@@ -278,8 +278,8 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
     return (
       <div className={`w-full h-full flex flex-col p-4 bg-panel-bg border-2 ${borderClass} rounded-lg shadow-2xl ${isDisconnected ? 'opacity-60' : ''} relative`}>
         {/* Status Icons - absolute positioned in top-right corner */}
-        {/* Order from right to left: checkbox (3px from corner), first player star (2px left), win medals (2px left) */}
-        <div className="absolute top-4 right-4 flex items-center flex-row-reverse gap-[2px] z-50">
+        {/* Order from left to right: win medals, first player star, checkbox (rightmost) */}
+        <div className="absolute top-4 right-4 flex items-center gap-[2px] z-50">
           {/* Win medals */}
           {winCount > 0 && Array.from({ length: winCount }).map((_, i) => (
             <img key={`win-${i}`} src={ROUND_WIN_MEDAL_URL} alt="Round Winner" className="w-6 h-6 drop-shadow-md flex-shrink-0" title="Round Winner" />

@@ -450,9 +450,26 @@ export const useGameState = () => {
           // Only update gameState if it's a valid game state (no type, but has required properties)
           // Sync card images from database (important for tokens after reconnection)
           const syncedData = syncGameStateImages(data)
+
+          // IMPORTANT: Prevent phase flicker by validating phase transitions
+          // If we're currently in scoring step and incoming state is not, verify it's a valid transition
+          const currentState = gameStateRef.current
+          if (currentState.isScoringStep && !syncedData.isScoringStep && syncedData.currentPhase !== 0) {
+            // We're in scoring, incoming is non-scoring but not setup phase - likely old state
+            logger.debug('Ignoring delayed state update (expected setup phase after scoring)')
+            return
+          }
+          // If we're NOT in scoring and incoming IS in scoring, verify current phase is commit (2)
+          if (!currentState.isScoringStep && syncedData.isScoringStep && currentState.currentPhase !== 2) {
+            // Incoming scoring state but we're not in commit phase - likely old state
+            logger.debug('Ignoring delayed scoring state update')
+            return
+          }
+
           setGameState(syncedData)
-          // Auto-save game state when receiving updates from server
           gameStateRef.current = syncedData
+
+          // Auto-save game state when receiving updates from server
           if (localPlayerIdRef.current !== null && syncedData.gameId) {
             // Get player token from reconnection_data
             let playerToken = undefined
@@ -1324,7 +1341,10 @@ export const useGameState = () => {
       const newState: GameState = JSON.parse(JSON.stringify(currentState))
 
       if (newState.isScoringStep) {
+        // IMPORTANT: Set currentPhase to 0 IMMEDIATELY after clearing isScoringStep
+        // to prevent visual glitch showing the previous phase
         newState.isScoringStep = false
+        newState.currentPhase = 0
         const finishingPlayerId = currentState.activePlayerId
         if (finishingPlayerId !== undefined) {
           newState.board.forEach(row => {
@@ -1351,7 +1371,6 @@ export const useGameState = () => {
           }
         }
 
-        newState.currentPhase = 0
         newState.activePlayerId = nextPlayerId
 
         // Auto-draw for the new active player
@@ -1497,8 +1516,10 @@ export const useGameState = () => {
       if (!currentState.isGameStarted) {
         return currentState
       }
+      // IMPORTANT: When exiting scoring step, immediately return to Commit phase (phase 3)
+      // to prevent visual glitch showing an incorrect phase
       if (currentState.isScoringStep) {
-        return { ...currentState, isScoringStep: false }
+        return { ...currentState, isScoringStep: false, currentPhase: 3 }
       }
       return {
         ...currentState,
