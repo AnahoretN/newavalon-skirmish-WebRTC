@@ -152,7 +152,7 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
   {
     baseId: 'patrolAgent',
     activationType: 'commit',
-    getAction: (_card, _gameState, _ownerId, coords) => ({
+    getAction: (card, _gameState, _ownerId, coords) => ({
       type: 'CREATE_STACK',
       tokenType: 'Stun',
       count: 1,
@@ -160,6 +160,7 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
       onlyOpponents: true,
       mustBeAdjacentToSource: true,
       sourceCoords: coords,
+      sourceCard: card,
     })
   },
 
@@ -177,7 +178,7 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
   {
     baseId: 'riotAgent',
     activationType: 'commit',
-    getAction: (_card, _gameState, _ownerId, coords) => ({
+    getAction: (card, _gameState, _ownerId, coords) => ({
       type: 'CREATE_STACK',
       tokenType: 'Stun',
       count: 1,
@@ -185,6 +186,7 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
       onlyOpponents: true,
       mustBeAdjacentToSource: true,
       sourceCoords: coords,
+      sourceCard: card,
     })
   },
 
@@ -326,12 +328,13 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
   {
     baseId: 'cautiousAvenger',
     activationType: 'deploy',
-    getAction: (_card, _gameState, _ownerId, coords) => ({
+    getAction: (card, _gameState, _ownerId, coords) => ({
       type: 'CREATE_STACK',
       tokenType: 'Aim',
       count: 1,
       sourceCoords: coords,
       mustBeInLineWithSource: true,
+      sourceCard: card,
     })
   },
   {
@@ -404,13 +407,14 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
     baseId: 'censor',
     activationType: 'commit',
     supportRequired: true,
-    getAction: (_card, _gameState, _ownerId, coords) => ({
+    getAction: (card, _gameState, _ownerId, coords) => ({
       type: 'CREATE_STACK',
       tokenType: 'Stun',
       count: 1,
       requiredTargetStatus: 'Exploit',
       requireStatusFromSourceOwner: true,
       sourceCoords: coords,
+      sourceCard: card,
     })
   },
 
@@ -566,12 +570,13 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
   {
     baseId: 'walkingTurret',
     activationType: 'deploy',
-    getAction: (_card, _gameState, _ownerId, coords) => ({
+    getAction: (card, _gameState, _ownerId, coords) => ({
       type: 'CREATE_STACK',
       tokenType: 'Aim',
       count: 1,
       mustBeInLineWithSource: true,
       sourceCoords: coords,
+      sourceCard: card,
     })
   },
   {
@@ -722,22 +727,23 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
   {
     baseId: 'pinkunonekoSV',
     activationType: 'deploy',
-    getAction: (_card, _gameState, _ownerId, coords) => ({
+    getAction: (card, _gameState, _ownerId, coords) => ({
       type: 'CREATE_STACK',
       tokenType: 'Stun',
       count: 1,
       onlyOpponents: true,
       mustBeAdjacentToSource: true,
       sourceCoords: coords,
+      sourceCard: card,
     })
   },
   {
     baseId: 'pinkunonekoSV',
     activationType: 'setup',
-    getAction: (_card, _gameState, ownerId, coords) => ({
+    getAction: (card, _gameState, ownerId, coords) => ({
       type: 'ENTER_MODE',
       mode: 'SELECT_TARGET',
-      sourceCard: _card,
+      sourceCard: card,
       sourceCoords: coords,
       payload: {
         actionType: 'DESTROY',
