@@ -225,6 +225,23 @@ export interface TranslationResource {
     empty: string;
     dragOutsideToPlaceToken: string;
     holdRightClickViewHints: string;
+    gameSettings: string;
+    autoAbilities: string;
+    on: string;
+    off: string;
+    private: string;
+    public: string;
+    dummyPlayers: string;
+    gridSize: string;
+    gameMode: string;
+    '2v2': string;
+    '3v1': string;
+    invitePlayer: string;
+    copy: string;
+    hiddenGame: string;
+    copied: string;
+    copyInviteLink: string;
+    reconnect: string;
   };
   rules: {
     title: string;
