@@ -251,7 +251,8 @@ export const recalculateBoardStatuses = (gameState: GameState): Board => {
       processedRowsForPearl.add(rowKey)
       for (let i = 0; i < GRID_SIZE; i++) {
         const target = newBoard[r][i].card
-        if (target && target.ownerId === ownerId && !target.isFaceDown) {
+        // Exclude the hero card itself - only buff OTHER units
+        if (target && target.ownerId === ownerId && !target.isFaceDown && target.baseId !== HERO_MR_PEARL_ID) {
           target.bonusPower = (target.bonusPower || 0) + 1
         }
       }
@@ -263,7 +264,8 @@ export const recalculateBoardStatuses = (gameState: GameState): Board => {
       processedColsForPearl.add(colKey)
       for (let i = 0; i < GRID_SIZE; i++) {
         const target = newBoard[i][c].card
-        if (target && target.ownerId === ownerId && !target.isFaceDown) {
+        // Exclude the hero card itself - only buff OTHER units
+        if (target && target.ownerId === ownerId && !target.isFaceDown && target.baseId !== HERO_MR_PEARL_ID) {
           target.bonusPower = (target.bonusPower || 0) + 1
         }
       }

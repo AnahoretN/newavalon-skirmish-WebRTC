@@ -36,6 +36,8 @@ interface HeaderProps {
   onToggleAutoAbilities: (enabled: boolean) => void;
   isAutoDrawEnabled: boolean;
   onToggleAutoDraw: (enabled: boolean) => void;
+  hideDummyCards: boolean;
+  onToggleHideDummyCards: (enabled: boolean) => void;
   isScoringStep?: boolean;
   currentRound?: number;
   turnNumber?: number;
@@ -121,6 +123,8 @@ const GameSettingsMenu = memo<{
   onGameModeChange: (mode: GameMode) => void;
   isGameStarted: boolean;
   isHost: boolean;
+  hideDummyCards: boolean;
+  onToggleHideDummyCards: (enabled: boolean) => void;
   t: (key: keyof TranslationResource['ui']) => string;
 }>(({
   isOpen,
@@ -139,6 +143,8 @@ const GameSettingsMenu = memo<{
   onGameModeChange,
   isGameStarted,
   isHost,
+  hideDummyCards,
+  onToggleHideDummyCards,
   t,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null)
@@ -204,7 +210,7 @@ const GameSettingsMenu = memo<{
       {/* Dummy Players */}
       <div className="flex items-center justify-between mb-3">
         <span className="text-gray-300 text-sm">{t('dummyPlayers')}</span>
-        <div className="flex gap-1">
+        <div className="flex gap-1 items-center">
           {dummyOptions.map(option => (
             <button
               key={option}
@@ -219,6 +225,18 @@ const GameSettingsMenu = memo<{
               {option}
             </button>
           ))}
+          {/* Hide Dummy Cards toggle button */}
+          <button
+            onClick={() => onToggleHideDummyCards(!hideDummyCards)}
+            className={`w-8 h-8 rounded text-xs font-bold transition-colors ${
+              hideDummyCards
+                ? 'bg-red-600 text-white'
+                : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+            }`}
+            title={t('hideDummyCardsTooltip')}
+          >
+            🙈
+          </button>
         </div>
       </div>
 
@@ -455,6 +473,8 @@ const Header = memo<HeaderProps>(({
   onToggleAutoAbilities,
   isAutoDrawEnabled,
   onToggleAutoDraw,
+  hideDummyCards,
+  onToggleHideDummyCards,
   isScoringStep,
   currentRound = 1,
   turnNumber = 1,
@@ -621,6 +641,8 @@ const Header = memo<HeaderProps>(({
         onGameModeChange={onGameModeChange}
         isGameStarted={isGameStarted}
         isHost={isHost}
+        hideDummyCards={hideDummyCards}
+        onToggleHideDummyCards={onToggleHideDummyCards}
         t={t}
       />
 

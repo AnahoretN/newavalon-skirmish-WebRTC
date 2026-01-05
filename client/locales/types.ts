@@ -245,6 +245,8 @@ export interface TranslationResource {
     copyGameLink: string;
     copyGameLinkDesc: string;
     reconnect: string;
+    hideDummyCards: string;
+    hideDummyCardsTooltip: string;
   };
   rules: {
     title: string;

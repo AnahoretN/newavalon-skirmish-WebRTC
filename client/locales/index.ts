@@ -205,6 +205,8 @@ const enUI = {
   '3v1': '3v1',
   copy: 'Copy',
   reconnect: 'Reconnect',
+  hideDummyCards: 'Hide Dummy Cards',
+  hideDummyCardsTooltip: 'Hide cards in dummy players hands like real players',
 }
 
 const enRules = {

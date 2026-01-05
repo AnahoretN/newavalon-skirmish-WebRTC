@@ -232,6 +232,8 @@ export const ru: TranslationResource = {
     '2v2': '2v2',
     '3v1': '3v1',
     reconnect: 'Переподключиться',
+    hideDummyCards: 'Скрыть карты ботов',
+    hideDummyCardsTooltip: 'Скрывать карты в руках бот-игроков, как у реальных игроков',
   },
   rules: {
     title: 'Правила Игры "New Avalon: Skirmish"',

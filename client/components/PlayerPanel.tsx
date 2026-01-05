@@ -47,6 +47,7 @@ interface PlayerPanelProps {
   startingPlayerId?: number | null; // Aligned with GameState type (null when not set)
   onDeckClick?: (playerId: number) => void;
   isDeckSelectable?: boolean;
+  hideDummyCards?: boolean; // If true, hide dummy player cards like real players
 }
 
 const ColorPicker: React.FC<{ player: Player, canEditSettings: boolean, selectedColors: Set<PlayerColor>, onColorChange: (c: PlayerColor) => void, compact?: boolean }> = memo(({ player, canEditSettings, selectedColors, onColorChange, compact = false }) => {
@@ -212,6 +213,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   startingPlayerId,
   onDeckClick,
   isDeckSelectable,
+  hideDummyCards = false,
 }) => {
   const { t, resources } = useLanguage()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -435,7 +437,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   if (layoutMode === 'list-remote') {
     const borderClass = isPlayerActive ? 'border-yellow-400' : 'border-gray-700'
     return (
-      <div className={`w-full h-full flex flex-col p-1 pt-[1px] bg-panel-bg border-2 ${borderClass} rounded-lg shadow-xl ${isDisconnected ? 'opacity-60' : ''} relative`}>
+      <div className={`w-full h-full flex flex-col p-1 pt-[3px] bg-panel-bg border-2 ${borderClass} rounded-lg shadow-xl ${isDisconnected ? 'opacity-60' : ''} relative`}>
         {/* Header: Color + Name + Deck Select + Status Icons - all in one row */}
         <div className="flex items-center gap-1 px-1 min-h-[20px] mt-[2px] relative z-10">
           {/* Color picker - compact for remote panels */}
@@ -456,9 +458,9 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
               </select>
             )}
             {/* Win medal */}
-            {winCount > 0 && <span className="text-yellow-500 text-[15px] font-bold whitespace-nowrap leading-none">★{winCount}</span>}
+            {winCount > 0 && <img src={ROUND_WIN_MEDAL_URL} alt="Round Winner" className="w-[19px] h-[17.7] flex-shrink-0 mt-[1.3px]" title="Round Winner" />}
             {/* First player star */}
-            {isFirstPlayer && <img src={firstPlayerIconUrl} className="w-[15px] h-[15px] flex-shrink-0" title="First Player" />}
+            {isFirstPlayer && <img src={firstPlayerIconUrl} className="w-[16.75px] h-[16.75px] flex-shrink-0" title="First Player" />}
             {/* Active player checkbox */}
             <input
               type="checkbox"
@@ -477,7 +479,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
           {/* Combined: Resources + Hand with gap-1 spacing */}
           <div className="flex flex-col flex-1 min-h-0 gap-1 px-1 mt-[4px]">
             {/* Row 1: Resources (Deck, Discard, Showcase) + Score at right edge - same size as hand cards */}
-            <div className="grid grid-cols-6 gap-1 flex-shrink-0 scale-96 origin-left">
+            <div className="grid grid-cols-6 gap-1 flex-shrink-0 scale-[0.975] origin-left">
             {/* Deck */}
             <div className="aspect-square relative">
               <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => openContextMenu(e, 'deckPile', { player })}>
@@ -571,7 +573,9 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
               const isOwnerDummy = owner?.isDummy
               const isOwner = localPlayerId === card.ownerId
 
-              const isVisible: boolean = isOwner || !!isOwnerDummy || isTeammate || isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
+              // If hideDummyCards is enabled, dummy cards are only visible if they have a reveal status
+              const isDummyVisible = !hideDummyCards || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
+              const isVisible: boolean = isOwner || (!!isOwnerDummy && isDummyVisible) || isTeammate || isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
 
               return (
                 <div

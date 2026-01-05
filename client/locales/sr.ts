@@ -232,6 +232,8 @@ export const sr: TranslationResource = {
     '2v2': '2v2',
     '3v1': '3v1',
     reconnect: 'Poveži ponovo',
+    hideDummyCards: 'Sakri karte botova',
+    hideDummyCardsTooltip: 'Sakrij karte u rukama bot-igrača kao kod pravih igrača',
   },
   rules: {
     title: 'Pravila igre "New Avalon: Skirmish"',

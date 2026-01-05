@@ -229,6 +229,25 @@ const App = memo(function App() {
     }
   }, [localPlayerId, gameState.players])
 
+  // Hide dummy cards setting - stored in localStorage
+  const [hideDummyCards, setHideDummyCards] = useState(() => {
+    try {
+      const saved = localStorage.getItem('hide_dummy_cards')
+      return saved === null ? false : saved === 'true'
+    } catch {
+      return false
+    }
+  })
+
+  // Save hideDummyCards setting to localStorage when it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('hide_dummy_cards', String(hideDummyCards))
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [hideDummyCards])
+
   const [justAutoTransitioned, setJustAutoTransitioned] = useState(false)
   const [abilityMode, setAbilityMode] = useState<AbilityAction | null>(null)
   const [actionQueue, setActionQueue] = useState<AbilityAction[]>([])
@@ -1646,6 +1665,8 @@ const App = memo(function App() {
             toggleAutoDraw(localPlayerId, enabled)
           }
         }}
+        hideDummyCards={hideDummyCards}
+        onToggleHideDummyCards={setHideDummyCards}
         isScoringStep={gameState.isScoringStep}
         currentRound={gameState.currentRound}
         turnNumber={gameState.turnNumber}
@@ -1868,6 +1889,7 @@ const App = memo(function App() {
               startingPlayerId={gameState.startingPlayerId}
               onDeckClick={handleDeckClick}
               isDeckSelectable={abilityMode?.mode === 'SELECT_DECK'}
+              hideDummyCards={hideDummyCards}
             />
           </div>
         )}
@@ -1954,6 +1976,7 @@ const App = memo(function App() {
                     startingPlayerId={gameState.startingPlayerId}
                     onDeckClick={handleDeckClick}
                     isDeckSelectable={abilityMode?.mode === 'SELECT_DECK'}
+                    hideDummyCards={hideDummyCards}
                   />
                 </div>
               ))}
