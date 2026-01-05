@@ -13,8 +13,10 @@ import {
   logGameAction,
   getClientGameMap,
   getPublicGames,
+  getAllGameLogs,
 } from './gameState.js';
 import { generatePlayerToken } from '../utils/deckUtils.js';
+import { handlePlayerLeave, broadcastGamesList } from './gameLifecycle.js';
 
 // Store wss instance for broadcasting
 let wssInstance = null;
@@ -234,44 +236,18 @@ function handleDisconnection(ws) {
   try {
     const gameId = getGameIdForClient(ws);
 
-    if (gameId) {
-      const gameState = getGameState(gameId);
-      if (gameState) {
-        // Find the player and handle disconnection (use playerId for reliability)
-        const player = gameState.players.find(p => p.id === ws.playerId);
-        if (player) {
-          logGameAction(gameId, `Player ${player.name} disconnected`);
-
-          // Generate playerToken if not already set (for reconnection)
-          const playerToken = player.playerToken || generatePlayerToken();
-
-          // Always mark player as disconnected (whether game started or not)
-          // This allows reconnection with the same player slot
-          updateGameState(gameId, {
-            players: gameState.players.map(p =>
-              p.id === ws.playerId
-                ? {
-                    ...p,
-                    isDisconnected: true,
-                    ws: null,
-                    playerToken,
-                    // Only convert to dummy if game is active
-                    ...(gameState.isGameStarted && { isDummy: true })
-                  }
-                : p
-            )
-          });
-        } else {
-          logger.warn(`Player with ws.playerId ${ws.playerId} not found in game ${gameId}`);
-        }
-
-        // Broadcast updated state to remaining players
-        // Get fresh state after any updates
-        const updatedState = getGameState(gameId);
-        if (updatedState) {
-          broadcastToGame(gameId, updatedState, ws);
-        }
-      }
+    if (gameId && ws.playerId) {
+      // Use the new handlePlayerLeave function with isManualExit=false
+      // This will mark as disconnected after 10s and remove after 5min
+      handlePlayerLeave(
+        gameId,
+        ws.playerId,
+        false, // Not a manual exit - it's a disconnect
+        getAllGameLogs(),
+        { clients: wssInstance?.clients || [] },
+        (gid, state) => broadcastToGame(gid, state, ws),
+        () => broadcastGamesList(getAllGameLogs(), { clients: wssInstance?.clients || [] })
+      );
     }
 
     // Clean up rate limiting data

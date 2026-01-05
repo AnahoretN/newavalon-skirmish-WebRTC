@@ -266,6 +266,7 @@ export const useGameState = () => {
     board: createInitialBoard(),
     activeGridSize: 7,
     gameId: null,
+    hostId: 1, // Default to player 1 as host
     dummyPlayerCount: 0,
     isGameStarted: false,
     gameMode: GameModeEnum.FreeForAll,
@@ -393,24 +394,43 @@ export const useGameState = () => {
 
       const currentGameState = gameStateRef.current
       logger.info('Current gameState on open:', currentGameState ? `gameId=${currentGameState.gameId}` : 'null')
+      logger.info('playerTokenRef.current on open:', playerTokenRef.current ? 'YES' : 'NO')
 
       // Only send JOIN_GAME if we have an active game
       // Don't send GET_GAMES_LIST on connect - it causes issues with tunnel connections (ngrok/cloudflared)
       if (currentGameState && currentGameState.gameId && ws.current?.readyState === WebSocket.OPEN) {
-        let playerToken = undefined
-        try {
-          const stored = localStorage.getItem(RECONNECTION_DATA_KEY)
-          if (stored) {
-            const data = JSON.parse(stored)
-            if (data?.gameId === currentGameState.gameId && data?.playerToken) {
-              playerToken = data.playerToken
+        let playerToken = playerTokenRef.current  // Use playerTokenRef first (restored from state)
+
+        // If no token in ref, try to find it from RECONNECTION_DATA_KEY or from gameState players
+        if (!playerToken) {
+          // Try RECONNECTION_DATA_KEY first
+          try {
+            const stored = localStorage.getItem(RECONNECTION_DATA_KEY)
+            if (stored) {
+              const data = JSON.parse(stored)
+              logger.info('RECONNECTION_DATA_KEY:', data?.gameId, currentGameState.gameId)
+              if (data?.playerToken) {
+                playerToken = data.playerToken
+                playerTokenRef.current = playerToken
+                logger.info('Using playerToken from RECONNECTION_DATA_KEY')
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to parse reconnection data:', e instanceof Error ? e.message : String(e))
+          }
+
+          // If still no token, try to get it from the player in gameState
+          if (!playerToken && currentGameState.players && localPlayerIdRef.current) {
+            const localPlayer = currentGameState.players.find((p: Player) => p.id === localPlayerIdRef.current)
+            if (localPlayer?.playerToken) {
+              playerToken = localPlayer.playerToken
+              playerTokenRef.current = playerToken
+              logger.info('Using playerToken from gameState player')
             }
           }
-        } catch (e) {
-          console.warn('Failed to parse reconnection data, clearing cache:', e instanceof Error ? e.message : String(e))
-          clearGameState()
         }
 
+        logger.info('JoinGame: Sending reconnection with token:', playerToken ? 'YES' : 'NO', 'gameId:', currentGameState.gameId)
         ws.current.send(JSON.stringify({
           type: 'JOIN_GAME',
           gameId: currentGameState.gameId,
@@ -440,16 +460,16 @@ export const useGameState = () => {
           if (gameId && data.playerId !== null && data.playerToken) {
             // Save player token for reconnection
             playerTokenRef.current = data.playerToken
-            // Save current game state with new player token
+            // Always save both RECONNECTION_DATA_KEY and try to save full game state
+            localStorage.setItem(RECONNECTION_DATA_KEY, JSON.stringify({
+              gameId,
+              playerId: data.playerId,
+              playerToken: data.playerToken,
+              timestamp: Date.now(),
+            }))
+            // Save full game state if we have a matching game state
             if (gameStateRef.current.gameId === gameId) {
               saveGameState(gameStateRef.current, data.playerId, data.playerToken)
-            } else {
-              localStorage.setItem(RECONNECTION_DATA_KEY, JSON.stringify({
-                gameId,
-                playerId: data.playerId,
-                playerToken: data.playerToken,
-                timestamp: Date.now(),
-              }))
             }
           } else if (data.playerId === null) {
             clearGameState()
@@ -541,7 +561,7 @@ export const useGameState = () => {
 
           // Auto-save game state when receiving updates from server
           if (localPlayerIdRef.current !== null && syncedData.gameId) {
-            // Get player token from reconnection_data
+            // Get player token from reconnection_data or from the player in gameState
             let playerToken = undefined
             try {
               const stored = localStorage.getItem(RECONNECTION_DATA_KEY)
@@ -550,6 +570,17 @@ export const useGameState = () => {
                 playerToken = parsed.playerToken
               }
             } catch (e) { /* ignore */ }
+
+            // Also try to get token from current player in gameState
+            if (!playerToken && syncedData.players) {
+              const localPlayer = syncedData.players.find((p: Player) => p.id === localPlayerIdRef.current)
+              if (localPlayer?.playerToken) {
+                playerToken = localPlayer.playerToken
+                // Update playerTokenRef if we found it in gameState
+                playerTokenRef.current = playerToken
+              }
+            }
+
             saveGameState(syncedData, localPlayerIdRef.current, playerToken)
           }
         } else {
@@ -598,6 +629,9 @@ export const useGameState = () => {
       const payload: { type: string; gameId: string; playerToken?: string } = { type: 'JOIN_GAME', gameId }
       if (reconnectionData?.gameId === gameId && reconnectionData.playerToken) {
         payload.playerToken = reconnectionData.playerToken
+        logger.info(`JoinGame: Sending reconnection with token ${reconnectionData.playerToken.substring(0, 8)}... for player ${reconnectionData.playerId}`)
+      } else {
+        logger.info(`JoinGame: No reconnection data or gameId mismatch. storedGameId=${reconnectionData?.gameId}, requestedGameId=${gameId}`)
       }
       ws.current.send(JSON.stringify(payload))
     } else {

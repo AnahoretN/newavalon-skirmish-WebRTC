@@ -1940,6 +1940,19 @@ const App = memo(function App() {
           <div className="flex flex-col h-full w-full">
             {gameState.players
               .filter(p => p.id !== localPlayerId)
+              .sort((a, b) => {
+                // Sort players in clockwise order relative to local player
+                // Players after local player come first, then players before
+                const localPos = localPlayer?.position ?? 0
+                const aPos = a.position ?? 0
+                const bPos = b.position ?? 0
+
+                // Calculate relative positions (0 = next player, higher = later)
+                const aRelative = (aPos - localPos + gameState.players.length) % gameState.players.length
+                const bRelative = (bPos - localPos + gameState.players.length) % gameState.players.length
+
+                return aRelative - bRelative
+              })
               .map(player => (
                 <div key={player.id} className="w-full flex-1 min-h-0 flex flex-col">
                   <PlayerPanel

@@ -7,6 +7,7 @@ import { logger } from '../utils/logger.js';
 import { sanitizeString, validateMessageSize } from '../utils/security.js';
 import { setCardDatabase, setTokenDatabase, setDeckFiles } from '../services/content.js';
 import { isRateLimited } from '../services/rateLimit.js';
+import { getGameState, getGameIdForClient } from '../services/gameState.js';
 import type { WebSocket } from 'ws';
 
 interface UpdateDeckDataPayload {
@@ -70,8 +71,18 @@ export function handleUpdateDeckData(ws: WebSocket & { playerId?: number }, data
       return;
     }
 
-    // SECURITY: Only allow host (player 1) to update deck data
-    if (ws.playerId !== 1) {
+    // SECURITY: Only allow host to update deck data
+    const gameId = getGameIdForClient(ws);
+    if (!gameId) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Not associated with a game'
+      }));
+      return;
+    }
+
+    const gameState = getGameState(gameId);
+    if (!gameState || ws.playerId !== gameState.hostId) {
       ws.send(JSON.stringify({
         type: 'ERROR',
         message: 'Unauthorized: Only host can update deck data'

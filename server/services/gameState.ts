@@ -82,6 +82,7 @@ export function createGameState(gameId: string, options: GameOptions = {}): Game
     isReadyCheckActive: false,
     created: Date.now(),
     lastActivity: Date.now(),
+    hostId: 1, // First player (creator) is initially the host
     // Game-level auto flags: authoritative server flags for auto-transitions
     // These control server-side behavior, while client-side localStorage stores UI preferences
     // autoAbilitiesEnabled: if true, server triggers auto-transitions between phases

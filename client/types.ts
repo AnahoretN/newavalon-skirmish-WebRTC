@@ -114,6 +114,8 @@ export interface Player {
   boardHistory: string[]; // Stack of card IDs currently on the board, used to track 'LastPlayed' status fallback.
   autoDrawEnabled?: boolean; // Whether this player has auto-draw enabled.
   isSpectator?: boolean; // True if this "player" is actually a spectator in the players array.
+  disconnectTimestamp?: number; // Timestamp when player disconnected (for timeout tracking)
+  position?: number; // Position in turn order (0-based)
 }
 
 /**
@@ -184,6 +186,7 @@ export interface GameState {
   board: Board;
   activeGridSize: GridSize;
   gameId: string | null;
+  hostId: number; // Player ID of the current host (can transfer on disconnect)
   dummyPlayerCount: number;
   isGameStarted: boolean;
   gameMode: GameMode;

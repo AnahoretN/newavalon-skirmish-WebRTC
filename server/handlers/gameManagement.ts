@@ -18,6 +18,7 @@ import { broadcastToGame } from '../services/websocket.js';
 import { createNewPlayer, generatePlayerToken } from '../utils/deckUtils.js';
 import {
   handlePlayerLeave,
+  cancelPlayerDisconnectTimer,
   cancelGameTermination,
   endGame,
   resetInactivityTimer,
@@ -86,35 +87,41 @@ export function handleUpdateState(ws, data) {
 
     const existingGameState = getGameState(gameIdToUpdate);
     if (existingGameState) {
-      // Game exists - check if this is the host reconnecting
+      // Game exists - check if this is a player reconnecting
       let assignedPlayerId = null;
 
       if (playerToken) {
-        // Try to find the player's slot by token
+        // Try to find the player's slot by token (don't require isDisconnected - F5 reconnect is fast)
         const playerToRestore = existingGameState.players.find(
-          p => p.playerToken === playerToken && p.isDisconnected
+          p => p.playerToken === playerToken
         );
         if (playerToRestore) {
+          // Clear any disconnect flags if present
           playerToRestore.isDisconnected = false;
           playerToRestore.isDummy = false;
+          playerToRestore.disconnectTimestamp = undefined;
           assignedPlayerId = playerToRestore.id;
-          logger.info(`Host/Player ${assignedPlayerId} reconnected via UPDATE_STATE to game ${gameIdToUpdate}`);
+          logger.info(`Player ${assignedPlayerId} reconnected via UPDATE_STATE to game ${gameIdToUpdate}`);
         }
       }
 
-      // If no player restored, try to assign as host if player 1 is disconnected
+      // If no player restored by token, try to assign as player 1 if disconnected
       if (assignedPlayerId === null) {
         const player1 = existingGameState.players.find(p => p.id === 1);
         if (player1 && player1.isDisconnected) {
           player1.isDisconnected = false;
           player1.isDummy = false;
+          player1.disconnectTimestamp = undefined;
           assignedPlayerId = 1;
-          logger.info(`Player 1 restored via UPDATE_STATE to game ${gameIdToUpdate}`);
+          logger.info(`Player 1 restored via UPDATE_STATE (disconnected) to game ${gameIdToUpdate}`);
         }
       }
 
-      // Update game state with client's state
+      // Update game state with client's state, but preserve players array
+      // to prevent overwriting current players with stale client data
+      const playersToPreserve = existingGameState.players;
       Object.assign(existingGameState, updatedGameState);
+      existingGameState.players = playersToPreserve;
       associateClientWithGame(ws, gameIdToUpdate);
       ws.gameId = gameIdToUpdate;
       ws.playerId = assignedPlayerId ?? 1; // Default to host if not assigned
@@ -122,10 +129,28 @@ export function handleUpdateState(ws, data) {
       logger.info(`State updated for game ${gameIdToUpdate}, playerId=${ws.playerId}`);
     } else {
       // Game doesn't exist, create it
+      // Add playerToken to all players that don't have one (coming from client)
+      if (updatedGameState.players) {
+        updatedGameState.players.forEach((p: any) => {
+          if (!p.playerToken) {
+            p.playerToken = generatePlayerToken();
+            logger.info(`Generated playerToken for Player ${p.id} in new game ${gameIdToUpdate}`);
+          }
+        });
+      }
       const newGameState = createGameState(gameIdToUpdate, updatedGameState);
+      // Store player1's token for the host
+      const player1 = newGameState.players.find((p: any) => p.id === 1);
+      const player1Token = player1?.playerToken;
       associateClientWithGame(ws, gameIdToUpdate);
       ws.gameId = gameIdToUpdate;
       ws.playerId = 1; // Host is always player 1 for new games
+      // Send JOIN_SUCCESS immediately with player1's token
+      ws.send(JSON.stringify({
+        type: 'JOIN_SUCCESS',
+        playerId: 1,
+        playerToken: player1Token
+      }));
       broadcastToGame(gameIdToUpdate, newGameState);
       logger.info(`New game created: ${gameIdToUpdate}, host assigned playerId=1`);
     }
@@ -141,7 +166,7 @@ export function handleUpdateState(ws, data) {
 export function handleJoinGame(ws, data) {
   try {
     const { gameId, playerToken } = data;
-    logger.info(`JOIN_GAME request: gameId=${gameId}, hasToken=${!!playerToken}`);
+    logger.info(`JOIN_GAME request: gameId=${gameId}, hasToken=${!!playerToken}, token=${playerToken?.substring(0, 12)}...`);
 
     const gameState = getGameState(gameId);
 
@@ -162,24 +187,25 @@ export function handleJoinGame(ws, data) {
     // Players with a valid playerToken can always reconnect, even if game started
     // This handles F5 refresh, temporary network issues, and tab reopening
     if (playerToken) {
+      // Log all player tokens for debugging
+      logger.info(`Current players in game:`, gameState.players.map((p: any) => `Player${p.id}(token=${p.playerToken?.substring(0, 8)}..., dummy=${p.isDummy}, disconnected=${p.isDisconnected})`).join(', '));
+
       const playerToReconnect = gameState.players.find(
         p => p.playerToken === playerToken
       );
       if (playerToReconnect) {
+        logger.info(`Reconnection: Player ${playerToReconnect.id} found with matching token, restoring...`);
         // Always allow reconnection with valid token
         playerToReconnect.isDisconnected = false;
         playerToReconnect.isDummy = false; // Restore as real player
+        playerToReconnect.disconnectTimestamp = undefined; // Clear disconnect timestamp
         ws.playerId = playerToReconnect.id;
 
         // Cancel any game termination timer
         cancelGameTermination(gameId, getAllGameLogs());
 
-        // Clear pending dummy conversion timer
-        const timerKey = `${gameId}-${playerToReconnect.id}`;
-        if (playerDisconnectTimers.has(timerKey)) {
-          clearTimeout(playerDisconnectTimers.get(timerKey));
-          playerDisconnectTimers.delete(timerKey);
-        }
+        // Cancel pending disconnect/removal timers
+        cancelPlayerDisconnectTimer(gameId, playerToReconnect.id);
 
         ws.send(JSON.stringify({
           type: 'JOIN_SUCCESS',
@@ -189,6 +215,8 @@ export function handleJoinGame(ws, data) {
         logger.info(`Player ${playerToReconnect.id} (${playerToReconnect.name}) reconnected to game ${gameId}`);
         broadcastToGame(gameId, gameState);
         return;
+      } else {
+        logger.info(`Reconnection: No player found with token ${playerToken.substring(0, 8)}... in game ${gameId}`);
       }
     }
 
@@ -208,16 +236,13 @@ export function handleJoinGame(ws, data) {
       playerToTakeOver.isDisconnected = false;
       playerToTakeOver.name = `Player ${playerToTakeOver.id}`;
       playerToTakeOver.playerToken = generatePlayerToken();
+      playerToTakeOver.disconnectTimestamp = undefined; // Clear disconnect timestamp
 
       // Cancel any game termination timer
       cancelGameTermination(gameId, getAllGameLogs());
 
-      // Clear pending dummy conversion timer for the slot being taken over
-      const timerKey = `${gameId}-${playerToTakeOver.id}`;
-      if (playerDisconnectTimers.has(timerKey)) {
-        clearTimeout(playerDisconnectTimers.get(timerKey));
-        playerDisconnectTimers.delete(timerKey);
-      }
+      // Cancel pending disconnect/removal timers
+      cancelPlayerDisconnectTimer(gameId, playerToTakeOver.id);
 
       ws.playerId = playerToTakeOver.id;
       ws.send(JSON.stringify({
@@ -339,8 +364,9 @@ export function handleForceSync(ws, data) {
       return;
     }
 
-    // Only the host (player 1) can force a sync
-    if (ws.playerId !== 1) {
+    // Only the host can force a sync
+    const gameState = getGameState(gameIdToSync);
+    if (!gameState || ws.playerId !== gameState.hostId) {
       logger.warn(`Non-host player ${ws.playerId} attempted to force sync game ${gameIdToSync}`);
       ws.send(JSON.stringify({
         type: 'ERROR',
@@ -354,7 +380,7 @@ export function handleForceSync(ws, data) {
 
     // Update game state
     updateGameState(gameIdToSync, hostGameState);
-    logGameAction(gameIdToSync, `Host (Player 1) forced a game state synchronization.`);
+    logGameAction(gameIdToSync, `Host (Player ${ws.playerId}) forced a game state synchronization.`);
 
     logger.info(`Host forcing sync for game ${gameIdToSync}`);
 

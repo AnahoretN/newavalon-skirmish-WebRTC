@@ -5,6 +5,7 @@ import React from 'react'
 import type { GameState, Player } from '@/types'
 import { PLAYER_COLORS } from '@/constants'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { APP_VERSION } from 'virtual:version'
 
 // Constants
 const MAX_ROUNDS = 5
@@ -98,7 +99,7 @@ export const RoundEndModal: React.FC<RoundEndModalProps> = ({ gameState, onConfi
         {/* Meta Info */}
         <div className="text-xs text-gray-400 flex justify-between px-1">
           <span>{t('endedOnTurn')} {gameState.turnNumber}</span>
-          <span>Alpha v0.1.3</span>
+          <span>v{APP_VERSION}</span>
         </div>
 
         <hr className="border-gray-600 my-2" />
