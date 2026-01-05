@@ -59,13 +59,13 @@ export async function fetchContentDatabase(): Promise<void> {
   try {
     let data: RawDecksJson
 
-    // Check if we're in a static build environment (GitHub Pages, etc.)
-    // If the base path is not '/', we're likely on GitHub Pages or similar static hosting
-    const isStaticBuild = window.location.pathname !== '/' && !window.location.hostname === 'localhost' && !window.location.hostname === '127.0.0.1'
+    // Check if we're in local development (localhost or 127.0.0.1)
+    // If not local, assume static hosting (GitHub Pages) and use embedded data
+    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
 
     // Try to fetch from server API first (for local development with server)
     // If that fails (e.g., on GitHub Pages), use embedded JSON
-    if (!isStaticBuild) {
+    if (isLocalDev) {
       try {
         const response = await fetch('/api/content/database')
         if (response.ok) {
@@ -85,7 +85,7 @@ export async function fetchContentDatabase(): Promise<void> {
           data = embeddedDatabase as RawDecksJson
         }
       } catch {
-        // Fetch failed (likely on GitHub Pages), use embedded data
+        // Fetch failed (e.g., server not running), use embedded data
         data = embeddedDatabase as RawDecksJson
       }
     } else {
