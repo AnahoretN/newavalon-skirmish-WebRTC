@@ -7,6 +7,7 @@ import { logger } from '../utils/logger.js';
 import { getGameState } from '../services/gameState.js';
 import { sanitizePlayerName } from '../utils/security.js';
 import { broadcastToGame } from '../services/websocket.js';
+import { createNewPlayer, generatePlayerToken } from '../utils/deckUtils.js';
 
 /**
  * Handle UPDATE_PLAYER_NAME message
@@ -267,8 +268,32 @@ export function handleSetDummyPlayerCount(ws, data) {
       return;
     }
 
+    // Get current real players (non-dummy)
+    const realPlayers = gameState.players.filter((p: any) => !p.isDummy);
+    const currentDummies = gameState.players.filter((p: any) => p.isDummy);
+
+    // If count matches current number of dummies, no change needed
+    if (currentDummies.length === numericCount) {
+      gameState.dummyPlayerCount = numericCount;
+      broadcastToGame(gameId, gameState);
+      return;
+    }
+
+    // Remove all existing dummy players
+    gameState.players = realPlayers;
+
+    // Add new dummy players
+    let nextPlayerId = Math.max(...realPlayers.map((p: any) => p.id), 0);
+    for (let i = 0; i < numericCount; i++) {
+      nextPlayerId++;
+      const dummyPlayer = createNewPlayer(nextPlayerId, true);
+      dummyPlayer.name = `Dummy ${i + 1}`;
+      dummyPlayer.playerToken = generatePlayerToken(); // Generate token for dummy
+      gameState.players.push(dummyPlayer);
+    }
+
     gameState.dummyPlayerCount = numericCount;
-    logger.info(`Dummy player count set to ${numericCount} for game ${gameId}`);
+    logger.info(`Dummy player count set to ${numericCount} for game ${gameId}, players now: ${gameState.players.length}`);
     broadcastToGame(gameId, gameState);
   } catch (error) {
     logger.error('Failed to set dummy player count:', error);

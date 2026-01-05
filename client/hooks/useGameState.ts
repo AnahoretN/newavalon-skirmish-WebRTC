@@ -954,8 +954,10 @@ export const useGameState = () => {
         return currentState
       }
       const newPlayers = [...realPlayers]
+      // Find the highest player ID and increment from there
+      const maxId = Math.max(...realPlayers.map(p => p.id), 0)
       for (let i = 0; i < count; i++) {
-        const dummyId = newPlayers.length + 1
+        const dummyId = maxId + i + 1
         const dummyPlayer = createNewPlayer(dummyId, true)
         dummyPlayer.name = `Dummy ${i + 1}`
         newPlayers.push(dummyPlayer)

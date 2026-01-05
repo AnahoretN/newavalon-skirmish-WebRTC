@@ -396,6 +396,19 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
             boxShadow: `inset 0 0 20px rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.6)`,
           } : {}
 
+          // Semi-transparent colored filter overlay for cards with ready abilities
+          // Gradient from center (0% opacity) to edges (75% opacity), 50% brighter than owner color
+          const readyAbilityOverlay = shouldHighlight && colorRgb ? (
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background: `radial-gradient(circle at center, transparent 37.5%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.75) 100%)`,
+                mixBlendMode: 'normal',
+                filter: 'brightness(1.25)',
+              }}
+            />
+          ) : null
+
           return (
             <div
               onMouseEnter={handleMouseEnter}
@@ -409,6 +422,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
               {currentImageSrc ? (
                 <>
                   <img src={currentImageSrc} onError={handleImageError} alt={displayCard.name} className="absolute inset-0 w-full h-full object-cover" />
+                  {readyAbilityOverlay}
                   {isHero && <div className={`absolute inset-0 hero-foil-overlay ${isShining ? 'animating' : ''}`}></div>}
                 </>
               ) : (

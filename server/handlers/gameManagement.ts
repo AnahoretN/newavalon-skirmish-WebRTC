@@ -117,11 +117,32 @@ export function handleUpdateState(ws, data) {
         }
       }
 
-      // Update game state with client's state, but preserve players array
-      // to prevent overwriting current players with stale client data
-      const playersToPreserve = existingGameState.players;
+      // Update game state with client's state
+      // Save players array before Object.assign since we need it for reconnection logic
+      const clientPlayers = updatedGameState.players;
+      const existingPlayers = existingGameState.players;
+
       Object.assign(existingGameState, updatedGameState);
-      existingGameState.players = playersToPreserve;
+
+      // Handle players array based on whether this is a reconnection
+      if (assignedPlayerId !== null) {
+        // During reconnection, we need to be careful about player data
+        // Copy over critical connection flags from existing state to client state
+        clientPlayers?.forEach((clientPlayer: any) => {
+          const existingPlayer = existingPlayers.find((p: any) => p.id === clientPlayer.id);
+          if (existingPlayer) {
+            // Preserve connection-related flags from server state
+            clientPlayer.isDisconnected = existingPlayer.isDisconnected;
+            clientPlayer.disconnectTimestamp = existingPlayer.disconnectTimestamp;
+          }
+        });
+        // Use the client's players with preserved connection flags
+        existingGameState.players = clientPlayers || existingPlayers;
+      } else {
+        // Normal update - use client's players as-is (includes hand/deck changes from drag-and-drop)
+        existingGameState.players = clientPlayers || existingPlayers;
+      }
+
       associateClientWithGame(ws, gameIdToUpdate);
       ws.gameId = gameIdToUpdate;
       ws.playerId = assignedPlayerId ?? 1; // Default to host if not assigned
