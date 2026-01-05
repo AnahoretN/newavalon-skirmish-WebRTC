@@ -88,10 +88,28 @@ const DUMMY_COLOR_MAP = new Map<number, PlayerColor>([
 
 // --- Text Formatter ---
 const formatRuleText = (text: string) => {
-  return text.split(/(\*\*.*?\*\*)/g).map((part, i) => {
+  // Split by markdown patterns: **bold** and [link](url)
+  // Use [\s\S]+? to match across newlines for links
+  const parts = text.split(/(\[[^\]]+\]\([^\)]+\)|\*\*[^\*]+\*\*)/g)
+
+  return parts.map((part, i) => {
+    // Handle [text](url) links
+    const linkMatch = part.match(/\[([^\]]+)\]\(([^)]+)\)/)
+    if (linkMatch) {
+      const linkText = linkMatch[1]
+      const linkUrl = linkMatch[2]
+      return (
+        <a key={i} href={linkUrl} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:text-sky-300 underline font-medium">
+          {linkText}
+        </a>
+      )
+    }
+
+    // Handle **bold** text
     if (part.startsWith('**') && part.endsWith('**')) {
       return <strong key={i} className="text-indigo-300">{part.slice(2, -2)}</strong>
     }
+
     return part
   })
 }
