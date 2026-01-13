@@ -384,55 +384,55 @@ export const sr: TranslationResource = {
     },
     overwatch: {
       name: 'Nadzor',
-      ability: '● Aim 1 na bilo koju kartu. Otkrij 1 kartu iz ruke protivnika za svaki tvoj Aim na bojištu.\n● Aim 1 na bilo koju kartu. Vuci 1 kartu za svaki tvoj Aim na bojištu.',
+      ability: '● Postavi 1 žeton Pricela na bilo koju kartu. Otkrij 1 kartu iz ruke oponenta za svaki tvoj žeton Pricela na bojištu.\n● Postavi 1 žeton Pricela na bilo koju kartu. Vuci 1 kartu za svaki tvoj žeton Pricela na bojištu.',
     },
     tacticalManeuver: {
       name: 'Taktički Manevar',
-      ability: '● Pomeri tvoju jedinicu na slobodnu ćeliju u liniji. Vuci karte jednake snage premeštene jedinice.\n● Pomeri tvoju jedinicu na slobodnu ćeliju u liniji. Dobij bodove jednake snage premeštene jedinice.',
+      ability: '● Pomeri tvoju jedinicu u praznu ćeliju u njenoj liniji. Vuci broj karata jednak snazi premeštene jedinice.\n● Pomeri tvoju jedinicu u praznu ćeliju u njenoj liniji. Dobij broj poena jednak snazi premeštene jedinice.',
     },
     inspiration: {
       name: 'Inspiracija',
-      ability: '● Skini bilo koji broj žetona (osim Support/Threat) sa tvoje jedinice. Vuci 1 kartu za svaki sklonuti žeton.\n● Skini bilo koji broj žetona (osim Support/Threat) sa tvoje jedinice. Dobij 1 bod za svaki sklonuti žeton.',
+      ability: '● Ukloni bilo koji broj žetona sa tvoje jedinice. Vuci 1 kartu za svaki uklonjeni žeton.\n● Ukloni bilo koji broj žetona sa tvoje jedinice. Dobij 1 poen za svaki uklonjeni žeton.',
     },
     dataInterception: {
       name: 'Presretanje Podataka',
-      ability: '● Exploit 1 na bilo koju kartu. Otkrij 1 kartu iz ruke protivnika za svaki tvoj Exploit na bojištu.\n● Exploit 1 na bilo koju kartu. Pomeri jedinicu sa tvojim Exploit za 1 ili 2 ćelije.',
+      ability: '● Postavi 1 žeton Eksploita na bilo koju kartu. Otkrij 1 kartu u ruci oponenta za svaki tvoj žeton Eksploita na bojištu.\n● Postavi 1 žeton Eksploita na bilo koju kartu. Pomeri jedinicu sa tvojim žetonom Eksploita za 1 ili 2 polja.',
     },
     falseOrders: {
       name: 'Lažni Naredbe',
-      ability: '● Stavi 1 Exploit na kartu protivnika. Zatim pomeri jedinicu protivnika sa tvojim Exploit (Domet 2). Otkrij do 2 karte iz ruke vlasnika.\n● Stavi 1 Exploit na kartu protivnika. Zatim pomeri jedinicu protivnika sa tvojim Exploit (Domet 2). Daj 2 Stun premeštenoj jedinici.',
+      ability: '● Postavi 1 žeton Eksploita na kartu oponenta. Pomeri jedinicu oponenta sa tvojim žetonom Eksploita za 1 ili 2 polja. Otkrij do 2 karata u ruci tog oponenta.\n● Postavi 1 žeton Eksploita na kartu oponenta. Pomeri jedinicu oponenta sa tvojim žetonom Eksploita za 1 ili 2 polja. Postavi 2 žetona Oglušеnja na nju.',
     },
     experimentalStimulants: {
       name: 'Eksperimentalni Stimulatori',
-      ability: '● Tvoja jedinica na bojištu može da aktivira svoju Deploy sposobnost još jednom.\n● Pomeri tvoju jedinicu na slobodnu ćeliju u liniji.',
+      ability: '● Jednica pod tvojom kontrolom na bojištu može aktivirati svoju Deploy sposobnost još jednom.\n● Pomeri tvoju jedinicu u praznu ćeliju u njenoj liniji.',
     },
     logisticsChain: {
       name: 'Lanac Logistike',
-      ability: '● Dobij bodove u izabranoj dijagonali. Dobij 1 dodatni bod za svaku tvoju kartu sa Support u ovoj dijagonali.\n● Dobij bodove u izabranoj dijagonali. Vuci 1 kartu za svaku tvoju kartu sa Support u ovoj dijagonali.',
+      ability: '● Dobij poene u dijagonali. Dobij +1 poen za svaku tvoju kartu sa Podrškom u toj dijagonali.\n● Dobij poene u dijagonali. Vuci 1 kartu za svaku tvoju kartu sa Podrškom u toj dijagonali.',
     },
     quickResponseTeam: {
       name: 'Tim za Brzo Reagovanje',
-      ability: '● Postavi tvoju jedinicu iz ruke na bilo koju ćeliju.\n● Pronađi kartu jedinice u tvojoj špilu i vuci je u ruku.',
+      ability: '● Odigraj jedinicu iz ruke u prazno polje.\n● Pronađi kartu jedinice u špilu i stavi je u ruku. Promešaj špil.',
     },
     temporaryShelter: {
       name: 'Privremeno Sklonište',
-      ability: '● Stavi Shield na tvoju kartu na bojištu. Skini sve Aim sa ove karte.\n● Stavi Shield na tvoju kartu na bojištu. Pomeri ovu kartu za 1 ili 2 ćelije.',
+      ability: '● Postavi 1 žeton Štita na tvoju kartu. Ukloni sve žetone Pricela sa te karte.\n● Postavi 1 žeton Štita na tvoju kartu. Pomeri tu kartu za 1 ili 2 polja.',
     },
     enhancedInterrogation: {
-      name: 'Pojačani Ispitivanje',
-      ability: '● Aim 1 na bilo koju kartu. Otkrij 1 kartu iz ruke protivnika za svaki tvoj Aim na bojištu.\n● Aim 1 na bilo koju kartu. Pomeri bilo koju kartu sa tvojim Aim za 1 ili 2 ćelije.',
+      name: 'Pojačano Ispitivanje',
+      ability: '● Postavi 1 žeton Pricela na bilo koju kartu. Otkrij 1 kartu iz ruke oponenta za svaki tvoj žeton Pricela na bojištu.\n● Postavi 1 žeton Pricela na bilo koju kartu. Pomeri bilo koju kartu sa tvojim žetonom Pricela za 1 ili 2 polja.',
     },
     mobilization1: {
       name: 'Probijanje Linije',
-      ability: 'Dobij bodove u izabranoj liniji bojišta.',
+      ability: 'Dobij poene u izabranoj liniji bojišta.',
     },
     mobilization2: {
-      name: 'Logistički Lanac',
-      ability: 'Dobij bodove u izabranoj dijagonali bojišta.',
+      name: 'Osvojavanje Sektora',
+      ability: 'Dobij poene od 4 susednih savezničkih karata.',
     },
     mobilization3: {
-      name: 'Osvojavanje Sektora',
-      ability: 'Dobij bodove od 4 susednih savezničkih karata.',
+      name: 'Probijanje Dijagonale',
+      ability: 'Dobij poene u izabranoj dijagonali bojišta.',
     },
     reconDrone: {
       name: 'Izvidnički Dron',
