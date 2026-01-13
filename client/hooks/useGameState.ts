@@ -311,10 +311,22 @@ export const useGameState = () => {
   const isManualExitRef = useRef<boolean>(false)
   const isJoinAttemptRef = useRef<boolean>(false) // Track if user is trying to join via Join Game modal
   const playerTokenRef = useRef<string | undefined>(undefined)
+  // Track which players have auto-drawn in the current turn to prevent duplicate draws
+  const autoDrawnPlayersRef = useRef<Set<number>>(new Set())
+  // Track the last active player ID and phase in onmessage to detect changes
+  const lastAutoDrawContextRef = useRef<{ activePlayerId: number | null | undefined; phase: number } | null>(null)
+  // Track if we've processed at least one message (to distinguish initial state from phase changes)
+  const hasProcessedFirstMessageRef = useRef(false)
 
   const gameStateRef = useRef(gameState)
+  const prevActivePlayerIdRef = useRef<number | null | undefined>(gameState.activePlayerId)
   useEffect(() => {
     gameStateRef.current = gameState
+    // Clear auto-draw tracking when active player changes (new turn)
+    if (prevActivePlayerIdRef.current !== gameState.activePlayerId && gameState.activePlayerId !== undefined) {
+      autoDrawnPlayersRef.current.clear()
+    }
+    prevActivePlayerIdRef.current = gameState.activePlayerId
   }, [gameState])
 
   const localPlayerIdRef = useRef(localPlayerId)
@@ -394,6 +406,10 @@ export const useGameState = () => {
 
     try {
       ws.current = new WebSocket(WS_URL)
+      // Reset auto-draw tracking when establishing new connection
+      autoDrawnPlayersRef.current.clear()
+      lastAutoDrawContextRef.current = null
+      hasProcessedFirstMessageRef.current = false
     } catch (error) {
       console.error('Failed to create WebSocket:', error)
       setConnectionStatus('Disconnected')
@@ -597,6 +613,71 @@ export const useGameState = () => {
 
           setGameState(syncedData)
           gameStateRef.current = syncedData
+
+          // Auto-draw logic: only draw when ENTERING Setup phase for a player who hasn't drawn yet this turn
+          // We track both active player and phase to detect "entering Setup" vs "already in Setup"
+          const prevContext = lastAutoDrawContextRef.current
+          const currentContext = { activePlayerId: syncedData.activePlayerId, phase: syncedData.currentPhase }
+          const isFirstMessage = !hasProcessedFirstMessageRef.current
+
+          // Determine if we're ENTERING Setup phase (coming from a different phase)
+          // This prevents auto-draw on page refresh when already in Setup
+          // But allows it after scoring when we transition back to Setup
+          const enteringSetupForPlayer = !isFirstMessage &&
+            prevContext !== null &&
+            prevContext.phase !== 0 && // Previous phase was NOT Setup
+            currentContext.phase === 0 && // Current phase IS Setup
+            currentContext.activePlayerId !== undefined // We have an active player
+
+          // Clear auto-draw tracking when phase changes from Setup OR when active player changes
+          const activePlayerChanged = prevContext !== null && prevContext.activePlayerId !== currentContext.activePlayerId
+          const phaseChangedFromSetup = prevContext !== null && prevContext.phase === 0 && currentContext.phase !== 0
+
+          if (activePlayerChanged || phaseChangedFromSetup) {
+            if (activePlayerChanged) {
+              logger.debug('Active player changed from', prevContext.activePlayerId, 'to', currentContext.activePlayerId, '- clearing auto-draw tracking')
+            }
+            autoDrawnPlayersRef.current.clear()
+          }
+
+          // Update the tracked context for next message
+          lastAutoDrawContextRef.current = currentContext
+          hasProcessedFirstMessageRef.current = true
+
+          // Auto-draw only when ENTERING Setup phase from a different phase
+          // NOT when: starting game in Setup, page refresh in Setup, already in Setup
+          if (enteringSetupForPlayer && syncedData.activePlayerId !== undefined) {
+            const activePlayer = syncedData.players.find((p: Player) => p.id === syncedData.activePlayerId)
+            if (activePlayer && activePlayer.deck.length > 0 && !autoDrawnPlayersRef.current.has(activePlayer.id)) {
+              let shouldDraw = false
+              if (activePlayer.isDummy) {
+                // Dummy players draw if host (Player 1) has auto-draw enabled
+                const hostPlayer = syncedData.players.find((p: Player) => p.id === 1)
+                shouldDraw = hostPlayer?.autoDrawEnabled === true
+              } else {
+                // Real players draw if they have auto-draw enabled
+                shouldDraw = activePlayer.autoDrawEnabled === true
+              }
+
+              if (shouldDraw) {
+                // Apply auto-draw via updateState (will sync to server)
+                // Mark this player as having drawn BEFORE the update to prevent race conditions
+                autoDrawnPlayersRef.current.add(activePlayer.id)
+                logger.debug('Auto-drawing card for player', activePlayer.id, 'entering Setup phase')
+                updateState((prevState: GameState) => {
+                  const newState = { ...prevState }
+                  const player = newState.players.find(p => p.id === activePlayer.id)
+                  if (player && player.deck.length > 0) {
+                    const drawnCard = player.deck[0]
+                    player.deck.splice(0, 1)
+                    player.hand.push(drawnCard)
+                    logger.debug('Applied auto-draw for player', player.id, 'entering Setup phase, hand size:', player.hand.length)
+                  }
+                  return newState
+                })
+              }
+            }
+          }
 
           // Auto-save game state when receiving updates from server
           if (localPlayerIdRef.current !== null && syncedData.gameId) {
@@ -1588,32 +1669,6 @@ export const useGameState = () => {
         }
 
         newState.activePlayerId = nextPlayerId
-
-        // Auto-draw for the new active player
-        // For dummy players: check if host (Player 1) has auto-draw enabled
-        // For real players: check their own auto-draw setting
-        if (nextPlayerId !== undefined && nextPlayerId !== finishingPlayerId) {
-          const newActivePlayer = newState.players.find(p => p.id === nextPlayerId)
-          if (newActivePlayer && newActivePlayer.deck.length > 0) {
-            let shouldDraw = false
-
-            if (newActivePlayer.isDummy) {
-              // Dummy players draw if host (Player 1) has auto-draw enabled
-              const hostPlayer = newState.players.find(p => p.id === 1)
-              shouldDraw = hostPlayer?.autoDrawEnabled === true
-            } else {
-              // Real players draw if they have auto-draw enabled
-              shouldDraw = newActivePlayer.autoDrawEnabled === true
-            }
-
-            if (shouldDraw) {
-              // Draw 1 card from deck to hand
-              const drawnCard = newActivePlayer.deck[0]
-              newActivePlayer.deck.splice(0, 1)
-              newActivePlayer.hand.push(drawnCard)
-            }
-          }
-        }
 
         // Reset phase-specific ready statuses for the new active player (readySetup, readyCommit)
         // Only for abilities that the card actually has

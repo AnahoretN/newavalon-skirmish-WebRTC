@@ -87,7 +87,8 @@ export function handleToggleAutoDraw(ws, data) {
 
 /**
  * Handle TOGGLE_ACTIVE_PLAYER message
- * Sets the active player and triggers auto-draw if enabled
+ * Sets the active player
+ * Note: Auto-draw is handled client-side in the onmessage handler when entering Setup phase
  */
 export function handleToggleActivePlayer(ws, data) {
   try {
@@ -109,31 +110,6 @@ export function handleToggleActivePlayer(ws, data) {
       gameState.activePlayerId = undefined;
     } else {
       gameState.activePlayerId = playerId;
-
-      // Auto-draw for the new active player
-      // For dummy players: check if host (Player 1) has auto-draw enabled
-      // For real players: check their own auto-draw setting
-      const newActivePlayer = gameState.players.find(p => p.id === playerId);
-      if (newActivePlayer && newActivePlayer.deck.length > 0) {
-        let shouldDraw = false
-
-        if (newActivePlayer.isDummy) {
-          // Dummy players draw if host (Player 1) has auto-draw enabled
-          const hostPlayer = gameState.players.find(p => p.id === 1)
-          shouldDraw = hostPlayer?.autoDrawEnabled === true
-        } else {
-          // Real players draw if they have auto-draw enabled
-          shouldDraw = newActivePlayer.autoDrawEnabled === true
-        }
-
-        if (shouldDraw) {
-          // Draw 1 card from deck to hand
-          const drawnCard = newActivePlayer.deck[0];
-          newActivePlayer.deck.splice(0, 1);
-          newActivePlayer.hand.push(drawnCard);
-          logger.info(`Auto-drew card for player ${playerId} (dummy: ${newActivePlayer.isDummy}) in game ${gameId}`);
-        }
-      }
     }
 
     broadcastToGame(gameId, gameState);

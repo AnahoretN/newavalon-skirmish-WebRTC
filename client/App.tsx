@@ -722,6 +722,13 @@ const App = memo(function App() {
   // Reset justAutoTransitioned when phase changes
   useEffect(() => {
     setJustAutoTransitioned(false)
+    // Clear highlights when phase changes (especially when leaving Scoring)
+    if (localHighlights.length > 0) {
+      console.log('[Phase Change] Clearing highlights due to phase change to', gameState.currentPhase)
+      setLocalHighlights([])
+      sentHighlightsHash.current = ''
+      isLocalHighlightsOwnerRef.current = false
+    }
   }, [gameState.currentPhase])
 
   // Recheck ability readiness when phase changes

@@ -139,7 +139,8 @@ export function handlePlayerReady(ws, data) {
       gameState.activePlayerId = activePlayers[0].id;
 
       // Draw starting hands for players with auto-draw enabled
-      // First player (active) draws 7 cards, others draw 6
+      // First player (active) draws 6 cards, others draw 6
+      // Note: The extra card for first turn comes from client-side auto-draw when entering Setup phase
       // For dummy players: check if host (Player 1) has auto-draw enabled
       // For real players: check their own auto-draw setting
       const hostPlayer = gameState.players.find(p => p.id === 1)
@@ -151,6 +152,7 @@ export function handlePlayerReady(ws, data) {
         logger.info(`Player ${player.id} (dummy: ${player.isDummy}): hand=${player.hand.length}, autoDrawEnabled=${player.autoDrawEnabled}`)
 
         if (player.hand.length > 0) {
+          logger.info(`Player ${player.id} already has ${player.hand.length} cards in hand - skipping starting hand draw`)
           continue
         }
 
@@ -170,8 +172,8 @@ export function handlePlayerReady(ws, data) {
           continue
         }
 
-        const isFirstPlayer = gameState.activePlayerId === player.id
-        const cardsToDraw = isFirstPlayer ? 7 : 6
+        // All players draw 6 cards (first player's extra card comes from client-side auto-draw)
+        const cardsToDraw = 6
 
         // Draw cards from deck to hand
         for (let i = 0; i < cardsToDraw && i < player.deck.length; i++) {
@@ -180,7 +182,7 @@ export function handlePlayerReady(ws, data) {
           player.hand.push(drawnCard)
         }
 
-        logger.info(`Auto-drew ${cardsToDraw} cards for player ${player.id} (dummy: ${player.isDummy})`);
+        logger.info(`Auto-drew ${cardsToDraw} cards for player ${player.id} (dummy: ${player.isDummy}), hand size is now ${player.hand.length}`);
       }
 
       logger.info(`All players ready! Starting game ${data.gameId}`);
