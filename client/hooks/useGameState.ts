@@ -160,7 +160,10 @@ const syncGameStateImages = (gameState: GameState): GameState => {
   return {
     ...gameState,
     board: syncedBoard,
-    players: syncedPlayers
+    players: syncedPlayers,
+    // Ensure visual effects arrays exist (for backwards compatibility)
+    floatingTexts: gameState.floatingTexts || [],
+    highlights: gameState.highlights || [],
   }
 }
 
@@ -324,10 +327,13 @@ export const useGameState = () => {
     const interval = setInterval(() => {
       setGameState(prev => {
         const now = Date.now()
-        const filteredHighlights = prev.highlights.filter(h => now - h.timestamp < 2000)
-        const filteredFloatingTexts = prev.floatingTexts.filter(t => now - t.timestamp < 2000)
+        // Ensure arrays exist (for backwards compatibility with old saved states)
+        const prevHighlights = prev.highlights || []
+        const prevFloatingTexts = prev.floatingTexts || []
+        const filteredHighlights = prevHighlights.filter(h => now - h.timestamp < 2000)
+        const filteredFloatingTexts = prevFloatingTexts.filter(t => now - t.timestamp < 2000)
 
-        if (filteredHighlights.length !== prev.highlights.length || filteredFloatingTexts.length !== prev.floatingTexts.length) {
+        if (filteredHighlights.length !== prevHighlights.length || filteredFloatingTexts.length !== prevFloatingTexts.length) {
           return { ...prev, highlights: filteredHighlights, floatingTexts: filteredFloatingTexts }
         }
         return prev
