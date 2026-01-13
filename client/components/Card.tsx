@@ -405,19 +405,19 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
           // Fallback to white/blue glow if color is missing from PLAYER_COLOR_RGB
           const colorRgb = ownerColorName ? (PLAYER_COLOR_RGB[ownerColorName] || { r: 255, g: 255, b: 255 }) : null
           const innerGlowStyle = shouldHighlight && colorRgb ? {
-            background: `radial-gradient(circle at center, transparent 20%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.7) 100%)`,
-            boxShadow: `inset 0 0 20px rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.6)`,
+            background: `radial-gradient(circle at center, transparent 20%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.84) 100%)`,
+            boxShadow: `inset 0 0 24px rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.72)`,
           } : {}
 
           // Semi-transparent colored filter overlay for cards with ready abilities
-          // Gradient from center (0% opacity) to edges (75% opacity), 50% brighter than owner color
+          // Gradient from center (0% opacity) to edges (90% opacity), 35% brighter than owner color
           const readyAbilityOverlay = shouldHighlight && colorRgb ? (
             <div
               className="absolute inset-0 pointer-events-none"
               style={{
-                background: `radial-gradient(circle at center, transparent 37.5%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.75) 100%)`,
+                background: `radial-gradient(circle at center, transparent 37.5%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.9) 100%)`,
                 mixBlendMode: 'normal',
-                filter: 'brightness(1.25)',
+                filter: 'brightness(1.35)',
               }}
             />
           ) : null

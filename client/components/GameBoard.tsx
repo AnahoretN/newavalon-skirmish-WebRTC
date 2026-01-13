@@ -206,20 +206,20 @@ const GridCell = memo<{
             // More visible glow effect with pulsing animation
             const glowColor = colorStyles?.glow || 'shadow-[0_0_15px_#2563eb]'
             const borderColor = colorStyles?.border || 'border-blue-500'
+            // Enhanced glow: 10% brighter, 20% more saturated
+            const rgb = playerColor && PLAYER_COLOR_RGB[playerColor]
+              ? PLAYER_COLOR_RGB[playerColor]
+              : { r: 37, g: 99, b: 235 }
             return (
               <div
                 key={`highlight-${idx}-${highlight.timestamp}`}
-                className="absolute inset-0 rounded-md pointer-events-none animate-pulse"
+                className="absolute inset-0 rounded-md pointer-events-none animate-glow-pulse"
                 style={{
                   zIndex: 40,
-                  boxShadow: '0 0 20px 4px rgba(59, 130, 246, 0.8)',
+                  boxShadow: `0 0 24px 5px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.88)`,
                   border: '3px solid',
-                  borderColor: playerColor && PLAYER_COLOR_RGB[playerColor]
-                    ? `rgb(${PLAYER_COLOR_RGB[playerColor].r}, ${PLAYER_COLOR_RGB[playerColor].g}, ${PLAYER_COLOR_RGB[playerColor].b})`
-                    : 'rgb(37, 99, 235)',
-                  backgroundColor: playerColor && PLAYER_COLOR_RGB[playerColor]
-                    ? `rgba(${PLAYER_COLOR_RGB[playerColor].r}, ${PLAYER_COLOR_RGB[playerColor].g}, ${PLAYER_COLOR_RGB[playerColor].b}, 0.4)`
-                    : 'rgba(37, 99, 235, 0.4)',
+                  borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
+                  backgroundColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.48)`,
                 }}
               />
             )

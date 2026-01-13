@@ -229,7 +229,7 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
                     ${isBeingDragged ? 'scale-95' : 'hover:scale-105'}
                   `}
                 >
-                  <div className={`w-full h-full ${isHighlighted && highlightFilter ? 'ring-4 ring-cyan-400 rounded-md shadow-[0_0_15px_#22d3ee]' : ''}`}>
+                  <div className={`w-full h-full ${isHighlighted && highlightFilter ? 'ring-4 ring-cyan-400 rounded-md shadow-[0_0_18px_#22d3ee]' : ''}`}>
                     <Card
                       card={card}
                       isFaceUp={true}
