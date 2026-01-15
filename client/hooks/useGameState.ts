@@ -7,6 +7,7 @@ import { decksData, countersDatabase, rawJsonData, getCardDefinitionByName, getC
 import { createInitialBoard, recalculateBoardStatuses } from '@server/utils/boardUtils'
 import { logger } from '../utils/logger'
 import { initializeReadyStatuses, removeAllReadyStatuses, resetPhaseReadyStatuses } from '../utils/autoAbilities'
+import { deepCloneState, TIMING } from '../utils/common'
 
 // Helper to determine the correct WebSocket URL
 const getWebSocketURL = () => {
@@ -40,20 +41,6 @@ const getWebSocketURL = () => {
   // Store the validated URL for link sharing
   localStorage.setItem('websocket_url', url)
   return url
-}
-
-/**
- * Optimized deep clone function for GameState.
- * Much faster than JSON.parse(JSON.stringify()) for our specific data structure.
- * Uses structuredClone for modern browsers with fallback.
- */
-const deepCloneState = (state: GameState): GameState => {
-  // Use structuredClone if available (modern browsers) - much faster
-  if (typeof structuredClone !== 'undefined') {
-    return structuredClone(state)
-  }
-  // Fallback to JSON method for older browsers
-  return JSON.parse(JSON.stringify(state))
 }
 
 export type ConnectionStatus = 'Connecting' | 'Connected' | 'Disconnected';
@@ -341,14 +328,14 @@ export const useGameState = () => {
         const now = Date.now()
         // Ensure arrays exist (for backwards compatibility with old saved states)
         const prevFloatingTexts = prev.floatingTexts || []
-        const filteredFloatingTexts = prevFloatingTexts.filter(t => now - t.timestamp < 10000)
+        const filteredFloatingTexts = prevFloatingTexts.filter(t => now - t.timestamp < TIMING.FLOATING_TEXT_DURATION)
 
         if (filteredFloatingTexts.length !== prevFloatingTexts.length) {
           return { ...prev, floatingTexts: filteredFloatingTexts }
         }
         return prev
       })
-    }, 500)
+    }, TIMING.DECK_SYNC_DELAY)
     return () => clearInterval(interval)
   }, [])
 
@@ -416,7 +403,7 @@ export const useGameState = () => {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
       }
-      reconnectTimeoutRef.current = window.setTimeout(connectWebSocket, 3000)
+      reconnectTimeoutRef.current = window.setTimeout(connectWebSocket, TIMING.RECONNECT_DELAY)
       return
     }
     setConnectionStatus('Connecting')
@@ -520,7 +507,7 @@ export const useGameState = () => {
               if (ws.current?.readyState === WebSocket.OPEN) {
                 ws.current.send(JSON.stringify({ type: 'UPDATE_DECK_DATA', deckData: rawJsonData }))
               }
-            }, 500)
+            }, TIMING.DECK_SYNC_DELAY)
           }
         } else if (data.type === 'CONNECTION_ESTABLISHED') {
           // Server acknowledging connection - no action needed
@@ -567,23 +554,19 @@ export const useGameState = () => {
           } else {
             console.warn('Server Error:', data.message)
           }
-        } else if (data.type === 'HIGHLIGHT_TRIGGERED') {
-          // Legacy handler - not used anymore, highlights are synced via gameState.highlights array
-          // This can be removed once all clients are updated
-          console.log('[Highlight] Received legacy HIGHLIGHT_TRIGGERED (deprecated):', data.highlightData)
         } else if (data.type === 'NO_TARGET_TRIGGERED') {
           setLatestNoTarget({ coords: data.coords, timestamp: data.timestamp })
         } else if (data.type === 'FLOATING_TEXT_TRIGGERED') {
           // Add floating text to gameState for all players to see
           setGameState(prev => ({
             ...prev,
-            floatingTexts: [...prev.floatingTexts, data.floatingTextData].filter(t => Date.now() - t.timestamp < 10000)
+            floatingTexts: [...prev.floatingTexts, data.floatingTextData].filter(t => Date.now() - t.timestamp < TIMING.FLOATING_TEXT_DURATION)
           }))
         } else if (data.type === 'FLOATING_TEXT_BATCH_TRIGGERED') {
           // Add multiple floating texts to gameState
           setGameState(prev => ({
             ...prev,
-            floatingTexts: [...prev.floatingTexts, ...data.batch].filter(t => Date.now() - t.timestamp < 10000)
+            floatingTexts: [...prev.floatingTexts, ...data.batch].filter(t => Date.now() - t.timestamp < TIMING.FLOATING_TEXT_DURATION)
           }))
         } else if (data.type === 'SYNC_HIGHLIGHTS') {
           // Receive highlights from other players
@@ -718,7 +701,7 @@ export const useGameState = () => {
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current)
         }
-        reconnectTimeoutRef.current = window.setTimeout(connectWebSocket, 3000)
+        reconnectTimeoutRef.current = window.setTimeout(connectWebSocket, TIMING.RECONNECT_DELAY)
       }
     }
     ws.current.onerror = (event) => console.error('WebSocket error event:', event)

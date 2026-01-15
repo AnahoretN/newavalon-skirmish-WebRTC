@@ -356,62 +356,28 @@ function handleSyncGame(ws) {
 }
 
 // Card action handlers - primarily client-side, logged here for tracking
-function handleCreateGame() {
-  logger.info('CREATE_GAME - handled via UPDATE_STATE');
+// These actions are handled via UPDATE_STATE by the client
+function handleClientSideAction(actionType: string) {
+  logger.debug(`${actionType} - handled via UPDATE_STATE`);
 }
 
-function handlePlayCard() {
-  logger.info('PLAY_CARD - handled via UPDATE_STATE');
-}
+// Handler wrappers for client-side actions
+const handleCreateGame = () => handleClientSideAction('CREATE_GAME');
+const handlePlayCard = () => handleClientSideAction('PLAY_CARD');
+const handleMoveCard = () => handleClientSideAction('MOVE_CARD');
+const handleEndTurn = () => handleClientSideAction('END_TURN');
+const handleDrawCard = () => handleClientSideAction('DRAW_CARD');
+const handleShuffleDeck = () => handleClientSideAction('SHUFFLE_DECK');
+const handleAnnounceCard = () => handleClientSideAction('ANNOUNCE_CARD');
+const handlePlayCounter = () => handleClientSideAction('PLAY_COUNTER');
+const handlePlayToken = () => handleClientSideAction('PLAY_TOKEN');
+const handleDestroyCard = () => handleClientSideAction('DESTROY_CARD');
+const handleReturnCardToHand = () => handleClientSideAction('RETURN_CARD_TO_HAND');
+const handleAddCommand = () => handleClientSideAction('ADD_COMMAND');
+const handleCancelPendingCommand = () => handleClientSideAction('CANCEL_PENDING_COMMAND');
+const handleExecutePendingCommand = () => handleClientSideAction('EXECUTE_PENDING_COMMAND');
 
-function handleMoveCard() {
-  logger.info('MOVE_CARD - handled via UPDATE_STATE');
-}
-
-function handleEndTurn() {
-  logger.info('END_TURN - handled via UPDATE_STATE');
-}
-
-function handleChatMessage() {
+// Note: CHAT_MESSAGE is not yet implemented
+const handleChatMessage = () => {
   logger.info('CHAT_MESSAGE not yet implemented');
-}
-
-function handleDrawCard() {
-  logger.info('DRAW_CARD - handled via UPDATE_STATE');
-}
-
-function handleShuffleDeck() {
-  logger.info('SHUFFLE_DECK - handled via UPDATE_STATE');
-}
-
-function handleAnnounceCard() {
-  logger.info('ANNOUNCE_CARD - handled via UPDATE_STATE');
-}
-
-function handlePlayCounter() {
-  logger.info('PLAY_COUNTER - handled via UPDATE_STATE');
-}
-
-function handlePlayToken() {
-  logger.info('PLAY_TOKEN - handled via UPDATE_STATE');
-}
-
-function handleDestroyCard() {
-  logger.info('DESTROY_CARD - handled via UPDATE_STATE');
-}
-
-function handleReturnCardToHand() {
-  logger.info('RETURN_CARD_TO_HAND - handled via UPDATE_STATE');
-}
-
-function handleAddCommand() {
-  logger.info('ADD_COMMAND - handled via UPDATE_STATE');
-}
-
-function handleCancelPendingCommand() {
-  logger.info('CANCEL_PENDING_COMMAND - handled via UPDATE_STATE');
-}
-
-function handleExecutePendingCommand() {
-  logger.info('EXECUTE_PENDING_COMMAND - handled via UPDATE_STATE');
-}
+};
