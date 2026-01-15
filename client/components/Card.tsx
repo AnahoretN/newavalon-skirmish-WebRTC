@@ -401,21 +401,31 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
             : 'border-4'
 
           // Inner glow effect with owner's color when ready
+          // Border color: blend between white and owner color (50/50 mix)
           const ownerColorName = card.ownerId ? playerColorMap.get(card.ownerId) : null
           // Fallback to white/blue glow if color is missing from PLAYER_COLOR_RGB
           const colorRgb = ownerColorName ? (PLAYER_COLOR_RGB[ownerColorName] || { r: 255, g: 255, b: 255 }) : null
+          // Glow color 30% brighter than owner color, 50% transparent
+          const glowRgb = colorRgb ? {
+            r: Math.min(255, Math.round(colorRgb.r * 1.3)),
+            g: Math.min(255, Math.round(colorRgb.g * 1.3)),
+            b: Math.min(255, Math.round(colorRgb.b * 1.3)),
+          } : null
+          // Border color: white
           const innerGlowStyle = shouldHighlight && colorRgb ? {
-            background: `radial-gradient(circle at center, transparent 20%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.84) 100%)`,
-            boxShadow: `inset 0 0 24px rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.72)`,
+            background: `radial-gradient(circle at center, transparent 20%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.5) 100%)`,
+            boxShadow: `inset 0 0 12px rgba(${glowRgb!.r}, ${glowRgb.g}, ${glowRgb.b}, 0.5)`,
+            border: '5px solid',
+            borderColor: `rgb(255, 255, 255)`,
           } : {}
 
           // Semi-transparent colored filter overlay for cards with ready abilities
-          // Gradient from center (0% opacity) to edges (90% opacity), 35% brighter than owner color
+          // Gradient from center (0% opacity) to edges (50% opacity), 35% brighter than owner color
           const readyAbilityOverlay = shouldHighlight && colorRgb ? (
             <div
               className="absolute inset-0 pointer-events-none"
               style={{
-                background: `radial-gradient(circle at center, transparent 37.5%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.9) 100%)`,
+                background: `radial-gradient(circle at center, transparent 37.5%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.5) 100%)`,
                 mixBlendMode: 'normal',
                 filter: 'brightness(1.35)',
               }}

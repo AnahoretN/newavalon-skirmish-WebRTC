@@ -64,7 +64,7 @@ async function createDevServer() {
 
   // Setup WebSocket route BEFORE Vite middleware (important for tunnel compatibility)
   // This matches the old working version's approach: app.ws('/', ...)
-  app.ws('/', () => {
+  (app as any).ws('/', () => {
     // WebSocket connection will be handled by the wss 'connection' event
     // The express-ws library routes this through the same wss instance
     // Just log for debugging - actual handling is in setupWebSocket

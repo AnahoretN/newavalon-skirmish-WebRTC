@@ -2,6 +2,7 @@ import React, { memo, useMemo, useCallback, useState } from 'react'
 import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerColor, HighlightData, FloatingTextData } from '@/types'
 import { Card } from './Card'
 import { PLAYER_COLORS, FLOATING_TEXT_COLORS, PLAYER_COLOR_RGB } from '@/constants'
+import { hasReadyAbilityInCurrentPhase } from '@/utils/autoAbilities'
 
 interface GameBoardProps {
   board: Board;
@@ -156,6 +157,14 @@ const GridCell = memo<{
       const canStack = isStackMode && isValidTarget
       // Interactive for click handling, but visual highlight comes from shared highlights
       const isInteractive = isValidTarget || canPlay || canStack
+      // Check if card has ready ability
+      const hasReadyAbility = cell.card && hasReadyAbilityInCurrentPhase(
+        cell.card,
+        currentPhase ?? 0,
+        activePlayerId
+      )
+      // Card has active effects (highlight, selection, or ready ability) - should appear above other cards
+      const hasActiveEffect = isValidTarget || (cellHighlights.length > 0) || hasReadyAbility
 
       // Only add cursor pointer for interactive cells - visual highlight comes from shared highlights
       const targetClasses = isInteractive ? 'cursor-pointer z-10' : ''
@@ -203,23 +212,27 @@ const GridCell = memo<{
           }).map((highlight, idx) => {
             const playerColor = playerColorMap.get(highlight.playerId)
             const colorStyles = playerColor && PLAYER_COLORS[playerColor] ? PLAYER_COLORS[playerColor] : null
-            // More visible glow effect with pulsing animation
-            const glowColor = colorStyles?.glow || 'shadow-[0_0_15px_#2563eb]'
-            const borderColor = colorStyles?.border || 'border-blue-500'
-            // Enhanced glow: 10% brighter, 20% more saturated
+            // Border color: blend between white and owner color (50/50 mix)
             const rgb = playerColor && PLAYER_COLOR_RGB[playerColor]
               ? PLAYER_COLOR_RGB[playerColor]
               : { r: 37, g: 99, b: 235 }
+            // Glow color 30% brighter than base color, 50% transparent
+            const glowRgb = {
+              r: Math.min(255, Math.round(rgb.r * 1.3)),
+              g: Math.min(255, Math.round(rgb.g * 1.3)),
+              b: Math.min(255, Math.round(rgb.b * 1.3)),
+            }
+            // Border color: white, gradient background like card ready ability
             return (
               <div
                 key={`highlight-${idx}-${highlight.timestamp}`}
                 className="absolute inset-0 rounded-md pointer-events-none animate-glow-pulse"
                 style={{
-                  zIndex: 40,
-                  boxShadow: `0 0 24px 5px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.88)`,
+                  zIndex: 50,
+                  boxShadow: `0 0 12px 2px rgba(${glowRgb.r}, ${glowRgb.g}, ${glowRgb.b}, 0.5)`,
                   border: '3px solid',
-                  borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
-                  backgroundColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.48)`,
+                  borderColor: `rgb(255, 255, 255)`,
+                  background: `radial-gradient(circle at center, transparent 20%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.5) 100%)`,
                 }}
               />
             )
@@ -233,7 +246,7 @@ const GridCell = memo<{
               onDragEnd={() => setDraggedItem(null)}
               onContextMenu={handleCardContextMenu}
               onDoubleClick={handleCardDoubleClick}
-              className={`w-full h-full ${isGameStarted ? 'cursor-grab' : 'cursor-default'} relative z-30`}
+              className={`w-full h-full ${isGameStarted ? 'cursor-grab' : 'cursor-default'} relative ${hasActiveEffect ? 'z-40' : 'z-30'}`}
               data-interactive="true"
             >
               <Card

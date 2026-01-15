@@ -306,7 +306,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
           <div className="grid grid-cols-4 gap-1 sm:gap-2">
             {/* Deck */}
             <DropZone className="relative" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => openContextMenu(e, 'deckPile', { player })}>
-              <div onClick={handleDeckInteraction} className={`aspect-square bg-card-back rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-md select-none text-white border-2 border-transparent ${shouldFlashDeck ? 'animate-deck-start' : ''} ${isDeckSelectable ? 'ring-4 ring-sky-400 shadow-[0_0_18px_#38bdf8] animate-glow-pulse' : ''}`}>
+              <div onClick={handleDeckInteraction} className={`aspect-square bg-card-back rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-md select-none text-white border-2 border-transparent ${shouldFlashDeck ? 'animate-deck-start' : ''} ${isDeckSelectable ? 'ring-3 ring-sky-400 shadow-[0_0_9px_#38bdf8] animate-glow-pulse' : ''}`}>
                 <span className="text-[10px] sm:text-xs font-bold mb-0.5 uppercase tracking-tight">{t('deck')}</span>
                 <span className="text-base sm:text-lg font-bold">{player.deck.length}</span>
               </div>
@@ -380,7 +380,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
             <div className="flex flex-col gap-[2px]">
               {player.hand.map((card, index) => {
                 const isTarget = validHandTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-                const targetClass = isTarget ? 'ring-4 ring-cyan-400 shadow-[0_0_18px_#22d3ee] rounded-md z-10' : ''
+                const targetClass = isTarget ? 'ring-3 ring-cyan-400 shadow-[0_0_9px_#22d3ee] rounded-md z-10' : ''
 
                 return (
                   <div
@@ -487,7 +487,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   label={t('deck')}
                   count={player.deck.length}
                   onClick={handleDeckInteraction}
-                  className={`bg-card-back ${shouldFlashDeck ? 'animate-deck-start' : ''} ${isDeckSelectable ? 'ring-4 ring-sky-400 shadow-[0_0_18px_#38bdf8] animate-glow-pulse' : ''}`}
+                  className={`bg-card-back ${shouldFlashDeck ? 'animate-deck-start' : ''} ${isDeckSelectable ? 'ring-3 ring-sky-400 shadow-[0_0_9px_#38bdf8] animate-glow-pulse' : ''}`}
                 />
               </DropZone>
             </div>

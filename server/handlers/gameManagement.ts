@@ -209,7 +209,8 @@ export function handleJoinGame(ws, data) {
     // This handles F5 refresh, temporary network issues, and tab reopening
     if (playerToken) {
       // Log all player tokens for debugging
-      logger.info(`Current players in game:`, gameState.players.map((p: any) => `Player${p.id}(token=${p.playerToken?.substring(0, 8)}..., dummy=${p.isDummy}, disconnected=${p.isDisconnected})`).join(', '));
+      const playerInfo = gameState.players.map((p: any) => `Player${p.id}(token=${p.playerToken?.substring(0, 8)}..., dummy=${p.isDummy}, disconnected=${p.isDisconnected})`).join(', ');
+      logger.info(`Current players in game: ${playerInfo}`);
 
       const playerToReconnect = gameState.players.find(
         p => p.playerToken === playerToken
