@@ -1,6 +1,6 @@
 import React, { memo, useRef, useState, useEffect, useMemo } from 'react'
 import { DeckType as DeckTypeEnum } from '@/types'
-import type { Player, PlayerColor, Card as CardType, DragItem, DropTarget, CustomDeckFile, ContextMenuParams } from '@/types'
+import type { Player, PlayerColor, Card as CardType, DragItem, DropTarget, CustomDeckFile, ContextMenuParams, CursorStackState } from '@/types'
 import { PLAYER_COLORS, GAME_ICONS, PLAYER_COLOR_RGB } from '@/constants'
 import { getSelectableDecks } from '@/content'
 import { Card as CardComponent } from './Card'
@@ -49,6 +49,8 @@ interface PlayerPanelProps {
   isDeckSelectable?: boolean;
   hideDummyCards?: boolean; // If true, hide dummy player cards like real players
   deckSelections?: { playerId: number; selectedByPlayerId: number; timestamp: number }[];
+  handCardSelections?: { playerId: number; cardIndex: number; selectedByPlayerId: number; timestamp: number }[];
+  cursorStack?: CursorStackState | null;
 }
 
 const ColorPicker: React.FC<{ player: Player, canEditSettings: boolean, selectedColors: Set<PlayerColor>, onColorChange: (c: PlayerColor) => void, compact?: boolean }> = memo(({ player, canEditSettings, selectedColors, onColorChange, compact = false }) => {
@@ -217,11 +219,14 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   isDeckSelectable,
   hideDummyCards = false,
   deckSelections = [],
+  handCardSelections = [],
+  cursorStack = null,
 }) => {
   const { t, resources } = useLanguage()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const canPerformActions: boolean = isLocalPlayer || !!player.isDummy
+  const canDrag: boolean = canPerformActions && !cursorStack
 
   const isPlayerActive = activePlayerId === player.id
   const isTeammate = localPlayerTeamId !== undefined && player.teamId === localPlayerTeamId && !isLocalPlayer
@@ -389,8 +394,8 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                 {player.announcedCard ? (
                   <div
                     className="w-full h-full p-1 cursor-pointer"
-                    draggable={canPerformActions}
-                    onDragStart={() => canPerformActions && setDraggedItem({
+                    draggable={canDrag}
+                    onDragStart={() => canDrag && setDraggedItem({
                       card: player.announcedCard!,
                       source: 'announced',
                       playerId: player.id,
@@ -443,49 +448,98 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
             <div className="flex flex-col gap-[2px]">
               {player.hand.map((card, index) => {
                 const isTarget = validHandTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-                const targetClass = isTarget ? 'ring-3 ring-cyan-400 shadow-[0_0_9px_#22d3ee] rounded-md z-10' : ''
+
+                // Use active player's color for the selection effect (not the card owner's color)
+                const activePlayerColorName = activePlayerId !== null && activePlayerId !== undefined ? playerColorMap.get(activePlayerId) : null
+                const rgb = activePlayerColorName && PLAYER_COLOR_RGB[activePlayerColorName]
+                  ? PLAYER_COLOR_RGB[activePlayerColorName]
+                  : { r: 37, g: 99, b: 235 }
+                const glowRgb = {
+                  r: Math.min(255, Math.round(rgb.r * 1.3)),
+                  g: Math.min(255, Math.round(rgb.g * 1.3)),
+                  b: Math.min(255, Math.round(rgb.b * 1.3)),
+                }
+
+                // Find recent hand card selection for this card (within last 1 second)
+                const now = Date.now()
+                const recentSelection = handCardSelections?.find(
+                  cs => cs.playerId === player.id && cs.cardIndex === index && (now - cs.timestamp) < 1000
+                )
+
+                // Card container style with highlight if target
+                const cardContainerStyle = isTarget ? {
+                  boxShadow: `0 0 12px 2px rgba(${glowRgb.r}, ${glowRgb.g}, ${glowRgb.b}, 0.5)`,
+                  border: '3px solid rgb(255, 255, 255)',
+                } : {}
 
                 return (
                   <div
                     key={`${player.id}-hand-${index}-${card.id}`}
-                    className={`flex items-center bg-gray-900 border border-gray-700 rounded p-2 ${targetClass}`}
-                    draggable={canPerformActions}
-                    onDragStart={() => canPerformActions && setDraggedItem({
-                      card,
-                      source: 'hand',
-                      playerId: player.id,
-                      cardIndex: index,
-                      isManual: true
-                    })}
-                    onDragEnd={() => setDraggedItem(null)}
-                    onContextMenu={(e) => canPerformActions && openContextMenu(e, 'handCard', {
-                      card,
-                      player,
-                      cardIndex: index
-                    })}
-                    onDoubleClick={() => onHandCardDoubleClick(player, card, index)}
-                    onClick={() => onCardClick?.(player, card, index)}
-                    data-hand-card={`${player.id},${index}`}
-                    data-interactive="true"
+                    className="relative"
                   >
-                    <div className="aspect-square flex-shrink-0 mr-3 w-[28.75%] max-w-[230px] min-w-[40px] overflow-hidden rounded">
-                      <CardComponent
-                        card={card}
-                        isFaceUp={true}
-                        playerColorMap={playerColorMap}
-                        localPlayerId={localPlayerId}
-                        imageRefreshVersion={imageRefreshVersion}
-                        disableTooltip={true}
-                        disableActiveHighlights={disableActiveHighlights}
-                        preserveDeployAbilities={preserveDeployAbilities}
+                    {/* Highlight overlay - doesn't interfere with card visibility */}
+                    {isTarget && (
+                      <div
+                        className="absolute inset-0 rounded pointer-events-none animate-glow-pulse"
+                        style={{
+                          zIndex: 10,
+                          background: `radial-gradient(circle at center, transparent 30%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 100%)`,
+                        }}
                       />
-                    </div>
-                    <div className="flex-grow min-w-0">
-                      <CardTooltipContent
-                        card={card}
-                        className="relative flex flex-col text-left w-full h-full justify-start whitespace-normal break-words"
-                        hideOwner={card.ownerId === player.id}
+                    )}
+                    {/* Ripple effect when card is selected */}
+                    {recentSelection && (
+                      <div
+                        className="absolute inset-0 rounded pointer-events-none animate-deck-selection"
+                        style={{
+                          zIndex: 15,
+                          border: '3px solid',
+                          borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
+                          background: `radial-gradient(circle at center, transparent 20%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 100%)`,
+                        }}
                       />
+                    )}
+                    <div
+                      className={`flex items-center bg-gray-900 border rounded p-2 ${isTarget ? 'border-transparent' : 'border-gray-700'}`}
+                      style={cardContainerStyle}
+                      draggable={canDrag}
+                      onDragStart={() => canDrag && setDraggedItem({
+                        card,
+                        source: 'hand',
+                        playerId: player.id,
+                        cardIndex: index,
+                        isManual: true
+                      })}
+                      onDragEnd={() => setDraggedItem(null)}
+                      onContextMenu={(e) => canPerformActions && openContextMenu(e, 'handCard', {
+                        card,
+                        player,
+                        cardIndex: index
+                      })}
+                      onDoubleClick={() => onHandCardDoubleClick(player, card, index)}
+                      onClick={() => onCardClick?.(player, card, index)}
+                      data-hand-card={`${player.id},${index}`}
+                      data-interactive="true"
+                    >
+                      <div className="aspect-square flex-shrink-0 mr-3 w-[28.75%] max-w-[230px] min-w-[40px] overflow-hidden rounded">
+                        <CardComponent
+                          card={card}
+                          isFaceUp={true}
+                          playerColorMap={playerColorMap}
+                          localPlayerId={localPlayerId}
+                          imageRefreshVersion={imageRefreshVersion}
+                          disableTooltip={true}
+                          disableActiveHighlights={disableActiveHighlights}
+                          preserveDeployAbilities={preserveDeployAbilities}
+                        />
+                      </div>
+                      <div className="flex-grow min-w-0">
+                        <CardTooltipContent
+                          card={card}
+                          className="relative flex flex-col text-left w-full h-full justify-start whitespace-normal break-words"
+                          hideOwner={card.ownerId === player.id}
+                        />
+                      </div>
                     </div>
                   </div>
                 )
@@ -630,8 +684,8 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   {player.announcedCard ? (
                     <div
                       className="w-full h-full"
-                      draggable={canPerformActions}
-                      onDragStart={() => canPerformActions && setDraggedItem({
+                      draggable={canDrag}
+                      onDragStart={() => canDrag && setDraggedItem({
                         card: player.announcedCard!,
                         source: 'announced',
                         playerId: player.id,
@@ -683,7 +737,29 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
           >
             {player.hand.map((card, index) => {
               const isTarget = validHandTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-              const targetClass = isTarget ? 'ring-2 ring-cyan-400 shadow-[0_0_10px_#22d3ee] rounded-md z-10' : ''
+
+              // Use active player's color for the selection effect (not the card owner's color)
+              const activePlayerColorName = activePlayerId !== null && activePlayerId !== undefined ? playerColorMap.get(activePlayerId) : null
+              const rgb = activePlayerColorName && PLAYER_COLOR_RGB[activePlayerColorName]
+                ? PLAYER_COLOR_RGB[activePlayerColorName]
+                : { r: 37, g: 99, b: 235 }
+              const glowRgb = {
+                r: Math.min(255, Math.round(rgb.r * 1.3)),
+                g: Math.min(255, Math.round(rgb.g * 1.3)),
+                b: Math.min(255, Math.round(rgb.b * 1.3)),
+              }
+
+              // Find recent hand card selection for this card (within last 1 second)
+              const now = Date.now()
+              const recentSelection = handCardSelections?.find(
+                cs => cs.playerId === player.id && cs.cardIndex === index && (now - cs.timestamp) < 1000
+              )
+
+              // Card container style with highlight if target
+              const cardHighlightStyle = isTarget ? {
+                boxShadow: `0 0 12px 2px rgba(${glowRgb.r}, ${glowRgb.g}, ${glowRgb.b}, 0.5)`,
+                border: '3px solid rgb(255, 255, 255)',
+              } : {}
 
               const isRevealedToAll = card.revealedTo === 'all'
               const isRevealedToMe = localPlayerId !== null && Array.isArray(card.revealedTo) && card.revealedTo.includes(localPlayerId)
@@ -700,9 +776,9 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
               return (
                 <div
                   key={`${player.id}-hand-${index}-${card.id}`}
-                  className={`aspect-square relative ${targetClass}`}
-                  draggable={canPerformActions}
-                  onDragStart={() => canPerformActions && setDraggedItem({ card, source: 'hand', playerId: player.id, cardIndex: index, isManual: true })}
+                  className="aspect-square relative"
+                  draggable={canDrag}
+                  onDragStart={() => canDrag && setDraggedItem({ card, source: 'hand', playerId: player.id, cardIndex: index, isManual: true })}
                   onDragEnd={() => setDraggedItem(null)}
                   onContextMenu={(e) => {
                     e.preventDefault()
@@ -731,7 +807,29 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   data-hand-card={`${player.id},${index}`}
                   data-interactive="true"
                 >
-                  <div className="w-full h-full">
+                  {/* Highlight overlay - doesn't interfere with card visibility */}
+                  {isTarget && (
+                    <div
+                      className="absolute inset-0 rounded pointer-events-none animate-glow-pulse"
+                      style={{
+                        zIndex: 10,
+                        background: `radial-gradient(circle at center, transparent 30%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 100%)`,
+                      }}
+                    />
+                  )}
+                  {/* Ripple effect when card is selected */}
+                  {recentSelection && (
+                    <div
+                      className="absolute inset-0 rounded pointer-events-none animate-deck-selection"
+                      style={{
+                        zIndex: 15,
+                        border: '3px solid',
+                        borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
+                        background: `radial-gradient(circle at center, transparent 20%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 100%)`,
+                      }}
+                    />
+                  )}
+                  <div className="w-full h-full rounded" style={cardHighlightStyle}>
                     <CardComponent
                       card={card}
                       isFaceUp={isVisible}

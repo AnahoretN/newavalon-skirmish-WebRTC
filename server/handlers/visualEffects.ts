@@ -399,3 +399,131 @@ export function handleSyncHighlights(ws: ExtendedWebSocket, data: any) {
     logger.error('Failed to sync highlights:', err);
   }
 }
+
+/**
+ * Handle TRIGGER_DECK_SELECTION message
+ * Broadcasts a deck selection effect to all clients in the game
+ */
+export function handleTriggerDeckSelection(ws: ExtendedWebSocket, data: any) {
+  try {
+    // Security: Validate message size
+    if (!validateMessageSize(JSON.stringify(data))) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Message size exceeds limit'
+      }));
+      return;
+    }
+
+    // Input validation
+    if (!data || typeof data !== 'object') {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Invalid data format'
+      }));
+      return;
+    }
+
+    const { gameId, deckSelectionData } = data;
+
+    if (!gameId || typeof gameId !== 'string') {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Invalid or missing gameId'
+      }));
+      return;
+    }
+
+    if (!deckSelectionData || typeof deckSelectionData !== 'object') {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Invalid or missing deckSelectionData'
+      }));
+      return;
+    }
+
+    // Security: Sanitize gameId
+    const sanitizedGameId = sanitizeString(gameId);
+
+    const gameState = getGameState(sanitizedGameId);
+
+    if (!gameState) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Game not found'
+      }));
+      return;
+    }
+
+    // Broadcast the deck selection event to ALL clients in the game (including sender)
+    broadcastVisualEffect(ws, sanitizedGameId, 'DECK_SELECTION_TRIGGERED', { deckSelectionData });
+
+    logger.debug(`Deck selection triggered in game ${sanitizedGameId}`);
+  } catch (err: any) {
+    logger.error('Failed to trigger deck selection:', err);
+  }
+}
+
+/**
+ * Handle TRIGGER_HAND_CARD_SELECTION message
+ * Broadcasts a hand card selection effect to all clients in the game
+ */
+export function handleTriggerHandCardSelection(ws: ExtendedWebSocket, data: any) {
+  try {
+    // Security: Validate message size
+    if (!validateMessageSize(JSON.stringify(data))) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Message size exceeds limit'
+      }));
+      return;
+    }
+
+    // Input validation
+    if (!data || typeof data !== 'object') {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Invalid data format'
+      }));
+      return;
+    }
+
+    const { gameId, handCardSelectionData } = data;
+
+    if (!gameId || typeof gameId !== 'string') {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Invalid or missing gameId'
+      }));
+      return;
+    }
+
+    if (!handCardSelectionData || typeof handCardSelectionData !== 'object') {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Invalid or missing handCardSelectionData'
+      }));
+      return;
+    }
+
+    // Security: Sanitize gameId
+    const sanitizedGameId = sanitizeString(gameId);
+
+    const gameState = getGameState(sanitizedGameId);
+
+    if (!gameState) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Game not found'
+      }));
+      return;
+    }
+
+    // Broadcast the hand card selection event to ALL clients in the game (including sender)
+    broadcastVisualEffect(ws, sanitizedGameId, 'HAND_CARD_SELECTION_TRIGGERED', { handCardSelectionData });
+
+    logger.debug(`Hand card selection triggered in game ${sanitizedGameId}`);
+  } catch (err: any) {
+    logger.error('Failed to trigger hand card selection:', err);
+  }
+}

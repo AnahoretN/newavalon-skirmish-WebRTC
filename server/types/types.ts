@@ -178,6 +178,16 @@ export interface DeckSelectionData {
 }
 
 /**
+ * Data structure for hand card selection effects (visible to all players).
+ */
+export interface HandCardSelectionData {
+    playerId: number; // The player whose hand card was selected
+    cardIndex: number; // The index of the card in hand
+    selectedByPlayerId: number; // The player who made the selection (active player)
+    timestamp: number;
+}
+
+/**
  * Data structure for floating text effects (e.g. damage, score).
  */
 export interface FloatingTextData {
@@ -222,6 +232,10 @@ export interface GameState {
   roundWinners: Record<number, number[]>; // Map of Round Number -> Winner Player IDs
   gameWinner: number | null; // Player ID if game is over
   isRoundEndModalOpen: boolean; // Controls visibility of inter-round modal
+
+  // Visual Effects (client-side only, synchronized via gameState)
+  deckSelections?: DeckSelectionData[]; // Deck selection effects
+  handCardSelections?: HandCardSelectionData[]; // Hand card selection effects
 }
 
 /**

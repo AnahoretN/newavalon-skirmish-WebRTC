@@ -52,7 +52,9 @@ import {
   handleTriggerNoTarget,
   handleTriggerFloatingText,
   handleTriggerFloatingTextBatch,
-  handleSyncHighlights
+  handleSyncHighlights,
+  handleTriggerDeckSelection,
+  handleTriggerHandCardSelection
 } from '../handlers/visualEffects.js';
 import {
   handleUpdateDeckData
@@ -204,6 +206,8 @@ function routeMessage(ws, data) {
     'TRIGGER_FLOATING_TEXT': handleTriggerFloatingText,
     'TRIGGER_FLOATING_TEXT_BATCH': handleTriggerFloatingTextBatch,
     'TRIGGER_NO_TARGET': handleTriggerNoTarget,
+    'TRIGGER_DECK_SELECTION': handleTriggerDeckSelection,
+    'TRIGGER_HAND_CARD_SELECTION': handleTriggerHandCardSelection,
     'SYNC_HIGHLIGHTS': handleSyncHighlights,
     'EXIT_GAME': handleExitGame,
     'FORCE_SYNC': handleForceSync,

@@ -102,6 +102,7 @@ const App = memo(function App() {
     latestFloatingTexts,
     latestNoTarget,
     triggerNoTarget,
+    triggerDeckSelection,
     syncHighlights,
     nextPhase,
     prevPhase,
@@ -122,6 +123,9 @@ const App = memo(function App() {
     reorderTopDeck,
     reorderCards,
     triggerFloatingText,
+    triggerHandCardSelection,
+    latestDeckSelections,
+    latestHandCardSelections,
   } = gameStateHook
 
   const [modalsState, setModalsState] = useState({
@@ -376,6 +380,7 @@ const App = memo(function App() {
     scoreDiagonal,
     removeStatusByType,
     triggerFloatingText,
+    triggerHandCardSelection,
   })
 
   const handleAnnouncedCardDoubleClick = (player: Player, card: Card) => {
@@ -457,18 +462,8 @@ const App = memo(function App() {
 
   const handleDeckClick = useCallback((targetPlayerId: number) => {
     if (abilityMode?.mode === 'SELECT_DECK') {
-      // Add deck selection effect visible to all players
-      updateState(state => ({
-        ...state,
-        deckSelections: [
-          ...(state.deckSelections || []),
-          {
-            playerId: targetPlayerId,
-            selectedByPlayerId: gameState.activePlayerId ?? localPlayerId ?? 1,
-            timestamp: Date.now(),
-          },
-        ],
-      }))
+      // Trigger deck selection effect visible to all players via WebSocket
+      triggerDeckSelection(targetPlayerId, gameState.activePlayerId ?? localPlayerId ?? 1)
       setTopDeckViewState({
         targetPlayerId,
         isLocked: true,
@@ -479,7 +474,7 @@ const App = memo(function App() {
       })
       setAbilityMode(null)
     }
-  }, [abilityMode, gameState.activePlayerId, localPlayerId, updateState])
+  }, [abilityMode, gameState.activePlayerId, localPlayerId, triggerDeckSelection])
 
   const handleTopDeckReorder = useCallback((playerId: number, newTopCards: Card[]) => {
     reorderTopDeck(playerId, newTopCards)
@@ -1836,7 +1831,7 @@ const App = memo(function App() {
   }
 
   return (
-    <div className={`relative w-screen h-screen overflow-hidden ${cursorStack ? 'cursor-none' : ''}`}>
+    <div className={`relative w-screen h-screen overflow-hidden ${cursorStack ? 'cursor-none cursor-stack-active' : ''}`}>
       <Header
         gameId={gameState.gameId}
         isGameStarted={gameState.isGameStarted}
@@ -1990,6 +1985,7 @@ const App = memo(function App() {
           localPlayerId={localPlayerId}
           imageRefreshVersion={imageRefreshVersion}
           highlightFilter={highlightFilter}
+          cursorStack={cursorStack}
         />
       )}
 
@@ -2095,7 +2091,9 @@ const App = memo(function App() {
               onDeckClick={handleDeckClick}
               isDeckSelectable={abilityMode?.mode === 'SELECT_DECK'}
               hideDummyCards={hideDummyCards}
-              deckSelections={gameState.deckSelections}
+              deckSelections={latestDeckSelections}
+              handCardSelections={latestHandCardSelections}
+              cursorStack={cursorStack}
             />
           </div>
         )}
@@ -2197,7 +2195,9 @@ const App = memo(function App() {
                     onDeckClick={handleDeckClick}
                     isDeckSelectable={abilityMode?.mode === 'SELECT_DECK'}
                     hideDummyCards={hideDummyCards}
-                    deckSelections={gameState.deckSelections}
+                    deckSelections={latestDeckSelections}
+                    handCardSelections={latestHandCardSelections}
+                    cursorStack={cursorStack}
                   />
                 </div>
               ))}

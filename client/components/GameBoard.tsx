@@ -122,6 +122,10 @@ const GridCell = memo<{
       }, [cell.card, onEmptyCellDoubleClick, row, col])
 
       const handleCardDragStart = useCallback(() => {
+        // Block dragging when cursorStack is active (has a token)
+        if (cursorStack) {
+          return
+        }
         if (cell.card) {
           setDraggedItem({
             card: cell.card,
@@ -130,7 +134,7 @@ const GridCell = memo<{
             isManual: true,
           })
         }
-      }, [cell.card, setDraggedItem, row, col])
+      }, [cell.card, setDraggedItem, row, col, cursorStack])
 
       const handleCardContextMenu = useCallback((e: React.MouseEvent) => {
         if (cell.card) {
@@ -241,12 +245,12 @@ const GridCell = memo<{
           {cell.card && (
             <div
               key={cell.card.id}
-              draggable={isGameStarted}
+              draggable={isGameStarted && !cursorStack}
               onDragStart={handleCardDragStart}
               onDragEnd={() => setDraggedItem(null)}
               onContextMenu={handleCardContextMenu}
               onDoubleClick={handleCardDoubleClick}
-              className={`w-full h-full ${isGameStarted ? 'cursor-grab' : 'cursor-default'} relative ${hasActiveEffect ? 'z-40' : 'z-30'}`}
+              className={`w-full h-full ${isGameStarted && !cursorStack ? 'cursor-grab' : 'cursor-default'} relative ${hasActiveEffect ? 'z-40' : 'z-30'}`}
               data-interactive="true"
             >
               <Card

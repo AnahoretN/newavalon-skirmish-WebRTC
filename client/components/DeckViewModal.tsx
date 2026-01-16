@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import type { Player, Card as CardType, DragItem, PlayerColor } from '@/types'
+import type { Player, Card as CardType, DragItem, PlayerColor, CursorStackState } from '@/types'
 import { Card } from './Card'
 import { useLanguage } from '@/contexts/LanguageContext'
 
@@ -20,6 +20,7 @@ interface DeckViewModalProps {
   localPlayerId: number | null;
   imageRefreshVersion?: number;
   highlightFilter?: (card: CardType) => boolean; // Optional filter to highlight certain cards (e.g. Units)
+  cursorStack?: CursorStackState | null;
 }
 
 export const DeckViewModal: React.FC<DeckViewModalProps> = ({
@@ -38,7 +39,8 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
   playerColorMap,
   localPlayerId,
   imageRefreshVersion,
-  highlightFilter
+  highlightFilter,
+  cursorStack = null,
 }) => {
   const { t } = useLanguage()
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
@@ -200,7 +202,7 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
               const isHighlighted = isMatchingFilter
               const isBeingDragged = draggedCardId === card.id
               const isDragTarget = dragOverIndex === index && draggedIndex !== index
-              const isInteractive = canInteract && isMatchingFilter
+              const isInteractive = canInteract && isMatchingFilter && !cursorStack
 
               const opacity = isBeingDragged ? 0.5 : (isMatchingFilter ? 1 : 0.3)
 

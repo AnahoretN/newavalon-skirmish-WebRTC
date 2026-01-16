@@ -128,15 +128,19 @@ export function handlePlayerReady(ws, data) {
     logger.info(`Player ${data.playerId} marked as ready in game ${data.gameId}`);
 
     // Check if all non-dummy, connected players are ready
-    const activePlayers = gameState.players.filter(p => !p.isDummy && !p.isDisconnected);
-    const allReady = activePlayers.length > 0 && activePlayers.every(p => p.isReady);
+    const realPlayers = gameState.players.filter(p => !p.isDummy && !p.isDisconnected);
+    const allReady = realPlayers.length > 0 && realPlayers.every(p => p.isReady);
 
-    if (allReady && activePlayers.length >= 1) {
+    if (allReady && realPlayers.length >= 1) {
       // All players ready - start the game!
       gameState.isReadyCheckActive = false;
       gameState.isGameStarted = true;
-      gameState.startingPlayerId = activePlayers[0].id;
-      gameState.activePlayerId = activePlayers[0].id;
+
+      // Randomly select starting player from ALL players (including dummies)
+      const allPlayers = gameState.players.filter(p => !p.isDisconnected);
+      const randomIndex = Math.floor(Math.random() * allPlayers.length);
+      gameState.startingPlayerId = allPlayers[randomIndex].id;
+      gameState.activePlayerId = allPlayers[randomIndex].id;
 
       // Draw starting hands for players with auto-draw enabled
       // First player (active) draws 6 cards, others draw 6

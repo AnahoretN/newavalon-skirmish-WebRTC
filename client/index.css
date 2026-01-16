@@ -137,3 +137,8 @@
 .animate-deck-selection {
   animation: deck-selection-ripple 0.75s ease-out forwards;
 }
+
+/* Block all draggable interactions when cursor has a token stack */
+.cursor-stack-active [data-interactive='true'] {
+  pointer-events: none !important;
+}

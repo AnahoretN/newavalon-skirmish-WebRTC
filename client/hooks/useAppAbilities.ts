@@ -44,6 +44,7 @@ interface UseAppAbilitiesProps {
     scoreDiagonal: (r1: number, c1: number, r2: number, c2: number, pid: number, bonusType?: 'point_per_support' | 'draw_per_support') => void;
     removeStatusByType: (coords: { row: number, col: number }, type: string) => void;
     triggerFloatingText: (data: Omit<FloatingTextData, 'timestamp'> | Omit<FloatingTextData, 'timestamp'>[]) => void;
+    triggerHandCardSelection: (playerId: number, cardIndex: number, selectedByPlayerId: number) => void;
 }
 
 export const useAppAbilities = ({
@@ -82,6 +83,7 @@ export const useAppAbilities = ({
   scoreDiagonal,
   removeStatusByType,
   triggerFloatingText,
+  triggerHandCardSelection,
 }: UseAppAbilitiesProps) => {
 
   const handleActionExecution = useCallback((action: AbilityAction, sourceCoords: { row: number, col: number }) => {
@@ -1221,7 +1223,7 @@ export const useAppAbilities = ({
 
       if (mode === 'REVEREND_DOUBLE_EXPLOIT') {
         // Reverend Deploy: Double the Exploit counters on the selected card (any card, even with 0 exploits)
-        if (!actorId) return
+        if (!actorId) { return }
         const ownerId = actorId
         // Counters are stored in statuses, not a counters property
         const currentExploits = (card.statuses || []).filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
@@ -1902,8 +1904,12 @@ export const useAppAbilities = ({
       return
     }
 
+    // Add visual selection effect when card is clicked during selection mode
     if (abilityMode?.type === 'ENTER_MODE' && abilityMode.mode === 'SELECT_TARGET') {
       const { payload, sourceCoords, isDeployAbility, sourceCard } = abilityMode
+
+      // Trigger hand card selection effect visible to all players via WebSocket (before any filtering)
+      triggerHandCardSelection(player.id, cardIndex, gameState.activePlayerId ?? localPlayerId ?? 1)
 
       // SELECT_HAND_FOR_DEPLOY (Quick Response Team)
       if (payload.actionType === 'SELECT_HAND_FOR_DEPLOY') {
@@ -1979,7 +1985,7 @@ export const useAppAbilities = ({
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
       }
     }
-  }, [interactionLock, abilityMode, moveItem, markAbilityUsed, setAbilityMode, setCommandContext, handleActionExecution])
+  }, [interactionLock, abilityMode, moveItem, markAbilityUsed, setAbilityMode, setCommandContext, handleActionExecution, updateState, gameState, localPlayerId, triggerHandCardSelection])
 
   const handleAnnouncedCardDoubleClick = useCallback((player: Player, card: Card) => {
     if (abilityMode || cursorStack) {

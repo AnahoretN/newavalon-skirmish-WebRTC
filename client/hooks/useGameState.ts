@@ -279,6 +279,7 @@ export const useGameState = () => {
     floatingTexts: [],
     highlights: [],
     deckSelections: [],
+    handCardSelections: [],
     localPlayerId: null,
     isSpectator: false,
   }), [])
@@ -291,6 +292,8 @@ export const useGameState = () => {
   const [latestHighlight, setLatestHighlight] = useState<HighlightData | null>(null)
   const [latestFloatingTexts, setLatestFloatingTexts] = useState<FloatingTextData[] | null>(null)
   const [latestNoTarget, setLatestNoTarget] = useState<{coords: {row: number, col: number}, timestamp: number} | null>(null)
+  const [latestDeckSelections, setLatestDeckSelections] = useState<DeckSelectionData[]>([])
+  const [latestHandCardSelections, setLatestHandCardSelections] = useState<HandCardSelectionData[]>([])
   const [contentLoaded, setContentLoaded] = useState(!!rawJsonData)
 
   const ws = useRef<WebSocket | null>(null)
@@ -307,14 +310,8 @@ export const useGameState = () => {
   const hasProcessedFirstMessageRef = useRef(false)
 
   const gameStateRef = useRef(gameState)
-  const prevActivePlayerIdRef = useRef<number | null | undefined>(gameState.activePlayerId)
   useEffect(() => {
     gameStateRef.current = gameState
-    // Clear auto-draw tracking when active player changes (new turn)
-    if (prevActivePlayerIdRef.current !== gameState.activePlayerId && gameState.activePlayerId !== undefined) {
-      autoDrawnPlayersRef.current.clear()
-    }
-    prevActivePlayerIdRef.current = gameState.activePlayerId
   }, [gameState])
 
   const localPlayerIdRef = useRef(localPlayerId)
@@ -555,8 +552,22 @@ export const useGameState = () => {
           } else {
             console.warn('Server Error:', data.message)
           }
+        } else if (data.type === 'HIGHLIGHT_TRIGGERED') {
+          setLatestHighlight(data.highlightData)
         } else if (data.type === 'NO_TARGET_TRIGGERED') {
           setLatestNoTarget({ coords: data.coords, timestamp: data.timestamp })
+        } else if (data.type === 'DECK_SELECTION_TRIGGERED') {
+          setLatestDeckSelections(prev => [...prev, data.deckSelectionData])
+          // Auto-remove after 1 second
+          setTimeout(() => {
+            setLatestDeckSelections(prev => prev.filter(ds => ds.timestamp !== data.deckSelectionData.timestamp))
+          }, 1000)
+        } else if (data.type === 'HAND_CARD_SELECTION_TRIGGERED') {
+          setLatestHandCardSelections(prev => [...prev, data.handCardSelectionData])
+          // Auto-remove after 1 second
+          setTimeout(() => {
+            setLatestHandCardSelections(prev => prev.filter(cs => cs.timestamp !== data.handCardSelectionData.timestamp))
+          }, 1000)
         } else if (data.type === 'FLOATING_TEXT_TRIGGERED') {
           // Add floating text to gameState for all players to see
           setGameState(prev => ({
@@ -607,14 +618,46 @@ export const useGameState = () => {
           // Determine if we're ENTERING Setup phase (coming from a different phase)
           // This prevents auto-draw on page refresh when already in Setup
           // But allows it after scoring when we transition back to Setup
-          const enteringSetupForPlayer = !isFirstMessage &&
+          // Special case: First turn of starting player - should auto-draw when game just started in Setup
+          const isStartingPlayerFirstSetup = isFirstMessage &&
+            syncedData.isGameStarted &&
+            currentContext.phase === 0 &&
+            currentContext.activePlayerId !== undefined &&
+            syncedData.startingPlayerId !== null &&
+            currentContext.activePlayerId === syncedData.startingPlayerId &&
+            syncedData.turnNumber === 1
+
+          // Special case: Game just started, active player was null and now has a value (in Setup)
+          const isActivePlayerJustSet = prevContext !== null &&
+            prevContext.activePlayerId === null &&
+            currentContext.activePlayerId !== undefined &&
+            currentContext.phase === 0 &&
+            syncedData.isGameStarted &&
+            syncedData.turnNumber === 1
+
+          logger.debug('[Auto-draw] First setup check:', {
+            isFirstMessage,
+            isGameStarted: syncedData.isGameStarted,
+            phase: currentContext.phase,
+            activePlayerId: currentContext.activePlayerId,
+            startingPlayerId: syncedData.startingPlayerId,
+            turnNumber: syncedData.turnNumber,
+            isStartingPlayerFirstSetup,
+            isActivePlayerJustSet,
+            prevActivePlayerId: prevContext?.activePlayerId
+          })
+
+          const enteringSetupForPlayer = isStartingPlayerFirstSetup ||
+            isActivePlayerJustSet ||
+            (!isFirstMessage &&
             prevContext !== null &&
             prevContext.phase !== 0 && // Previous phase was NOT Setup
             currentContext.phase === 0 && // Current phase IS Setup
-            currentContext.activePlayerId !== undefined // We have an active player
+            currentContext.activePlayerId !== undefined) // We have an active player
 
           // Clear auto-draw tracking when phase changes from Setup OR when active player changes
-          const activePlayerChanged = prevContext !== null && prevContext.activePlayerId !== currentContext.activePlayerId
+          const activePlayerChanged = prevContext !== null && prevContext.activePlayerId !== currentContext.activePlayerId &&
+            prevContext.activePlayerId !== null // Don't clear if setting from null to first player
           const phaseChangedFromSetup = prevContext !== null && prevContext.phase === 0 && currentContext.phase !== 0
 
           if (activePlayerChanged || phaseChangedFromSetup) {
@@ -630,8 +673,19 @@ export const useGameState = () => {
 
           // Auto-draw only when ENTERING Setup phase from a different phase
           // NOT when: starting game in Setup, page refresh in Setup, already in Setup
+          logger.debug('[Auto-draw] Checking conditions:', {
+            enteringSetupForPlayer,
+            activePlayerId: syncedData.activePlayerId
+          })
+
           if (enteringSetupForPlayer && syncedData.activePlayerId !== undefined) {
             const activePlayer = syncedData.players.find((p: Player) => p.id === syncedData.activePlayerId)
+            logger.debug('[Auto-draw] Active player found:', {
+              found: !!activePlayer,
+              id: activePlayer?.id,
+              deckLength: activePlayer?.deck.length || 0,
+              hasAutoDrawn: activePlayer ? autoDrawnPlayersRef.current.has(activePlayer.id) : false
+            })
             if (activePlayer && activePlayer.deck.length > 0 && !autoDrawnPlayersRef.current.has(activePlayer.id)) {
               let shouldDraw = false
               if (activePlayer.isDummy) {
@@ -1035,6 +1089,7 @@ export const useGameState = () => {
         floatingTexts: [],
         highlights: [],
         deckSelections: [],
+        handCardSelections: [],
       }
     })
   }, [updateState, createDeck])
@@ -1885,13 +1940,6 @@ export const useGameState = () => {
         }
       }
 
-      if (newState.startingPlayerId === undefined && target.target === 'board' && item.source !== 'board') {
-        const dropperId = item.playerId || localPlayerIdRef.current
-        if (dropperId !== null) {
-          newState.startingPlayerId = dropperId
-        }
-      }
-
       // Store the actual current card state for board-to-board moves
       // This ensures we preserve all statuses (including ready statuses) when moving
       let actualCardState: Card | null = null
@@ -2483,6 +2531,57 @@ export const useGameState = () => {
     }
   }, [])
 
+  const triggerDeckSelection = useCallback((playerId: number, selectedByPlayerId: number) => {
+    const deckSelectionData = {
+      playerId,
+      selectedByPlayerId,
+      timestamp: Date.now(),
+    }
+
+    // Immediately update local state so the acting player sees the effect without waiting for round-trip
+    setLatestDeckSelections(prev => [...prev, deckSelectionData])
+
+    // Also broadcast to other players via WebSocket
+    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
+      ws.current.send(JSON.stringify({
+        type: 'TRIGGER_DECK_SELECTION',
+        gameId: gameStateRef.current.gameId,
+        deckSelectionData,
+      }))
+    }
+
+    // Auto-remove after 1 second
+    setTimeout(() => {
+      setLatestDeckSelections(prev => prev.filter(ds => ds.timestamp !== deckSelectionData.timestamp))
+    }, 1000)
+  }, [])
+
+  const triggerHandCardSelection = useCallback((playerId: number, cardIndex: number, selectedByPlayerId: number) => {
+    const handCardSelectionData = {
+      playerId,
+      cardIndex,
+      selectedByPlayerId,
+      timestamp: Date.now(),
+    }
+
+    // Immediately update local state so the acting player sees the effect without waiting for round-trip
+    setLatestHandCardSelections(prev => [...prev, handCardSelectionData])
+
+    // Also broadcast to other players via WebSocket
+    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
+      ws.current.send(JSON.stringify({
+        type: 'TRIGGER_HAND_CARD_SELECTION',
+        gameId: gameStateRef.current.gameId,
+        handCardSelectionData,
+      }))
+    }
+
+    // Auto-remove after 1 second
+    setTimeout(() => {
+      setLatestHandCardSelections(prev => prev.filter(cs => cs.timestamp !== handCardSelectionData.timestamp))
+    }, 1000)
+  }, [])
+
   const markAbilityUsed = useCallback((boardCoords: { row: number, col: number }, _isDeployAbility?: boolean, _setDeployAttempted?: boolean, readyStatusToRemove?: string) => {
     updateState(currentState => {
       if (!currentState.isGameStarted) {
@@ -2882,6 +2981,8 @@ export const useGameState = () => {
     latestHighlight,
     latestFloatingTexts,
     latestNoTarget,
+    latestDeckSelections,
+    latestHandCardSelections,
     createGame,
     joinGame,
     joinGameViaModal,
@@ -2929,6 +3030,8 @@ export const useGameState = () => {
     triggerHighlight,
     triggerFloatingText,
     triggerNoTarget,
+    triggerDeckSelection,
+    triggerHandCardSelection,
     syncHighlights,
     nextPhase,
     prevPhase,
