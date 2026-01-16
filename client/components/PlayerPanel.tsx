@@ -320,19 +320,29 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                 }
                 const deckHighlightStyle = isDeckSelectable ? {
                   boxShadow: `0 0 12px 2px rgba(${glowRgb.r}, ${glowRgb.g}, ${glowRgb.b}, 0.5)`,
-                  border: '3px solid',
-                  borderColor: `rgb(255, 255, 255)`,
-                  background: `radial-gradient(circle at center, transparent 20%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.5) 100%)`,
+                  border: '3px solid rgb(255, 255, 255)',
                 } : {}
 
                 return (
-                  <div
-                    onClick={handleDeckInteraction}
-                    className={`aspect-square bg-card-back rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-md select-none text-white ${shouldFlashDeck ? 'animate-deck-start' : ''} ${isDeckSelectable ? 'animate-glow-pulse' : ''}`}
-                    style={deckHighlightStyle}
-                  >
-                    <span className="text-[10px] sm:text-xs font-bold mb-0.5 uppercase tracking-tight">{t('deck')}</span>
-                    <span className="text-base sm:text-lg font-bold">{player.deck.length}</span>
+                  <div className="relative aspect-square">
+                    {/* Highlight overlay - doesn't interfere with deck visibility */}
+                    {isDeckSelectable && (
+                      <div
+                        className="absolute inset-0 rounded pointer-events-none animate-glow-pulse"
+                        style={{
+                          zIndex: 10,
+                          background: `radial-gradient(circle at center, transparent 30%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 100%)`,
+                        }}
+                      />
+                    )}
+                    <div
+                      onClick={handleDeckInteraction}
+                      className={`absolute inset-0 bg-card-back rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-md select-none text-white ${shouldFlashDeck ? 'animate-deck-start' : ''}`}
+                      style={deckHighlightStyle}
+                    >
+                      <span className="text-[10px] sm:text-xs font-bold mb-0.5 uppercase tracking-tight relative z-20">{t('deck')}</span>
+                      <span className="text-base sm:text-lg font-bold relative z-20">{player.deck.length}</span>
+                    </div>
                   </div>
                 )
               })()}
@@ -522,19 +532,29 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   }
                   const deckHighlightStyle = isDeckSelectable ? {
                     boxShadow: `0 0 12px 2px rgba(${glowRgb.r}, ${glowRgb.g}, ${glowRgb.b}, 0.5)`,
-                    border: '3px solid',
-                    borderColor: `rgb(255, 255, 255)`,
-                    background: `radial-gradient(circle at center, transparent 20%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.5) 100%)`,
+                    border: '3px solid rgb(255, 255, 255)',
                   } : {}
 
                   return (
-                    <RemotePile
-                      label={t('deck')}
-                      count={player.deck.length}
-                      onClick={handleDeckInteraction}
-                      className={`bg-card-back ${shouldFlashDeck ? 'animate-deck-start' : ''} ${isDeckSelectable ? 'animate-glow-pulse' : ''}`}
-                      style={deckHighlightStyle}
-                    />
+                    <div className="relative w-full h-full">
+                      {/* Highlight overlay - doesn't interfere with deck visibility */}
+                      {isDeckSelectable && (
+                        <div
+                          className="absolute inset-0 rounded pointer-events-none animate-glow-pulse"
+                          style={{
+                            zIndex: 10,
+                            background: `radial-gradient(circle at center, transparent 30%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 100%)`,
+                          }}
+                        />
+                      )}
+                      <RemotePile
+                        label={t('deck')}
+                        count={player.deck.length}
+                        onClick={handleDeckInteraction}
+                        className={`bg-card-back ${shouldFlashDeck ? 'animate-deck-start' : ''}`}
+                        style={deckHighlightStyle}
+                      />
+                    </div>
                   )
                 })()}
               </DropZone>
