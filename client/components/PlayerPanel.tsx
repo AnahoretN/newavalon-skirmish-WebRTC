@@ -1,7 +1,7 @@
 import React, { memo, useRef, useState, useEffect, useMemo } from 'react'
 import { DeckType as DeckTypeEnum } from '@/types'
 import type { Player, PlayerColor, Card as CardType, DragItem, DropTarget, CustomDeckFile, ContextMenuParams } from '@/types'
-import { PLAYER_COLORS, GAME_ICONS } from '@/constants'
+import { PLAYER_COLORS, GAME_ICONS, PLAYER_COLOR_RGB } from '@/constants'
 import { getSelectableDecks } from '@/content'
 import { Card as CardComponent } from './Card'
 import { CardTooltipContent } from './Tooltip'
@@ -166,10 +166,11 @@ const RemoteScore: React.FC<{ score: number, onChange: (delta: number) => void, 
   </div>
 )
 
-const RemotePile: React.FC<{ label: string, count: number, onClick?: () => void, children?: React.ReactNode, className?: string }> = ({ label, count, onClick, children, className }) => (
+const RemotePile: React.FC<{ label: string, count: number, onClick?: () => void, children?: React.ReactNode, className?: string, style?: React.CSSProperties }> = ({ label, count, onClick, children, className, style }) => (
   <div
     onClick={onClick}
     className={`w-full h-full rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-sm select-none text-white border border-gray-600 relative overflow-hidden ${className || ''}`}
+    style={style}
   >
     {children ? children : (
       <>
@@ -306,10 +307,35 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
           <div className="grid grid-cols-4 gap-1 sm:gap-2">
             {/* Deck */}
             <DropZone className="relative" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => openContextMenu(e, 'deckPile', { player })}>
-              <div onClick={handleDeckInteraction} className={`aspect-square bg-card-back rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-md select-none text-white border-2 border-transparent ${shouldFlashDeck ? 'animate-deck-start' : ''} ${isDeckSelectable ? 'ring-3 ring-sky-400 shadow-[0_0_9px_#38bdf8] animate-glow-pulse' : ''}`}>
-                <span className="text-[10px] sm:text-xs font-bold mb-0.5 uppercase tracking-tight">{t('deck')}</span>
-                <span className="text-base sm:text-lg font-bold">{player.deck.length}</span>
-              </div>
+              {(() => {
+                // Calculate deck highlight style matching the board highlight effect
+                const playerColorName = playerColorMap.get(player.id)
+                const rgb = playerColorName && PLAYER_COLOR_RGB[playerColorName]
+                  ? PLAYER_COLOR_RGB[playerColorName]
+                  : { r: 37, g: 99, b: 235 }
+                const glowRgb = {
+                  r: Math.min(255, Math.round(rgb.r * 1.3)),
+                  g: Math.min(255, Math.round(rgb.g * 1.3)),
+                  b: Math.min(255, Math.round(rgb.b * 1.3)),
+                }
+                const deckHighlightStyle = isDeckSelectable ? {
+                  boxShadow: `0 0 12px 2px rgba(${glowRgb.r}, ${glowRgb.g}, ${glowRgb.b}, 0.5)`,
+                  border: '3px solid',
+                  borderColor: `rgb(255, 255, 255)`,
+                  background: `radial-gradient(circle at center, transparent 20%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.5) 100%)`,
+                } : {}
+
+                return (
+                  <div
+                    onClick={handleDeckInteraction}
+                    className={`aspect-square bg-card-back rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-md select-none text-white ${shouldFlashDeck ? 'animate-deck-start' : ''} ${isDeckSelectable ? 'animate-glow-pulse' : ''}`}
+                    style={deckHighlightStyle}
+                  >
+                    <span className="text-[10px] sm:text-xs font-bold mb-0.5 uppercase tracking-tight">{t('deck')}</span>
+                    <span className="text-base sm:text-lg font-bold">{player.deck.length}</span>
+                  </div>
+                )
+              })()}
             </DropZone>
 
             {/* Discard */}
@@ -483,12 +509,34 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
             {/* Deck */}
             <div className="aspect-square relative">
               <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => openContextMenu(e, 'deckPile', { player })}>
-                <RemotePile
-                  label={t('deck')}
-                  count={player.deck.length}
-                  onClick={handleDeckInteraction}
-                  className={`bg-card-back ${shouldFlashDeck ? 'animate-deck-start' : ''} ${isDeckSelectable ? 'ring-3 ring-sky-400 shadow-[0_0_9px_#38bdf8] animate-glow-pulse' : ''}`}
-                />
+                {(() => {
+                  // Calculate deck highlight style matching the board highlight effect
+                  const playerColorName = playerColorMap.get(player.id)
+                  const rgb = playerColorName && PLAYER_COLOR_RGB[playerColorName]
+                    ? PLAYER_COLOR_RGB[playerColorName]
+                    : { r: 37, g: 99, b: 235 }
+                  const glowRgb = {
+                    r: Math.min(255, Math.round(rgb.r * 1.3)),
+                    g: Math.min(255, Math.round(rgb.g * 1.3)),
+                    b: Math.min(255, Math.round(rgb.b * 1.3)),
+                  }
+                  const deckHighlightStyle = isDeckSelectable ? {
+                    boxShadow: `0 0 12px 2px rgba(${glowRgb.r}, ${glowRgb.g}, ${glowRgb.b}, 0.5)`,
+                    border: '3px solid',
+                    borderColor: `rgb(255, 255, 255)`,
+                    background: `radial-gradient(circle at center, transparent 20%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.5) 100%)`,
+                  } : {}
+
+                  return (
+                    <RemotePile
+                      label={t('deck')}
+                      count={player.deck.length}
+                      onClick={handleDeckInteraction}
+                      className={`bg-card-back ${shouldFlashDeck ? 'animate-deck-start' : ''} ${isDeckSelectable ? 'animate-glow-pulse' : ''}`}
+                      style={deckHighlightStyle}
+                    />
+                  )
+                })()}
               </DropZone>
             </div>
 
