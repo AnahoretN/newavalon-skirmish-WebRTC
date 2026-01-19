@@ -1887,8 +1887,20 @@ export const useGameState = () => {
           }
 
           const count = item.count || 1
-          const activePlayer = newState.players.find(p => p.id === newState.activePlayerId)
-          const effectiveActorId = (activePlayer?.isDummy) ? activePlayer.id : (localPlayerIdRef.current !== null ? localPlayerIdRef.current : 0)
+
+          // Determine effectiveActorId: use item.ownerId if provided (for counter_panel from abilities),
+          // otherwise fall back to card owner, active player (if dummy), or local player
+          let effectiveActorId: number
+          if (item.ownerId !== undefined) {
+            // For counter_panel items, ownerId comes from the source card that created the stack
+            effectiveActorId = item.ownerId
+          } else if (item.card.ownerId !== undefined) {
+            // For regular card moves, use the card's owner
+            effectiveActorId = item.card.ownerId
+          } else {
+            const activePlayer = newState.players.find(p => p.id === newState.activePlayerId)
+            effectiveActorId = (activePlayer?.isDummy) ? activePlayer.id : (localPlayerIdRef.current !== null ? localPlayerIdRef.current : 0)
+          }
           if (item.statusType === 'Power+') {
             if (targetCard.powerModifier === undefined) {
               targetCard.powerModifier = 0

@@ -251,6 +251,7 @@ export interface DragItem {
   card: Card;
   source: 'hand' | 'board' | 'discard' | 'token_panel' | 'counter_panel' | 'deck' | 'announced';
   playerId?: number; // The ID of the player who owns the source location (hand, deck, etc.).
+  ownerId?: number; // The ID of the player who should be credited as the actor (for status/counter ownership)
   boardCoords?: { row: number; col: number }; // Original coordinates if dragged from the board.
   cardIndex?: number; // Original index if dragged from an array (hand, discard, deck).
   statusType?: string; // For counters: the type of status (e.g., 'Aim', 'Power+')

@@ -164,6 +164,7 @@ export const useAppCounters = ({
             handleDrop({
               card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
               source: 'counter_panel',
+              ownerId: cursorStack.sourceCard?.ownerId, // Use source card owner for status ownership
               statusType: cursorStack.type,
               replaceStatusType: cursorStack.replaceStatus ? cursorStack.requiredTargetStatus : undefined, // For status replacement
               count: 1,
@@ -244,6 +245,7 @@ export const useAppCounters = ({
                     handleDrop({
                       card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
                       source: 'counter_panel',
+                      ownerId: cursorStack.sourceCard?.ownerId, // Use source card owner for status ownership
                       statusType: cursorStack.type,
                       count: 1,
                     }, { target: 'board', boardCoords: { row, col } })
@@ -274,6 +276,7 @@ export const useAppCounters = ({
                 handleDrop({
                   card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
                   source: 'counter_panel',
+                  ownerId: cursorStack.sourceCard?.ownerId, // Use source card owner for status ownership
                   statusType: cursorStack.type,
                   replaceStatusType: cursorStack.replaceStatus ? cursorStack.requiredTargetStatus : undefined, // For Censor: Exploit -> Stun
                   count: amountToDrop,
