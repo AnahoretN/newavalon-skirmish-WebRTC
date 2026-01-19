@@ -745,7 +745,7 @@ const App = memo(function App() {
 
   // Recheck ability readiness when Support/Threat tokens change on active player's cards
   useEffect(() => {
-    if (!gameState) return
+    if (!gameState) {return}
     const activePlayerId = gameState.activePlayerId
     if (activePlayerId === undefined) {
       return

@@ -43,3 +43,7 @@ ngrok
 cloudflared.exe
 config.yml
 *.pem
+
+# Build artifacts (docs folder contains built static files)
+docs/assets/
+docs/index.html
