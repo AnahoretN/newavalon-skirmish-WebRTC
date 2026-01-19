@@ -956,19 +956,69 @@ export const useGameState = () => {
       if (localPlayerIdRef.current !== 1) {
         return currentState
       }
+
+      // Step 1: Collect ALL cards from hands, discard piles, and board
+      const allCards: Card[] = []
+
+      // Cards from hands and discard
+      currentState.players.forEach(player => {
+        player.hand.forEach(card => allCards.push(card))
+        player.discard.forEach(card => allCards.push(card))
+        if (player.announcedCard) {
+          allCards.push(player.announcedCard)
+        }
+      })
+
+      // Cards from the board
+      currentState.board.forEach(row => {
+        row.forEach(cell => {
+          if (cell.card) {
+            allCards.push(cell.card)
+          }
+        })
+      })
+
+      // Step 2: Reset card properties to base state (remove temporary effects)
+      const resetCard = (card: Card): Card => ({
+        ...card,
+        powerModifier: undefined,
+        bonusPower: undefined,
+        statuses: [],
+        enteredThisTurn: undefined,
+        isFaceDown: undefined,
+        revealedTo: undefined,
+      })
+
+      const resetCards = allCards.map(resetCard)
+
+      // Step 3: Shuffle and distribute cards to their original owners
+      const shuffledCards = shuffleDeck(resetCards)
+
+      // Group cards by ownerId
+      const cardsByOwner = new Map<number, Card[]>()
+      shuffledCards.forEach(card => {
+        const ownerId = card.ownerId ?? 1
+        if (!cardsByOwner.has(ownerId)) {
+          cardsByOwner.set(ownerId, [])
+        }
+        cardsByOwner.get(ownerId)!.push(card)
+      })
+
+      // Step 4: Create new player states with restored decks
       const newPlayers = currentState.players.map(player => {
-        const newDeck = createDeck(player.selectedDeck, player.id, player.name)
+        const playerCards = cardsByOwner.get(player.id) || []
         return {
           ...player,
           hand: [],
-          deck: newDeck,
+          deck: playerCards,
           discard: [],
           announcedCard: null,
           score: 0,
           isReady: false,
-          boardHistory: [], // Reset history
+          boardHistory: [],
         }
       })
+
       return {
         ...currentState,
         players: newPlayers,
@@ -976,8 +1026,8 @@ export const useGameState = () => {
         isGameStarted: false,
         isReadyCheckActive: false,
         revealRequests: [],
-        activePlayerId: null, // Aligned with server default (null)
-        startingPlayerId: null, // Aligned with server default (null)
+        activePlayerId: null,
+        startingPlayerId: null,
         currentPhase: 0,
         isScoringStep: false,
         currentRound: 1,
@@ -992,7 +1042,7 @@ export const useGameState = () => {
         handCardSelections: [],
       }
     })
-  }, [updateState, createDeck])
+  }, [updateState])
 
 
   const setActiveGridSize = useCallback((size: GridSize) => {

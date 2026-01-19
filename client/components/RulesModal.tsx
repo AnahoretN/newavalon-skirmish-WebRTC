@@ -90,7 +90,7 @@ const DUMMY_COLOR_MAP = new Map<number, PlayerColor>([
 const formatRuleText = (text: string) => {
   // Split by markdown patterns: **bold** and [link](url)
   // Use [\s\S]+? to match across newlines for links
-  const parts = text.split(/(\[[^\]]+\]\([^)]+\)|\*\*[^\*]+\*\*)/g)
+  const parts = text.split(/(\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*)/g)
 
   return parts.map((part, i) => {
     // Handle [text](url) links
