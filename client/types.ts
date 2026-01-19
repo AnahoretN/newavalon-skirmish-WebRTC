@@ -340,6 +340,7 @@ export interface CursorStackState {
     chainedAction?: AbilityAction; // Optional: Action to enter immediately after the stack is depleted
     recordContext?: boolean; // Optional: If true, saves the target to CommandContext
     replaceStatus?: boolean; // If true, replace the requiredTargetStatus with type (e.g., Censor: Exploit -> Stun)
+    originalOwnerId?: number; // The owner of the card that initiated the action (for multi-step commands)
 }
 
 /**
@@ -391,4 +392,5 @@ export type AbilityAction = {
     allowHandTargets?: boolean; // If true, allows targeting cards in player's hand
     handOnly?: boolean; // If true, ONLY target cards in hand, not on board (e.g., IP Dept Agent Commit)
     replaceStatus?: boolean; // If true, replace the requiredTargetStatus with tokenType (e.g., Censor: Exploit -> Stun)
+    originalOwnerId?: number; // The owner of the card that initiated this action (for multi-step commands like Data Interception)
 };

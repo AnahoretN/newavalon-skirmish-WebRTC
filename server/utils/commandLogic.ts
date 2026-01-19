@@ -400,5 +400,11 @@ export const getCommandAction = (
     }
   }
 
+  // Set originalOwnerId for all actions to preserve command card ownership
+  // This ensures highlights and effects use the correct owner color even in multi-step commands
+  actions.forEach(action => {
+    action.originalOwnerId = card.ownerId
+  })
+
   return actions
 }

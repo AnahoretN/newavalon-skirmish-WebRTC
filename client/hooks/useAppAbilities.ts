@@ -363,6 +363,7 @@ export const useAppAbilities = ({
           isDragging: false,
           sourceCoords: sourceCoords,
           sourceCard: action.sourceCard, // Important for determining actorId
+          originalOwnerId: action.originalOwnerId, // Preserve command owner for highlight colors
           excludeOwnerId: action.excludeOwnerId,
           onlyOpponents: action.onlyOpponents,
           onlyFaceDown: action.onlyFaceDown,
@@ -496,6 +497,7 @@ export const useAppAbilities = ({
             isDragging: false,
             sourceCoords: sourceCoords,
             sourceCard: action.sourceCard,
+            originalOwnerId: action.originalOwnerId, // Preserve command owner for highlight colors
             mustBeInLineWithSource: true, // Target must be in line with Princeps
             isDeployAbility: action.isDeployAbility,
           })
@@ -533,6 +535,7 @@ export const useAppAbilities = ({
             isDragging: false,
             sourceCoords: sourceCoords,
             sourceCard: action.sourceCard,
+            originalOwnerId: action.originalOwnerId, // Preserve command owner for highlight colors
             mustBeInLineWithSource: true, // Target must be in line with Gawain
             isDeployAbility: action.isDeployAbility,
           })
@@ -567,6 +570,7 @@ export const useAppAbilities = ({
             isDragging: false,
             sourceCoords: sourceCoords,
             sourceCard: action.sourceCard,
+            originalOwnerId: action.originalOwnerId, // Preserve command owner for highlight colors
             targetOwnerId: actorId,
             requiredTargetStatus: 'Threat',
             requireStatusFromSourceOwner: true, // Pass to cursor state
@@ -1442,7 +1446,7 @@ export const useAppAbilities = ({
         if (payload.filter && !payload.filter(card, boardCoords.row, boardCoords.col)) {
           return
         }
-        setCursorStack({ type: 'Revealed', count: 1, isDragging: false, sourceCoords: sourceCoords, sourceCard: sourceCard, targetOwnerId: card.ownerId, onlyFaceDown: true, onlyOpponents: true, isDeployAbility: isDeployAbility })
+        setCursorStack({ type: 'Revealed', count: 1, isDragging: false, sourceCoords: sourceCoords, sourceCard: sourceCard, originalOwnerId: action.originalOwnerId, targetOwnerId: card.ownerId, onlyFaceDown: true, onlyOpponents: true, isDeployAbility: isDeployAbility })
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         return
       }

@@ -992,8 +992,14 @@ const App = memo(function App() {
     // Determine the owner of the current mode for highlight color
     // The highlights should belong to the card/ability owner, not the active player
     let highlightOwnerId: number
-    if (abilityMode?.sourceCard?.ownerId !== undefined) {
+    if (abilityMode?.originalOwnerId !== undefined) {
+      // For multi-step commands, use the original command owner
+      highlightOwnerId = abilityMode.originalOwnerId
+    } else if (abilityMode?.sourceCard?.ownerId !== undefined) {
       highlightOwnerId = abilityMode.sourceCard.ownerId
+    } else if (cursorStack?.originalOwnerId !== undefined) {
+      // For cursor stacks from multi-step commands
+      highlightOwnerId = cursorStack.originalOwnerId
     } else if (cursorStack?.sourceCard?.ownerId !== undefined) {
       highlightOwnerId = cursorStack.sourceCard.ownerId
     } else if (playMode?.card?.ownerId !== undefined) {
