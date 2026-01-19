@@ -133,9 +133,6 @@ export function handleUpdateState(ws, data) {
       // Check if active player changed (simple rule: new player = draw card)
       const playerChanged = clientActivePlayerId !== undefined && clientActivePlayerId !== previousActivePlayerId;
 
-      // Also check if client is requesting Draw Phase (-1)
-      const clientRequestsDrawPhase = clientPhase === -1;
-
       // Debug logging
       if (clientActivePlayerId !== undefined && clientActivePlayerId !== previousActivePlayerId) {
         logger.info(`[UpdateState] Player change detected: previous=${previousActivePlayerId}, client=${clientActivePlayerId}, changed=${playerChanged}`);
@@ -144,15 +141,13 @@ export function handleUpdateState(ws, data) {
       } else if (clientActivePlayerId === previousActivePlayerId) {
         logger.info(`[UpdateState] Player same: ${clientActivePlayerId}, no draw`);
       }
-      if (clientRequestsDrawPhase) {
-        logger.info(`[UpdateState] Client requesting Draw Phase (-1), phase=${clientPhase}`);
-      }
 
       // Perform draw FIRST on existing state (before any client data is applied)
-      // This ensures the draw happens on the correct server state
+      // CRITICAL: Only draw if player changed. Phase=-1 alone is NOT enough to trigger draw.
+      // This prevents duplicate draws when client sends multiple rapid UPDATE_STATE with phase=-1.
       let drawnPlayerId: number | null = null;
-      if ((playerChanged || clientRequestsDrawPhase) && clientActivePlayerId !== null) {
-        logger.info(`[UpdateState] 🎯 Triggering draw - playerChanged=${playerChanged}, clientRequestsDrawPhase=${clientRequestsDrawPhase}, BEFORE: hand=${existingGameState.players.find(p => p.id === clientActivePlayerId)?.hand?.length || 0}`);
+      if (playerChanged && clientActivePlayerId !== null) {
+        logger.info(`[UpdateState] 🎯 Triggering draw - playerChanged=${playerChanged}, BEFORE: hand=${existingGameState.players.find(p => p.id === clientActivePlayerId)?.hand?.length || 0}`);
         existingGameState.activePlayerId = clientActivePlayerId;
         existingGameState.currentPhase = 0; // Set to Setup after draw
         performDrawPhase(existingGameState);
@@ -189,21 +184,11 @@ export function handleUpdateState(ws, data) {
             const serverHasMoreCards = serverPlayerAfterDraw.hand.length > clientPlayer.hand.length;
             const preserveHandDueToSize = serverHasMoreCards && clientPlayer.id === drawnPlayerId;
 
-            // NEW: Also preserve hand/deck if this is the NEW active player and server has more cards
-            const isNewActivePlayer = clientPlayer.id === clientActivePlayerId && clientPlayer.id !== previousActivePlayerId;
-            const isNewActiveWithMoreCards = isNewActivePlayer && serverHasMoreCards;
-
-            // DEBUG LOG for active player
-            if (clientPlayer.id === clientActivePlayerId) {
-              logger.info(`[UpdateState] MERGE player ${clientPlayer.id}: drawnPlayerId=${drawnPlayerId}, preserveServerCards=${preserveServerCards}, serverHasMoreCards=${serverHasMoreCards}, preserveHandDueToSize=${preserveHandDueToSize}, isNewActiveWithMoreCards=${isNewActiveWithMoreCards}`);
-              logger.info(`[UpdateState] MERGE player ${clientPlayer.id}: serverHand=${serverPlayerAfterDraw.hand.length}, clientHand=${clientPlayer.hand.length}, finalHand=${((preserveServerCards || preserveHandDueToSize || isNewActiveWithMoreCards) ? serverPlayerAfterDraw.hand : clientPlayer.hand).length}`);
-            }
-
             mergedPlayers.push({
               ...serverPlayerAfterDraw,
               ...clientPlayer,
-              hand: (preserveServerCards || preserveHandDueToSize || isNewActiveWithMoreCards) ? serverPlayerAfterDraw.hand : clientPlayer.hand,
-              deck: (preserveServerCards || preserveHandDueToSize || isNewActiveWithMoreCards) ? serverPlayerAfterDraw.deck : clientPlayer.deck,
+              hand: (preserveServerCards || preserveHandDueToSize) ? serverPlayerAfterDraw.hand : clientPlayer.hand,
+              deck: (preserveServerCards || preserveHandDueToSize) ? serverPlayerAfterDraw.deck : clientPlayer.deck,
               discard: clientPlayer.discard || serverPlayerAfterDraw.discard || [],
             });
           } else {
