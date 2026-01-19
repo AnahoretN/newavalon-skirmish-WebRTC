@@ -181,35 +181,62 @@ export function handleUpdateState(ws, data) {
         }
       }
 
-      // Merge players: ALWAYS preserve server's hand/deck/boardHistory (server is source of truth)
-      // Client can update name, color, settings, but NOT card state
-      // IMPORTANT: This prevents stale client state from overwriting correct server state
+      // Merge players: smart merge of card state based on who sent the update
+      // Rule: Client sending update is the authority for their own card state (hand/deck/discard)
+      // Server state is preserved for other players to prevent stale data from overwriting
+      // Additionally, if this is the active player, we trust their card state
       if (clientPlayers) {
         const mergedPlayers: any[] = [];
+        const sendingPlayerId = ws.playerId;
 
         clientPlayers.forEach((clientPlayer: any) => {
           const serverPlayerAfterDraw = serverPlayersAfterDraw.find((p: any) => p.id === clientPlayer.id);
           if (serverPlayerAfterDraw) {
-            // Server is ALWAYS the source of truth for card state (hand, deck, discard, boardHistory)
-            // Client can update other properties like name, color, settings, etc.
-            mergedPlayers.push({
-              ...serverPlayerAfterDraw,
-              // Only allow client to update specific non-game-state fields
-              name: clientPlayer.name ?? serverPlayerAfterDraw.name,
-              color: clientPlayer.color ?? serverPlayerAfterDraw.color,
-              isDisconnected: clientPlayer.isDisconnected ?? serverPlayerAfterDraw.isDisconnected,
-              disconnectTimestamp: clientPlayer.disconnectTimestamp ?? serverPlayerAfterDraw.disconnectTimestamp,
-              autoDrawEnabled: clientPlayer.autoDrawEnabled ?? serverPlayerAfterDraw.autoDrawEnabled,
-              // CRITICAL: Never let client overwrite server's card state
-              hand: serverPlayerAfterDraw.hand,
-              deck: serverPlayerAfterDraw.deck,
-              discard: serverPlayerAfterDraw.discard || [],
-              boardHistory: serverPlayerAfterDraw.boardHistory || [],
-              // Preserve any other server-specific fields
-              playerToken: serverPlayerAfterDraw.playerToken,
-              isDummy: serverPlayerAfterDraw.isDummy,
-              isSpectator: serverPlayerAfterDraw.isSpectator,
-            });
+            // Determine if we should trust client's card state for this player
+            // We trust client if: they ARE the sending player, OR they are the active player
+            // This allows the active player to play cards and have that state reflected
+            const isSendingPlayer = clientPlayer.id === sendingPlayerId;
+            const isActivePlayer = clientPlayer.id === clientActivePlayerId;
+            const trustClientCards = isSendingPlayer || isActivePlayer;
+
+            // Also preserve server's boardHistory if it's longer (has more recent plays)
+            // This prevents stale client state from overwriting correct LastPlayed order
+            const serverHasMoreHistory = serverPlayerAfterDraw.boardHistory &&
+              serverPlayerAfterDraw.boardHistory.length > (clientPlayer.boardHistory?.length || 0);
+
+            if (trustClientCards) {
+              // Client is authoritative for their own card state (they just played/moved cards)
+              mergedPlayers.push({
+                ...serverPlayerAfterDraw,
+                ...clientPlayer,
+                // Preserve server-side fields that shouldn't change
+                playerToken: serverPlayerAfterDraw.playerToken,
+                isDummy: serverPlayerAfterDraw.isDummy,
+                isSpectator: serverPlayerAfterDraw.isSpectator,
+                // Use server's boardHistory if it has more data
+                boardHistory: serverHasMoreHistory ? serverPlayerAfterDraw.boardHistory : clientPlayer.boardHistory,
+              });
+            } else {
+              // For other players, preserve server's card state (prevent stale client data)
+              mergedPlayers.push({
+                ...serverPlayerAfterDraw,
+                // Only allow client to update specific non-game-state fields
+                name: clientPlayer.name ?? serverPlayerAfterDraw.name,
+                color: clientPlayer.color ?? serverPlayerAfterDraw.color,
+                isDisconnected: clientPlayer.isDisconnected ?? serverPlayerAfterDraw.isDisconnected,
+                disconnectTimestamp: clientPlayer.disconnectTimestamp ?? serverPlayerAfterDraw.disconnectTimestamp,
+                autoDrawEnabled: clientPlayer.autoDrawEnabled ?? serverPlayerAfterDraw.autoDrawEnabled,
+                // CRITICAL: Never let client overwrite other players' card state
+                hand: serverPlayerAfterDraw.hand,
+                deck: serverPlayerAfterDraw.deck,
+                discard: serverPlayerAfterDraw.discard || [],
+                boardHistory: serverHasMoreHistory ? serverPlayerAfterDraw.boardHistory : clientPlayer.boardHistory,
+                // Preserve server-specific fields
+                playerToken: serverPlayerAfterDraw.playerToken,
+                isDummy: serverPlayerAfterDraw.isDummy,
+                isSpectator: serverPlayerAfterDraw.isSpectator,
+              });
+            }
           } else {
             // New player (e.g., dummy added) - use client's data
             mergedPlayers.push(clientPlayer);
