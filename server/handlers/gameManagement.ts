@@ -138,13 +138,15 @@ export function handleUpdateState(ws, data) {
 
       // Debug logging
       if (clientActivePlayerId !== undefined && clientActivePlayerId !== previousActivePlayerId) {
-        logger.info(`[UpdateState] Player change: previous=${previousActivePlayerId}, client=${clientActivePlayerId}, phase=${clientPhase}`);
+        logger.info(`[UpdateState] Player change: previous=${previousActivePlayerId}, client=${clientActivePlayerId}, phase=${clientPhase}, serverPhase=${previousPhase}`);
       } else if (clientActivePlayerId === undefined) {
         logger.info(`[UpdateState] No clientActivePlayerId in update`);
-      } else if (clientPhase === -1 && previousPhase !== 0) {
-        logger.info(`[UpdateState] Draw phase requested for player ${clientActivePlayerId} (server phase=${previousPhase})`);
-      } else if (clientPhase === -1 && previousPhase === 0) {
-        logger.info(`[UpdateState] Stale phase -1 from client for player ${clientActivePlayerId} - server already in phase 0, will restore phase 0 without drawing`);
+      } else if (clientPhase === -1) {
+        if (previousPhase !== 0) {
+          logger.info(`[UpdateState] Draw phase requested for player ${clientActivePlayerId} (server phase=${previousPhase})`);
+        } else {
+          logger.info(`[UpdateState] Stale phase -1 from client for player ${clientActivePlayerId} - server already in phase 0, will restore phase 0 without drawing`);
+        }
       }
 
       // Perform draw FIRST on existing state (before any client data is applied)
@@ -204,7 +206,11 @@ export function handleUpdateState(ws, data) {
             const serverHasMoreHistory = serverPlayerAfterDraw.boardHistory &&
               serverPlayerAfterDraw.boardHistory.length > (clientPlayer.boardHistory?.length || 0);
 
-            if (trustClientCards) {
+            // Special case: if we just drew for this player, ALWAYS use server's card state
+              // Client's hand/deck are stale (they haven't received the draw yet)
+              const justDrewForThisPlayer = drawnPlayerId === clientPlayer.id;
+
+            if (trustClientCards && !justDrewForThisPlayer) {
               // Client is authoritative for their own card state (they just played/moved cards)
               mergedPlayers.push({
                 ...serverPlayerAfterDraw,
@@ -218,6 +224,7 @@ export function handleUpdateState(ws, data) {
               });
             } else {
               // For other players, preserve server's card state (prevent stale client data)
+              // Also used when we just drew for this player (client state is stale)
               mergedPlayers.push({
                 ...serverPlayerAfterDraw,
                 // Only allow client to update specific non-game-state fields
