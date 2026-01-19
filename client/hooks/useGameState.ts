@@ -1949,7 +1949,7 @@ export const useGameState = () => {
           // IMPORTANT: Verify the card at the index matches the expected ID
           // This prevents duplicate removals when multiple players target the same card
           const cardAtIndex = player.hand[item.cardIndex]
-          if (cardAtIndex && cardAtIndex.id === item.id) {
+          if (cardAtIndex && cardAtIndex.id === item.card.id) {
             player.hand.splice(item.cardIndex, 1)
           } else {
             // Card at index doesn't match expected ID - it was likely already removed by another player

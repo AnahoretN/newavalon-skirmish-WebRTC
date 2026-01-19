@@ -201,6 +201,7 @@ export default [
       'server-dev.js',
       'coverage/**',
       '.nyc_output/**',
+      'docs/**',
     ],
   },
 ];
