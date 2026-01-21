@@ -31,6 +31,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [linkCopySuccess, setLinkCopySuccess] = useState(false)
   const [isReconnecting, setIsReconnecting] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [cacheClearing, setCacheClearing] = useState(false)
 
   const isConnected = connectionStatus === 'Connected'
 
@@ -95,6 +96,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }).catch(err => {
       console.error('Failed to copy:', err)
     })
+  }
+
+  const handleClearCache = () => {
+    setCacheClearing(true)
+    // Clear all localStorage and sessionStorage
+    localStorage.clear()
+    sessionStorage.clear()
+    // Show feedback then reload
+    setTimeout(() => {
+      window.location.reload()
+    }, 1000)
   }
 
   // Button is only enabled when connected AND no unsaved changes
@@ -200,6 +212,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
             <p className="text-xs text-gray-400 mt-1">
               {t('copyGameLinkDesc')}
+            </p>
+          </div>
+
+          {/* Clear Cache Button */}
+          <div className="-mt-3">
+            <button
+              onClick={handleClearCache}
+              disabled={cacheClearing}
+              className={`w-full py-2 rounded text-sm font-bold transition-colors ${
+                cacheClearing
+                  ? 'bg-orange-600 text-white'
+                  : 'bg-red-700 hover:bg-red-600 text-white'
+              }`}
+            >
+              {cacheClearing ? t('cacheCleared') : t('clearCache')}
+            </button>
+            <p className="text-xs text-gray-400 mt-1">
+              {t('clearCacheDesc')}
             </p>
           </div>
         </div>

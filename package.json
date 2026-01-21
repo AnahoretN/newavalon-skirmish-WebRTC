@@ -1,6 +1,6 @@
 {
   "name": "new-avalon-skirmish",
-  "version": "0.2.6t",
+  "version": "0.2.7t",
   "description": "A virtual tabletop for the New Avalon: Skirmish card game.",
   "type": "module",
   "scripts": {

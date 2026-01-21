@@ -31,7 +31,8 @@ import {
   handleJoinAsInvite,
   handleSpectatorLeave,
   handleExitGame,
-  handleForceSync
+  handleForceSync,
+  handleResetGame
 } from '../handlers/gameManagement.js';
 import {
   handleStartReadyCheck,
@@ -212,6 +213,7 @@ function routeMessage(ws, data) {
     'CLEAR_TARGETING_MODE': handleClearTargetingMode,
     'EXIT_GAME': handleExitGame,
     'FORCE_SYNC': handleForceSync,
+    'RESET_GAME': handleResetGame,
     'SYNC_GAME': handleSyncGame,
     'TOGGLE_AUTO_ABILITIES': handleToggleAutoAbilities,
     'TOGGLE_AUTO_DRAW': handleToggleAutoDraw,

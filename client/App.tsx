@@ -121,6 +121,7 @@ const App = memo(function App() {
     spawnToken,
     scoreLine,
     closeRoundEndModal,
+    resetGame,
     resetDeployStatus,
     scoreDiagonal,
     removeStatusByType,
@@ -1859,6 +1860,7 @@ const App = memo(function App() {
         gameId={gameState.gameId}
         isGameStarted={gameState.isGameStarted}
         onStartGame={handleStartGameSequence}
+        onResetGame={resetGame}
         activeGridSize={gameState.activeGridSize}
         onGridSizeChange={setActiveGridSize}
         dummyPlayerCount={gameState.dummyPlayerCount}

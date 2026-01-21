@@ -12,6 +12,7 @@ interface HeaderProps {
   gameId: string | null;
   isGameStarted: boolean;
   onStartGame: () => void;
+  onResetGame?: () => void;
   activeGridSize: GridSize;
   onGridSizeChange: (size: GridSize) => void;
   dummyPlayerCount: number;
@@ -450,6 +451,7 @@ const Header = memo<HeaderProps>(({
   gameId,
   isGameStarted,
   onStartGame,
+  onResetGame,
   activeGridSize,
   onGridSizeChange,
   dummyPlayerCount,
@@ -613,6 +615,18 @@ const Header = memo<HeaderProps>(({
               className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-sm animate-pulse disabled:bg-gray-600 disabled:opacity-70 disabled:cursor-not-allowed disabled:animate-none"
             >
               {t('startGame')}
+            </button>
+          )}
+
+          {/* Reset Game button (only visible when game is started) */}
+          {isGameStarted && onResetGame && (
+            <button
+              onClick={onResetGame}
+              disabled={!isHost}
+              className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded text-sm disabled:bg-gray-600 disabled:opacity-70 disabled:cursor-not-allowed"
+              title="Reset game to lobby (keeps players and decks)"
+            >
+              {t('resetGame')}
             </button>
           )}
 

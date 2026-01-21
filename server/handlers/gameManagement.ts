@@ -879,3 +879,95 @@ export function handleSpectatorLeave(ws: any, data: any) {
     logger.error('Failed to handle spectator leave:', error);
   }
 }
+
+/**
+ * Handle RESET_GAME message
+ * Resets game to lobby state while preserving players and their deck selections
+ */
+export function handleResetGame(ws: any, data: any) {
+  try {
+    const { gameId } = data;
+    const gameState = getGameState(gameId);
+
+    if (!gameState) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Game not found'
+      }));
+      return;
+    }
+
+    logger.info(`[ResetGame] Resetting game ${gameId} to lobby state`);
+
+    // Store current player data with their deck selections
+    const playersToKeep = gameState.players.map((p: any) => {
+      const deckType = p.selectedDeck || 'SynchroTech';
+      return {
+        id: p.id,
+        name: p.name,
+        color: p.color,
+        selectedDeck: deckType,
+        playerToken: p.playerToken,
+        isDummy: p.isDummy,
+        isDisconnected: false,
+        boardHistory: [],
+        autoDrawEnabled: p.autoDrawEnabled !== false,
+        hand: [],
+        deck: createNewPlayer(p.id, p.isDummy).deck,
+        discard: [],
+        score: 0,
+        isReady: false,
+        announcedCard: null,
+      };
+    });
+
+    // Preserve game settings
+    const preservedSettings = {
+      gameMode: gameState.gameMode,
+      isPrivate: gameState.isPrivate,
+      activeGridSize: gameState.activeGridSize,
+      dummyPlayerCount: gameState.dummyPlayerCount,
+      autoAbilitiesEnabled: gameState.autoAbilitiesEnabled,
+    };
+
+    // Reset game state
+    gameState.isGameStarted = false;
+    gameState.currentPhase = 0;
+    gameState.currentRound = 1;
+    gameState.turnNumber = 1;
+    gameState.activePlayerId = null;
+    gameState.startingPlayerId = null;
+    gameState.roundWinners = {};
+    gameState.gameWinner = null;
+    gameState.roundEndTriggered = false;
+    gameState.isRoundEndModalOpen = false;
+    gameState.isReadyCheckActive = false;
+
+    // Clear the board with preserved grid size (activeGridSize is a number: 4, 5, 6, 7)
+    const gridSize = preservedSettings.activeGridSize || 8;
+    gameState.board = [];
+    for (let i = 0; i < gridSize; i++) {
+      const row: any[] = [];
+      for (let j = 0; j < gridSize; j++) {
+        row.push({ card: null });
+      }
+      gameState.board.push(row);
+    }
+
+    // Restore players with fresh decks
+    gameState.players = playersToKeep;
+
+    // Restore preserved settings
+    gameState.gameMode = preservedSettings.gameMode;
+    gameState.isPrivate = preservedSettings.isPrivate;
+    gameState.activeGridSize = preservedSettings.activeGridSize;
+    gameState.dummyPlayerCount = preservedSettings.dummyPlayerCount;
+    gameState.autoAbilitiesEnabled = preservedSettings.autoAbilitiesEnabled;
+
+    logger.info(`[ResetGame] Game ${gameId} reset to lobby. Players preserved: ${playersToKeep.length}`);
+
+    broadcastToGame(gameId, gameState);
+  } catch (error) {
+    logger.error('Failed to reset game:', error);
+  }
+}

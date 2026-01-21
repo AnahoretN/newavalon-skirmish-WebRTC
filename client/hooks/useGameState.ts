@@ -1012,7 +1012,22 @@ export const useGameState = () => {
         return currentState
       }
       const newState = { ...currentState, activeGridSize: size }
-      newState.board = recalculateBoardStatuses(newState)
+
+      // Recreate board if size changed to ensure proper dimensions
+      const currentSize = currentState.board.length
+      if (currentSize !== size) {
+        // Create new board with the new size
+        newState.board = []
+        for (let i = 0; i < size; i++) {
+          const row: any[] = []
+          for (let j = 0; j < size; j++) {
+            row.push({ card: null })
+          }
+          newState.board.push(row)
+        }
+      } else {
+        newState.board = recalculateBoardStatuses(newState)
+      }
       return newState
     })
   }, [updateState])
@@ -1773,6 +1788,19 @@ export const useGameState = () => {
     if (ws.current?.readyState === WebSocket.OPEN) {
       ws.current.send(JSON.stringify({
         type: 'START_NEXT_ROUND',
+        gameId: gameStateRef.current.gameId,
+      }))
+    }
+  }, [])
+
+  /**
+   * resetGame - Reset game to lobby state while preserving players and deck selections
+   * Sends RESET_GAME message to server
+   */
+  const resetGame = useCallback(() => {
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        type: 'RESET_GAME',
         gameId: gameStateRef.current.gameId,
       }))
     }
@@ -3047,6 +3075,7 @@ export const useGameState = () => {
     spawnToken,
     scoreLine,
     closeRoundEndModal,
+    resetGame,
     resetDeployStatus,
     scoreDiagonal,
     removeStatusByType,

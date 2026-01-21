@@ -23,6 +23,7 @@ const enUI = {
   autoAbility: 'Auto-Ability',
   autoDraw: 'Auto-Draw',
   newGame: 'New Game',
+  resetGame: 'Reset Game',
   exit: 'Exit',
   surrender: 'Surrender',
   mode: 'Mode',
@@ -173,7 +174,7 @@ const enUI = {
   matchComplete: 'Match Complete',
   thankYouPlaying: 'Thank you for playing New Avalon: Skirmish.',
   returnToMenu: 'Return to Menu',
-  continueGame: 'Continue Game',
+  continueGame: 'View Battlefield',
   startRound: 'Start Round',
   youLabel: '(You)',
   readyToStart: 'Ready to Start?',
@@ -207,6 +208,9 @@ const enUI = {
   reconnect: 'Reconnect',
   hideDummyCards: 'Hide Dummy Cards',
   hideDummyCardsTooltip: 'Hide cards in dummy players hands like real players',
+  clearCache: 'Clear Cache',
+  clearCacheDesc: 'Clear all saved data and reload the page',
+  cacheCleared: 'Cache cleared! Reloading...',
 }
 
 const enRules = {

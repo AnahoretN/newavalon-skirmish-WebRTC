@@ -63,6 +63,7 @@ export interface TranslationResource {
     autoAbility: string;
     autoDraw: string;
     newGame: string;
+    resetGame: string;
     exit: string;
     surrender: string;
     mode: string;
@@ -247,6 +248,9 @@ export interface TranslationResource {
     reconnect: string;
     hideDummyCards: string;
     hideDummyCardsTooltip: string;
+    clearCache: string;
+    clearCacheDesc: string;
+    cacheCleared: string;
   };
   rules: {
     title: string;
