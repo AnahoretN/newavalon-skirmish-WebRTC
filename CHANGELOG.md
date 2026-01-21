@@ -6,7 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [0.2.6t] - 2026-01-13
+## [0.2.7t] - 2026-01-21
+
+### Fixed
+- **Critical Card Ownership Bug**: Fixed issue where playing a card from hand would remove the same card from other players' hands/decks
+  - Server now checks both card ID AND ownerId when removing duplicates from board/announced slots
+  - Cards with same type (same ID) but different owners are now treated independently
+  - Client-side moveItem also enhanced with ownerId verification
+- **Logistics Chain**: Fixed to NOT advance phase after scoring/selecting diagonal
+
+### Added
+- **Universal Targeting Mode System**: Targeting highlights are now synchronized across all players
+  - When any player activates an ability requiring targeting, all players see the valid targets highlighted
+  - Target highlights use the activating player's color for visual distinction
+  - TargetingModeData structure includes playerId, action, sourceCoords, and boardTargets
+- **Target Selection Visual Effect**: White ripple animation (1s duration) when a player makes a target selection
+  - Broadcast to all players via WebSocket
+  - Auto-removes after animation completes
+  - Works for both board and hand targets
+- **4-Phase Tracker**: Added visual phase tracker showing all 4 phases (Setup/Main/Commit/Scoring)
+- **Player-Colored Ready Effects**: Ready ability highlights now use each player's color
+  - Card glow effect shows owner's color when ability is ready to activate
+  - Inner glow and overlay effects scale with card power (higher power = more visible)
+- **Shared Visual Effects**: All visual effects (highlights, floating texts, no-target overlays) are now broadcast to all players
+
+### Changed
+- Phase transitions now skip automatically when using certain command cards (e.g., Logistics Chain)
+
+
+## [0.2.6t] - 2026-01-20
 
 ### Fixed
 - **ABR Gawain Deploy**: Fixed targeting - can now Aim any card in its line (not just threats)
@@ -27,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Card glow effect shows owner's color when ability is ready to activate
   - Inner glow and overlay effects scale with card power (higher power = more visible)
 - **Shared Visual Effects**: Highlight effects are now broadcast to all players with player-colored distinction
+
 
 ## [0.2.5t] - 2026-01-03
 

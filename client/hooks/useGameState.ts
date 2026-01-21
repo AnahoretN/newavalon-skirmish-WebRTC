@@ -2004,15 +2004,15 @@ export const useGameState = () => {
       if (item.source === 'hand' && item.playerId !== undefined && item.cardIndex !== undefined) {
         const player = newState.players.find(p => p.id === item.playerId)
         if (player) {
-          // IMPORTANT: Verify the card at the index matches the expected ID
-          // This prevents duplicate removals when multiple players target the same card
+          // IMPORTANT: Verify the card at the index matches the expected ID AND ownerId
+          // This prevents duplicate removals when multiple players target the same card type
           const cardAtIndex = player.hand[item.cardIndex]
-          if (cardAtIndex && cardAtIndex.id === item.card.id) {
+          if (cardAtIndex && cardAtIndex.id === item.card.id && cardAtIndex.ownerId === item.card.ownerId) {
             player.hand.splice(item.cardIndex, 1)
           } else {
-            // Card at index doesn't match expected ID - it was likely already removed by another player
-            // Try to find and remove the card by ID instead
-            const actualIndex = player.hand.findIndex(c => c.id === item.card.id)
+            // Card at index doesn't match expected ID/ownerId - it was likely already removed by another player
+            // Try to find and remove the card by ID AND ownerId instead
+            const actualIndex = player.hand.findIndex(c => c.id === item.card.id && c.ownerId === item.card.ownerId)
             if (actualIndex !== -1) {
               player.hand.splice(actualIndex, 1)
             } else {
@@ -2022,10 +2022,10 @@ export const useGameState = () => {
           }
         }
       } else if (item.source === 'board' && item.boardCoords) {
-        // IMPORTANT: Verify the card at the coords matches the expected ID
-        // This prevents duplicate removals when multiple players target the same card
+        // IMPORTANT: Verify the card at the coords matches the expected ID AND ownerId
+        // This prevents duplicate removals when multiple players target the same card type
         const cell = newState.board[item.boardCoords.row][item.boardCoords.col]
-        if (cell.card && cell.card.id === item.card.id) {
+        if (cell.card && cell.card.id === item.card.id && cell.card.ownerId === item.card.ownerId) {
           newState.board[item.boardCoords.row][item.boardCoords.col].card = null
         } else {
           // Card at coords doesn't match expected ID - it was likely already removed/moved by another player
@@ -2035,15 +2035,15 @@ export const useGameState = () => {
       } else if (item.source === 'discard' && item.playerId !== undefined && item.cardIndex !== undefined) {
         const player = newState.players.find(p => p.id === item.playerId)
         if (player) {
-          // IMPORTANT: Verify the card at the index matches the expected ID
-          // This prevents duplicate removals when multiple players target the same card
+          // IMPORTANT: Verify the card at the index matches the expected ID AND ownerId
+          // This prevents duplicate removals when multiple players target the same card type
           const cardAtIndex = player.discard[item.cardIndex]
-          if (cardAtIndex && cardAtIndex.id === item.card.id) {
+          if (cardAtIndex && cardAtIndex.id === item.card.id && cardAtIndex.ownerId === item.card.ownerId) {
             player.discard.splice(item.cardIndex, 1)
           } else {
-            // Card at index doesn't match expected ID - it was likely already removed by another player
-            // Try to find and remove the card by ID instead
-            const actualIndex = player.discard.findIndex(c => c.id === item.card.id)
+            // Card at index doesn't match expected ID/ownerId - it was likely already removed by another player
+            // Try to find and remove the card by ID AND ownerId instead
+            const actualIndex = player.discard.findIndex(c => c.id === item.card.id && c.ownerId === item.card.ownerId)
             if (actualIndex !== -1) {
               player.discard.splice(actualIndex, 1)
             } else {
@@ -2055,15 +2055,15 @@ export const useGameState = () => {
       } else if (item.source === 'deck' && item.playerId !== undefined && item.cardIndex !== undefined) {
         const player = newState.players.find(p => p.id === item.playerId)
         if (player) {
-          // IMPORTANT: Verify the card at the index matches the expected ID
-          // This prevents duplicate removals when multiple players target the same card
+          // IMPORTANT: Verify the card at the index matches the expected ID AND ownerId
+          // This prevents duplicate removals when multiple players target the same card type
           const cardAtIndex = player.deck[item.cardIndex]
-          if (cardAtIndex && cardAtIndex.id === item.card.id) {
+          if (cardAtIndex && cardAtIndex.id === item.card.id && cardAtIndex.ownerId === item.card.ownerId) {
             player.deck.splice(item.cardIndex, 1)
           } else {
-            // Card at index doesn't match expected ID - it was likely already removed by another player
-            // Try to find and remove the card by ID instead
-            const actualIndex = player.deck.findIndex(c => c.id === item.card.id)
+            // Card at index doesn't match expected ID/ownerId - it was likely already removed by another player
+            // Try to find and remove the card by ID AND ownerId instead
+            const actualIndex = player.deck.findIndex(c => c.id === item.card.id && c.ownerId === item.card.ownerId)
             if (actualIndex !== -1) {
               player.deck.splice(actualIndex, 1)
             } else {

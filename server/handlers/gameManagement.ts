@@ -173,11 +173,13 @@ export function handleUpdateState(ws, data) {
 
       // IMPORTANT: Collect announced card IDs and discard card IDs from SERVER state BEFORE Object.assign
       // This is needed to clean up duplicates when command cards move from announced to discard
+      //
+      // IMPORTANT: Include ownerId in the key to prevent cross-player card removal
       const serverAnnouncedCardIds = new Set<string>();
       const serverDiscardCardIds = new Set<string>();
       existingGameState.players.forEach((player: any) => {
-        if (player.announcedCard?.id) {
-          serverAnnouncedCardIds.add(player.announcedCard.id);
+        if (player.announcedCard?.id && player.announcedCard.ownerId !== undefined) {
+          serverAnnouncedCardIds.add(`${player.announcedCard.id}_${player.announcedCard.ownerId}`);
         }
         // Also collect IDs of cards already in discard before merge
         // If a card is already in discard, we shouldn't remove it again
@@ -353,11 +355,15 @@ export function handleUpdateState(ws, data) {
       // This prevents duplicate cards when:
       // 1. A non-active player moves a card (board was updated by Object.assign, but player hand/deck was restored)
       // 2. A command card is played (card moved to announced, but hand/discard may not have been updated by merge)
+      //
+      // IMPORTANT: Store card IDs with their ownerId to prevent removing cards from other players
+      // who have the same card type (same ID but different ownerId)
       const boardCardIds = new Set<string>();
       existingGameState.board?.forEach((row: any[]) => {
         row.forEach((cell: any) => {
-          if (cell.card?.id) {
-            boardCardIds.add(cell.card.id);
+          if (cell.card?.id && cell.card.ownerId !== undefined) {
+            // Store as "cardId_ownerId" to prevent cross-player card removal
+            boardCardIds.add(`${cell.card.id}_${cell.card.ownerId}`);
           }
         });
       });
@@ -366,8 +372,8 @@ export function handleUpdateState(ws, data) {
       // This ensures we catch cards that were just moved from announced to discard
       const currentAnnouncedCardIds = new Set<string>();
       existingGameState.players.forEach((player: any) => {
-        if (player.announcedCard?.id) {
-          currentAnnouncedCardIds.add(player.announcedCard.id);
+        if (player.announcedCard?.id && player.announcedCard.ownerId !== undefined) {
+          currentAnnouncedCardIds.add(`${player.announcedCard.id}_${player.announcedCard.ownerId}`);
         }
       });
       // Merge server and current announced card IDs
@@ -375,6 +381,7 @@ export function handleUpdateState(ws, data) {
 
       // For each player, remove any cards that are on the board or in announced slot
       existingGameState.players.forEach((player: any) => {
+
         // First, deduplicate discard pile by card ID (can happen during merge when client and server both have the card)
         if (player.discard && player.discard.length > 0) {
           const seenIds = new Set<string>();
@@ -395,8 +402,13 @@ export function handleUpdateState(ws, data) {
           const initialLength = list.length;
           // Filter out cards that are on the board or in announced slot
           for (let i = list.length - 1; i >= 0; i--) {
-            const cardId = list[i].id;
-            const isOnBoard = boardCardIds.has(cardId);
+            const card = list[i];
+            const cardId = card.id;
+            const cardOwnerId = card.ownerId;
+
+            // Check if this specific card (by ID and ownerId) is on the board
+            const cardKey = cardOwnerId !== undefined ? `${cardId}_${cardOwnerId}` : cardId;
+            const isOnBoard = boardCardIds.has(cardKey);
 
             // For discard pile: only remove if card is on board (not if just in announced)
             // This is because cards moving from announced to discard is a valid operation
@@ -411,7 +423,7 @@ export function handleUpdateState(ws, data) {
             }
 
             // For hand and deck: remove if on board or in any player's announced slot
-            if (isOnBoard || currentAnnouncedCardIds.has(cardId)) {
+            if (isOnBoard || currentAnnouncedCardIds.has(cardKey)) {
               list.splice(i, 1);
             }
           }
@@ -428,7 +440,9 @@ export function handleUpdateState(ws, data) {
         // This prevents duplicate cards when command cards are moved from announced to discard
         if (player.announcedCard) {
           const announcedId = player.announcedCard.id;
-          const isOnBoard = boardCardIds.has(announcedId);
+          const announcedOwnerId = player.announcedCard.ownerId;
+          const announcedKey = announcedOwnerId !== undefined ? `${announcedId}_${announcedOwnerId}` : announcedId;
+          const isOnBoard = boardCardIds.has(announcedKey);
           // Check if the announced card is in this player's storage (hand, deck, discard)
           const isInStorage = player.hand?.some((c: any) => c?.id === announcedId) ||
                             player.deck?.some((c: any) => c?.id === announcedId) ||
