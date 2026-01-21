@@ -944,7 +944,7 @@ export function handleResetGame(ws: any, data: any) {
     gameState.isReadyCheckActive = false;
 
     // Clear the board with preserved grid size (activeGridSize is a number: 4, 5, 6, 7)
-    const gridSize = preservedSettings.activeGridSize || 8;
+    const gridSize: number = (preservedSettings.activeGridSize as unknown as number) || 8;
     gameState.board = [];
     for (let i = 0; i < gridSize; i++) {
       const row: any[] = [];
