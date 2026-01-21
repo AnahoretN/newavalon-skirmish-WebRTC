@@ -410,3 +410,15 @@ export interface TargetingModeData {
     handTargets?: { playerId: number, cardIndex: number }[]; // Valid hand targets (pre-calculated)
     isDeckSelectable?: boolean; // Whether deck is a valid target
 }
+
+/**
+ * Target selection effect - visual feedback when a target is selected
+ * Shows a white ripple animation at the target location
+ */
+export interface TargetSelectionEffect {
+    timestamp: number; // When the selection was made
+    location: 'board' | 'hand' | 'deck'; // Where the selection occurred
+    boardCoords?: { row: number; col: number }; // For board targets
+    handTarget?: { playerId: number; cardIndex: number }; // For hand targets
+    selectedByPlayerId: number; // The player who made the selection
+}

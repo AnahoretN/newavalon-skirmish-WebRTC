@@ -93,7 +93,7 @@ export const TargetSelectionEffect: React.FC<TargetSelectionEffectProps> = ({ ef
     >
       {waves.map((wave) => {
         const style = getWaveStyle(wave)
-        if (!style) return null
+        if (!style) {return null}
 
         return (
           <div

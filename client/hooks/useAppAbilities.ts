@@ -1917,7 +1917,7 @@ export const useAppAbilities = ({
       setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
       return
     }
-  }, [interactionLock, abilityMode, gameState, localPlayerId, handleLineSelection, moveItem, markAbilityUsed, setAbilityMode, spawnToken, setCommandContext, resurrectDiscardedCard, updatePlayerScore, commandContext, handleActionExecution, triggerFloatingText])
+  }, [interactionLock, abilityMode, gameState, localPlayerId, handleLineSelection, moveItem, markAbilityUsed, setAbilityMode, spawnToken, setCommandContext, resurrectDiscardedCard, updatePlayerScore, commandContext, handleActionExecution, triggerFloatingText, clearValidTargets])
 
   const handleHandCardClick = useCallback((player: Player, card: Card, cardIndex: number) => {
     logger.debug('[handleHandCardClick] CALLED - player:', player.name, 'card:', card.name, 'cardIndex:', cardIndex, 'cursorStack:', cursorStack?.type)
