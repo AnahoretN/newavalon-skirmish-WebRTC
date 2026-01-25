@@ -279,6 +279,33 @@ export function handleUpdateState(ws, data) {
               const clientHistoryIsLonger = !isTurnTransition && clientPlayer.boardHistory &&
                 clientPlayer.boardHistory.length > (serverPlayerAfterDraw.boardHistory?.length || 0);
 
+              // IMPORTANT: Merge card statuses from client into server's hand
+              // This allows Revealed tokens placed by other players to be preserved
+              // The server's hand structure is preserved, but statuses are merged in
+              const mergedHand = serverPlayerAfterDraw.hand.map((serverCard: any) => {
+                const clientCard = clientPlayer.hand?.find((c: any) => c.id === serverCard.id && c.ownerId === serverCard.ownerId);
+                if (clientCard && clientCard.statuses) {
+                  // Merge statuses: keep server's card but add/merge statuses from client
+                  const mergedStatuses = [...(serverCard.statuses || [])];
+                  for (const clientStatus of clientCard.statuses) {
+                    // Check if this status type from this player already exists
+                    const existingIndex = mergedStatuses.findIndex(
+                      (s: any) => s.type === clientStatus.type && s.addedByPlayerId === clientStatus.addedByPlayerId
+                    );
+                    if (existingIndex === -1) {
+                      // Status doesn't exist, add it
+                      mergedStatuses.push(clientStatus);
+                    }
+                    // If status exists, keep the existing one (server is authoritative for duplicates)
+                  }
+                  return {
+                    ...serverCard,
+                    statuses: mergedStatuses,
+                  };
+                }
+                return serverCard;
+              });
+
               mergedPlayers.push({
                 ...serverPlayerAfterDraw,
                 // Only allow client to update specific non-game-state fields
@@ -289,10 +316,34 @@ export function handleUpdateState(ws, data) {
                 autoDrawEnabled: clientPlayer.autoDrawEnabled ?? serverPlayerAfterDraw.autoDrawEnabled,
                 // IMPORTANT: Allow client to update score (this is how dummy players get points from scoring)
                 score: clientPlayer.score ?? serverPlayerAfterDraw.score,
-                // CRITICAL: Never let client overwrite other players' card state
-                hand: serverPlayerAfterDraw.hand,
+                // CRITICAL: Use merged hand with statuses from client, otherwise preserve server's card state
+                hand: mergedHand,
                 deck: serverPlayerAfterDraw.deck,
-                discard: serverPlayerAfterDraw.discard || [],
+                // IMPORTANT: Also merge statuses for discard pile
+                discard: (() => {
+                  const serverDiscard = serverPlayerAfterDraw.discard || [];
+                  const clientDiscard = clientPlayer.discard || [];
+                  // Map server discard cards with merged statuses
+                  return serverDiscard.map((serverCard: any) => {
+                    const clientCard = clientDiscard.find((c: any) => c.id === serverCard.id && c.ownerId === serverCard.ownerId);
+                    if (clientCard && clientCard.statuses) {
+                      const mergedStatuses = [...(serverCard.statuses || [])];
+                      for (const clientStatus of clientCard.statuses) {
+                        const existingIndex = mergedStatuses.findIndex(
+                          (s: any) => s.type === clientStatus.type && s.addedByPlayerId === clientStatus.addedByPlayerId
+                        );
+                        if (existingIndex === -1) {
+                          mergedStatuses.push(clientStatus);
+                        }
+                      }
+                      return {
+                        ...serverCard,
+                        statuses: mergedStatuses,
+                      };
+                    }
+                    return serverCard;
+                  });
+                })(),
                 // Preserve server's boardHistory during turn transitions (client state is stale)
                 // Otherwise use whichever is longer (client may have just played a card)
                 boardHistory: isTurnTransition ? (serverPlayerAfterDraw.boardHistory || []) :
