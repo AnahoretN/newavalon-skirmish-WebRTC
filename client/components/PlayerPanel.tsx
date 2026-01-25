@@ -1,4 +1,4 @@
-import React, { memo, useRef, useState, useEffect, useMemo, useCallback } from 'react'
+import React, { memo, useRef, useState, useEffect, useMemo } from 'react'
 import { DeckType as DeckTypeEnum } from '@/types'
 import type { Player, PlayerColor, Card as CardType, DragItem, DropTarget, CustomDeckFile, ContextMenuParams, CursorStackState } from '@/types'
 import { PLAYER_COLORS, GAME_ICONS } from '@/constants'
