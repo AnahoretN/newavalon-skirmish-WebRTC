@@ -1,4 +1,4 @@
-import React, { memo, useRef, useState, useEffect, useMemo } from 'react'
+import React, { memo, useRef, useState, useEffect, useMemo, useCallback } from 'react'
 import { DeckType as DeckTypeEnum } from '@/types'
 import type { Player, PlayerColor, Card as CardType, DragItem, DropTarget, CustomDeckFile, ContextMenuParams, CursorStackState } from '@/types'
 import { PLAYER_COLORS, GAME_ICONS } from '@/constants'
@@ -8,6 +8,9 @@ import { CardTooltipContent } from './Tooltip'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { parseTextDeckFormat } from '@/utils/textDeckFormat'
 import { calculateGlowColor, rgba, getPlayerColorRgbOrDefault, TIMING } from '@/utils/common'
+
+// Track deck change deltas for each player
+const deckChangeDeltas = new Map<number, { delta: number, timerId: NodeJS.Timeout }>()
 
 type ContextMenuData =
   | { player: Player }
@@ -175,7 +178,7 @@ const RemoteScore: React.FC<{ score: number, onChange: (delta: number) => void, 
   </div>
 )
 
-const RemotePile: React.FC<{ label: string, count: number, onClick?: () => void, children?: React.ReactNode, className?: string, style?: React.CSSProperties }> = ({ label, count, onClick, children, className, style }) => (
+const RemotePile: React.FC<{ label: string, count: number, onClick?: () => void, children?: React.ReactNode, className?: string, style?: React.CSSProperties, delta?: number | null }> = ({ label, count, onClick, children, className, style, delta }) => (
   <div
     onClick={onClick}
     className={`w-full h-full rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-sm select-none text-white border border-gray-600 relative overflow-hidden ${className || ''}`}
@@ -184,7 +187,14 @@ const RemotePile: React.FC<{ label: string, count: number, onClick?: () => void,
     {children ? children : (
       <>
         <span className="text-[9px] font-bold mb-0.5 opacity-80 uppercase tracking-tighter">{label}</span>
-        <span className="text-base font-bold">{count}</span>
+        <div className="relative">
+          <span className="text-base font-bold">{count}</span>
+          {delta !== null && delta !== undefined && (
+            <span className={`absolute left-full top-0 ml-0.5 text-base font-bold animate-fade-out ${delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {delta > 0 ? `+${delta}` : delta}
+            </span>
+          )}
+        </div>
       </>
     )}
   </div>
@@ -232,6 +242,10 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
 }) => {
   const { t, resources } = useLanguage()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const prevDeckLengthRef = useRef<number>(player.deck.length)
+
+  // State for deck change indicator (+/- number)
+  const [deckChangeDelta, setDeckChangeDelta] = useState<number | null>(null)
 
   const canPerformActions: boolean = isLocalPlayer || !!player.isDummy
   const canDrag: boolean = canPerformActions && !cursorStack
@@ -247,7 +261,48 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   const isFirstPlayer = startingPlayerId === player.id
   const firstPlayerIconUrl = GAME_ICONS.FIRST_PLAYER
   const ROUND_WIN_MEDAL_URL = GAME_ICONS.ROUND_WIN_MEDAL
-  const shouldFlashDeck = isPlayerActive && currentPhase === 0
+
+  // Track deck count changes and show delta indicator
+  useEffect(() => {
+    const prevLength = prevDeckLengthRef.current
+    const currentLength = player.deck.length
+
+    if (prevLength !== currentLength) {
+      const delta = currentLength - prevLength
+      prevDeckLengthRef.current = currentLength
+
+      // Accumulate delta if there's already a pending change (within 1 second)
+      const existing = deckChangeDeltas.get(player.id)
+      if (existing) {
+        clearTimeout(existing.timerId)
+        const newDelta = existing.delta + delta
+        setDeckChangeDelta(newDelta)
+        const timerId = setTimeout(() => {
+          setDeckChangeDelta(null)
+          deckChangeDeltas.delete(player.id)
+        }, 1000)
+        deckChangeDeltas.set(player.id, { delta: newDelta, timerId })
+      } else {
+        setDeckChangeDelta(delta)
+        const timerId = setTimeout(() => {
+          setDeckChangeDelta(null)
+          deckChangeDeltas.delete(player.id)
+        }, 1000)
+        deckChangeDeltas.set(player.id, { delta, timerId })
+      }
+    }
+  }, [player.deck.length, player.id])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      const existing = deckChangeDeltas.get(player.id)
+      if (existing) {
+        clearTimeout(existing.timerId)
+        deckChangeDeltas.delete(player.id)
+      }
+    }
+  }, [player.id])
 
   const handleDeckSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     onDeckChange(e.target.value as DeckTypeEnum)
@@ -379,11 +434,18 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     )}
                     <div
                       onClick={handleDeckInteraction}
-                      className={`absolute inset-0 bg-card-back rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-md select-none text-white ${shouldFlashDeck ? 'animate-deck-start' : ''}`}
+                      className="absolute inset-0 bg-card-back rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-md select-none text-white"
                       style={deckHighlightStyle}
                     >
                       <span className="text-[10px] sm:text-xs font-bold mb-0.5 uppercase tracking-tight relative z-20">{t('deck')}</span>
-                      <span className="text-base sm:text-lg font-bold relative z-20">{player.deck.length}</span>
+                      <div className="relative z-20">
+                        <span className="text-base sm:text-lg font-bold">{player.deck.length}</span>
+                        {deckChangeDelta !== null && (
+                          <span className={`absolute left-full top-0 ml-1 text-base sm:text-lg font-bold animate-fade-out ${deckChangeDelta > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {deckChangeDelta > 0 ? `+${deckChangeDelta}` : deckChangeDelta}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )
@@ -672,8 +734,9 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         label={t('deck')}
                         count={player.deck.length}
                         onClick={handleDeckInteraction}
-                        className={`bg-card-back ${shouldFlashDeck ? 'animate-deck-start' : ''}`}
+                        className="bg-card-back"
                         style={deckHighlightStyle}
+                        delta={deckChangeDelta}
                       />
                     </div>
                   )
