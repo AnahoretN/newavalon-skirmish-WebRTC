@@ -144,12 +144,11 @@ export const useAppCounters = ({
           const targetCard = targetPlayer?.hand[cardIndex]
 
           if (targetPlayer && targetCard) {
-            // Special handling for Revealed tokens on opponent hand cards
-            // Unlike board cards, hand cards are always eligible for Revealed status
-            // The status simply marks that the local player can see the card
-            const isRevealedOnOpponentHand = cursorStack.type === 'Revealed' && playerId !== effectiveActorId && !targetPlayer.isDummy
+            // Special handling for Revealed tokens on ANY hand cards (not just opponents)
+            // Revealed can be placed on any player's hand cards as long as they don't already have your Revealed
+            const isRevealedToken = cursorStack.type === 'Revealed' && !targetPlayer.isDummy
 
-            if (isRevealedOnOpponentHand) {
+            if (isRevealedToken) {
               // Check if card already has Revealed from this player (unique constraint)
               const alreadyHasRevealed = targetCard.statuses?.some(s => s.type === 'Revealed' && s.addedByPlayerId === effectiveActorId)
               if (alreadyHasRevealed) {
@@ -157,7 +156,7 @@ export const useAppCounters = ({
                 return
               }
 
-              // Allow placing Revealed token on opponent hand card
+              // Allow placing Revealed token on any player's hand card
               handleDrop({
                 card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
                 source: 'counter_panel',
@@ -284,7 +283,16 @@ export const useAppCounters = ({
 
                 const targetPlayer = gameState.players.find(p => p.id === targetCard.ownerId)
 
-                if (cursorStack.type === 'Revealed' && targetCard.ownerId !== effectiveActorId && !targetPlayer?.isDummy) {
+                // Special handling for Revealed tokens on ANY board cards (not just opponents)
+                // Revealed can be placed on any player's face-down board cards as long as they don't already have your Revealed
+                if (cursorStack.type === 'Revealed' && !targetPlayer?.isDummy) {
+                  // Check if card already has Revealed from this player (unique constraint)
+                  const alreadyHasRevealed = targetCard.statuses?.some(s => s.type === 'Revealed' && s.addedByPlayerId === effectiveActorId)
+                  if (alreadyHasRevealed) {
+                    // Card already revealed to this player - keep cursor stack active
+                    return
+                  }
+
                   if (targetCard.isFaceDown) {
                     if (localPlayerId !== null) {
                       requestCardReveal({ source: 'board', ownerId: targetCard.ownerId, boardCoords: { row, col } }, localPlayerId)
@@ -293,7 +301,7 @@ export const useAppCounters = ({
                     handleDrop({
                       card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
                       source: 'counter_panel',
-                      ownerId: cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId, // Use originalOwnerId (command card owner) for status ownership
+                      ownerId: cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId ?? effectiveActorId,
                       statusType: cursorStack.type,
                       count: 1,
                     }, { target: 'board', boardCoords: { row, col } })
