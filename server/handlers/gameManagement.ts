@@ -320,8 +320,14 @@ export function handleUpdateState(ws, data) {
               // CRITICAL FIX: When we just drew for this player, client's deck is stale
               // If we merge client's deck, the drawn card will be added back
               // Solution: filter out the drawn card from client's deck before merging
+              //
+              // Also detect draws from toggle active player (where drawnPlayerId is not set)
+              // by checking if server deck is smaller than client deck
+              const serverDeckSmaller = (serverPlayerAfterDraw.deck?.length || 0) < (clientPlayer.deck?.length || 0);
+              const shouldFilterDrawnCard = justDrewForThisPlayer || serverDeckSmaller;
+
               let clientDeckToMerge = clientPlayer.deck || [];
-              if (justDrewForThisPlayer && serverPlayerAfterDraw.hand.length > 0) {
+              if (shouldFilterDrawnCard && serverPlayerAfterDraw.hand.length > 0) {
                 // The most recently drawn card is at the end of hand
                 const drawnCard = serverPlayerAfterDraw.hand[serverPlayerAfterDraw.hand.length - 1];
                 // Remove this card from client's deck before merge (it's stale)
@@ -330,9 +336,10 @@ export function handleUpdateState(ws, data) {
                   !(c.id === drawnCard.id && c.ownerId === drawnCard.ownerId)
                 );
                 // Log for debugging the second draw issue
-                logger.info(`[DrawFix] Player ${clientPlayer.id}: drew ${drawnCard.name}, filtered ${beforeFilter - clientDeckToMerge.length} card(s) from client deck`);
-              } else if (justDrewForThisPlayer) {
-                logger.info(`[DrawFix] Player ${clientPlayer.id}: justDrewForThisPlayer=true but hand.length=${serverPlayerAfterDraw.hand.length}`);
+                const reason = justDrewForThisPlayer ? 'justDrewForThisPlayer' : 'serverDeckSmaller';
+                logger.info(`[DrawFix] Player ${clientPlayer.id} (${reason}): drew ${drawnCard.name}, filtered ${beforeFilter - clientDeckToMerge.length} card(s) from client deck`);
+              } else if (shouldFilterDrawnCard) {
+                logger.info(`[DrawFix] Player ${clientPlayer.id}: shouldFilter=true but hand.length=${serverPlayerAfterDraw.hand.length}`);
               }
 
               // Merge hand, deck, and discard - combining statuses and adding new cards from client
