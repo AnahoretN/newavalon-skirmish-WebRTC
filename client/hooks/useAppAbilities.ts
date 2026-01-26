@@ -1501,6 +1501,7 @@ export const useAppAbilities = ({
           sourceCoords: boardCoords,
           isDeployAbility: isDeployAbility,
           recordContext: abilityMode.recordContext,
+          originalOwnerId: actorId,  // Set originalOwnerId for correct highlight color (command card owner)
           payload: {
             allowSelf: false,
             abilitySourceCoords: sourceCoords,
@@ -1521,6 +1522,7 @@ export const useAppAbilities = ({
           sourceCard: card,
           sourceCoords: boardCoords,
           recordContext: abilityMode.recordContext,
+          originalOwnerId: actorId,  // Set originalOwnerId for correct highlight color (command card owner)
           payload: {
             allowSelf: false,
             range: payload.range,
