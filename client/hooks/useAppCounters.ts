@@ -160,7 +160,7 @@ export const useAppCounters = ({
               handleDrop({
                 card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
                 source: 'counter_panel',
-                ownerId: cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId ?? effectiveActorId,
+                ownerId: cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId ?? effectiveActorId ?? undefined,
                 statusType: cursorStack.type,
                 count: 1,
               }, { target: 'hand', playerId, cardIndex, boardCoords: undefined })
@@ -301,7 +301,7 @@ export const useAppCounters = ({
                     handleDrop({
                       card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
                       source: 'counter_panel',
-                      ownerId: cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId ?? effectiveActorId,
+                      ownerId: cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId ?? effectiveActorId ?? undefined,
                       statusType: cursorStack.type,
                       count: 1,
                     }, { target: 'board', boardCoords: { row, col } })

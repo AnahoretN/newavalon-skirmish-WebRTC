@@ -1501,13 +1501,13 @@ export const useAppAbilities = ({
           sourceCoords: boardCoords,
           isDeployAbility: isDeployAbility,
           recordContext: abilityMode.recordContext,
-          originalOwnerId: actorId,  // Set originalOwnerId for correct highlight color (command card owner)
+          originalOwnerId: actorId ?? undefined,  // Set originalOwnerId for correct highlight color (command card owner)
           payload: {
             allowSelf: false,
             abilitySourceCoords: sourceCoords,
             range: payload.range,
             chainedAction: payload.chainedAction,
-            originalActorId: actorId,
+            originalActorId: actorId ?? undefined,
           },
         })
         return
@@ -1522,12 +1522,12 @@ export const useAppAbilities = ({
           sourceCard: card,
           sourceCoords: boardCoords,
           recordContext: abilityMode.recordContext,
-          originalOwnerId: actorId,  // Set originalOwnerId for correct highlight color (command card owner)
+          originalOwnerId: actorId ?? undefined,  // Set originalOwnerId for correct highlight color (command card owner)
           payload: {
             allowSelf: false,
             range: payload.range,
             chainedAction: payload.chainedAction,
-            originalActorId: actorId,
+            originalActorId: actorId ?? undefined,
           },
         })
         return
