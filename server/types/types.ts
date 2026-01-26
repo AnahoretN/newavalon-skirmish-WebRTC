@@ -255,6 +255,7 @@ export interface GameState {
 
   // Server-side auto-draw tracking for Setup phase
   autoDrawnPlayers?: number[]; // Player IDs who have already auto-drawn this Setup phase
+  lastDrawnPlayerId?: number | null; // Player who most recently drew a card (for merge fix)
 }
 
 /**

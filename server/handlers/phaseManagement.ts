@@ -237,6 +237,7 @@ export function handleToggleActivePlayer(ws, data) {
       }).catch();
 
       performDrawPhase(gameState);
+      gameState.lastDrawnPlayerId = playerId;  // Track for merge logic
     }
 
     broadcastToGame(gameId, gameState);

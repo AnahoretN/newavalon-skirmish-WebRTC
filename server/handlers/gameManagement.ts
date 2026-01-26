@@ -181,6 +181,7 @@ export function handleUpdateState(ws, data) {
         existingGameState.activePlayerId = clientActivePlayerId;
         performDrawPhase(existingGameState);
         drawnPlayerId = clientActivePlayerId;
+        existingGameState.lastDrawnPlayerId = clientActivePlayerId;  // Track for merge logic
       } else if (clientActivePlayerId !== null && clientActivePlayerId !== undefined) {
         // No draw requested, just set the active player
         existingGameState.activePlayerId = clientActivePlayerId;
@@ -321,10 +322,12 @@ export function handleUpdateState(ws, data) {
               // If we merge client's deck, the drawn card will be added back
               // Solution: filter out the drawn card from client's deck before merging
               //
-              // Also detect draws from toggle active player (where drawnPlayerId is not set)
-              // by checking if server deck is smaller than client deck
-              const serverDeckSmaller = (serverPlayerAfterDraw.deck?.length || 0) < (clientPlayer.deck?.length || 0);
-              const shouldFilterDrawnCard = justDrewForThisPlayer || serverDeckSmaller;
+              // Check if this player just drew (from either path: UPDATE_STATE or toggle active player)
+              // - justDrewForThisPlayer: set when UPDATE_STATE path with phase=-1
+              // - existingGameState.lastDrawnPlayerId: set by toggle active player path
+              const lastDrawnPlayerId = existingGameState.lastDrawnPlayerId;
+              const justDrewForThisPlayerGlobal = lastDrawnPlayerId === clientPlayer.id;
+              const shouldFilterDrawnCard = justDrewForThisPlayer || justDrewForThisPlayerGlobal;
 
               let clientDeckToMerge = clientPlayer.deck || [];
               if (shouldFilterDrawnCard && serverPlayerAfterDraw.hand.length > 0) {
@@ -335,9 +338,9 @@ export function handleUpdateState(ws, data) {
                 clientDeckToMerge = clientDeckToMerge.filter((c: any) =>
                   !(c.id === drawnCard.id && c.ownerId === drawnCard.ownerId)
                 );
-                // Log for debugging the second draw issue
-                const reason = justDrewForThisPlayer ? 'justDrewForThisPlayer' : 'serverDeckSmaller';
-                logger.info(`[DrawFix] Player ${clientPlayer.id} (${reason}): drew ${drawnCard.name}, filtered ${beforeFilter - clientDeckToMerge.length} card(s) from client deck`);
+                // Log for debugging - note which path triggered the filter
+                const path = justDrewForThisPlayer ? 'UPDATE_STATE' : 'toggle';
+                logger.info(`[DrawFix] Player ${clientPlayer.id} (${path}): drew ${drawnCard.name}, filtered ${beforeFilter - clientDeckToMerge.length} card(s) from client deck`);
               } else if (shouldFilterDrawnCard) {
                 logger.info(`[DrawFix] Player ${clientPlayer.id}: shouldFilter=true but hand.length=${serverPlayerAfterDraw.hand.length}`);
               }
@@ -505,6 +508,10 @@ export function handleUpdateState(ws, data) {
           }
         });
       }
+
+      // Clear lastDrawnPlayerId after merge is complete (before broadcast)
+      // This prevents it from affecting subsequent merges
+      existingGameState.lastDrawnPlayerId = null;
 
       associateClientWithGame(ws, gameIdToUpdate);
       ws.gameId = gameIdToUpdate;
