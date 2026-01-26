@@ -653,6 +653,9 @@ export const useGameState = () => {
           // Sync card images from database (important for tokens after reconnection)
           const syncedData = syncGameStateImages(data)
 
+          // Debug: log announced cards received from server
+          const announcedCards = syncedData.players.map(p => ({ name: p.name, announced: p.announcedCard?.name || 'none', handSize: p.hand.length }))
+
           // Mark that we've received server state - now safe to send updates
           if (!receivedServerStateRef.current) {
             receivedServerStateRef.current = true
@@ -2081,7 +2084,15 @@ export const useGameState = () => {
       } else if (item.source === 'announced' && item.playerId !== undefined) {
         const player = newState.players.find(p => p.id === item.playerId)
         if (player) {
-          player.announcedCard = null
+          // IMPORTANT: Verify the card ID matches before removing
+          // This prevents accidental removal if card was already moved by another action
+          if (player.announcedCard && player.announcedCard.id === item.card.id) {
+            player.announcedCard = null
+          } else {
+            // Card doesn't match - it was likely already removed/moved
+            // Skip this move entirely to avoid card loss
+            return currentState
+          }
         }
       }
 
@@ -2140,39 +2151,62 @@ export const useGameState = () => {
       }
 
       if (target.target === 'hand' && target.playerId !== undefined) {
+
         // Don't allow moving actual tokens/counters to hand (they stay on board or return to their source)
         // But DO allow moving cards that happen to have 'Tokens' as their origin deck
-        if ((cardToMove.deck === DeckType.Tokens || cardToMove.deck === 'counter') && cardToMove.types?.includes('Token')) {
+        // CRITICAL FIX: Only block if it's BOTH from Tokens/counter deck AND has Token type
+        const isToken = (cardToMove.deck === DeckType.Tokens || cardToMove.deck === 'counter') &&
+                        (cardToMove.types?.includes('Token') || cardToMove.types?.includes('Token Unit'))
+
+        if (isToken) {
+          // Fail-safe: if card was removed from announced, restore it before returning
+          if (removedCardFromAnnounced) {
+            const restorePlayer = newState.players.find(p => p.id === removedCardFromAnnounced.playerId)
+            if (restorePlayer && !restorePlayer.announcedCard) {
+              restorePlayer.announcedCard = removedCardFromAnnounced.card
+            }
+          }
           return currentState
         }
+
         // Remove ready statuses when card leaves the battlefield
         removeAllReadyStatuses(cardToMove)
         const player = newState.players.find(p => p.id === target.playerId)
-        if (player) {
-          // Determine insert index: use target.cardIndex if provided, otherwise append to end
-          let insertIndex = target.cardIndex !== undefined ? target.cardIndex : player.hand.length
 
-          // Special case: reordering within the same hand
-          // The source card was already removed from hand earlier (line 1854-1858)
-          // We need to adjust insertIndex if we removed from before the insert position
-          if (item.source === 'hand' && item.playerId === target.playerId && item.cardIndex !== undefined) {
-            // If removing from before insert position, the indices shifted
-            if (item.cardIndex < insertIndex) {
-              insertIndex -= 1
-            }
-            // If dragging to same position, no change needed
-            if (item.cardIndex === insertIndex) {
-              return currentState
+        if (!player) {
+          // Fail-safe: restore card to announced
+          if (removedCardFromAnnounced) {
+            const restorePlayer = newState.players.find(p => p.id === removedCardFromAnnounced.playerId)
+            if (restorePlayer && !restorePlayer.announcedCard) {
+              restorePlayer.announcedCard = removedCardFromAnnounced.card
             }
           }
-
-          // Insert card at the calculated position
-          player.hand.splice(insertIndex, 0, cardToMove)
-
-          // NOTE: Removed automatic shuffle when moving from deck to hand
-          // Shuffle should only happen for specific search abilities (Mr. Pearl, Lucius Setup, Quick Response Team, Michael Falk)
-          // Those abilities handle their own shuffle in their ability action chains
+          return currentState
         }
+
+        // Determine insert index: use target.cardIndex if provided, otherwise append to end
+        let insertIndex = target.cardIndex !== undefined ? target.cardIndex : player.hand.length
+
+        // Special case: reordering within the same hand
+        // The source card was already removed from hand earlier (line 1854-1858)
+        // We need to adjust insertIndex if we removed from before the insert position
+        if (item.source === 'hand' && item.playerId === target.playerId && item.cardIndex !== undefined) {
+          // If removing from before insert position, the indices shifted
+          if (item.cardIndex < insertIndex) {
+            insertIndex -= 1
+          }
+          // If dragging to same position, no change needed
+          if (item.cardIndex === insertIndex) {
+            return currentState
+          }
+        }
+
+        // Insert card at the calculated position
+        player.hand.splice(insertIndex, 0, cardToMove)
+
+        // NOTE: Removed automatic shuffle when moving from deck to hand
+        // Shuffle should only happen for specific search abilities (Mr. Pearl, Lucius Setup, Quick Response Team, Michael Falk)
+        // Those abilities handle their own shuffle in their ability action chains
       } else if (target.target === 'board' && target.boardCoords) {
         if (newState.board[target.boardCoords.row][target.boardCoords.col].card === null) {
           // CRITICAL: Only set ownerId if it's still undefined
@@ -2224,9 +2258,24 @@ export const useGameState = () => {
           }
         }
       } else if (target.target === 'deck' && target.playerId !== undefined) {
-        if (cardToMove.deck === DeckType.Tokens || cardToMove.deck === 'counter') {
-          return newState
+
+        // Don't allow moving actual tokens/counters to deck
+        // CRITICAL FIX: Only block if it's BOTH from Tokens/counter deck AND has Token type
+        const isToken = (cardToMove.deck === DeckType.Tokens || cardToMove.deck === 'counter') &&
+                        (cardToMove.types?.includes('Token') || cardToMove.types?.includes('Token Unit'))
+
+        if (isToken) {
+          // Fail-safe: if card was removed from announced, restore it before returning
+          if (removedCardFromAnnounced) {
+            const restorePlayer = newState.players.find(p => p.id === removedCardFromAnnounced.playerId)
+            if (restorePlayer && !restorePlayer.announcedCard) {
+              restorePlayer.announcedCard = removedCardFromAnnounced.card
+            }
+          }
+          // Return currentState to discard changes (including removal from announced)
+          return currentState
         }
+
         // Remove ready statuses when card leaves the battlefield
         removeAllReadyStatuses(cardToMove)
         // Remove Revealed status when card goes to deck
@@ -2234,16 +2283,26 @@ export const useGameState = () => {
           cardToMove.statuses = cardToMove.statuses.filter(s => s.type !== 'Revealed')
         }
         const player = newState.players.find(p => p.id === target.playerId)
-        if (player) {
-          if (cardToMove.ownerId === undefined) {
-            cardToMove.ownerId = target.playerId
-            cardToMove.ownerName = player.name
+
+        if (!player) {
+          // Fail-safe: restore card to announced
+          if (removedCardFromAnnounced) {
+            const restorePlayer = newState.players.find(p => p.id === removedCardFromAnnounced.playerId)
+            if (restorePlayer && !restorePlayer.announcedCard) {
+              restorePlayer.announcedCard = removedCardFromAnnounced.card
+            }
           }
-          if (target.deckPosition === 'top' || !target.deckPosition) {
-            player.deck.unshift(cardToMove)
-          } else {
-            player.deck.push(cardToMove)
-          }
+          return currentState
+        }
+
+        if (cardToMove.ownerId === undefined) {
+          cardToMove.ownerId = target.playerId
+          cardToMove.ownerName = player.name
+        }
+        if (target.deckPosition === 'top' || !target.deckPosition) {
+          player.deck.unshift(cardToMove)
+        } else {
+          player.deck.push(cardToMove)
         }
       } else if (target.target === 'announced' && target.playerId !== undefined) {
         const player = newState.players.find(p => p.id === target.playerId)
@@ -2433,8 +2492,6 @@ export const useGameState = () => {
     // Also broadcast to other players via WebSocket
     if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
       ws.current.send(JSON.stringify({ type: 'TRIGGER_HIGHLIGHT', gameId: gameStateRef.current.gameId, highlightData: fullHighlightData }))
-    } else {
-      console.warn('[Highlight] Cannot send highlight:', { wsReady: ws.current?.readyState, gameId: gameStateRef.current.gameId })
     }
   }, [])
 
@@ -2666,8 +2723,7 @@ export const useGameState = () => {
             // Require valid ownerId (player IDs start at 1, so 0 is invalid)
             const ownerId = card.ownerId
             if (ownerId === undefined || ownerId === null || ownerId === 0) {
-              console.warn('[resetDeployStatus] Card missing or invalid ownerId:', card.id)
-              return currentState
+                  return currentState
             }
             card.statuses.push({ type: 'readyDeploy', addedByPlayerId: ownerId })
           }

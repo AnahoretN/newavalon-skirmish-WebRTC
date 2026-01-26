@@ -149,7 +149,7 @@ const DropZone: React.FC<{ onDrop: () => void, className?: string, isOverClassNa
         onDrop()
       }}
       onContextMenu={onContextMenu}
-      className={`${className || ''} ${isOver ? (isOverClassName || '') : ''}`}
+      className={`${className || ''} ${isOver ? `relative z-10 ${isOverClassName || ''}` : ''}`}
     >
       {children}
     </div>
@@ -380,7 +380,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
         <div className="bg-gray-800 p-1 rounded-lg mb-1 flex-shrink-0">
           <div className="grid grid-cols-4 gap-1 sm:gap-2">
             {/* Deck */}
-            <DropZone className="relative" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => openContextMenu(e, 'deckPile', { player })} isOverClassName="rounded-lg ring-2 ring-white">
+            <DropZone className="relative" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => openContextMenu(e, 'deckPile', { player })} isOverClassName="rounded ring-2 ring-white">
               {(() => {
                 // Check if deck is selectable (either from local player or from remote player)
                 const isLocalDeckSelectable = isDeckSelectable
@@ -453,7 +453,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
             </DropZone>
 
             {/* Discard */}
-            <DropZone onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'discard', playerId: player.id })} onContextMenu={(e) => openContextMenu(e, 'discardPile', { player })} isOverClassName="rounded-lg ring-2 ring-indigo-400">
+            <DropZone onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'discard', playerId: player.id })} onContextMenu={(e) => openContextMenu(e, 'discardPile', { player })} isOverClassName="rounded ring-2 ring-white">
               <div className="aspect-square bg-gray-700 rounded flex flex-col items-center justify-center cursor-pointer hover:bg-gray-600 transition-all shadow-md border border-gray-600 select-none text-white">
                 <span className="text-[10px] sm:text-xs font-bold mb-0.5 text-gray-400 uppercase tracking-tight">{t('discard')}</span>
                 <span className="text-base sm:text-lg font-bold">{player.discard.length}</span>
@@ -461,7 +461,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
             </DropZone>
 
             {/* Showcase */}
-            <DropZone onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'announced', playerId: player.id })}>
+            <DropZone onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'announced', playerId: player.id })} isOverClassName="rounded ring-2 ring-white">
               <div className="aspect-square bg-gray-800 border border-dashed border-gray-600 rounded flex items-center justify-center relative overflow-hidden">
                 {player.announcedCard ? (
                   <div
@@ -678,7 +678,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
             <div className="grid grid-cols-6 gap-1 flex-shrink-0 scale-[0.975] origin-left">
             {/* Deck */}
             <div className="aspect-square relative">
-              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => openContextMenu(e, 'deckPile', { player })} isOverClassName="rounded-lg ring-2 ring-white">
+              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => openContextMenu(e, 'deckPile', { player })} isOverClassName="rounded ring-2 ring-white">
                 {(() => {
                   // Check if deck is selectable (either from local player or from remote player)
                   const isLocalDeckSelectable = isDeckSelectable
@@ -746,7 +746,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
 
             {/* Discard */}
             <div className="aspect-square relative">
-              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'discard', playerId: player.id })} onContextMenu={(e) => openContextMenu(e, 'discardPile', { player })} isOverClassName="rounded-lg ring-2 ring-indigo-500">
+              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'discard', playerId: player.id })} onContextMenu={(e) => openContextMenu(e, 'discardPile', { player })} isOverClassName="rounded ring-2 ring-white">
                 <RemotePile
                   label={t('discard')}
                   count={player.discard.length}
@@ -757,7 +757,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
 
             {/* Showcase */}
             <div className="aspect-square relative">
-              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'announced', playerId: player.id })}>
+              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'announced', playerId: player.id })} isOverClassName="rounded ring-2 ring-white">
                 <div className="w-full h-full bg-gray-800 border border-dashed border-gray-600 rounded flex items-center justify-center relative overflow-hidden">
                   {player.announcedCard ? (
                     <div

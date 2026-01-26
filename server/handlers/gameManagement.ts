@@ -30,6 +30,42 @@ import { openGameLog, logGameAction as logAction, GameActions } from '../utils/g
 const MAX_PLAYERS = 4;
 
 /**
+ * Merges card lists from server and client, combining statuses and adding new cards
+ * @param serverList - The server's card list (authoritative)
+ * @param clientList - The client's card list (may have new cards or updated statuses)
+ * @returns Merged card list with server cards merged with client statuses + new client cards
+ */
+function mergeCardList(serverList: any[], clientList: any[] = []): any[] {
+  const merged = serverList.map((serverCard) => {
+    const clientCard = clientList.find((c) => c.id === serverCard.id && c.ownerId === serverCard.ownerId);
+    if (clientCard?.statuses) {
+      const mergedStatuses = [...(serverCard.statuses || [])];
+      for (const clientStatus of clientCard.statuses) {
+        const existingIndex = mergedStatuses.findIndex(
+          (s: any) => s.type === clientStatus.type && s.addedByPlayerId === clientStatus.addedByPlayerId
+        );
+        if (existingIndex === -1) {
+          mergedStatuses.push(clientStatus);
+        }
+      }
+      return { ...serverCard, statuses: mergedStatuses };
+    }
+    return serverCard;
+  });
+
+  // Add new cards from client that don't exist on server yet
+  const serverCardIds = new Set(serverList.map((c) => `${c.id}_${c.ownerId}`));
+  for (const clientCard of clientList) {
+    const cardKey = `${clientCard.id}_${clientCard.ownerId}`;
+    if (!serverCardIds.has(cardKey)) {
+      merged.push(clientCard);
+    }
+  }
+
+  return merged;
+}
+
+/**
  * Handle SUBSCRIBE message
  * Associates a client with a game and sends current state
  */
@@ -63,6 +99,7 @@ export function handleUpdateState(ws, data) {
   try {
     // Extract gameState from the message - client sends { type: 'UPDATE_STATE', gameState: {...} }
     const { gameState: updatedGameState, playerToken } = data;
+
 
     // Validate game state object
     if (!updatedGameState || typeof updatedGameState !== 'object') {
@@ -208,9 +245,10 @@ export function handleUpdateState(ws, data) {
       // Rule: Client sending update is the authority for their own card state (hand/deck/discard)
       // Server state is preserved for other players to prevent stale data from overwriting
       // Additionally, if this is the active player, we trust their card state
+      const mergedPlayers: any[] = [];
+      const sendingPlayerId = ws.playerId;
+
       if (clientPlayers) {
-        const mergedPlayers: any[] = [];
-        const sendingPlayerId = ws.playerId;
 
         clientPlayers.forEach((clientPlayer: any) => {
           const serverPlayerAfterDraw = serverPlayersAfterDraw.find((p: any) => p.id === clientPlayer.id);
@@ -279,32 +317,10 @@ export function handleUpdateState(ws, data) {
               const clientHistoryIsLonger = !isTurnTransition && clientPlayer.boardHistory &&
                 clientPlayer.boardHistory.length > (serverPlayerAfterDraw.boardHistory?.length || 0);
 
-              // IMPORTANT: Merge card statuses from client into server's hand
-              // This allows Revealed tokens placed by other players to be preserved
-              // The server's hand structure is preserved, but statuses are merged in
-              const mergedHand = serverPlayerAfterDraw.hand.map((serverCard: any) => {
-                const clientCard = clientPlayer.hand?.find((c: any) => c.id === serverCard.id && c.ownerId === serverCard.ownerId);
-                if (clientCard && clientCard.statuses) {
-                  // Merge statuses: keep server's card but add/merge statuses from client
-                  const mergedStatuses = [...(serverCard.statuses || [])];
-                  for (const clientStatus of clientCard.statuses) {
-                    // Check if this status type from this player already exists
-                    const existingIndex = mergedStatuses.findIndex(
-                      (s: any) => s.type === clientStatus.type && s.addedByPlayerId === clientStatus.addedByPlayerId
-                    );
-                    if (existingIndex === -1) {
-                      // Status doesn't exist, add it
-                      mergedStatuses.push(clientStatus);
-                    }
-                    // If status exists, keep the existing one (server is authoritative for duplicates)
-                  }
-                  return {
-                    ...serverCard,
-                    statuses: mergedStatuses,
-                  };
-                }
-                return serverCard;
-              });
+              // Merge hand, deck, and discard - combining statuses and adding new cards from client
+              const mergedHand = mergeCardList(serverPlayerAfterDraw.hand, clientPlayer.hand);
+              const mergedDeck = mergeCardList(serverPlayerAfterDraw.deck || [], clientPlayer.deck || []);
+              const mergedDiscard = mergeCardList(serverPlayerAfterDraw.discard || [], clientPlayer.discard || []);
 
               mergedPlayers.push({
                 ...serverPlayerAfterDraw,
@@ -314,38 +330,12 @@ export function handleUpdateState(ws, data) {
                 isDisconnected: clientPlayer.isDisconnected ?? serverPlayerAfterDraw.isDisconnected,
                 disconnectTimestamp: clientPlayer.disconnectTimestamp ?? serverPlayerAfterDraw.disconnectTimestamp,
                 autoDrawEnabled: clientPlayer.autoDrawEnabled ?? serverPlayerAfterDraw.autoDrawEnabled,
-                // IMPORTANT: Allow client to update score (this is how dummy players get points from scoring)
                 score: clientPlayer.score ?? serverPlayerAfterDraw.score,
-                // CRITICAL: Use merged hand with statuses from client, otherwise preserve server's card state
+                // Use merged card lists
                 hand: mergedHand,
-                deck: serverPlayerAfterDraw.deck,
-                // IMPORTANT: Also merge statuses for discard pile
-                discard: (() => {
-                  const serverDiscard = serverPlayerAfterDraw.discard || [];
-                  const clientDiscard = clientPlayer.discard || [];
-                  // Map server discard cards with merged statuses
-                  return serverDiscard.map((serverCard: any) => {
-                    const clientCard = clientDiscard.find((c: any) => c.id === serverCard.id && c.ownerId === serverCard.ownerId);
-                    if (clientCard && clientCard.statuses) {
-                      const mergedStatuses = [...(serverCard.statuses || [])];
-                      for (const clientStatus of clientCard.statuses) {
-                        const existingIndex = mergedStatuses.findIndex(
-                          (s: any) => s.type === clientStatus.type && s.addedByPlayerId === clientStatus.addedByPlayerId
-                        );
-                        if (existingIndex === -1) {
-                          mergedStatuses.push(clientStatus);
-                        }
-                      }
-                      return {
-                        ...serverCard,
-                        statuses: mergedStatuses,
-                      };
-                    }
-                    return serverCard;
-                  });
-                })(),
+                deck: mergedDeck,
+                discard: mergedDiscard,
                 // Preserve server's boardHistory during turn transitions (client state is stale)
-                // Otherwise use whichever is longer (client may have just played a card)
                 boardHistory: isTurnTransition ? (serverPlayerAfterDraw.boardHistory || []) :
                   (clientHistoryIsLonger ? clientPlayer.boardHistory : serverPlayerAfterDraw.boardHistory || []),
                 // Preserve server-specific fields
@@ -392,6 +382,24 @@ export function handleUpdateState(ws, data) {
       });
       // Merge server and current announced card IDs
       serverAnnouncedCardIds.forEach(id => currentAnnouncedCardIds.add(id));
+
+      // Update players with merged data
+      existingGameState.players = mergedPlayers;
+
+      // CRITICAL FIX: Remove cards from currentAnnouncedCardIds if client moved them from announced
+      // This must be done AFTER merging and BEFORE the cleanup loop
+      if (clientPlayers) {
+        clientPlayers.forEach((clientPlayer: any) => {
+          // If client has no announced card but server did, the card was moved
+          if (!clientPlayer.announcedCard) {
+            const serverPlayer = serverPlayersAfterDraw.find((p: any) => p.id === clientPlayer.id);
+            if (serverPlayer?.announcedCard?.id) {
+              const key = `${serverPlayer.announcedCard.id}_${serverPlayer.announcedCard.ownerId}`;
+              currentAnnouncedCardIds.delete(key);
+            }
+          }
+        });
+      }
 
       // For each player, remove any cards that are on the board or in announced slot
       existingGameState.players.forEach((player: any) => {
