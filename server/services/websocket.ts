@@ -309,6 +309,36 @@ export function sendToClient(client, message) {
 }
 
 /**
+ * Broadcast a compact message to all clients in a game (not full gameState)
+ * Use this for events, notifications, and partial updates to save bandwidth
+ */
+export function broadcastToGameMessage(gameId: string, message: Record<string, unknown>, excludeClient = null) {
+  try {
+    const payload = JSON.stringify(message);
+
+    // Get the client game map to find all clients associated with this game
+    const clientGameMap = getClientGameMap();
+
+    // Send to all connected clients associated with this game
+    if (wssInstance && wssInstance.clients) {
+      wssInstance.clients.forEach(client => {
+        if (client !== excludeClient &&
+            client.readyState === 1 && // WebSocket.OPEN
+            clientGameMap.get(client) === gameId) {
+          try {
+            client.send(payload);
+          } catch (error) {
+            logger.error('Error sending message to client:', error);
+          }
+        }
+      });
+    }
+  } catch (error) {
+    logger.error('Error broadcasting message to game:', error);
+  }
+}
+
+/**
  * Sanitize game state for client transmission
  */
 function sanitizeGameState(gameState) {

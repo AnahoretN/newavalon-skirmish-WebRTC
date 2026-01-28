@@ -14,7 +14,7 @@ import {
   updateGameState,
   logGameAction
 } from '../services/gameState.js';
-import { broadcastToGame } from '../services/websocket.js';
+import { broadcastToGame, broadcastToGameMessage } from '../services/websocket.js';
 import { createNewPlayer, generatePlayerToken, createDeck } from '../utils/deckUtils.js';
 import {
   handlePlayerLeave,
@@ -953,7 +953,7 @@ export function handleResetGame(ws: any, data: any) {
       return;
     }
 
-    // Store current player data with their deck selections
+    // Store current player data with their deck selections (minimal data for reset)
     const playersToKeep = gameState.players.map((p: any) => {
       const deckType = p.selectedDeck || 'SynchroTech';
       return {
@@ -1019,7 +1019,42 @@ export function handleResetGame(ws: any, data: any) {
     gameState.dummyPlayerCount = preservedSettings.dummyPlayerCount;
     gameState.autoAbilitiesEnabled = preservedSettings.autoAbilitiesEnabled;
 
-    broadcastToGame(gameId, gameState);
+    // Send compact GAME_RESET message instead of full gameState
+    // This is MUCH smaller than sending the entire game state with all deck data
+    broadcastToGameMessage(gameId, {
+      type: 'GAME_RESET',
+      gameId,
+      players: playersToKeep.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        color: p.color,
+        selectedDeck: p.selectedDeck,
+        isDummy: p.isDummy,
+        isDisconnected: p.isDisconnected,
+        autoDrawEnabled: p.autoDrawEnabled,
+        hand: p.hand,
+        deck: p.deck,
+        discard: p.discard,
+        score: p.score,
+        isReady: p.isReady,
+        announcedCard: p.announcedCard,
+      })),
+      gameMode: preservedSettings.gameMode,
+      isPrivate: preservedSettings.isPrivate,
+      activeGridSize: preservedSettings.activeGridSize,
+      dummyPlayerCount: preservedSettings.dummyPlayerCount,
+      autoAbilitiesEnabled: preservedSettings.autoAbilitiesEnabled,
+      isGameStarted: false,
+      currentPhase: 0,
+      currentRound: 1,
+      turnNumber: 1,
+      activePlayerId: null,
+      startingPlayerId: null,
+      roundWinners: {},
+      gameWinner: null,
+      isRoundEndModalOpen: false,
+      isReadyCheckActive: false,
+    });
   } catch (error) {
     logger.error('Failed to reset game:', error);
   }

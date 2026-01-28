@@ -128,7 +128,7 @@ Before commit **MANDATORY**:
 │   └── index.css                 # (no exports - global styles)
 ├── server/                       # Server-side application
 │   ├── services/                 # Core services (6 files)
-│   │   ├── websocket.ts          # export function setupWebSocket(wss), export function broadcastToGame(gameId, gameState, excludeClient), export function sendToClient(client, message)
+│   │   ├── websocket.ts          # export function setupWebSocket(wss), export function broadcastToGame(gameId, gameState, excludeClient), export function sendToClient(client, message), export function broadcastToGameMessage(gameId, message, excludeClient)
 │   │   ├── gameState.ts          # export function createGameState(gameId, options), export function getGameState(gameId), export function updateGameState(gameId, updates), export function deleteGameState(gameId), export function addPlayerToGame(gameId, player), export function removePlayerFromGame(gameId, playerId), export function getAllGameStates(), export function getPublicGames(), export function associateClientWithGame(client, gameId), export function getGameIdForClient(client), export function removeClientAssociation(client), export function getClientGameMap(), export function logGameAction(gameId, action), export function getGameLogs(gameId), export function clearGameTimers(gameId), export function getGameStats()
 │   │   ├── gameLifecycle.ts      # export const gameTerminationTimers, export const gameInactivityTimers, export const playerDisconnectTimers, export function logToGame(gameId, message, gameLogs), export function endGame(gameId, reason, gameLogs, wss), export function resetInactivityTimer(gameId, gameLogs, wss), export function convertPlayerToDummy(gameId, playerId, gameLogs, wss, broadcastToGame), export function scheduleGameTermination(gameId, gameLogs, wss), export function cancelGameTermination(gameId, gameLogs), export function handlePlayerLeave(gameId, playerId, isManualExit, gameLogs, wss, broadcastToGame, broadcastGamesListFn), export function broadcastGamesList(gameLogs, wss)
 │   │   ├── content.ts            # export function getCardDefinition(cardId), export function getTokenDefinition(tokenId), export function getCounterDefinition(counterId), export function getDeckFiles(), export function getAllCards(), export function getAllTokens(), export function getAllCounters(), export function setCardDatabase(cards), export function setTokenDatabase(tokens), export function setDeckFiles(decks)
@@ -337,6 +337,17 @@ interface TargetingModeData {
 4. **server/handlers/gameManagement.ts** - If game exists: `Object.assign(existingGameState, updatedGameState)` (line 82)
 5. **server/handlers/gameManagement.ts** - If game doesn't exist: `createGameState(gameId, updatedGameState)` + `ws.playerId = 1` (line 88-91)
 6. **server/services/websocket.ts** - `broadcastToGame(gameId, gameState)` to all clients
+
+### RESET_GAME Flow (Optimized with Compact Message)
+1. **client/hooks/useGameState.ts** - `resetGame()` sends `RESET_GAME` message (line ~1864)
+2. **server/services/websocket.ts** - `routeMessage` → `handleResetGame` (line 201)
+3. **server/handlers/gameManagement.ts** - `handleResetGame()` resets server-side state (line 943-1026)
+4. **server/services/websocket.ts** - `broadcastToGameMessage(gameId, { type: 'GAME_RESET', ... })` sends compact message (line ~300)
+   - Only sends necessary reset data (players, settings, flags)
+   - Avoids sending full deck data and large game state
+5. **client/hooks/useGameState.ts** - `data.type === 'GAME_RESET'` handler (line ~665)
+   - Updates local gameState with reset values
+   - Clears board, targetingMode, floatingTexts, currentCommand
 
 ### Phase Transition Flow (with Draw Phase)
 1. **client/hooks/useGameState.ts** - `nextPhase()` called after scoring (line ~1730)

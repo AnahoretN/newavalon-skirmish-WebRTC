@@ -662,6 +662,39 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           }))
           gameStateRef.current.targetingMode = null
           logger.debug('[TargetingMode] Cleared targeting mode from server')
+        } else if (data.type === 'GAME_RESET') {
+          // Handle compact game reset message (much smaller than full gameState)
+          logger.info('[GameReset] Received GAME_RESET message from server')
+          setGameState(prev => {
+            const resetState = {
+              ...prev,
+              players: data.players || [],
+              gameMode: data.gameMode,
+              isPrivate: data.isPrivate,
+              activeGridSize: data.activeGridSize,
+              dummyPlayerCount: data.dummyPlayerCount,
+              autoAbilitiesEnabled: data.autoAbilitiesEnabled,
+              isGameStarted: data.isGameStarted,
+              currentPhase: data.currentPhase,
+              currentRound: data.currentRound,
+              turnNumber: data.turnNumber,
+              activePlayerId: data.activePlayerId,
+              startingPlayerId: data.startingPlayerId,
+              roundWinners: data.roundWinners || {},
+              gameWinner: data.gameWinner,
+              isRoundEndModalOpen: data.isRoundEndModalOpen,
+              isReadyCheckActive: data.isReadyCheckActive,
+              // Clear board
+              board: prev.board.map(row => row.map(() => ({ card: null }))),
+              // Clear other state
+              targetingMode: null,
+              floatingTexts: [],
+              currentCommand: null,
+              validTargets: [],
+            }
+            gameStateRef.current = resetState
+            return resetState
+          })
         } else if (!data.type && data.players && data.board) {
           // Only update gameState if it's a valid game state (no type, but has required properties)
           // Sync card images from database (important for tokens after reconnection)
