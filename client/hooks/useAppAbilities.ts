@@ -26,6 +26,7 @@ interface UseAppAbilitiesProps {
     updateState: (stateOrFn: GameState | ((prevState: GameState) => GameState)) => void;
     moveItem: (item: DragItem, target: any) => void;
     drawCard: (playerId: number) => void;
+    drawCardsBatch: (playerId: number, count: number) => void;
     updatePlayerScore: (playerId: number, delta: number) => void;
     markAbilityUsed: (coords: { row: number, col: number }, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void;
     applyGlobalEffect: (source: any, targets: any[], type: string, pid: number, isDeploy: boolean) => void;
@@ -67,6 +68,7 @@ export const useAppAbilities = ({
   updateState,
   moveItem,
   drawCard,
+  drawCardsBatch,
   updatePlayerScore,
   markAbilityUsed,
   applyGlobalEffect,
@@ -251,9 +253,7 @@ export const useAppAbilities = ({
             }
             const rewardType = action.payload.contextReward
             if (rewardType === 'DRAW_MOVED_POWER' || rewardType === 'DRAW_EQUAL_POWER') {
-              for (let i = 0; i < amount; i++) {
-                drawCard(playerId)
-              }
+              drawCardsBatch(playerId, amount)
             } else if (rewardType === 'SCORE_MOVED_POWER') {
               triggerFloatingText({
                 row: sourceCoords.row,

@@ -387,6 +387,7 @@ const App = memo(function App() {
     updateState,
     moveItem,
     drawCard,
+    drawCardsBatch,
     updatePlayerScore,
     markAbilityUsed,
     applyGlobalEffect,
