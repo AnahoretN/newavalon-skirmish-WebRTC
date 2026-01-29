@@ -65,11 +65,11 @@ export const getCommandAction = (
       })
     }
     // Option 1: Draw X cards (X = Total Aim on battlefield).
-    // pendingAimTokens: 1 accounts for the Aim token placed by main action (which may not be synced yet)
+    // Note: Main action Aim token is already on board when this executes
     else if (optionIndex === 1) {
       actions.push({
         type: 'GLOBAL_AUTO_APPLY',
-        payload: { dynamicResource: { type: 'draw', factor: 'Aim', ownerId: localPlayerId, baseCount: 0, pendingAimTokens: 1 } },
+        payload: { dynamicResource: { type: 'draw', factor: 'Aim', ownerId: localPlayerId, baseCount: 0 } },
         sourceCard: card,
       })
     }

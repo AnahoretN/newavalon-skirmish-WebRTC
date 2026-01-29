@@ -1224,10 +1224,10 @@ const App = memo(function App() {
             }
           }
         } else if (actionToProcess.payload?.dynamicResource) {
-          const { type, factor, baseCount, ownerId: payloadOwnerId, pendingAimTokens } = actionToProcess.payload.dynamicResource
+          const { type, factor, baseCount, ownerId: payloadOwnerId } = actionToProcess.payload.dynamicResource
           // Use multiple fallbacks: sourceCard.ownerId, originalOwnerId (set in commandLogic), payload.ownerId, then localPlayerId
           const resourceOwnerId = actionToProcess.sourceCard?.ownerId ?? actionToProcess.originalOwnerId ?? payloadOwnerId ?? localPlayerId
-          const count = calculateDynamicCount(factor, resourceOwnerId, baseCount) + (pendingAimTokens || 0)
+          const count = calculateDynamicCount(factor, resourceOwnerId, baseCount)
           if (type === 'draw' && count > 0) {
             for (let i = 0; i < count; i++) {
               drawCard(resourceOwnerId)
