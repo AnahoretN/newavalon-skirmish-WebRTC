@@ -43,7 +43,7 @@ export function checkRoundEnd(gameState: any, isDeselectCheck = false): boolean 
     return false;
   }
 
-  // Don't check if round end modal is already open
+  // Don't check if round end modal is already open (prevents duplicate checks)
   if (gameState.isRoundEndModalOpen) {
     return false;
   }
@@ -57,11 +57,6 @@ export function checkRoundEnd(gameState: any, isDeselectCheck = false): boolean 
   // Only check if the starting player is the active player, unless this is a deselect check
   // This prevents checking when other players are in their turns
   if (!isDeselectCheck && gameState.activePlayerId !== gameState.startingPlayerId) {
-    return false;
-  }
-
-  // Don't check if round end was already checked for this round (prevents recheck after starting new round)
-  if (gameState.roundEndChecked) {
     return false;
   }
 
@@ -103,7 +98,6 @@ export function endRound(gameState: any): void {
 
   // Mark round as triggered and open modal
   gameState.roundEndTriggered = true;
-  gameState.roundEndChecked = true;
   gameState.isRoundEndModalOpen = true;
 
   // Log round end
@@ -238,6 +232,11 @@ export function handleToggleActivePlayer(ws, data) {
       }
     } else {
       gameState.activePlayerId = playerId;
+
+      // Increment turn number when cycling back to starting player (completes a full orbit)
+      if (playerId === gameState.startingPlayerId && previousActivePlayerId !== null) {
+        gameState.turnNumber = (gameState.turnNumber || 1) + 1;
+      }
 
       // Enter Preparation phase (0) when selecting a new active player
       // The preparation phase will auto-draw a card and transition to Setup (1)
@@ -386,6 +385,12 @@ export function handleNextPhase(ws, data) {
 
       // Set new active player
       gameState.activePlayerId = nextPlayerId ?? null;
+
+      // Increment turn number when cycling back to starting player (completes a full orbit)
+      if (nextPlayerId === gameState.startingPlayerId && nextPlayerId !== finishingPlayerId) {
+        gameState.turnNumber = (gameState.turnNumber || 1) + 1;
+      }
+
       gameState.currentPhase = 0;  // Preparation phase - will auto-transition to Setup
 
       // Remove Stun from finishing player's cards
@@ -567,7 +572,8 @@ export function handleStartNextRound(ws, data) {
     }
 
     // Increment round number
-    gameState.currentRound = (gameState.currentRound || 1) + 1;
+    const newRound = (gameState.currentRound || 1) + 1;
+    gameState.currentRound = newRound;
 
     // Reset all player scores to 0
     gameState.players.forEach((p: any) => {
@@ -580,13 +586,12 @@ export function handleStartNextRound(ws, data) {
     // Reset round end triggered flag
     gameState.roundEndTriggered = false;
 
-    // Mark that round end hasn't been checked for the new round yet
-    // This prevents the modal from immediately reopening when the first player takes their turn
-    gameState.roundEndChecked = false;
+    // Update last activity timestamp
+    gameState.lastActivity = Date.now();
 
     // Log next round start
     logAction(gameId, GameActions.ROUND_STARTED, {
-      round: gameState.currentRound,
+      round: newRound,
       startingPlayerId: gameState.startingPlayerId
     }).catch();
 
@@ -619,7 +624,6 @@ export function handleStartNewMatch(ws, data) {
     gameState.roundWinners = {};
     gameState.gameWinner = null;
     gameState.roundEndTriggered = false;
-    gameState.roundEndChecked = false;
     gameState.isRoundEndModalOpen = false;
 
     // Reset all player scores to 0

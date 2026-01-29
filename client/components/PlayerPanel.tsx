@@ -49,6 +49,7 @@ interface PlayerPanelProps {
   preserveDeployAbilities?: boolean;
   roundWinners?: Record<number, number[]>;
   startingPlayerId?: number | null; // Aligned with GameState type (null when not set)
+  currentRound?: number; // Force re-render when round changes
   onDeckClick?: (playerId: number) => void;
   isDeckSelectable?: boolean;
   hideDummyCards?: boolean; // If true, hide dummy player cards like real players
@@ -1036,6 +1037,23 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
 
   // Should never reach here since layoutMode is always 'list-local' or 'list-remote'
   return null
+}, (prevProps, nextProps) => {
+  // Custom comparison for PlayerPanel memo
+  // Re-render if important props change
+  return (
+    prevProps.player.id === nextProps.player.id &&
+    prevProps.player.score === nextProps.player.score &&
+    prevProps.player.color === nextProps.player.color &&
+    prevProps.player.name === nextProps.player.name &&
+    prevProps.player.hand.length === nextProps.player.hand.length &&
+    prevProps.player.deck.length === nextProps.player.deck.length &&
+    prevProps.player.discard.length === nextProps.player.discard.length &&
+    prevProps.isGameStarted === nextProps.isGameStarted &&
+    prevProps.activePlayerId === nextProps.activePlayerId &&
+    prevProps.currentPhase === nextProps.currentPhase &&
+    prevProps.imageRefreshVersion === nextProps.imageRefreshVersion &&
+    prevProps.currentRound === nextProps.currentRound
+  )
 })
 
 export { PlayerPanel }

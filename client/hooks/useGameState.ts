@@ -295,7 +295,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     currentRound: 1,
     turnNumber: 1,
     roundEndTriggered: false,
-    roundEndChecked: false,
     roundWinners: {},
     gameWinner: null,
     isRoundEndModalOpen: false,
@@ -698,20 +697,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         } else if (!data.type && data.players && data.board) {
           // Only update gameState if it's a valid game state (no type, but has required properties)
           // Sync card images from database (important for tokens after reconnection)
-          logger.info('[ServerSync] Received game state update', {
-            gameId: data.gameId,
-            currentRound: data.currentRound,
-            isRoundEndModalOpen: data.isRoundEndModalOpen,
-            roundEndChecked: data.roundEndChecked,
-            scores: data.players?.map((p: any) => p.score)
-          })
           const syncedData = syncGameStateImages(data)
-
-          // Mark that we've received server state - now safe to send updates
-          if (!receivedServerStateRef.current) {
-            receivedServerStateRef.current = true
-            logger.info('[ServerSync] Received first server state - client now synced with server')
-          }
 
           // IMPORTANT: Prevent phase flicker by validating phase transitions
           // Only ignore delayed updates if we're NOT in scoring step OR if this is a forced sync
@@ -734,15 +720,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
           setGameState(syncedData)
           gameStateRef.current = syncedData
-
-          // Log when isRoundEndModalOpen changes
-          if (currentState.isRoundEndModalOpen !== syncedData.isRoundEndModalOpen) {
-            logger.info('[ServerSync] isRoundEndModalOpen changed:', {
-              from: currentState.isRoundEndModalOpen,
-              to: syncedData.isRoundEndModalOpen,
-              currentRound: syncedData.currentRound
-            })
-          }
 
           // Auto-save game state when receiving updates from server
           if (localPlayerIdRef.current !== null && syncedData.gameId) {
@@ -1548,6 +1525,16 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       return
     }
 
+    // IMMEDIATE local optimistic update for UI responsiveness
+    setGameState(prev => ({
+      ...prev,
+      players: prev.players.map(p =>
+        p.id === playerId
+          ? { ...p, score: Math.max(0, (p.score || 0) + delta) }
+          : p
+      ),
+    }))
+
     const existing = scoreDeltaAccumulator.get(playerId)
     if (existing) {
       // Clear existing timer and accumulate delta
@@ -1584,7 +1571,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       }, 500)
       scoreDeltaAccumulator.set(playerId, { delta, timerId })
     }
-  }, [])
+  }, [setGameState])
 
   const changePlayerDeck = useCallback((playerId: number, deckType: DeckType) => {
     updateState(currentState => {
@@ -1892,30 +1879,39 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   /**
    * closeRoundEndModal - Start the next round
    * Resets player scores and closes the modal
+   * Does optimistic updates for immediate UI feedback
    */
   const closeRoundEndModal = useCallback(() => {
-    logger.info('[closeRoundEndModal] Called', {
-      wsState: ws.current?.readyState,
-      gameId: gameStateRef.current.gameId,
-    })
     if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
-      const payload = {
+      // Optimistic updates: close modal, increment round, reset scores locally
+      setGameState(prev => ({
+        ...prev,
+        isRoundEndModalOpen: false,
+        currentRound: (prev.currentRound || 1) + 1,
+        players: prev.players.map(p => ({
+          ...p,
+          score: 0,
+        })),
+      }))
+
+      // Send START_NEXT_ROUND to server to sync with all clients
+      ws.current.send(JSON.stringify({
         type: 'START_NEXT_ROUND',
         gameId: gameStateRef.current.gameId,
-      }
-      logger.info('[closeRoundEndModal] Sending:', payload)
-      ws.current.send(JSON.stringify(payload))
-
-      // Immediately close modal locally for responsiveness
-      // Server will broadcast the updated state to confirm
-      updateState(currentState => ({
-        ...currentState,
-        isRoundEndModalOpen: false,
       }))
-    } else {
-      logger.warn('[closeRoundEndModal] Cannot send - WebSocket not open or gameId missing')
     }
-  }, [updateState])
+  }, [setGameState])
+
+  /**
+   * closeRoundEndModalOnly - Just close the modal (for "Continue Game" button after match ends)
+   * Does NOT reset scores or start new round - just lets players view the board
+   */
+  const closeRoundEndModalOnly = useCallback(() => {
+    setGameState(prev => ({
+      ...prev,
+      isRoundEndModalOpen: false,
+    }))
+  }, [setGameState])
 
   /**
    * resetGame - Reset game to lobby state while preserving players and deck selections
@@ -3273,6 +3269,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     spawnToken,
     scoreLine,
     closeRoundEndModal,
+    closeRoundEndModalOnly,
     resetGame,
     resetDeployStatus,
     scoreDiagonal,

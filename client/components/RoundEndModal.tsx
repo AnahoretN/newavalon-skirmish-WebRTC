@@ -8,7 +8,6 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { APP_VERSION } from 'virtual:version'
 
 // Constants
-const MAX_ROUNDS = 5
 const ROUND_WIN_MEDAL_URL = 'https://res.cloudinary.com/dxxh6meej/image/upload/v1764252181/medal_rgbw8d.png'
 
 interface RoundEndModalProps {
@@ -116,10 +115,6 @@ export const RoundEndModal: React.FC<RoundEndModalProps> = ({ gameState, onConti
               <div className="flex justify-between">
                 <span className="text-gray-400">{t('victoryCondition')}</span>
                 <span className="font-bold text-yellow-400">{nextTarget} {t('score')}</span>
-              </div>
-              <div className="text-xs text-gray-500 italic mt-2 text-center">
-                {t('win2RoundsMatch')}<br/>
-                {nextRound === MAX_ROUNDS ? t('finalRoundMaxTurns') : t('max5RoundsInfo')}
               </div>
             </>
           ) : (

@@ -128,6 +128,7 @@ const App = memo(function App() {
     spawnToken,
     scoreLine,
     closeRoundEndModal,
+    closeRoundEndModalOnly,
     resetGame,
     resetDeployStatus,
     scoreDiagonal,
@@ -1946,7 +1947,7 @@ const App = memo(function App() {
       {gameState.isRoundEndModalOpen && (
         <RoundEndModal
           gameState={gameState}
-          onContinueGame={resetGame}
+          onContinueGame={closeRoundEndModalOnly}
           onStartNextRound={closeRoundEndModal}
           onExit={exitGame}
         />
@@ -2160,6 +2161,7 @@ const App = memo(function App() {
               preserveDeployAbilities={justAutoTransitioned}
               roundWinners={gameState.roundWinners}
               startingPlayerId={gameState.startingPlayerId}
+              currentRound={gameState.currentRound}
               onDeckClick={handleDeckClick}
               isDeckSelectable={abilityMode?.mode === 'SELECT_DECK'}
               hideDummyCards={hideDummyCards}
@@ -2267,6 +2269,7 @@ const App = memo(function App() {
                     preserveDeployAbilities={justAutoTransitioned}
                     roundWinners={gameState.roundWinners}
                     startingPlayerId={gameState.startingPlayerId}
+                    currentRound={gameState.currentRound}
                     onDeckClick={handleDeckClick}
                     isDeckSelectable={abilityMode?.mode === 'SELECT_DECK'}
                     hideDummyCards={hideDummyCards}

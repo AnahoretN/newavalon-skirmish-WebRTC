@@ -226,7 +226,6 @@ export interface GameState {
   currentRound: number; // 1, 2, or 3
   turnNumber: number; // Counts total full orbits (circles)
   roundEndTriggered: boolean; // True if someone hit the score threshold
-  roundEndChecked: boolean; // True if round end was already checked for the current round
   roundWinners: Record<number, number[]>; // Map of Round Number -> Winner Player IDs
   gameWinner: number | null; // Player ID if game is over
   isRoundEndModalOpen: boolean; // Controls visibility of inter-round modal
