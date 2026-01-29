@@ -75,6 +75,7 @@ const App = memo(function App() {
     changePlayerDeck,
     loadCustomDeck,
     drawCard,
+    drawCardsBatch,
     handleDrop,
     draggedItem,
     setDraggedItem,
@@ -1229,9 +1230,7 @@ const App = memo(function App() {
           const resourceOwnerId = actionToProcess.sourceCard?.ownerId ?? actionToProcess.originalOwnerId ?? payloadOwnerId ?? localPlayerId
           const count = calculateDynamicCount(factor, resourceOwnerId, baseCount)
           if (type === 'draw' && count > 0) {
-            for (let i = 0; i < count; i++) {
-              drawCard(resourceOwnerId)
-            }
+            drawCardsBatch(resourceOwnerId, count)
           }
         } else if (actionToProcess.payload?.resourceChange) {
           const { draw, score } = actionToProcess.payload.resourceChange
@@ -1239,9 +1238,7 @@ const App = memo(function App() {
           if (activePlayerId !== undefined && activePlayerId !== null) {
             if (draw) {
               const count = typeof draw === 'number' ? draw : 1
-              for (let i = 0; i < count; i++) {
-                drawCard(activePlayerId)
-              }
+              drawCardsBatch(activePlayerId, count)
             }
             if (score) {
               updatePlayerScore(activePlayerId, score)

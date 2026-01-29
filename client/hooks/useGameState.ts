@@ -1664,6 +1664,32 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     })
   }, [updateState])
 
+  // Batch version of drawCard - draws multiple cards in a single state update
+  // This prevents multiple UPDATE_STATE messages and race conditions with server sync
+  const drawCardsBatch = useCallback((playerId: number, count: number) => {
+    if (count <= 0) return
+    updateState(currentState => {
+      if (!currentState.isGameStarted) {
+        return currentState
+      }
+      const player = currentState.players.find(p => p.id === playerId)
+      if (!player || player.deck.length === 0) {
+        return currentState
+      }
+      const newState = deepCloneState(currentState)
+      const playerToUpdate = newState.players.find((p: Player) => p.id === playerId)!
+      // Draw up to 'count' cards (or as many as available)
+      const cardsToDraw = Math.min(count, playerToUpdate.deck.length)
+      for (let i = 0; i < cardsToDraw; i++) {
+        const cardDrawn = playerToUpdate.deck.shift()
+        if (cardDrawn) {
+          playerToUpdate.hand.push(cardDrawn)
+        }
+      }
+      return newState
+    })
+  }, [updateState])
+
   const shufflePlayerDeck = useCallback((playerId: number) => {
     updateState(currentState => {
       if (!currentState.isGameStarted) {
@@ -3201,6 +3227,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     changePlayerDeck,
     loadCustomDeck,
     drawCard,
+    drawCardsBatch,
     shufflePlayerDeck,
     moveItem,
     handleDrop: moveItem,
