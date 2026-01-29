@@ -351,7 +351,9 @@ const App = memo(function App() {
     setCounterSelectionData,
     moveItem,
     drawCard,
+    drawCardsBatch,
     updatePlayerScore,
+    updateState,
     removeBoardCardStatus,
   })
 
