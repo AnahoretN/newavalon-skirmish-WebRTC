@@ -11,14 +11,7 @@ import {
   validateMessageSize
 } from '../utils/security.js';
 import { CONFIG } from '../utils/config.js';
-import type { WebSocket } from 'ws';
-
-interface ExtendedWebSocket extends WebSocket {
-  server?: any;
-  playerId?: number;
-  gameId?: string;
-  clientGameMap?: Map<any, string>;
-}
+import type { ExtendedWebSocket } from '../utils/websocketTypes.js';
 
 /**
  * Helper function to broadcast visual effects to all clients in a game

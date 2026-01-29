@@ -4,12 +4,7 @@
 
 import { CONFIG } from './config.js';
 import crypto from 'crypto';
-import type { WebSocket } from 'ws';
-
-// Extended WebSocket interface with send method
-interface ExtendedWebSocket extends WebSocket {
-  send(data: string, cb?: (err?: Error) => void): void;
-}
+import type { ExtendedWebSocket } from './websocketTypes.js';
 
 /**
  * Validation result type
