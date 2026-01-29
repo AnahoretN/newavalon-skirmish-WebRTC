@@ -1946,7 +1946,7 @@ const App = memo(function App() {
       {gameState.isRoundEndModalOpen && (
         <RoundEndModal
           gameState={gameState}
-          onContinueGame={closeRoundEndModal}
+          onContinueGame={resetGame}
           onStartNextRound={closeRoundEndModal}
           onExit={exitGame}
         />
