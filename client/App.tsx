@@ -1186,14 +1186,14 @@ const App = memo(function App() {
         let count = baseCount
         if (factor === 'Aim') {
           gameState.board.forEach(row => row.forEach(cell => {
-            if (cell.card?.statuses?.some(s => s.type === 'Aim' && s.addedByPlayerId === ownerId)) {
-              count++
+            if (cell.card?.statuses) {
+              count += cell.card.statuses.filter(s => s.type === 'Aim' && s.addedByPlayerId === ownerId).length
             }
           }))
         } else if (factor === 'Exploit') {
           gameState.board.forEach(row => row.forEach(cell => {
-            if (cell.card?.statuses?.some(s => s.type === 'Exploit' && s.addedByPlayerId === ownerId)) {
-              count++
+            if (cell.card?.statuses) {
+              count += cell.card.statuses.filter(s => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
             }
           }))
         }
@@ -1224,10 +1224,10 @@ const App = memo(function App() {
             }
           }
         } else if (actionToProcess.payload?.dynamicResource) {
-          const { type, factor, baseCount } = actionToProcess.payload.dynamicResource
-          // Use sourceCard.ownerId (command card owner) instead of payload.ownerId to ensure we count tokens owned by the command player
-          const resourceOwnerId = actionToProcess.sourceCard?.ownerId ?? actionToProcess.payload.dynamicResource.ownerId
-          const count = calculateDynamicCount(factor, resourceOwnerId, baseCount)
+          const { type, factor, baseCount, ownerId: payloadOwnerId, pendingAimTokens } = actionToProcess.payload.dynamicResource
+          // Use multiple fallbacks: sourceCard.ownerId, originalOwnerId (set in commandLogic), payload.ownerId, then localPlayerId
+          const resourceOwnerId = actionToProcess.sourceCard?.ownerId ?? actionToProcess.originalOwnerId ?? payloadOwnerId ?? localPlayerId
+          const count = calculateDynamicCount(factor, resourceOwnerId, baseCount) + (pendingAimTokens || 0)
           if (type === 'draw' && count > 0) {
             for (let i = 0; i < count; i++) {
               drawCard(resourceOwnerId)
@@ -1485,6 +1485,9 @@ const App = memo(function App() {
     }
     if (viewingDiscard?.pickConfig?.filterType === 'Command') {
       return (card: Card) => card.deck === DeckType.Command || !!card.types?.includes('Command')
+    }
+    if (viewingDiscard?.pickConfig?.filterType === 'Device') {
+      return (card: Card) => !!card.types?.includes('Device')
     }
     if (viewingDiscard?.pickConfig?.filterType === 'Optimates') {
       return (card: Card) => !!card.types?.includes('Unit') && !!card.types?.includes('Optimates')

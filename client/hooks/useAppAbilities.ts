@@ -1629,6 +1629,11 @@ export const useAppAbilities = ({
       handleLineSelection(boardCoords); return
     }
 
+    if (mode === 'SELECT_DIAGONAL') {
+      handleLineSelection(boardCoords)
+      return
+    }
+
     const actorId = sourceCard?.ownerId ?? (gameState.players.find(p => p.id === gameState.activePlayerId)?.isDummy ? gameState.activePlayerId : (localPlayerId || gameState.activePlayerId))
 
     if (mode === 'PATROL_MOVE' && sourceCoords && sourceCard && sourceCoords.row >= 0) {

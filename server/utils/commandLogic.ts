@@ -64,12 +64,12 @@ export const getCommandAction = (
         sourceCard: card,
       })
     }
-    // Option 1: Draw X cards (X = Total Aim).
-    // baseCount: 1 accounts for the Aim token being placed by this command's main action
+    // Option 1: Draw X cards (X = Total Aim on battlefield).
+    // pendingAimTokens: 1 accounts for the Aim token placed by main action (which may not be synced yet)
     else if (optionIndex === 1) {
       actions.push({
         type: 'GLOBAL_AUTO_APPLY',
-        payload: { dynamicResource: { type: 'draw', factor: 'Aim', ownerId: localPlayerId, baseCount: 1 } },
+        payload: { dynamicResource: { type: 'draw', factor: 'Aim', ownerId: localPlayerId, baseCount: 0, pendingAimTokens: 1 } },
         sourceCard: card,
       })
     }

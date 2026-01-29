@@ -769,7 +769,8 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             saveGameState(syncedData, localPlayerIdRef.current, playerToken)
           }
         } else {
-          console.warn('Unknown message type:', data.type, data)
+          // Log the actual message type and all keys in data for debugging
+          console.warn('Unknown message type:', data.type, 'keys:', Object.keys(data), 'data:', data)
         }
       } catch (error) {
         console.error('Failed to parse message from server:', event.data, error)
