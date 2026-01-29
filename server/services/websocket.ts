@@ -53,7 +53,8 @@ import {
   handleTriggerDeckSelection,
   handleTriggerHandCardSelection,
   handleSetTargetingMode,
-  handleClearTargetingMode
+  handleClearTargetingMode,
+  handleSyncValidTargets
 } from '../handlers/visualEffects.js';
 import {
   handleUpdateDeckData
@@ -196,6 +197,7 @@ function routeMessage(ws, data) {
     'TRIGGER_HAND_CARD_SELECTION': handleTriggerHandCardSelection,
     'SET_TARGETING_MODE': handleSetTargetingMode,
     'CLEAR_TARGETING_MODE': handleClearTargetingMode,
+    'SYNC_VALID_TARGETS': handleSyncValidTargets,
     'EXIT_GAME': handleExitGame,
     'FORCE_SYNC': handleForceSync,
     'RESET_GAME': handleResetGame,

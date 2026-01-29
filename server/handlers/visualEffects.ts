@@ -10,6 +10,7 @@ import {
   sanitizeString,
   validateMessageSize
 } from '../utils/security.js';
+import { CONFIG } from '../utils/config.js';
 import type { WebSocket } from 'ws';
 
 interface ExtendedWebSocket extends WebSocket {
@@ -549,5 +550,58 @@ export function handleClearTargetingMode(ws: ExtendedWebSocket, data: any) {
     broadcastVisualEffect(ws, sanitizedGameId, 'TARGETING_MODE_CLEARED', {});
   } catch (err: any) {
     logger.error('Failed to clear targeting mode:', err);
+  }
+}
+
+/**
+ * Handle SYNC_VALID_TARGETS message
+ * Broadcasts valid targets from one player to other players in the game
+ */
+export function handleSyncValidTargets(ws: ExtendedWebSocket, data: any) {
+  try {
+    // Security: Validate message size
+    if (!validateMessageSize(JSON.stringify(data))) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Message size exceeds limit'
+      }));
+      return;
+    }
+
+    // Input validation
+    if (!data || typeof data !== 'object') {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Invalid data format'
+      }));
+      return;
+    }
+
+    const { gameId, playerId, validTargets, isDeckSelectable } = data;
+
+    if (!gameId || typeof gameId !== 'string') {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Invalid or missing gameId'
+      }));
+      return;
+    }
+
+    const sanitizedGameId = sanitizeString(gameId, CONFIG.MAX_STRING_LENGTH);
+
+    // Validate that the game exists
+    const gameState = getGameState(sanitizedGameId);
+    if (!gameState) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Game not found'
+      }));
+      return;
+    }
+
+    // Broadcast the valid targets to all clients except the sender
+    broadcastVisualEffect(ws, sanitizedGameId, 'SYNC_VALID_TARGETS', { playerId, validTargets, isDeckSelectable });
+  } catch (err: any) {
+    logger.error('Failed to sync valid targets:', err);
   }
 }
