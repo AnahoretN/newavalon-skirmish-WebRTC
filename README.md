@@ -8,7 +8,7 @@ A dynamic tactical duel card game played on a limited grid field. Deploy Units a
 
 ## Play Online
 
-The game is available at: **[anahoretn.github.io/newavalon-skirmish](https://anahoretn.github.io/newavalon-skirmish/)**
+The game is available at: **[anahoretn.github.io/newavalon-skirmish-tunnel](https://anahoretn.github.io/newavalon-skirmish-tunnel/)**
 
 ## Quick Start (Host a Game)
 
@@ -39,7 +39,7 @@ Copy the tunnel URL (e.g., `https://abc123.trycloudflare.com` or `https://abc123
 ### 3. Share with Players
 
 Players can join by:
-1. Opening the game at [anahoretn.github.io/newavalon-skirmish](https://anahoretn.github.io/newavalon-skirmish/)
+1. Opening the game at [anahoretn.github.io/newavalon-skirmish-tunnel](https://anahoretn.github.io/newavalon-skirmish-tunnel/)
 2. Clicking **Settings** (gear icon)
 3. Entering the WebSocket URL: `wss://your-tunnel-url.com`
 4. Clicking **Save & Apply**

@@ -36,7 +36,7 @@ jobs:
       - name: Build
         run: npm run build:gh-pages
         env:
-          BASE_URL: /newavalon-skirmish/
+          BASE_URL: /newavalon-skirmish-tunnel/
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
