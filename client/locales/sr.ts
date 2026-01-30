@@ -215,7 +215,7 @@ export const sr: TranslationResource = {
     dragOutsideToPlaceToken: 'Prevucite napolje da biste postavili token na tablu.',
     holdRightClickViewHints: 'Držite desni taster za prikaz saveta',
     gameSettings: 'Podešavanja igre',
-    invitePlayer: 'Invite Player',
+    invitePlayer: 'Pozovi Igrača',
     hiddenGame: 'Privatnost',
     private: 'Privatna',
     public: 'Javna',
@@ -224,9 +224,9 @@ export const sr: TranslationResource = {
     copied: 'Kopirano!',
     inviteLinkDesc: 'Pošaljite link prijatelju. Adresa servera će se podesiti automatski.',
     copyGameLinkDesc: 'Podelite se ovim linkom kako biste prijatelji mogli da se pridruže sa podešenim podešavanjima servera.',
+    copy: 'Kopiraj',
     on: 'UKLJ',
     off: 'ISKLJ',
-    copy: 'Kopiraj',
     dummyPlayers: 'Botovi',
     gridSize: 'Veličina polja',
     autoAbilities: 'Auto-sposobnosti',
@@ -279,6 +279,7 @@ export const sr: TranslationResource = {
     Threat: { name: 'Pretnja', description: 'Ovaj žeton sam po sebi nema efekta, ali može da menja sposobnosti karata.\nOva karta je okružena i pritisnuta na ivicu polja kartama protivnika.' },
     'Power+': { name: 'Snaga+', description: 'Povećava snagu karte za 1.' },
     'Power-': { name: 'Snaga-', description: 'Smanjuje snagu karte za 1.' },
+    Resurrected: { name: 'Vaskrsnut', description: 'Ova jedinica se nedavno vratila iz bačenih. Biće oglušena na početku sledeće faze.' },
   },
   deckNames: {
     SynchroTech: 'SynchroTech',
@@ -329,7 +330,7 @@ export const sr: TranslationResource = {
     },
     vigilantSpotter: {
       name: 'Bedni Nadzornik',
-      ability: 'Support ⇒ Pass: Kada otkrivena (Revealed) karta protivnika izađe na polje, dobij 2 boda.\nCommit: Otkrij 1 kartu iz ruke protivnika.',
+      ability: 'Pass (zahteva Podršku): Kada otkrivena (Revealed) karta protivnika izađe na polje, dobij 2 boda.\nCommit: Otkrij 1 kartu iz ruke protivnika.',
       flavorText: '- "Strpljenje je oružje. Osveta je umetnost."',
     },
     inventiveMaker: {
@@ -441,7 +442,7 @@ export const sr: TranslationResource = {
       ability: 'Dobij poene od 4 susednih savezničkih karata.',
     },
     mobilization3: {
-      name: 'Probijanje Dijagonale',
+      name: 'Proboj Dijagonale',
       ability: 'Dobij poene u izabranoj dijagonali bojišta.',
     },
     reconDrone: {

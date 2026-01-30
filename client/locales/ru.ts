@@ -279,6 +279,7 @@ export const ru: TranslationResource = {
     Threat: { name: 'Угроза', description: 'Этот жетон сам по себе не имеет эффекта, но может изменять способности карт.\nЭта карта окружена и прижата к краю поля картами противника.' },
     'Power+': { name: 'Сила+', description: 'Увеличивает силу карты на 1.' },
     'Power-': { name: 'Сила-', description: 'Уменьшает силу карты на 1.' },
+    Resurrected: { name: 'Воскресший', description: 'Этот юнит недавно вернулся из сброса. Он получит Оглушение в начале следующей фазы.' },
   },
   deckNames: {
     SynchroTech: 'СинхроТех',
@@ -329,7 +330,7 @@ export const ru: TranslationResource = {
     },
     vigilantSpotter: {
       name: 'Бдительный Наблюдатель',
-      ability: 'Support ⇒ Pass: Когда раскрытая (Revealed) карта противника выходит на поле, получите 2 очка.\nCommit: Раскройте 1 карту из руки противника.',
+      ability: 'Pass (требуется Поддержка): Когда раскрытая (Revealed) карта противника выходит на поле, получите 2 очка.\nCommit: Раскройте 1 карту из руки противника.',
       flavorText: '- "Терпение — это оружие. Месть — это искусство."',
     },
     inventiveMaker: {
@@ -436,7 +437,7 @@ export const ru: TranslationResource = {
       ability: 'Получите очки от 4 соседних союзных карт.',
     },
     mobilization3: {
-      name: 'Прорыв Линии',
+      name: 'Прорыв Диагонали',
       ability: 'Получите очки в выбранной диагонали.',
     },
     reconDrone: {
