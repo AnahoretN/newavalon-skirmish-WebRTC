@@ -665,6 +665,17 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           // Handle compact game reset message (much smaller than full gameState)
           logger.info('[GameReset] Received GAME_RESET message from server')
           setGameState(prev => {
+            // Create fresh board with correct grid size
+            const gridSize: number = (data.activeGridSize as unknown as number) || 8;
+            const newBoard: Board = []
+            for (let i = 0; i < gridSize; i++) {
+              const row: any[] = []
+              for (let j = 0; j < gridSize; j++) {
+                row.push({ card: null })
+              }
+              newBoard.push(row)
+            }
+
             const resetState = {
               ...prev,
               players: data.players || [],
@@ -683,8 +694,8 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               gameWinner: data.gameWinner,
               isRoundEndModalOpen: data.isRoundEndModalOpen,
               isReadyCheckActive: data.isReadyCheckActive,
-              // Clear board
-              board: prev.board.map(row => row.map(() => ({ card: null }))),
+              // Use new board with correct grid size
+              board: newBoard,
               // Clear other state
               targetingMode: null,
               floatingTexts: [],
