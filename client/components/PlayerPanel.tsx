@@ -1040,6 +1040,17 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
 }, (prevProps, nextProps) => {
   // Custom comparison for PlayerPanel memo
   // Re-render if important props change
+  const cursorStackEqual = (
+    (prevProps.cursorStack === null && nextProps.cursorStack === null) ||
+    (prevProps.cursorStack !== null && nextProps.cursorStack !== null &&
+     prevProps.cursorStack.type === nextProps.cursorStack.type &&
+     prevProps.cursorStack.count === nextProps.cursorStack.count)
+  )
+  const playModeEqual = (
+    (prevProps.playMode === null && nextProps.playMode === null) ||
+    (prevProps.playMode !== null && nextProps.playMode !== null &&
+     prevProps.playMode.card.id === nextProps.playMode.card.id)
+  )
   return (
     prevProps.player.id === nextProps.player.id &&
     prevProps.player.score === nextProps.player.score &&
@@ -1048,11 +1059,14 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
     prevProps.player.hand.length === nextProps.player.hand.length &&
     prevProps.player.deck.length === nextProps.player.deck.length &&
     prevProps.player.discard.length === nextProps.player.discard.length &&
+    prevProps.player.announcedCard?.id === nextProps.player.announcedCard?.id &&
     prevProps.isGameStarted === nextProps.isGameStarted &&
     prevProps.activePlayerId === nextProps.activePlayerId &&
     prevProps.currentPhase === nextProps.currentPhase &&
     prevProps.imageRefreshVersion === nextProps.imageRefreshVersion &&
-    prevProps.currentRound === nextProps.currentRound
+    prevProps.currentRound === nextProps.currentRound &&
+    cursorStackEqual &&
+    playModeEqual
   )
 })
 

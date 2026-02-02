@@ -44,3 +44,4 @@ cloudflared.exe
 config.yml
 *.pem
 *.timestamp-*.mjs
+.ngrok.exe.old
