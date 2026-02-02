@@ -2001,6 +2001,10 @@ export const useAppAbilities = ({
 
       // SELECT_HAND_FOR_DISCARD_THEN_SPAWN (Faber)
       if (payload.actionType === 'SELECT_HAND_FOR_DISCARD_THEN_SPAWN') {
+        // Apply filter to validate the card
+        if (payload.filter && !payload.filter(card)) {
+          return
+        }
         if (player.id !== sourceCard?.ownerId) {
           return
         } // Only discard own cards

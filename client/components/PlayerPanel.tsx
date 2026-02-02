@@ -1,8 +1,68 @@
+/**
+ * ===============================================================================
+ * IMPORTANT GAME RULES - DO NOT MODIFY WITHOUT THOROUGH TESTING
+ * ===============================================================================
+ *
+ * 1. CARD MOVEMENT RULE
+ * --------------------
+ * Cards can be moved ANYWHERE at ANY TIME during gameplay:
+ * - From hand to deck, discard, showcase (announced), or battlefield
+ * - From battlefield back to hand
+ * - Between any valid drop targets
+ *
+ * This flexibility is intentional and essential for game mechanics.
+ * NEVER modify drag/drop handlers in a way that restricts this movement.
+ *
+ * DropZone components handle card movement via handleDrop callback.
+ * The draggedItem contains: { card, source, playerId, cardIndex?, isManual? }
+ *
+ * 2. DECK SELECTION VISUAL FEEDBACK RULE
+ * ---------------------------------------
+ * When player selects a deck from dropdown, it MUST update VISUALLY IMMEDIATELY:
+ * - The dropdown must show the selected deck name highlighted
+ * - No page reload required
+ * - User must see their selection is confirmed
+ *
+ * REQUIREMENTS:
+ * a) Memo function MUST include `player.selectedDeck` in comparison
+ *    Without this, component won't re-render when deck changes
+ *
+ * b) Server merge logic (gameManagement.ts) MUST include `selectedDeck`
+ *    In both trustClientCards=true and trustClientCards=false branches
+ *
+ * c) selectableDecks MUST use useMemo with deckFiles dependency
+ *    Ensures component re-renders when deck database loads
+ *
+ * d) Dropdown should only render when selectableDecks.length > 0
+ *    Prevents empty dropdown from breaking on first render
+ *
+ * 3. MEMO FUNCTION RULES
+ * ----------------------
+ * The memo comparison function MUST check all props that affect rendering:
+ * - player.selectedDeck (CRITICAL for deck selection feedback)
+ * - player.hand.length, deck.length, discard.length
+ * - player.announcedCard?.id
+ * - draggedItem (for drag/drop visual feedback)
+ * - cursorStack (for targeting mode visual feedback)
+ * - imageRefreshVersion, currentRound, etc.
+ *
+ * When adding new props that affect rendering, ALWAYS add them to memo comparison!
+ *
+ * 4. LOAD BUTTON POSITIONING RULE
+ * -------------------------------
+ * When Custom deck is selected, Load button appears:
+ * - To the LEFT of the dropdown (not below)
+ * - Gray style: bg-transparent border border-gray-500 hover:bg-gray-700
+ * - File input should be hidden and triggered by button click
+ *
+ * ===============================================================================
+ */
+
 import React, { memo, useRef, useState, useEffect, useMemo } from 'react'
 import { DeckType as DeckTypeEnum } from '@/types'
 import type { Player, PlayerColor, Card as CardType, DragItem, DropTarget, CustomDeckFile, ContextMenuParams, CursorStackState } from '@/types'
 import { PLAYER_COLORS, GAME_ICONS } from '@/constants'
-import { getSelectableDecks } from '@/content'
+import { deckFiles } from '@/content'
 import { Card as CardComponent } from './Card'
 import { CardTooltipContent } from './Tooltip'
 import { useLanguage } from '@/contexts/LanguageContext'
@@ -347,7 +407,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   const isTeammate = localPlayerTeamId !== undefined && player.teamId === localPlayerTeamId && !isLocalPlayer
   const isDisconnected = !!player.isDisconnected
 
-  const selectableDecks = getSelectableDecks()
+  const selectableDecks = useMemo(() => deckFiles.filter(df => df.isSelectable), [deckFiles])
   const selectedColors = useMemo(() => new Set(allPlayers.map(p => p.color)), [allPlayers])
 
   const winCount = roundWinners ? Object.values(roundWinners).filter(winners => winners.includes(player.id)).length : 0
@@ -599,17 +659,22 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
           </div>
         </div>
 
-        {!isGameStarted && canPerformActions && (
+        {!isGameStarted && canPerformActions && selectableDecks.length > 0 && (
           <div className="mb-[3px] flex-shrink-0 text-white">
-            <select value={player.selectedDeck} onChange={handleDeckSelectChange} className="w-full bg-gray-700 border border-gray-600 rounded p-2 mb-2">
-              {selectableDecks.map(deck => <option key={deck.id} value={deck.id}>{resources.deckNames[deck.id as keyof typeof resources.deckNames] || deck.name}</option>)}
-              <option value={DeckTypeEnum.Custom}>{t('customDeck')}</option>
-            </select>
-            {player.selectedDeck === DeckTypeEnum.Custom && (
+            <input type="file" ref={fileInputRef} onChange={handleFileSelected} accept=".txt" className="hidden" />
+            {player.selectedDeck === DeckTypeEnum.Custom ? (
               <div className="flex gap-2">
-                <input type="file" ref={fileInputRef} onChange={handleFileSelected} accept=".txt" className="hidden" />
-                <button onClick={handleLoadDeckClick} className="w-full bg-indigo-600 hover:bg-indigo-700 py-1 rounded font-bold">{t('loadDeck')}</button>
+                <button onClick={handleLoadDeckClick} className="bg-transparent border border-gray-500 hover:bg-gray-700 px-4 py-1.5 rounded font-bold">{t('loadDeck')}</button>
+                <select value={player.selectedDeck} onChange={handleDeckSelectChange} className="flex-grow bg-gray-700 border border-gray-600 rounded p-1">
+                  {selectableDecks.map((deck: { id: DeckTypeEnum; name: string; isSelectable: boolean }) => <option key={deck.id} value={deck.id}>{resources.deckNames[deck.id as keyof typeof resources.deckNames] || deck.name}</option>)}
+                  <option value={DeckTypeEnum.Custom}>{t('customDeck')}</option>
+                </select>
               </div>
+            ) : (
+              <select value={player.selectedDeck} onChange={handleDeckSelectChange} className="w-full bg-gray-700 border border-gray-600 rounded p-2 mb-2">
+                {selectableDecks.map((deck: { id: DeckTypeEnum; name: string; isSelectable: boolean }) => <option key={deck.id} value={deck.id}>{resources.deckNames[deck.id as keyof typeof resources.deckNames] || deck.name}</option>)}
+                <option value={DeckTypeEnum.Custom}>{t('customDeck')}</option>
+              </select>
             )}
           </div>
         )}
@@ -741,16 +806,31 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
           <span className="font-bold text-white text-[14px] truncate leading-tight flex-1 min-w-0 relative z-10">{player.name}</span>
           {/* Status icons and deck select - aligned right */}
           <div className="flex items-center gap-[2px] flex-shrink-0">
-            {/* Dummy deck select - shown before status icons */}
-            {!isGameStarted && player.isDummy && canPerformActions && (
-              <select
-                value={player.selectedDeck}
-                onChange={handleDeckSelectChange}
-                className="text-[11px] bg-gray-700 text-white border border-gray-600 rounded px-1 py-0 h-5 w-[110px] focus:outline-none truncate flex-shrink-0"
-              >
-                {selectableDecks.map(deck => <option key={deck.id} value={deck.id}>{resources.deckNames[deck.id as keyof typeof resources.deckNames] || deck.name}</option>)}
-                <option value={DeckTypeEnum.Custom}>{t('customDeck')}</option>
-              </select>
+            {/* Deck select with Load button for Custom deck - shown before status icons */}
+            {!isGameStarted && canPerformActions && selectableDecks.length > 0 && (
+              player.selectedDeck === DeckTypeEnum.Custom ? (
+                <>
+                  <input type="file" ref={fileInputRef} onChange={handleFileSelected} accept=".txt" className="hidden" />
+                  <button onClick={handleLoadDeckClick} className="text-[11px] bg-transparent border border-gray-500 hover:bg-gray-700 text-white rounded px-1 py-0 h-5 flex-shrink-0">{t('loadDeck')}</button>
+                  <select
+                    value={player.selectedDeck}
+                    onChange={handleDeckSelectChange}
+                    className="text-[11px] bg-gray-700 text-white border border-gray-600 rounded px-1 py-0 h-5 w-[90px] focus:outline-none truncate flex-shrink-0"
+                  >
+                    {selectableDecks.map((deck: { id: DeckTypeEnum; name: string; isSelectable: boolean }) => <option key={deck.id} value={deck.id}>{resources.deckNames[deck.id as keyof typeof resources.deckNames] || deck.name}</option>)}
+                    <option value={DeckTypeEnum.Custom}>{t('customDeck')}</option>
+                  </select>
+                </>
+              ) : (
+                <select
+                  value={player.selectedDeck}
+                  onChange={handleDeckSelectChange}
+                  className="text-[11px] bg-gray-700 text-white border border-gray-600 rounded px-1 py-0 h-5 w-[110px] focus:outline-none truncate flex-shrink-0"
+                >
+                  {selectableDecks.map((deck: { id: DeckTypeEnum; name: string; isSelectable: boolean }) => <option key={deck.id} value={deck.id}>{resources.deckNames[deck.id as keyof typeof resources.deckNames] || deck.name}</option>)}
+                  <option value={DeckTypeEnum.Custom}>{t('customDeck')}</option>
+                </select>
+              )
             )}
             {/* Win medal */}
             {winCount > 0 && <img src={ROUND_WIN_MEDAL_URL} alt="Round Winner" className="w-[19px] h-[17.7] flex-shrink-0 mt-[1.3px]" title="Round Winner" />}
@@ -1043,19 +1123,22 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   const cursorStackEqual = (
     (prevProps.cursorStack === null && nextProps.cursorStack === null) ||
     (prevProps.cursorStack !== null && nextProps.cursorStack !== null &&
-     prevProps.cursorStack.type === nextProps.cursorStack.type &&
-     prevProps.cursorStack.count === nextProps.cursorStack.count)
+     prevProps.cursorStack!.type === nextProps.cursorStack!.type &&
+     prevProps.cursorStack!.count === nextProps.cursorStack!.count)
   )
-  const playModeEqual = (
-    (prevProps.playMode === null && nextProps.playMode === null) ||
-    (prevProps.playMode !== null && nextProps.playMode !== null &&
-     prevProps.playMode.card.id === nextProps.playMode.card.id)
+  // DraggedItem comparison - check if card or source changed
+  const draggedItemEqual = (
+    prevProps.draggedItem === nextProps.draggedItem ||
+    (prevProps.draggedItem?.card.id === nextProps.draggedItem?.card.id &&
+     prevProps.draggedItem?.source === nextProps.draggedItem?.source &&
+     prevProps.draggedItem?.playerId === nextProps.draggedItem?.playerId)
   )
   return (
     prevProps.player.id === nextProps.player.id &&
     prevProps.player.score === nextProps.player.score &&
     prevProps.player.color === nextProps.player.color &&
     prevProps.player.name === nextProps.player.name &&
+    prevProps.player.selectedDeck === nextProps.player.selectedDeck &&
     prevProps.player.hand.length === nextProps.player.hand.length &&
     prevProps.player.deck.length === nextProps.player.deck.length &&
     prevProps.player.discard.length === nextProps.player.discard.length &&
@@ -1065,8 +1148,9 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
     prevProps.currentPhase === nextProps.currentPhase &&
     prevProps.imageRefreshVersion === nextProps.imageRefreshVersion &&
     prevProps.currentRound === nextProps.currentRound &&
+    prevProps.validHandTargets === nextProps.validHandTargets &&
     cursorStackEqual &&
-    playModeEqual
+    draggedItemEqual
   )
 })
 

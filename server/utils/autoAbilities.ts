@@ -391,9 +391,11 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
       mode: 'SELECT_TARGET',
       sourceCard: _card,
       sourceCoords: coords,
+      originalOwnerId: ownerId,
       payload: {
         actionType: 'SELECT_HAND_FOR_DISCARD_THEN_SPAWN',
         tokenName: 'Walking Turret',
+        // Filter uses ownerId from closure (getAction scope) - checks if card belongs to owner
         filter: (c: Card) => c.ownerId === ownerId,
       },
     })

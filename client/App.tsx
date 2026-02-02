@@ -919,7 +919,20 @@ const App = memo(function App() {
           })
         })
       }
-    } else if (cursorStack) {
+    }
+
+    // CRITICAL: Update validHandTargets state to trigger visual highlights in PlayerPanel
+    if (handTargets.length > 0) {
+      setValidHandTargets(handTargets)
+    } else if (abilityMode?.type === 'ENTER_MODE' && abilityMode.mode === 'SELECT_TARGET' && abilityMode.payload?.filter) {
+      // In SELECT_TARGET mode with filter - always update (even with empty array)
+      setValidHandTargets(handTargets)
+    } else {
+      // Not in SELECT_TARGET mode with filter - clear valid hand targets
+      setValidHandTargets([])
+    }
+
+    if (cursorStack) {
       const counterDef = countersDatabase[cursorStack.type]
       const allowsHand = cursorStack.type === 'Revealed' || (counterDef?.allowedTargets?.includes('hand'))
 
@@ -1048,6 +1061,8 @@ const App = memo(function App() {
     } else if (!hasActiveMode) {
       // Clear targeting mode when no active mode exists
       clearTargetingMode()
+      // Also clear valid hand targets to remove highlights
+      setValidHandTargets([])
     }
 
     return undefined

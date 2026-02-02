@@ -1,6 +1,28 @@
 /**
  * @file Game management handlers
  * Handles game creation, joining, and leaving
+ *
+ * ===============================================================================
+ * IMPORTANT: PLAYER STATE MERGE RULES
+ * ===============================================================================
+ * When merging client player state with server player state (handleUpdateState):
+ *
+ * 1. SELECTED DECK MUST BE PRESERVED FROM CLIENT
+ *    - Both trustClientCards=true and trustClientCards=false branches
+ *    - Add: selectedDeck: clientPlayer.selectedDeck ?? serverPlayerAfterDraw.selectedDeck
+ *
+ *    Without this, deck selection won't update visually in the dropdown!
+ *
+ * 2. FIELDS TO ALWAYS PRESERVE FROM SERVER (server-authoritative):
+ *    - playerToken
+ *    - score (updated via UPDATE_PLAYER_SCORE only)
+ *    - isDummy, isSpectator
+ *
+ * 3. CARD STATE HANDLING:
+ *    - Use mergeCardList for hand, deck, discard to properly combine states
+ *    - Filter out drawn cards from client's deck when merge happens
+ *
+ * ===============================================================================
  */
 
 import { logger } from '../utils/logger.js';
@@ -357,6 +379,7 @@ export function handleUpdateState(ws, data) {
                 // Only allow client to update specific non-game-state fields
                 name: clientPlayer.name ?? serverPlayerAfterDraw.name,
                 color: clientPlayer.color ?? serverPlayerAfterDraw.color,
+                selectedDeck: clientPlayer.selectedDeck ?? serverPlayerAfterDraw.selectedDeck,
                 isDisconnected: clientPlayer.isDisconnected ?? serverPlayerAfterDraw.isDisconnected,
                 disconnectTimestamp: clientPlayer.disconnectTimestamp ?? serverPlayerAfterDraw.disconnectTimestamp,
                 autoDrawEnabled: clientPlayer.autoDrawEnabled ?? serverPlayerAfterDraw.autoDrawEnabled,

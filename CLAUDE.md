@@ -31,6 +31,32 @@ Before commit **MANDATORY**:
    b. Update locales, all should be in sync
    c. Ensure all lint checks and type checks pass
 
+## Critical Rules - NEVER BREAK
+
+### Card Movement Rule
+**Cards MUST be movable ANYWHERE at ANY TIME:**
+- Hand ↔ Deck ↔ Discard ↔ Showcase ↔ Battlefield
+- This flexibility is intentional and essential for game mechanics
+- Located in: `client/components/PlayerPanel.tsx` (see header documentation)
+
+### Deck Selection Visual Feedback Rule
+**When player selects a deck from dropdown, it MUST update VISUALLY IMMEDIATELY:**
+
+1. **Client-side (`PlayerPanel.tsx`):**
+   - Memo function MUST include `player.selectedDeck` in comparison
+   - `selectableDecks` MUST use `useMemo(() => deckFiles.filter(...), [deckFiles])`
+   - Dropdown only renders when `selectableDecks.length > 0`
+
+2. **Server-side (`gameManagement.ts`):**
+   - Player merge logic MUST include `selectedDeck` in BOTH branches:
+     - `trustClientCards=true`: Spread `...clientPlayer` covers it
+     - `trustClientCards=false`: MUST explicitly add `selectedDeck: clientPlayer.selectedDeck ?? serverPlayerAfterDraw.selectedDeck`
+
+**Failure to follow these rules will cause:**
+- Dropdown not updating when deck is selected
+- User having no visual feedback that selection was made
+- Page reload required to see correct deck
+
 ### Deployment (GitHub Pages + ngrok)
 1. **Build for GitHub Pages**:
    ```bash

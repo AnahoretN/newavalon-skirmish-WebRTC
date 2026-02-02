@@ -710,9 +710,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
           // Clear isScoringStep when server broadcasts state with different phase or different active player
           // This ensures that after turn passing (server-side), the client exits scoring mode
+          // Also clear if server has moved past Scoring phase (4) to Setup (1) or later
           const shouldClearScoringStep = currentState.isScoringStep && (
             syncedData.currentPhase !== currentState.currentPhase ||
-            syncedData.activePlayerId !== currentState.activePlayerId
+            syncedData.activePlayerId !== currentState.activePlayerId ||
+            syncedData.currentPhase !== 4  // Server has moved past Scoring phase
           )
           if (shouldClearScoringStep) {
             syncedData.isScoringStep = false
@@ -1771,7 +1773,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
     // When at Scoring phase (4) or in scoring step, send NEXT_PHASE to server
     // Server will handle turn passing and Preparation phase for next player
-    if (currentState.isGameStarted && (currentState.currentPhase === 4 || currentState.isScoringStep)) {
+    // CRITICAL: Only send to server if BOTH conditions are aligned - prevent race conditions
+    // where isScoringStep might be true but currentPhase has already changed
+    if (currentState.isGameStarted && currentState.currentPhase === 4 && currentState.isScoringStep) {
       // CRITICAL: Flush any pending score deltas BEFORE passing turn
       // This ensures server has up-to-date scores for round end check
       if (ws.current?.readyState === WebSocket.OPEN) {
@@ -2718,6 +2722,26 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     // Check for hand targets (if applicable)
     const handTargets: { playerId: number, cardIndex: number }[] = []
     const isDeckSelectable = action.mode === 'SELECT_DECK'
+
+    // Calculate hand targets if action has a filter for hand cards
+    if (action.payload?.filter && action.mode === 'SELECT_TARGET') {
+      // Find the player who owns the source card
+      const sourceOwnerId = action.sourceCard?.ownerId || action.originalOwnerId || playerId
+      const player = currentGameState.players.find(p => p.id === sourceOwnerId)
+
+      if (player && player.hand) {
+        // Apply the filter to each card in hand to find valid targets
+        player.hand.forEach((card, index) => {
+          try {
+            if (action.payload.filter(card)) {
+              handTargets.push({ playerId: player.id, cardIndex: index })
+            }
+          } catch (e) {
+            // Filter failed, skip this card
+          }
+        })
+      }
+    }
 
     // Build targeting mode data
     const targetingModeData: TargetingModeData = {
