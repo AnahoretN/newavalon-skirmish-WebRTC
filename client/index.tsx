@@ -13,6 +13,7 @@ const hashParams = new URLSearchParams(window.location.hash.slice(1))
 const inviteGameId = urlParams.get('game') || hashParams.get('game')
 const inviteServerUrl = urlParams.get('server') || hashParams.get('server')
 const encodedServerUrl = urlParams.get('s') || hashParams.get('s')
+const inviteHostId = urlParams.get('hostId') || hashParams.get('hostId')
 // const autoJoin = urlParams.get('autojoin') || hashParams.get('autojoin') // Reserved for future auto-join functionality
 
 // Store invite data in sessionStorage for App to use
@@ -21,6 +22,15 @@ if (inviteGameId) {
   // Set auto-join flag
   sessionStorage.setItem('invite_auto_join', 'true')
 }
+
+// Handle WebRTC hostId invite link
+if (inviteHostId) {
+  sessionStorage.setItem('invite_host_id', inviteHostId)
+  sessionStorage.setItem('invite_auto_join', 'true')
+  // Enable WebRTC mode if not already enabled
+  localStorage.setItem('webrtc_enabled', 'true')
+}
+
 if (inviteServerUrl) {
   // Auto-configure server URL from invite link (legacy parameter)
   localStorage.setItem('websocket_url', inviteServerUrl)
@@ -42,7 +52,7 @@ if (encodedServerUrl) {
 }
 
 // Clear URL parameters for security (so they don't persist in browser history)
-if (inviteGameId || inviteServerUrl || encodedServerUrl) {
+if (inviteGameId || inviteServerUrl || encodedServerUrl || inviteHostId) {
   window.history.replaceState({}, '', window.location.pathname)
 }
 

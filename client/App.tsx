@@ -1359,6 +1359,30 @@ const App = memo(function App() {
     setModalsState(prev => ({ ...prev, isSettingsModalOpen: false }))
   }, [forceReconnect])
 
+  // Handle WebRTC host invite link - auto-connect to host
+  useEffect(() => {
+    const inviteHostId = sessionStorage.getItem('invite_host_id')
+    const autoJoinFlag = sessionStorage.getItem('invite_auto_join')
+
+    if (inviteHostId && autoJoinFlag) {
+      console.log('[App] Auto-connecting to WebRTC host:', inviteHostId)
+      // Clear the stored invite data
+      sessionStorage.removeItem('invite_host_id')
+      sessionStorage.removeItem('invite_auto_join')
+
+      // Connect to host (async, but we don't need to wait for it here)
+      connectAsGuest(inviteHostId).then(success => {
+        if (success) {
+          console.log('[App] Successfully connected to WebRTC host')
+        } else {
+          console.error('[App] Failed to connect to WebRTC host')
+        }
+      }).catch(err => {
+        console.error('[App] Error connecting to WebRTC host:', err)
+      })
+    }
+  }, []) // Empty dependency array - run once on mount
+
   // Handle invite link - auto-join game as new player or spectator
   useEffect(() => {
     const inviteGameId = sessionStorage.getItem('invite_game_id')
