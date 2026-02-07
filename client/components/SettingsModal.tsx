@@ -14,6 +14,8 @@ interface SettingsModalProps {
   gameId?: string | null;
   isGameStarted?: boolean;
   isPrivate?: boolean;
+  webrtcEnabled?: boolean;
+  onWebrtcToggle?: (enabled: boolean) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -25,6 +27,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   gameId = null,
   isGameStarted = false,
   isPrivate = false,
+  webrtcEnabled = false,
+  onWebrtcToggle,
 }) => {
   const { language, setLanguage, t } = useLanguage()
   const [serverUrl, setServerUrl] = useState('')
@@ -32,8 +36,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isReconnecting, setIsReconnecting] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [cacheClearing, setCacheClearing] = useState(false)
+  const [localWebrtcEnabled, setLocalWebrtcEnabled] = useState(webrtcEnabled)
 
   const isConnected = connectionStatus === 'Connected'
+
+  // Update local state when prop changes
+  useEffect(() => {
+    setLocalWebrtcEnabled(webrtcEnabled)
+  }, [webrtcEnabled])
+
+  // Load WebRTC setting from localStorage on mount
+  useEffect(() => {
+    if (isOpen) {
+      const savedWebrtc = localStorage.getItem('webrtc_enabled')
+      setLocalWebrtcEnabled(savedWebrtc === 'true')
+    }
+  }, [isOpen])
 
   // Track when connection is established to update unsaved changes
   useEffect(() => {
@@ -109,6 +127,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }, 1000)
   }
 
+  const handleWebrtcToggle = (enabled: boolean) => {
+    setLocalWebrtcEnabled(enabled)
+    localStorage.setItem('webrtc_enabled', enabled.toString())
+    if (onWebrtcToggle) {
+      onWebrtcToggle(enabled)
+    }
+  }
+
   // Button is only enabled when connected AND no unsaved changes
   const canCopyLink = isConnected && !hasUnsavedChanges
 
@@ -132,6 +158,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <option key={code} value={code}>{LANGUAGE_NAMES[code]}</option>
               ))}
             </select>
+          </div>
+
+          {/* WebRTC Mode Toggle */}
+          <div>
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">
+                  {t('webrtcMode')}
+                </label>
+                <p className="text-xs text-gray-400">
+                  {t('webrtcModeDesc')}
+                </p>
+              </div>
+              <button
+                onClick={() => handleWebrtcToggle(!localWebrtcEnabled)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  localWebrtcEnabled ? 'bg-indigo-600' : 'bg-gray-600'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    localWebrtcEnabled ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            {localWebrtcEnabled && (
+              <div className="mt-2 p-2 bg-indigo-900 bg-opacity-30 rounded border border-indigo-700">
+                <p className="text-xs text-indigo-300">
+                  <span className="font-bold">{t('peerToPeer')}:</span> {t('directConnection')}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Server URL input with reconnect button and connection status */}

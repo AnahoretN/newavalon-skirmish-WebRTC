@@ -139,6 +139,9 @@ const App = memo(function App() {
     triggerHandCardSelection,
     latestDeckSelections,
     latestHandCardSelections,
+    // WebRTC props
+    initializeWebrtcHost,
+    connectAsGuest,
   } = gameStateHook
 
   const [modalsState, setModalsState] = useState({
@@ -1913,6 +1916,8 @@ const App = memo(function App() {
         gameId={gameState.gameId}
         isGameStarted={gameState.isGameStarted}
         isPrivate={gameState.isPrivate}
+        initializeWebrtcHost={initializeWebrtcHost}
+        connectAsGuest={connectAsGuest}
       />
     )
   }

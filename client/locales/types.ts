@@ -120,6 +120,7 @@ export interface TranslationResource {
     noDescription: string;
     comingSoon: string;
     revealed: string;
+    connecting: string;
     reconnecting: string;
     error: string;
     loading: string;
@@ -257,6 +258,22 @@ export interface TranslationResource {
     loadTextDeck: string;
     cannotSaveEmptyDeck: string;
     failedToParseDeckFile: string;
+    webrtcMode: string;
+    webrtcModeDesc: string;
+    peerToPeer: string;
+    directConnection: string;
+    hostGame: string;
+    hostGameDesc: string;
+    copyHostLink: string;
+    hostLinkCopied: string;
+    joinAsGuest: string;
+    enterHostId: string;
+    invalidHostId: string;
+    connectingToHost: string;
+    connectedToHost: string;
+    hostDisconnected: string;
+    guestDisconnected: string;
+    guestConnected: string;
   };
   rules: {
     title: string;

@@ -1,4 +1,4 @@
-import React, { memo } from 'react'
+import React, { memo, useState } from 'react'
 import { JoinGameModal } from './JoinGameModal'
 import { DeckBuilderModal } from './DeckBuilderModal'
 import { SettingsModal } from './SettingsModal'
@@ -34,6 +34,9 @@ interface MainMenuProps {
     gameId?: string | null;
     isGameStarted?: boolean;
     isPrivate?: boolean;
+    // WebRTC props
+    initializeWebrtcHost?: () => Promise<string | null>;
+    connectAsGuest?: (hostId: string) => Promise<boolean>;
 }
 
 export const MainMenu: React.FC<MainMenuProps> = memo(({
@@ -61,7 +64,31 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
   gameId = null,
   isGameStarted = false,
   isPrivate = false,
+  initializeWebrtcHost,
+  connectAsGuest,
 }) => {
+  const [isWebrtcJoinModalOpen, setIsWebrtcJoinModalOpen] = useState(false)
+  const [isInitializingHost, setIsInitializingHost] = useState(false)
+
+  // Check actual WebRTC mode from localStorage (source of truth)
+  const actualWebrtcEnabled = localStorage.getItem('webrtc_enabled') === 'true'
+
+  const handleHostGame = async () => {
+    if (!initializeWebrtcHost) return
+    setIsInitializingHost(true)
+    try {
+      const peerId = await initializeWebrtcHost()
+      if (peerId) {
+        // Create game after host is ready
+        handleCreateGame()
+      }
+    } catch (err) {
+      console.error('Failed to initialize host:', err)
+    } finally {
+      setIsInitializingHost(false)
+    }
+  }
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white relative overflow-hidden">
       <div
@@ -82,28 +109,40 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
         {/* Connection Status Indicator */}
         <div className="mb-6 flex items-center justify-center gap-2">
           <span className={`relative flex h-3 w-3`}>
-            {connectionStatus === 'Connected' && (
+            {/* WebRTC P2P mode - blue indicator */}
+            {actualWebrtcEnabled && (
+              <>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+              </>
+            )}
+            {/* Standard server mode - green/yellow/red based on status */}
+            {!actualWebrtcEnabled && connectionStatus === 'Connected' && (
               <>
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
               </>
             )}
-            {connectionStatus === 'Connecting' && (
+            {!actualWebrtcEnabled && connectionStatus === 'Connecting' && (
               <>
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
               </>
             )}
-            {connectionStatus === 'Disconnected' && (
+            {!actualWebrtcEnabled && connectionStatus === 'Disconnected' && (
               <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
             )}
           </span>
           <span className="text-sm text-gray-400">
-            {connectionStatus === 'Connected' && t('connected')}
-            {connectionStatus === 'Connecting' && t('connecting')}
-            {connectionStatus === 'Disconnected' && t('disconnected')}
+            {actualWebrtcEnabled ? t('peerToPeer') : (
+              <>
+                {connectionStatus === 'Connected' && t('connected')}
+                {connectionStatus === 'Connecting' && t('connecting')}
+                {connectionStatus === 'Disconnected' && t('disconnected')}
+              </>
+            )}
           </span>
-          {connectionStatus === 'Disconnected' && (
+          {!actualWebrtcEnabled && connectionStatus === 'Disconnected' && (
             <button
               onClick={forceReconnect}
               className="ml-2 text-xs text-blue-400 hover:text-blue-300 underline"
@@ -114,30 +153,47 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
         </div>
 
         <div className="space-y-4 w-full">
+          {/* Start Game / Host Game Button */}
           <button
-            onClick={handleCreateGame}
-            disabled={connectionStatus !== 'Connected'}
+            onClick={actualWebrtcEnabled ? handleHostGame : handleCreateGame}
+            disabled={
+              !actualWebrtcEnabled && connectionStatus !== 'Connected'
+            }
             className={`w-full font-bold py-3 px-6 rounded-lg shadow-lg transition-all transform flex items-center justify-center gap-2 ${
-              connectionStatus === 'Connected'
+              (actualWebrtcEnabled && !isInitializingHost) || (!actualWebrtcEnabled && connectionStatus === 'Connected')
                 ? 'bg-indigo-600 hover:bg-indigo-700 text-white hover:scale-105'
                 : 'bg-gray-800 text-gray-500 cursor-not-allowed'
             }`}
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-            {t('startGame')}
+            {actualWebrtcEnabled ? (
+              <>
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" /></svg>
+                {isInitializingHost ? t('connecting') + '...' : t('hostGame')}
+              </>
+            ) : (
+              <>
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                {t('startGame')}
+              </>
+            )}
           </button>
 
+          {/* Join Game Button */}
           <button
-            onClick={handleOpenJoinModal}
-            disabled={connectionStatus !== 'Connected'}
+            onClick={actualWebrtcEnabled ? () => setIsWebrtcJoinModalOpen(true) : handleOpenJoinModal}
+            disabled={
+              !actualWebrtcEnabled && connectionStatus !== 'Connected'
+            }
             className={`w-full font-bold py-3 px-6 rounded-lg shadow-lg transition-all transform flex items-center justify-center gap-2 ${
-              connectionStatus === 'Connected'
+              !actualWebrtcEnabled && connectionStatus === 'Connected'
                 ? 'bg-gray-700 hover:bg-gray-600 text-white hover:scale-105'
-                : 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                : actualWebrtcEnabled
+                  ? 'bg-gray-700 hover:bg-gray-600 text-white hover:scale-105'
+                  : 'bg-gray-800 text-gray-500 cursor-not-allowed'
             }`}
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-            {t('joinGame')}
+            {actualWebrtcEnabled ? t('joinAsGuest') : t('joinGame')}
           </button>
 
           <button
@@ -232,6 +288,53 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
         isOpen={isRulesModalOpen}
         onClose={() => setRulesModalOpen(false)}
       />
+
+      {/* WebRTC Join Modal */}
+      {isWebrtcJoinModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-8 shadow-xl w-full max-w-md">
+            <h2 className="text-2xl font-bold mb-6 text-white">{t('joinAsGuest')}</h2>
+            <p className="text-sm text-gray-400 mb-4">
+              {t('enterHostId')}
+            </p>
+            <input
+              type="text"
+              id="host-id-input"
+              placeholder="xxxx-xxxx-xxxx-xxxx"
+              className="w-full bg-gray-700 border border-gray-600 text-white font-mono rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500 mb-4"
+              autoFocus
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setIsWebrtcJoinModalOpen(false)}
+                className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                onClick={async () => {
+                  const input = document.getElementById('host-id-input') as HTMLInputElement
+                  const hostId = input?.value?.trim()
+                  if (hostId && connectAsGuest) {
+                    const success = await connectAsGuest(hostId)
+                    if (success) {
+                      setIsWebrtcJoinModalOpen(false)
+                      // Join the game after connecting
+                      // In WebRTC mode, the host will handle game state
+                    }
+                  }
+                }}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded"
+              >
+                {t('join')}
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-4">
+              Or enter full invite link (e.g., https://game.com#hostId=...)
+            </p>
+          </div>
+        </div>
+      )}
 
       {viewingCard && (
         <CardDetailModal

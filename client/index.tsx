@@ -46,6 +46,11 @@ if (inviteGameId || inviteServerUrl || encodedServerUrl) {
   window.history.replaceState({}, '', window.location.pathname)
 }
 
+// Set default WebRTC mode to enabled if not set
+if (localStorage.getItem('webrtc_enabled') === null) {
+  localStorage.setItem('webrtc_enabled', 'true')
+}
+
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean}> {
   constructor(props: {children: React.ReactNode}) {
     super(props)

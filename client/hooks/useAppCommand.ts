@@ -27,11 +27,11 @@ export const useAppCommand = ({
   setCommandModalCard,
   setCounterSelectionData,
   moveItem,
-  drawCard,
-  drawCardsBatch,
+  // drawCard,
+  // drawCardsBatch,
   updatePlayerScore,
   updateState,
-  removeBoardCardStatus,
+  // removeBoardCardStatus,
 }: UseAppCommandProps) => {
 
   const playCommandCard = useCallback((card: Card, source: DragItem) => {
@@ -182,16 +182,19 @@ export const useAppCommand = ({
 
       // Calculate total removed and remove counters
       let totalRemoved = 0
-      if (card?.statuses) {
-        Object.entries(countsToRemove).forEach(([type, count]) => {
-          for (let i = 0; i < count; i++) {
-            const lastIndex = card.statuses.map(s => s.type).lastIndexOf(type)
-            if (lastIndex > -1) {
-              card.statuses.splice(lastIndex, 1)
-              totalRemoved++
-            }
+      const cardStatuses = card?.statuses ?? []
+      Object.entries(countsToRemove).forEach(([type, count]) => {
+        for (let i = 0; i < count; i++) {
+          const lastIndex = cardStatuses.map(s => s.type).lastIndexOf(type)
+          if (lastIndex > -1 && card?.statuses) {
+            card.statuses.splice(lastIndex, 1)
+            totalRemoved++
           }
-        })
+        }
+      })
+      if (!card?.statuses && card) {
+        // Initialize statuses array if it doesn't exist
+        card.statuses = []
       }
 
       // Recalculate board statuses after removing counters

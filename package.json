@@ -1,7 +1,7 @@
 {
   "name": "new-avalon-skirmish",
-  "version": "0.2.8t",
-  "description": "A virtual tabletop for the New Avalon: Skirmish card game.",
+  "version": "0.2.9-WebRTC",
+  "description": "A virtual tabletop for the New Avalon: Skirmish card game with WebRTC P2P support.",
   "type": "module",
   "scripts": {
     "dev": "node --import tsx/esm server/dev.ts",
@@ -24,6 +24,7 @@
   "dependencies": {
     "express": "^5.2.1",
     "express-ws": "^5.0.2",
+    "peerjs": "^1.5.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "ws": "^8.17.1"
@@ -33,6 +34,7 @@
     "@types/express": "^5.0.6",
     "@types/express-ws": "^3.0.6",
     "@types/node": "^20.19.27",
+    "@types/peerjs": "^0.0.30",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@types/ws": "^8.18.1",

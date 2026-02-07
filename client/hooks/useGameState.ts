@@ -10,6 +10,7 @@ import { calculateValidTargets } from '@server/utils/targeting'
 import { logger } from '../utils/logger'
 import { initializeReadyStatuses, removeAllReadyStatuses } from '../utils/autoAbilities'
 import { deepCloneState, TIMING } from '../utils/common'
+import { getWebrtcManager, type WebrtcEvent } from '../utils/webrtcManager'
 
 // Helper to determine the correct WebSocket URL
 const getWebSocketURL = () => {
@@ -325,6 +326,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   } | null>(null)
   const [contentLoaded, setContentLoaded] = useState(!!rawJsonData)
 
+  // WebRTC P2P mode state
+  const [webrtcEnabled, setWebrtcEnabled] = useState(false)
+  const [webrtcHostId, setWebrtcHostId] = useState<string | null>(null)
+  const [webrtcIsHost, setWebrtcIsHost] = useState(false)
+
   const ws = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<number | null>(null)
   const joiningGameIdRef = useRef<string | null>(null)
@@ -332,6 +338,49 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   const isJoinAttemptRef = useRef<boolean>(false) // Track if user is trying to join via Join Game modal
   const playerTokenRef = useRef<string | undefined>(undefined)
   const receivedServerStateRef = useRef<boolean>(false) // Track if we've received server state after connection
+
+  // WebRTC manager ref
+  const webrtcManagerRef = useRef<ReturnType<typeof getWebrtcManager> | null>(null)
+
+  // Initialize WebRTC manager
+  useEffect(() => {
+    // Check if WebRTC is enabled in settings
+    const webrtcSetting = localStorage.getItem('webrtc_enabled') === 'true'
+    setWebrtcEnabled(webrtcSetting)
+
+    if (webrtcSetting) {
+      webrtcManagerRef.current = getWebrtcManager()
+      logger.info('WebRTC manager initialized')
+
+      // Setup WebRTC event handlers
+      const cleanup = webrtcManagerRef.current.on((event: WebrtcEvent) => {
+        handleWebrtcEvent(event)
+      })
+
+      return () => {
+        cleanup()
+        // Don't destroy manager on unmount, just cleanup listeners
+      }
+    }
+    return undefined
+  }, [])
+
+  // Check URL for hostId parameter (WebRTC guest join)
+  useEffect(() => {
+    if (!webrtcEnabled || !webrtcManagerRef.current) return
+
+    const hash = window.location.hash.slice(1)
+    if (!hash) return
+
+    const params = new URLSearchParams(hash)
+    const hostId = params.get('hostId')
+
+    if (hostId) {
+      // Auto-connect as guest to host
+      logger.info(`Found hostId in URL: ${hostId}, connecting as guest...`)
+      connectAsGuest(hostId)
+    }
+  }, [webrtcEnabled])
 
   const gameStateRef = useRef(gameState)
   useEffect(() => {
@@ -370,6 +419,149 @@ export const useGameState = (props: UseGameStateProps = {}) => {
    *
    * @param newStateOrFn - New state object or function deriving new state from previous state
    */
+
+  /**
+   * Handle WebRTC events from the P2P manager
+   */
+  const handleWebrtcEvent = useCallback((event: WebrtcEvent) => {
+    switch (event.type) {
+      case 'peer_open':
+        // Host: Peer is ready, peerId is available
+        if (event.data?.peerId) {
+          setWebrtcHostId(event.data.peerId)
+          logger.info(`WebRTC peer opened with ID: ${event.data.peerId}`)
+        }
+        break
+
+      case 'guest_connected':
+        // Host: A new guest connected
+        logger.info('Guest connected via WebRTC:', event.data?.peerId)
+        break
+
+      case 'connected_to_host':
+        // Guest: Successfully connected to host
+        setConnectionStatus('Connected')
+        logger.info('Connected to host via WebRTC')
+        break
+
+      case 'host_disconnected':
+      case 'guest_disconnected':
+        logger.warn('WebRTC peer disconnected')
+        setConnectionStatus('Disconnected')
+        break
+
+      case 'message_received':
+        // Handle incoming WebRTC message
+        handleWebrtcMessage(event.data)
+        break
+
+      case 'error':
+        logger.error('WebRTC error:', event.data)
+        break
+    }
+  }, [])
+
+  /**
+   * Handle incoming WebRTC message
+   */
+  const handleWebrtcMessage = useCallback((message: any) => {
+    if (!message || !message.type) return
+
+    switch (message.type) {
+      case 'JOIN_ACCEPT':
+        // Host accepted our join request with current game state
+        if (message.data?.gameState) {
+          const remoteState = message.data.gameState
+          setGameState(remoteState)
+          if (message.playerId !== undefined) {
+            setLocalPlayerId(message.playerId)
+          }
+          logger.info('Received game state from host via WebRTC')
+        }
+        break
+
+      case 'STATE_UPDATE':
+        // Host broadcasted state update
+        if (message.data?.gameState) {
+          setGameState(message.data.gameState)
+          logger.debug('Received state update from host via WebRTC')
+        }
+        break
+
+      case 'JOIN_REQUEST':
+        // Guest wants to join (host only) - handled elsewhere
+        break
+
+      case 'ACTION':
+        // Guest sent action to host (host only) - handled elsewhere
+        break
+
+      case 'PLAYER_LEAVE':
+        // Player is leaving
+        logger.info('Player left via WebRTC')
+        break
+    }
+  }, [])
+
+  /**
+   * Initialize WebRTC as host
+   */
+  const initializeWebrtcHost = useCallback(async (): Promise<string | null> => {
+    if (!webrtcManagerRef.current) {
+      logger.error('WebRTC manager not initialized')
+      return null
+    }
+
+    try {
+      setWebrtcIsHost(true)
+      setConnectionStatus('Connecting')
+      const peerId = await webrtcManagerRef.current.initializeAsHost()
+      setConnectionStatus('Connected')
+      return peerId
+    } catch (err) {
+      logger.error('Failed to initialize WebRTC host:', err)
+      setConnectionStatus('Disconnected')
+      return null
+    }
+  }, [])
+
+  /**
+   * Connect as guest to host via WebRTC
+   */
+  const connectAsGuest = useCallback(async (hostId: string): Promise<boolean> => {
+    if (!webrtcManagerRef.current) {
+      logger.error('WebRTC manager not initialized')
+      return false
+    }
+
+    try {
+      setWebrtcIsHost(false)
+      setConnectionStatus('Connecting')
+      await webrtcManagerRef.current.initializeAsGuest(hostId)
+      return true
+    } catch (err) {
+      logger.error('Failed to connect as guest:', err)
+      setConnectionStatus('Disconnected')
+      return false
+    }
+  }, [])
+
+  /**
+   * Broadcast game state via WebRTC (host only)
+   */
+  const broadcastWebrtcState = useCallback((newState: GameState) => {
+    if (!webrtcManagerRef.current || !webrtcIsHost) return
+    webrtcManagerRef.current.broadcastGameState(newState)
+  }, [webrtcIsHost])
+
+  /**
+   * Send action to host via WebRTC (guest only)
+   */
+  const sendWebrtcAction = useCallback((actionType: string, actionData: any) => {
+    if (!webrtcManagerRef.current || webrtcIsHost) return false
+    return webrtcManagerRef.current.sendAction(actionType, actionData)
+  }, [webrtcIsHost])
+
   const updateState = useCallback((newStateOrFn: GameState | ((prevState: GameState) => GameState)) => {
     setGameState((prevState) => {
       // Guard against undefined prevState
@@ -397,7 +589,20 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         return newState
       }
 
-      // Send WebSocket message with the computed state
+      // Use WebRTC for P2P communication if enabled
+      if (webrtcEnabled && webrtcManagerRef.current) {
+        if (webrtcIsHost) {
+          // Host broadcasts to all guests
+          broadcastWebrtcState(newState)
+        } else {
+          // Guest sends action to host (which will then broadcast)
+          // This is handled by specific action functions, not here
+          logger.debug('[updateState] Guest mode - state update will be sent via action')
+        }
+        return newState
+      }
+
+      // Send WebSocket message with the computed state (traditional mode)
       if (ws.current && ws.current.readyState === WebSocket.OPEN) {
         const payload: { type: string; gameState: GameState; playerToken?: string } = {
           type: 'UPDATE_STATE',
@@ -412,7 +617,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       return newState
     })
-  }, [])
+  }, [webrtcEnabled, webrtcIsHost, broadcastWebrtcState])
 
   // ... WebSocket logic (connectWebSocket, forceReconnect, joinGame, etc.) kept as is ...
   const connectWebSocket = useCallback(() => {
@@ -3312,5 +3517,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     reorderTopDeck,
     reorderCards,
     updateState,
+    // WebRTC P2P functions
+    webrtcHostId,
+    webrtcIsHost,
+    initializeWebrtcHost,
+    connectAsGuest,
+    sendWebrtcAction,
   }
 }
