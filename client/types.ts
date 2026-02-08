@@ -491,6 +491,12 @@ export interface PlayerDelta {
   discardAdd?: Card[]; // Cards added to discard
   discardClear?: boolean; // Clear discard pile
 
+  // Announced card (showcase) changes
+  announcedCard?: Card | null; // Full announced card state (for all players to see)
+
+  // Board history changes (for LastPlayed status tracking)
+  boardHistory?: string[]; // New board history state
+
   // Score changes
   scoreDelta?: number;
 
@@ -500,6 +506,11 @@ export interface PlayerDelta {
   name?: string;
   color?: PlayerColor;
   isDisconnected?: boolean;
+  teamId?: number;
+  autoDrawEnabled?: boolean;
+  readySetup?: boolean;
+  readyCommit?: boolean;
+  position?: number;
 }
 
 /**

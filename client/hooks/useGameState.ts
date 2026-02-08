@@ -969,6 +969,8 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       case 'STATE_UPDATE':
         // Host broadcasted state update
+        // Mark that we've received state from host (similar to server state in WebSocket mode)
+        receivedServerStateRef.current = true
         if (message.data?.gameState) {
           const remoteState = message.data.gameState
           // Use functional update to get the absolute latest state
@@ -1067,6 +1069,10 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       case 'STATE_DELTA':
         // Host: received delta from guest, rebroadcast to all other guests
         // Guest: received delta broadcast from host
+        // Mark that we've received state from host (enables sending our own deltas)
+        if (!webrtcIsHostRef.current) {
+          receivedServerStateRef.current = true
+        }
         logger.info(`[STATE_DELTA] Received STATE_DELTA message, isHost: ${webrtcIsHostRef.current}, senderId: ${message.senderId}`)
         if (message.data?.delta) {
           const delta: StateDelta = message.data.delta
@@ -1482,6 +1488,8 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       case 'GAME_START':
         // Host started the game (guest only)
+        // Mark that we've received state from host (enables sending our own deltas)
+        receivedServerStateRef.current = true
         logger.info('[handleWebrtcMessage] Game starting!', message.data)
         // Log current deck/hand sizes before applying GAME_START
         if (gameStateRef.current) {
@@ -1801,19 +1809,20 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       // Use WebRTC for P2P communication if enabled
       if (webrtcEnabled && webrtcManagerRef.current) {
+        const delta = createDeltaFromStates(prevState, newState, localPlayerIdRef.current || 0)
+        logger.info(`[updateState] WebRTC enabled, isHost=${webrtcIsHostRef.current}, delta: boardCells=${delta.boardCells?.length || 0}, playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, phase=${!!delta.phaseDelta}`)
+
         if (webrtcIsHostRef.current) {
           // Host broadcasts delta to all guests (efficient)
-          const delta = createDeltaFromStates(prevState, newState, localPlayerIdRef.current || 0)
           if (!isDeltaEmpty(delta)) {
             webrtcManagerRef.current.broadcastStateDelta(delta)
-            logger.debug(`[updateState] Host broadcast delta: phase=${!!delta.phaseDelta}, board=${delta.boardCells?.length || 0}`)
+            logger.info(`[updateState] Host broadcast delta: phase=${!!delta.phaseDelta}, board=${delta.boardCells?.length || 0}`)
           }
         } else {
           // Guest sends delta to host (which will then broadcast to all)
-          const delta = createDeltaFromStates(prevState, newState, localPlayerIdRef.current || 0)
           if (!isDeltaEmpty(delta)) {
-            webrtcManagerRef.current.sendStateDelta(delta)
-            logger.debug(`[updateState] Guest sent delta to host`)
+            const success = webrtcManagerRef.current.sendStateDelta(delta)
+            logger.info(`[updateState] Guest sent delta to host: success=${success}, boardCells=${delta.boardCells?.length || 0}`)
           } else {
             logger.debug('[updateState] Delta empty, skipping send')
           }

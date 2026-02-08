@@ -196,6 +196,7 @@ export function createPlayerPropertyDelta(
  * For other players: adjust array sizes to match delta (placeholder cards)
  */
 export function applyStateDelta(currentState: GameState, delta: StateDelta, localPlayerId?: number | null): GameState {
+  console.log(`[applyStateDelta] Applying delta: sourcePlayerId=${delta.sourcePlayerId}, boardCells=${delta.boardCells?.length || 0}, playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, phase=${!!delta.phaseDelta}`)
   const newState = { ...currentState }
 
   // Apply player deltas
@@ -254,11 +255,17 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
         }
       }
 
-      // Apply discard size changes
-      if (playerDelta.discardSizeDelta !== undefined) {
-        if (isLocalPlayer) {
-          // Local player: keep their actual discard
-        } else {
+      // Apply discard changes
+      if (playerDelta.discardAdd) {
+        // Cards added to discard - append them for local player
+        updatedPlayer.discard = [...updatedPlayer.discard, ...playerDelta.discardAdd]
+      }
+      if (playerDelta.discardClear) {
+        updatedPlayer.discard = []
+      }
+      if (playerDelta.discardSizeDelta !== undefined && !playerDelta.discardAdd) {
+        // Only adjust size if we don't have exact cards (for other players' discards)
+        if (!isLocalPlayer) {
           // Other players: adjust discard array size for UI display
           const newSize = player.discard.length + playerDelta.discardSizeDelta
           if (newSize < player.discard.length) {
@@ -295,6 +302,34 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
       }
       if (playerDelta.isDisconnected !== undefined) {
         updatedPlayer.isDisconnected = playerDelta.isDisconnected
+      }
+
+      // Apply announcedCard changes
+      if (playerDelta.announcedCard !== undefined) {
+        console.log(`[applyStateDelta] Player ${player.id} announcedCard updated:`, playerDelta.announcedCard?.id || 'null')
+        updatedPlayer.announcedCard = playerDelta.announcedCard
+      }
+
+      // Apply boardHistory changes
+      if (playerDelta.boardHistory !== undefined) {
+        updatedPlayer.boardHistory = [...playerDelta.boardHistory]
+      }
+
+      // Apply other property changes
+      if (playerDelta.teamId !== undefined) {
+        updatedPlayer.teamId = playerDelta.teamId
+      }
+      if (playerDelta.autoDrawEnabled !== undefined) {
+        updatedPlayer.autoDrawEnabled = playerDelta.autoDrawEnabled
+      }
+      if (playerDelta.readySetup !== undefined) {
+        updatedPlayer.readySetup = playerDelta.readySetup
+      }
+      if (playerDelta.readyCommit !== undefined) {
+        updatedPlayer.readyCommit = playerDelta.readyCommit
+      }
+      if (playerDelta.position !== undefined) {
+        updatedPlayer.position = playerDelta.position
       }
 
       return updatedPlayer
@@ -347,11 +382,12 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
         // Apply power changes
         if (cellDelta.cardPowerDelta !== undefined && updatedCell.card) {
           const cardWithPowerDelta: Card = { ...updatedCell.card }
-          cardWithPowerDelta.power = cardWithPowerDelta.power + (cellDelta.cardPowerDelta || 0)
+          cardWithPowerDelta.power = Number(cardWithPowerDelta.power ?? 0) + cellDelta.cardPowerDelta
           updatedCell.card = cardWithPowerDelta
         }
 
         if (cellDelta.cardPowerModifier !== undefined && updatedCell.card) {
+          console.log(`[applyStateDelta] Applying powerModifier at [${rowIndex},${colIndex}]: ${updatedCell.card.powerModifier} -> ${cellDelta.cardPowerModifier}`)
           const cardWithPowerModifier: Card = { ...updatedCell.card }
           cardWithPowerModifier.powerModifier = cellDelta.cardPowerModifier
           updatedCell.card = cardWithPowerModifier
@@ -509,27 +545,51 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
         const oldStatuses = oldCell?.card?.statuses || []
         const newStatuses = newCell?.card?.statuses || []
 
-        if (oldStatuses.length !== newStatuses.length) {
-          const addedStatuses = newStatuses.filter(ns =>
-            !oldStatuses.find(os => os.type === ns.type && os.addedByPlayerId === ns.addedByPlayerId)
-          )
-          const removedStatusTypes = oldStatuses
-            .filter(os =>
-              !newStatuses.find(ns => ns.type === os.type && ns.addedByPlayerId === os.addedByPlayerId)
-            )
-            .map(s => s.type)
+        // Collect added/removed/replaced statuses
+        const addedStatuses: any[] = []
+        const removedStatusTypes: string[] = []
 
-          if (addedStatuses.length > 0 || removedStatusTypes.length > 0) {
-            cellDelta.cardStatuses = {
-              ...(addedStatuses.length > 0 && { add: addedStatuses }),
-              ...(removedStatusTypes.length > 0 && { remove: removedStatusTypes })
+        if (oldStatuses.length !== newStatuses.length) {
+          // Length changed - find statuses that were added/removed by index
+          // This handles duplicate status types correctly (e.g., multiple Shield tokens)
+          addedStatuses.push(...newStatuses.slice(oldStatuses.length))
+          const removedStatuses = oldStatuses.slice(newStatuses.length)
+          removedStatusTypes.push(...removedStatuses.map(s => s.type))
+        } else {
+          // Same length - check for status replacements (e.g., ready → anotherStatus)
+          for (let i = 0; i < oldStatuses.length; i++) {
+            const oldStatus = oldStatuses[i]
+            const newStatus = newStatuses[i]
+            // Compare by type and addedByPlayerId to detect replacements
+            if (oldStatus.type !== newStatus.type ||
+                oldStatus.addedByPlayerId !== newStatus.addedByPlayerId) {
+              // Status was replaced - remove old, add new
+              removedStatusTypes.push(oldStatus.type)
+              addedStatuses.push(newStatus)
             }
           }
         }
 
-        // Check power changes
-        if (oldCell?.card?.power !== newCell?.card?.power) {
-          cellDelta.cardPowerDelta = (newCell?.card?.power || 0) - (oldCell?.card?.power || 0)
+        if (addedStatuses.length > 0 || removedStatusTypes.length > 0) {
+          cellDelta.cardStatuses = {
+            ...(addedStatuses.length > 0 && { add: addedStatuses }),
+            ...(removedStatusTypes.length > 0 && { remove: removedStatusTypes })
+          }
+        }
+
+        // Check power changes (explicit number comparison)
+        const oldPower = Number(oldCell?.card?.power ?? 0)
+        const newPower = Number(newCell?.card?.power ?? 0)
+        if (oldPower !== newPower) {
+          cellDelta.cardPowerDelta = newPower - oldPower
+        }
+
+        // Check powerModifier changes (used for abilities like Walking Turret)
+        const oldPowerModifier = oldCell?.card?.powerModifier
+        const newPowerModifier = newCell?.card?.powerModifier
+        if (oldPowerModifier !== newPowerModifier) {
+          cellDelta.cardPowerModifier = newPowerModifier
+          console.log(`[createDeltaFromStates] Power modifier changed at [${r},${c}]: ${oldPowerModifier} -> ${newPowerModifier}`)
         }
 
         if (Object.keys(cellDelta).length > 2) { // More than just row/col
@@ -583,6 +643,49 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
     }
     if (oldPlayer.discard.length !== newPlayer.discard.length) {
       playerDelta.discardSizeDelta = newPlayer.discard.length - oldPlayer.discard.length
+      // Track actual cards added to discard (for local player to see their own discarded cards)
+      if (newPlayer.discard.length > oldPlayer.discard.length) {
+        playerDelta.discardAdd = newPlayer.discard.slice(oldPlayer.discard.length)
+      }
+    }
+
+    // Check announcedCard (showcase) changes
+    const oldAnnounced = oldPlayer.announcedCard
+    const newAnnounced = newPlayer.announcedCard
+    // Compare announced cards (deep comparison of relevant fields)
+    const announcedChanged = !oldAnnounced !== !newAnnounced ||
+      (oldAnnounced && newAnnounced && (
+        oldAnnounced.id !== newAnnounced.id ||
+        oldAnnounced.power !== newAnnounced.power ||
+        oldAnnounced.powerModifier !== newAnnounced.powerModifier ||
+        (oldAnnounced.statuses?.length ?? 0) !== (newAnnounced.statuses?.length ?? 0) ||
+        JSON.stringify(oldAnnounced.statuses) !== JSON.stringify(newAnnounced.statuses)
+      ))
+    if (announcedChanged) {
+      playerDelta.announcedCard = newAnnounced ? { ...newAnnounced } : null
+      console.log(`[createDeltaFromStates] Player ${newPlayer.id} announcedCard changed:`, oldAnnounced?.id, '->', newAnnounced?.id)
+    }
+
+    // Check boardHistory changes (for LastPlayed status)
+    if (JSON.stringify(oldPlayer.boardHistory) !== JSON.stringify(newPlayer.boardHistory)) {
+      playerDelta.boardHistory = [...newPlayer.boardHistory]
+    }
+
+    // Check other property changes
+    if (oldPlayer.teamId !== newPlayer.teamId) {
+      playerDelta.teamId = newPlayer.teamId
+    }
+    if (oldPlayer.autoDrawEnabled !== newPlayer.autoDrawEnabled) {
+      playerDelta.autoDrawEnabled = newPlayer.autoDrawEnabled
+    }
+    if (oldPlayer.readySetup !== newPlayer.readySetup) {
+      playerDelta.readySetup = newPlayer.readySetup
+    }
+    if (oldPlayer.readyCommit !== newPlayer.readyCommit) {
+      playerDelta.readyCommit = newPlayer.readyCommit
+    }
+    if (oldPlayer.position !== newPlayer.position) {
+      playerDelta.position = newPlayer.position
     }
 
     if (Object.keys(playerDelta).length > 1) { // More than just id

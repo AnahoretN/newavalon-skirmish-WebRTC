@@ -8,12 +8,33 @@ import { PLAYER_COLOR_RGB } from '../constants.js'
 /**
  * Deep clone a GameState using structuredClone with fallback
  * Prefer structuredClone for better performance and type preservation
+ * Note: Removes targetingMode before cloning as it may contain non-serializable functions
  */
 export function deepCloneState<T>(state: T): T {
-  if (typeof structuredClone !== 'undefined') {
-    return structuredClone(state)
+  // targetingMode may contain functions (e.g., action.payload.filter) that can't be cloned
+  // We temporarily remove it, clone the state, then restore it
+  const stateAny = state as any
+  const targetingMode = stateAny?.targetingMode
+
+  if (targetingMode) {
+    // Temporarily remove targetingMode
+    delete stateAny.targetingMode
   }
-  return JSON.parse(JSON.stringify(state)) as T
+
+  let cloned: T
+  if (typeof structuredClone !== 'undefined') {
+    cloned = structuredClone(state)
+  } else {
+    cloned = JSON.parse(JSON.stringify(state)) as T
+  }
+
+  // Restore targetingMode after cloning
+  if (targetingMode) {
+    (cloned as any).targetingMode = targetingMode
+    stateAny.targetingMode = targetingMode
+  }
+
+  return cloned
 }
 
 /**
