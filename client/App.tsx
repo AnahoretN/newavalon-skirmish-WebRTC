@@ -414,6 +414,8 @@ const App = memo(function App() {
     triggerFloatingText,
     triggerHandCardSelection,
     clearValidTargets: () => setValidTargets([]),
+    setTargetingMode,
+    clearTargetingMode,
   })
 
   const handleAnnouncedCardDoubleClick = (player: Player, card: Card) => {

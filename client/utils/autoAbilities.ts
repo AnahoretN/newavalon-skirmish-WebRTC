@@ -133,8 +133,13 @@ export const initializeReadyStatuses = (card: Card, ownerId: number): void => {
     card.statuses = []
   }
 
+  const oldStatusesLength = card.statuses.length
+  const oldStatusesTypes = card.statuses.map(s => s.type)
+
   // Use server-side ability definitions to determine which ready statuses to add
   const abilityTypes = getCardAbilityTypes(card)
+
+  console.log(`[initializeReadyStatuses] Card: ${card.name} (${card.id}), ownerId: ${ownerId}, abilities: [${abilityTypes.join(', ')}]`)
 
   for (const abilityType of abilityTypes) {
     let readyStatusType = ''
@@ -148,7 +153,12 @@ export const initializeReadyStatuses = (card: Card, ownerId: number): void => {
 
     if (readyStatusType && !card.statuses.some(s => s.type === readyStatusType)) {
       card.statuses.push({ type: readyStatusType, addedByPlayerId: ownerId })
+      console.log(`[initializeReadyStatuses] Added status: ${readyStatusType} to ${card.name}`)
     }
+  }
+
+  if (card.statuses.length !== oldStatusesLength) {
+    console.log(`[initializeReadyStatuses] Card ${card.name}: statuses changed from [${oldStatusesTypes.join(', ')}] to [${card.statuses.map(s => s.type).join(', ')}]`)
   }
 }
 

@@ -188,6 +188,20 @@ export function createPlayerPropertyDelta(
 }
 
 /**
+ * Create a delta for ability mode changes (for P2P visual sync)
+ */
+export function createAbilityModeDelta(
+  abilityMode: any,
+  sourcePlayerId: number
+): StateDelta {
+  return {
+    timestamp: Date.now(),
+    sourcePlayerId,
+    abilityModeDelta: abilityMode
+  }
+}
+
+/**
  * Apply a state delta to the current game state
  * This is called by guests when they receive a delta from host
  *
@@ -347,14 +361,18 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
 
         const updatedCell = { ...cell }
 
-        // Apply card placement/removal
+        // Apply card placement/removal (full card replacement)
         if (cellDelta.card !== undefined) {
-          console.log(`[applyStateDelta] Cell [${rowIndex},${colIndex}]: card ${cellDelta.card ? 'added' : 'removed'}, name: ${cellDelta.card?.name || 'N/A'}`)
+          const statusCount = cellDelta.card?.statuses?.length || 0
+          const statusTypes = cellDelta.card?.statuses?.map(s => s.type).join(',') || 'none'
+          console.log(`[applyStateDelta] Cell [${rowIndex},${colIndex}]: card ${cellDelta.card ? 'added' : 'removed'}, name: ${cellDelta.card?.name || 'N/A'}, statuses: [${statusTypes}] (count: ${statusCount})`)
           updatedCell.card = cellDelta.card
         }
 
-        // Apply status changes to existing card
+        // Apply status changes to existing card (after potential card replacement)
         if (cellDelta.cardStatuses && updatedCell.card) {
+          console.log(`[applyStateDelta] Cell [${rowIndex},${colIndex}]: applying cardStatuses, remove=${cellDelta.cardStatuses.remove?.join(',')}, add count=${cellDelta.cardStatuses.add?.length || 0}`)
+
           const updatedCard = { ...updatedCell.card }
           if (!updatedCard.statuses) {
             updatedCard.statuses = []
@@ -363,16 +381,22 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
           if (cellDelta.cardStatuses.clear) {
             updatedCard.statuses = []
           } else {
-            // Remove statuses
-            if (cellDelta.cardStatuses.remove) {
+            // Remove statuses by type (first, before adding new ones)
+            if (cellDelta.cardStatuses.remove && cellDelta.cardStatuses.remove.length > 0) {
               const removeTypes = cellDelta.cardStatuses.remove
+              const beforeLength = updatedCard.statuses.length
               updatedCard.statuses = updatedCard.statuses.filter(
                 s => !removeTypes.includes(s.type)
               )
+              const afterLength = updatedCard.statuses.length
+              if (beforeLength !== afterLength) {
+                console.log(`[applyStateDelta] Cell [${rowIndex},${colIndex}]: removed ${beforeLength - afterLength} statuses with types: ${removeTypes.join(',')}`)
+              }
             }
-            // Add statuses
-            if (cellDelta.cardStatuses.add) {
+            // Add new statuses
+            if (cellDelta.cardStatuses.add && cellDelta.cardStatuses.add.length > 0) {
               updatedCard.statuses = [...updatedCard.statuses, ...cellDelta.cardStatuses.add]
+              console.log(`[applyStateDelta] Cell [${rowIndex},${colIndex}]: added ${cellDelta.cardStatuses.add.length} statuses`)
             }
           }
 
@@ -470,6 +494,11 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
     }
   }
 
+  // Apply ability mode changes (for P2P visual sync)
+  if (delta.abilityModeDelta) {
+    newState.abilityMode = delta.abilityModeDelta
+  }
+
   return newState
 }
 
@@ -532,6 +561,9 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
       const newCardId = newCell?.card?.id
 
       if (oldCardId !== newCardId) {
+        const statusCount = newCell?.card?.statuses?.length || 0
+        const statusTypes = newCell?.card?.statuses?.map(s => s.type).join(',') || 'none'
+        console.log(`[createDeltaFromStates] Cell [${r},${c}]: card changed, new card: ${newCell?.card?.name || 'null'}, statuses: [${statusTypes}] (count: ${statusCount})`)
         boardCellDeltas.push({
           row: r,
           col: c,
@@ -545,16 +577,69 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
         const oldStatuses = oldCell?.card?.statuses || []
         const newStatuses = newCell?.card?.statuses || []
 
+        // Log status arrays for debugging (only when they exist)
+        if (oldStatuses.length > 0 || newStatuses.length > 0) {
+          const oldStatusTypes = oldStatuses.map(s => s.type).join(',')
+          const newStatusTypes = newStatuses.map(s => s.type).join(',')
+          if (oldStatusTypes !== newStatusTypes) {
+            console.log(`[createDeltaFromStates] Cell [${r},${c}] (${newCell.card.name}): statuses differ - old: [${oldStatusTypes}], new: [${newStatusTypes}]`)
+          }
+        }
+
         // Collect added/removed/replaced statuses
         const addedStatuses: any[] = []
         const removedStatusTypes: string[] = []
 
         if (oldStatuses.length !== newStatuses.length) {
-          // Length changed - find statuses that were added/removed by index
-          // This handles duplicate status types correctly (e.g., multiple Shield tokens)
-          addedStatuses.push(...newStatuses.slice(oldStatuses.length))
-          const removedStatuses = oldStatuses.slice(newStatuses.length)
-          removedStatusTypes.push(...removedStatuses.map(s => s.type))
+          // Length changed - use comprehensive comparison to find actual differences
+          // This handles the case where statuses are removed from the middle using filter()
+          // Create Maps for comparison (keyed by type+addedByPlayerId to handle duplicates)
+          const oldStatusMap = new Map<string, any[]>()
+          const newStatusMap = new Map<string, any[]>()
+
+          for (const s of oldStatuses) {
+            const key = `${s.type}_${s.addedByPlayerId}`
+            if (!oldStatusMap.has(key)) oldStatusMap.set(key, [])
+            oldStatusMap.get(key)!.push(s)
+          }
+
+          for (const s of newStatuses) {
+            const key = `${s.type}_${s.addedByPlayerId}`
+            if (!newStatusMap.has(key)) newStatusMap.set(key, [])
+            newStatusMap.get(key)!.push(s)
+          }
+
+          // Find removed statuses (in old but not in new, or count decreased)
+          for (const [key, oldList] of oldStatusMap) {
+            const newList = newStatusMap.get(key)
+            const oldCount = oldList.length
+            const newCount = newList ? newList.length : 0
+
+            if (newCount < oldCount) {
+              // Some of these statuses were removed
+              const removeCount = oldCount - newCount
+              for (let i = 0; i < removeCount; i++) {
+                removedStatusTypes.push(oldList[i].type)
+              }
+            }
+          }
+
+          // Find added statuses (in new but not in old, or count increased)
+          for (const [key, newList] of newStatusMap) {
+            const oldList = oldStatusMap.get(key)
+            const newCount = newList.length
+            const oldCount = oldList ? oldList.length : 0
+
+            if (newCount > oldCount) {
+              // Some of these statuses were added
+              const addCount = newCount - oldCount
+              for (let i = oldCount; i < newCount; i++) {
+                addedStatuses.push(newList[i])
+              }
+            }
+          }
+
+          console.log(`[createDeltaFromStates] Cell [${r},${c}]: status length changed ${oldStatuses.length} -> ${newStatuses.length}, added: ${addedStatuses.length}, removed: ${removedStatusTypes.join(',')}`)
         } else {
           // Same length - check for status replacements (e.g., ready → anotherStatus)
           for (let i = 0; i < oldStatuses.length; i++) {
@@ -566,6 +651,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
               // Status was replaced - remove old, add new
               removedStatusTypes.push(oldStatus.type)
               addedStatuses.push(newStatus)
+              console.log(`[createDeltaFromStates] Cell [${r},${c}]: status replaced at index ${i}: ${oldStatus.type} -> ${newStatus.type}`)
             }
           }
         }
@@ -575,6 +661,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
             ...(addedStatuses.length > 0 && { add: addedStatuses }),
             ...(removedStatusTypes.length > 0 && { remove: removedStatusTypes })
           }
+          console.log(`[createDeltaFromStates] Cell [${r},${c}]: cardStatuses delta created, remove: [${removedStatusTypes.join(',')}], add: ${addedStatuses.map(s => s.type).join(',')}`)
         }
 
         // Check power changes (explicit number comparison)
@@ -697,6 +784,22 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
     delta.playerDeltas = playerDeltas
   }
 
+  // Detect ability mode changes (for P2P visual sync)
+  if (JSON.stringify(oldState.abilityMode) !== JSON.stringify(newState.abilityMode)) {
+    delta.abilityModeDelta = newState.abilityMode
+    console.log(`[createDeltaFromStates] abilityMode changed:`, oldState.abilityMode?.mode, '->', newState.abilityMode?.mode)
+  }
+
+  // Detect targeting mode changes (for P2P visual sync)
+  if (JSON.stringify(oldState.targetingMode) !== JSON.stringify(newState.targetingMode)) {
+    if (newState.targetingMode === null) {
+      delta.targetingModeDelta = { clear: true }
+    } else {
+      delta.targetingModeDelta = { set: newState.targetingMode }
+    }
+    console.log(`[createDeltaFromStates] targetingMode changed`)
+  }
+
   return delta
 }
 
@@ -710,5 +813,6 @@ export function isDeltaEmpty(delta: StateDelta): boolean {
          !delta.playerDeltas &&
          !delta.highlightsDelta &&
          !delta.floatingTextsDelta &&
-         !delta.targetingModeDelta
+         !delta.targetingModeDelta &&
+         !delta.abilityModeDelta
 }

@@ -30,7 +30,7 @@ interface UseAppAbilitiesProps {
     updatePlayerScore: (playerId: number, delta: number) => void;
     markAbilityUsed: (coords: { row: number, col: number }, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void;
     applyGlobalEffect: (source: any, targets: any[], type: string, pid: number, isDeploy: boolean) => void;
-    swapCards: (c1: any, c2: any, removeReadyStatusFromCoords?: any) => void;
+    swapCards: (c1: any, c2: any) => void;
     transferStatus: (from: any, to: any, type: string) => void;
     transferAllCounters: (from: any, to: any) => void;
     resurrectDiscardedCard: (pid: number, idx: number, coords: any) => void;
@@ -47,6 +47,8 @@ interface UseAppAbilitiesProps {
     triggerFloatingText: (data: Omit<FloatingTextData, 'timestamp'> | Omit<FloatingTextData, 'timestamp'>[]) => void;
     triggerHandCardSelection: (playerId: number, cardIndex: number, selectedByPlayerId: number) => void;
     clearValidTargets: () => void;
+    setTargetingMode: (action: AbilityAction, playerId: number, sourceCoords?: { row: number; col: number }, preCalculatedTargets?: {row: number, col: number}[], commandContext?: CommandContext) => void;
+    clearTargetingMode: () => void;
 }
 
 export const useAppAbilities = ({
@@ -89,6 +91,8 @@ export const useAppAbilities = ({
   triggerFloatingText,
   triggerHandCardSelection,
   clearValidTargets,
+  setTargetingMode,
+  clearTargetingMode,
 }: UseAppAbilitiesProps) => {
 
   const handleActionExecution = useCallback((action: AbilityAction, sourceCoords: { row: number, col: number }) => {
@@ -130,7 +134,7 @@ export const useAppAbilities = ({
         }])
       }
       // Mark ability as used
-      markAbilityUsed(sourceCoords, !!action.isDeployAbility)
+      markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
       return
     }
 
@@ -143,7 +147,7 @@ export const useAppAbilities = ({
         // Defensive check: if source card has no owner, this scoring is invalid
         if (finnOwnerId === undefined) {
           console.warn('[FINN_SCORING] Source card missing ownerId, skipping scoring')
-          markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility)
+          markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
           return
         }
 
@@ -181,7 +185,7 @@ export const useAppAbilities = ({
           })
           updatePlayerScore(finnOwnerId, revealedCount)
         }
-        markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility)
+        markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
         return
       }
 
@@ -316,7 +320,7 @@ export const useAppAbilities = ({
           }
         } else {
           triggerNoTarget(sourceCoords)
-          markAbilityUsed(sourceCoords, !!action.isDeployAbility)
+          markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
         }
         return
       }
@@ -374,6 +378,7 @@ export const useAppAbilities = ({
           onlyFaceDown: action.onlyFaceDown,
           targetType: action.targetType, // New prop
           isDeployAbility: action.isDeployAbility,
+          readyStatusToRemove: action.readyStatusToRemove, // CRITICAL: Pass ready status to remove when token is placed
           requiredTargetStatus: action.requiredTargetStatus,
           requireStatusFromSourceOwner: action.requireStatusFromSourceOwner, // New prop
           mustBeAdjacentToSource: action.mustBeAdjacentToSource,
@@ -505,6 +510,7 @@ export const useAppAbilities = ({
             originalOwnerId: action.originalOwnerId, // Preserve command owner for highlight colors
             mustBeInLineWithSource: true, // Target must be in line with Princeps
             isDeployAbility: action.isDeployAbility,
+            readyStatusToRemove: action.readyStatusToRemove,
           })
         } else {
           triggerNoTarget(sourceCoords)
@@ -541,6 +547,7 @@ export const useAppAbilities = ({
             originalOwnerId: action.originalOwnerId, // Preserve command owner for highlight colors
             mustBeInLineWithSource: true, // Target must be in line with Gawain
             isDeployAbility: action.isDeployAbility,
+            readyStatusToRemove: action.readyStatusToRemove,
           })
         } else {
           triggerNoTarget(sourceCoords)
@@ -578,6 +585,7 @@ export const useAppAbilities = ({
             requiredTargetStatus: 'Threat',
             requireStatusFromSourceOwner: true, // Pass to cursor state
             isDeployAbility: action.isDeployAbility,
+            readyStatusToRemove: action.readyStatusToRemove,
           })
         } else {
           triggerNoTarget(sourceCoords)
@@ -700,6 +708,11 @@ export const useAppAbilities = ({
         sourceCoords: effectiveSourceCoords,
       })
 
+      // Sync targeting mode for visual effects (P2P)
+      // Calculate valid targets for the mode to show highlights to all players
+      const playerId = action.sourceCard?.ownerId ?? gameState.activePlayerId ?? localPlayerId ?? 1
+      setTargetingMode(action, playerId, effectiveSourceCoords, undefined, commandContext)
+
     } else if (action.type === 'OPEN_MODAL') {
       // Modal logic (unchanged essentially, but wrapped)
       if (action.mode === 'RETRIEVE_DEVICE') {
@@ -710,7 +723,7 @@ export const useAppAbilities = ({
             pickConfig: { filterType: 'Device', action: 'recover' },
           })
           if (sourceCoords.row >= 0) {
-            markAbilityUsed(sourceCoords, !!action.isDeployAbility)
+            markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
           }
         }
       } else if (action.mode === 'IMMUNIS_RETRIEVE') {
@@ -741,7 +754,7 @@ export const useAppAbilities = ({
             },
           })
           if (sourceCoords.row >= 0) {
-            markAbilityUsed(sourceCoords, !!action.isDeployAbility)
+            markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
           }
         }
       } else if (action.mode === 'ZIUS_LINE_SELECT') {
@@ -801,7 +814,7 @@ export const useAppAbilities = ({
         })
       }
     }
-  }, [gameState, localPlayerId, commandContext, markAbilityUsed, setAbilityMode, setCursorStack, triggerNoTarget, applyGlobalEffect, setViewingDiscard, addBoardCardStatus, updatePlayerScore, drawCard, removeStatusByType, onAbilityComplete, triggerFloatingText])
+  }, [gameState, localPlayerId, commandContext, markAbilityUsed, setAbilityMode, setCursorStack, triggerNoTarget, applyGlobalEffect, setViewingDiscard, addBoardCardStatus, updatePlayerScore, drawCard, removeStatusByType, onAbilityComplete, triggerFloatingText, setTargetingMode])
 
   // Auto-Execute GLOBAL_AUTO_APPLY actions when they appear in abilityMode
   useEffect(() => {
@@ -810,6 +823,14 @@ export const useAppAbilities = ({
       setAbilityMode(null)
     }
   }, [abilityMode, handleActionExecution, setAbilityMode])
+
+// Sync targeting mode with abilityMode for P2P visual effects
+  // When abilityMode is cleared, also clear targetingMode
+  useEffect(() => {
+    if (!abilityMode) {
+      clearTargetingMode()
+    }
+  }, [abilityMode, clearTargetingMode])
 
   const activateAbility = useCallback((card: Card, boardCoords: { row: number, col: number }) => {
     if (abilityMode || cursorStack) {
@@ -865,7 +886,7 @@ export const useAppAbilities = ({
     if (!abilityMode) {
       return
     }
-    const { mode, sourceCard, sourceCoords, payload, isDeployAbility } = abilityMode
+    const { mode, sourceCard, sourceCoords, payload, isDeployAbility, readyStatusToRemove } = abilityMode
 
     if (mode === 'SCORE_LAST_PLAYED_LINE' && abilityMode.sourceCoords) {
       // Prevent multiple clicks
@@ -1019,7 +1040,7 @@ export const useAppAbilities = ({
           updatePlayerScore(actorId, exploitCount)
         }
         if (sourceCoords && sourceCoords.row >= 0) {
-          markAbilityUsed(sourceCoords, isDeployAbility)
+          markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
         }
       } else if (actionType === 'CENTURION_BUFF' && sourceCard && sourceCoords && actorId) {
         const gridSize = gameState.board.length
@@ -1045,7 +1066,7 @@ export const useAppAbilities = ({
             }
           }
         }
-        markAbilityUsed(sourceCoords, isDeployAbility)
+        markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
       } else if (actionType === 'SCORE_LINE' || !actionType) {
         scoreLine(r1, c1, r2, c2, actorId!)
         // Advance phase after scoring, unless skipNextPhase is set (e.g., Logistics Chain)
@@ -1082,9 +1103,56 @@ export const useAppAbilities = ({
 
   const handleBoardCardClick = useCallback((card: Card, boardCoords: { row: number, col: number }) => {
 
-    if (setPlayMode !== null && setPlayMode !== undefined && cursorStack) {
+    // Handle cursorStack (token placement from Aim, etc.)
+    if (cursorStack && setPlayMode !== null && setPlayMode !== undefined) {
+      // Check if this card is a valid target for the cursorStack
+      const constraints = {
+        targetOwnerId: cursorStack.targetOwnerId,
+        excludeOwnerId: cursorStack.excludeOwnerId,
+        onlyOpponents: cursorStack.onlyOpponents || (cursorStack.targetOwnerId === -1),
+        onlyFaceDown: cursorStack.onlyFaceDown,
+        targetType: cursorStack.targetType,
+        requiredTargetStatus: cursorStack.requiredTargetStatus,
+        tokenType: cursorStack.type,
+      }
+
+      const isValid = validateTarget(
+        { card, ownerId: card.ownerId, location: 'board' },
+        constraints,
+        gameState.activePlayerId,
+        gameState.players,
+      )
+
+      if (isValid) {
+        // Place the token/status on the board card
+        if (cursorStack.type === 'Aim') {
+          moveItem({
+            card: { id: 'dummy', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
+            source: 'counter_panel',
+            statusType: 'Aim',
+            count: 1,
+          }, { target: 'board', boardCoords })
+
+          // Mark ability as used
+          if (cursorStack.sourceCoords && cursorStack.sourceCoords.row >= 0) {
+            markAbilityUsed(cursorStack.sourceCoords, cursorStack.isDeployAbility, false, cursorStack.readyStatusToRemove)
+          }
+
+          // Decrease stack count or clear
+          if (cursorStack.count > 1) {
+            setCursorStack(prev => prev ? ({ ...prev, count: prev.count - 1 }) : null)
+          } else {
+            if (cursorStack.chainedAction) {
+              handleActionExecution(cursorStack.chainedAction, cursorStack.sourceCoords || { row: -1, col: -1 })
+            }
+            setCursorStack(null)
+          }
+        }
+        // Add other token types here as needed
+      }
       return
     }
+
     if (interactionLock.current) {
       return
     }
@@ -1109,7 +1177,7 @@ export const useAppAbilities = ({
         return
       }
 
-      const { mode, payload, sourceCard, sourceCoords, isDeployAbility } = abilityMode
+      const { mode, payload, sourceCard, sourceCoords, isDeployAbility, readyStatusToRemove, originalOwnerId, recordContext } = abilityMode
       if (mode === 'SELECT_LINE_START' || mode === 'SELECT_LINE_END') {
         handleLineSelection(boardCoords); return
       }
@@ -1131,7 +1199,7 @@ export const useAppAbilities = ({
         // Trigger target selection effect
         triggerTargetSelection('board', boardCoords)
 
-        if (abilityMode.recordContext) {
+        if (recordContext) {
           setCommandContext({ lastMovedCardCoords: boardCoords, lastMovedCardId: card.id })
         }
 
@@ -1153,7 +1221,7 @@ export const useAppAbilities = ({
           }
         } else {
           if (sourceCoords && sourceCoords.row >= 0) {
-            markAbilityUsed(sourceCoords, isDeployAbility)
+            markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
           }
           setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         }
@@ -1221,7 +1289,7 @@ export const useAppAbilities = ({
         }
 
         if (sourceCoords && sourceCoords.row >= 0) {
-          markAbilityUsed(sourceCoords, isDeployAbility)
+          markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
         }
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         return
@@ -1245,7 +1313,7 @@ export const useAppAbilities = ({
         }
 
         if (sourceCoords && sourceCoords.row >= 0) {
-          markAbilityUsed(sourceCoords, isDeployAbility)
+          markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
         }
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         return
@@ -1274,7 +1342,7 @@ export const useAppAbilities = ({
           }
         } else {
           if (sourceCoords && sourceCoords.row >= 0) {
-            markAbilityUsed(sourceCoords, isDeployAbility)
+            markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
           }
           setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         }
@@ -1337,7 +1405,7 @@ export const useAppAbilities = ({
           modifyBoardCardPower(boardCoords, payload.amount)
         }
         if (sourceCoords && sourceCoords.row >= 0) {
-          markAbilityUsed(sourceCoords, isDeployAbility)
+          markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
         }
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         return
@@ -1346,7 +1414,7 @@ export const useAppAbilities = ({
       if (mode === 'RIOT_PUSH' && sourceCoords && sourceCoords.row >= 0) {
         // Allow self-click to skip/finish
         if (boardCoords.row === sourceCoords.row && boardCoords.col === sourceCoords.col) {
-          markAbilityUsed(sourceCoords, isDeployAbility)
+          markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
           setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
           return
         }
@@ -1379,14 +1447,7 @@ export const useAppAbilities = ({
           return
         }
         moveItem({ card, source: 'board', boardCoords, bypassOwnershipCheck: true }, { target: 'board', boardCoords: { row: targetRow, col: targetCol } })
-        setAbilityMode({ type: 'ENTER_MODE', mode: 'RIOT_MOVE', sourceCard: abilityMode.sourceCard, sourceCoords: abilityMode.sourceCoords, isDeployAbility: isDeployAbility, payload: { vacatedCoords: boardCoords } })
-        return
-      }
-      if (mode === 'RIOT_MOVE' && sourceCoords && sourceCoords.row >= 0) {
-        if (boardCoords.row === sourceCoords.row && boardCoords.col === sourceCoords.col) {
-          markAbilityUsed(sourceCoords, isDeployAbility)
-          setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
-        }
+        setAbilityMode({ type: 'ENTER_MODE', mode: 'RIOT_MOVE', sourceCard: sourceCard, sourceCoords: sourceCoords, isDeployAbility: isDeployAbility, payload: { vacatedCoords: boardCoords } })
         return
       }
       if (mode === 'SWAP_POSITIONS' && sourceCoords && sourceCoords.row >= 0) {
@@ -1402,8 +1463,10 @@ export const useAppAbilities = ({
         if (payload.filter && !payload.filter(card, boardCoords.row, boardCoords.col)) {
           return
         }
-        // Swap cards and remove ready status from where Reckless Provocateur ends up (boardCoords)
-        swapCards(sourceCoords, boardCoords, boardCoords)
+        // Swap cards - swapCards no longer removes ready status, we'll call markAbilityUsed separately
+        swapCards(sourceCoords, boardCoords)
+        // Mark ability used at the NEW location (boardCoords) where Reckless Provocateur ends up
+        markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         return
       }
@@ -1416,7 +1479,7 @@ export const useAppAbilities = ({
         }
         if (card.statuses && card.statuses.length > 0) {
           transferStatus(boardCoords, sourceCoords, card.statuses[0].type)
-          markAbilityUsed(sourceCoords, isDeployAbility)
+          markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
           setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         }
         return
@@ -1429,7 +1492,7 @@ export const useAppAbilities = ({
           return
         }
         transferAllCounters(boardCoords, sourceCoords)
-        markAbilityUsed(sourceCoords, isDeployAbility, false, abilityMode.readyStatusToRemove)
+        markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         return
       }
@@ -1440,7 +1503,7 @@ export const useAppAbilities = ({
         if (payload.filter && !payload.filter(card, boardCoords.row, boardCoords.col)) {
           return
         }
-        setCursorStack({ type: 'Revealed', count: 1, isDragging: false, sourceCoords: sourceCoords, sourceCard: sourceCard, originalOwnerId: abilityMode.originalOwnerId, targetOwnerId: card.ownerId, onlyFaceDown: true, onlyOpponents: true, isDeployAbility: isDeployAbility })
+        setCursorStack({ type: 'Revealed', count: 1, isDragging: false, sourceCoords: sourceCoords, sourceCard: sourceCard, originalOwnerId: originalOwnerId, targetOwnerId: card.ownerId, onlyFaceDown: true, onlyOpponents: true, isDeployAbility: isDeployAbility, readyStatusToRemove: readyStatusToRemove })
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         return
       }
@@ -1450,7 +1513,7 @@ export const useAppAbilities = ({
         }
         removeBoardCardStatusByOwner(boardCoords, 'Exploit', actorId!)
         addBoardCardStatus(boardCoords, 'Stun', actorId!)
-        markAbilityUsed(sourceCoords, isDeployAbility)
+        markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         return
       }
@@ -1459,12 +1522,12 @@ export const useAppAbilities = ({
           return
         }
         modifyBoardCardPower(boardCoords, -1)
-        markAbilityUsed(sourceCoords, isDeployAbility)
+        markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         return
       }
       if (mode === 'CENTURION_BUFF' && sourceCoords && sourceCoords.row >= 0) {
-        markAbilityUsed(sourceCoords, isDeployAbility)
+        markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         return
       }
@@ -1478,7 +1541,7 @@ export const useAppAbilities = ({
           sourceCard: card,
           sourceCoords: boardCoords,
           isDeployAbility: isDeployAbility,
-          recordContext: abilityMode.recordContext,
+          recordContext: recordContext,
           originalOwnerId: actorId ?? undefined,  // Set originalOwnerId for correct highlight color (command card owner)
           payload: {
             allowSelf: false,
@@ -1499,7 +1562,7 @@ export const useAppAbilities = ({
           mode: 'SELECT_CELL',
           sourceCard: card,
           sourceCoords: boardCoords,
-          recordContext: abilityMode.recordContext,
+          recordContext: recordContext,
           originalOwnerId: actorId ?? undefined,  // Set originalOwnerId for correct highlight color (command card owner)
           payload: {
             allowSelf: false,
@@ -1542,7 +1605,7 @@ export const useAppAbilities = ({
           })
           updatePlayerScore(actorId!, exploits)
         }
-        markAbilityUsed(sourceCoords, isDeployAbility)
+        markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         return
       }
@@ -1600,7 +1663,7 @@ export const useAppAbilities = ({
           triggerFloatingText(floatingTextBatch)
           updatePlayerScore(actorId!, totalExploits)
         }
-        markAbilityUsed(sourceCoords, isDeployAbility)
+        markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         return
       }
@@ -1609,7 +1672,7 @@ export const useAppAbilities = ({
     if (!abilityMode && !cursorStack) {
       activateAbility(card, boardCoords)
     }
-  }, [abilityMode, cursorStack, gameState, localPlayerId, interactionLock, handleLineSelection, moveItem, markAbilityUsed, setAbilityMode, setCursorStack, setPlayMode, removeBoardCardStatus, removeBoardCardStatusByOwner, addBoardCardStatus, modifyBoardCardPower, swapCards, transferStatus, transferAllCounters, updatePlayerScore, drawCard, activateAbility, setCounterSelectionData, resetDeployStatus, removeStatusByType, handleActionExecution, setCommandContext, triggerFloatingText, triggerTargetSelection])
+  }, [abilityMode, cursorStack, gameState, localPlayerId, interactionLock, handleLineSelection, moveItem, markAbilityUsed, setAbilityMode, setCursorStack, setPlayMode, removeBoardCardStatus, removeBoardCardStatusByOwner, addBoardCardStatus, modifyBoardCardPower, swapCards, transferStatus, transferAllCounters, updatePlayerScore, drawCard, activateAbility, setCounterSelectionData, resetDeployStatus, removeStatusByType, handleActionExecution, setCommandContext, triggerFloatingText, triggerTargetSelection, validateTarget])
 
   const handleEmptyCellClick = useCallback((boardCoords: { row: number, col: number }) => {
     if (interactionLock.current) {
@@ -1618,7 +1681,7 @@ export const useAppAbilities = ({
     if (abilityMode?.type !== 'ENTER_MODE') {
       return
     }
-    const { mode, sourceCoords, sourceCard, payload, isDeployAbility } = abilityMode
+    const { mode, sourceCoords, sourceCard, payload, isDeployAbility, readyStatusToRemove, recordContext } = abilityMode
 
     if (mode === 'SCORE_LAST_PLAYED_LINE' || mode === 'SELECT_LINE_END') {
       handleLineSelection(boardCoords)
@@ -1641,12 +1704,12 @@ export const useAppAbilities = ({
       const isCol = boardCoords.col === sourceCoords.col
       if (boardCoords.row === sourceCoords.row && boardCoords.col === sourceCoords.col) {
         // Cancel - mark ability used at current position
-        markAbilityUsed(sourceCoords, isDeployAbility)
+        markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY); return
       }
       if (isRow || isCol) {
         // Mark ability used BEFORE moving (at old position)
-        markAbilityUsed(sourceCoords, isDeployAbility)
+        markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
         moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
       }
@@ -1654,10 +1717,15 @@ export const useAppAbilities = ({
     }
     if (mode === 'RIOT_MOVE' && sourceCoords && sourceCard && payload.vacatedCoords) {
       if (boardCoords.row === payload.vacatedCoords.row && boardCoords.col === payload.vacatedCoords.col) {
+        // Move to vacated cell
         moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
-        markAbilityUsed(boardCoords, isDeployAbility)
+        markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+        return
       }
+      // If clicked elsewhere, cancel the mode and mark ability as used
+      markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+      setAbilityMode(null)
       return
     }
     if (mode === 'SPAWN_TOKEN' && sourceCoords && payload.tokenName && sourceCoords.row >= 0) {
@@ -1666,7 +1734,7 @@ export const useAppAbilities = ({
         // Token owner is the source card's owner (could be dummy)
         const tokenOwnerId = sourceCard?.ownerId ?? actorId!
         spawnToken(boardCoords, payload.tokenName, tokenOwnerId)
-        markAbilityUsed(sourceCoords, isDeployAbility)
+        markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
       }
       return
@@ -1755,7 +1823,7 @@ export const useAppAbilities = ({
           }
         }
 
-        if (abilityMode.recordContext) {
+        if (recordContext) {
           setCommandContext({ lastMovedCardCoords: boardCoords, lastMovedCardId: sourceCard.id })
         }
 
@@ -1770,7 +1838,7 @@ export const useAppAbilities = ({
           // CRITICAL FIX for Tactical Maneuver:
           // Inject the moved card's ID into the payload of the next action.
           // This allows handleActionExecution to find the card even if the React state hasn't updated the board yet.
-          if (abilityMode.recordContext) {
+          if (recordContext) {
             if (!nextAction.payload) {
               nextAction.payload = {}
             }
@@ -1789,13 +1857,13 @@ export const useAppAbilities = ({
           // CRITICAL FIX: Mark ability used at the NEW location (boardCoords) after move, not the old sourceCoords
           // After moveItem updates gameStateRef.current, the card is at boardCoords, not sourceCoords
           if (payload.abilitySourceCoords) {
-            markAbilityUsed(payload.abilitySourceCoords, isDeployAbility)
+            markAbilityUsed(payload.abilitySourceCoords, isDeployAbility, false, readyStatusToRemove)
           } else {
             // For self-move (stay in place), use the current card location
             const markCoords = isSelfMove ? sourceCoords : boardCoords
             if (markCoords && markCoords.row >= 0) {
               if (payload.originalActorId === undefined || sourceCard.ownerId === payload.originalActorId) {
-                markAbilityUsed(markCoords, isDeployAbility)
+                markAbilityUsed(markCoords, isDeployAbility, false, readyStatusToRemove)
               }
             }
           }
@@ -1808,7 +1876,7 @@ export const useAppAbilities = ({
     if (mode === 'IMMUNIS_RETRIEVE' && sourceCoords && sourceCoords.row >= 0) {
       if (payload.selectedCardIndex !== undefined && payload.filter?.(boardCoords.row, boardCoords.col)) {
         resurrectDiscardedCard(actorId!, payload.selectedCardIndex, boardCoords)
-        markAbilityUsed(sourceCoords, isDeployAbility)
+        markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         return
       }
@@ -1848,7 +1916,7 @@ export const useAppAbilities = ({
         })
         updatePlayerScore(actorId!, exploits)
       }
-      markAbilityUsed(sourceCoords, isDeployAbility)
+      markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
       setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
       return
     }
@@ -1905,7 +1973,7 @@ export const useAppAbilities = ({
         triggerFloatingText(floatingTextBatch)
         updatePlayerScore(actorId!, totalExploits)
       }
-      markAbilityUsed(sourceCoords, isDeployAbility)
+      markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
       setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
       return
     }
@@ -1959,7 +2027,7 @@ export const useAppAbilities = ({
             }, { target: 'hand', playerId: player.id, cardIndex })
 
             if (cursorStack.sourceCoords && cursorStack.sourceCoords.row >= 0) {
-              markAbilityUsed(cursorStack.sourceCoords, cursorStack.isDeployAbility)
+              markAbilityUsed(cursorStack.sourceCoords, cursorStack.isDeployAbility, false, cursorStack.readyStatusToRemove)
             }
             if (cursorStack.count > 1) {
               setCursorStack(prev => prev ? ({ ...prev, count: prev.count - 1 }) : null)
@@ -1977,7 +2045,7 @@ export const useAppAbilities = ({
 
     // Add visual selection effect when card is clicked during selection mode
     if (abilityMode?.type === 'ENTER_MODE' && abilityMode.mode === 'SELECT_TARGET') {
-      const { payload, sourceCoords, isDeployAbility, sourceCard } = abilityMode
+      const { payload, sourceCoords, isDeployAbility, sourceCard, readyStatusToRemove } = abilityMode
 
       // Trigger hand card selection effect visible to all players via WebSocket (before any filtering)
       triggerHandCardSelection(player.id, cardIndex, gameState.activePlayerId ?? localPlayerId ?? 1)
@@ -2016,9 +2084,9 @@ export const useAppAbilities = ({
         setAbilityMode({
           type: 'ENTER_MODE',
           mode: 'SPAWN_TOKEN',
-          sourceCard: abilityMode.sourceCard,
-          sourceCoords: abilityMode.sourceCoords,
-          isDeployAbility: abilityMode.isDeployAbility,
+          sourceCard: sourceCard,
+          sourceCoords: sourceCoords,
+          isDeployAbility: isDeployAbility,
           payload: { tokenName: payload.tokenName },
         })
         return
@@ -2037,13 +2105,13 @@ export const useAppAbilities = ({
         const openModalAction: AbilityAction = {
           type: 'OPEN_MODAL',
           mode: 'SEARCH_DECK',
-          sourceCard: abilityMode.sourceCard,
-          sourceCoords: abilityMode.sourceCoords, // This ensures ability gets marked used when modal closes
-          isDeployAbility: abilityMode.isDeployAbility,
+          sourceCard: sourceCard,
+          sourceCoords: sourceCoords, // This ensures ability gets marked used when modal closes
+          isDeployAbility: isDeployAbility,
           payload: { filterType: 'Command' },
         }
 
-        handleActionExecution(openModalAction, abilityMode.sourceCoords || { row: -1, col: -1 })
+        handleActionExecution(openModalAction, sourceCoords || { row: -1, col: -1 })
         setAbilityMode(null)
         return
       }
@@ -2055,7 +2123,7 @@ export const useAppAbilities = ({
         }
         moveItem({ card, source: 'hand', playerId: player.id, cardIndex, bypassOwnershipCheck: true }, { target: 'discard', playerId: player.id })
         if (sourceCoords && sourceCoords.row >= 0) {
-          markAbilityUsed(sourceCoords, isDeployAbility)
+          markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
         }
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
       }

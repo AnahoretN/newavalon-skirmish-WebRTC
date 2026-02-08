@@ -35,10 +35,24 @@ export type WebrtcMessageType =
   | 'TOGGLE_AUTO_DRAW'     // Toggle auto draw
   | 'START_NEXT_ROUND'     // Start next round
   | 'RESET_DEPLOY_STATUS'  // Reset deploy status
+  // Visual effects messages (rebroadcast by host to all guests)
+  | 'TRIGGER_HIGHLIGHT'    // Highlight a cell on the board
+  | 'TRIGGER_FLOATING_TEXT'// Show floating text
+  | 'TRIGGER_FLOATING_TEXT_BATCH' // Show multiple floating texts
+  | 'TRIGGER_NO_TARGET'    // Show "no target" overlay
+  | 'SET_TARGETING_MODE'   // Set targeting/selection mode for ability
+  | 'CLEAR_TARGETING_MODE' // Clear targeting mode
+  | 'SYNC_VALID_TARGETS'   // Sync valid targets for ability
+  // Ability activation messages
+  | 'ABILITY_ACTIVATED'    // Player activated an ability (guest -> host)
+  | 'ABILITY_MODE_SET'     // Host broadcasts ability mode to all
+  | 'ABILITY_COMPLETED'    // Ability execution completed
+  | 'ABILITY_TARGET_SELECTED' // Target selected for ability
+  | 'ABILITY_CANCELLED'    // Ability was cancelled
 
 export interface WebrtcMessage {
   type: WebrtcMessageType
-  senderId?: string     // Peer ID of sender
+  senderId?: string | null     // Peer ID of sender
   playerId?: number     // Game player ID
   data?: any            // Message-specific data
   timestamp: number
@@ -100,4 +114,56 @@ export type MessageHandler = (message: WebrtcMessage, fromPeerId: string) => voi
 export interface BroadcastOptions {
   excludePeerId?: string
   includeDelta?: boolean
+}
+
+// ============================================================================
+// Ability Mode Types
+// ============================================================================
+
+/**
+ * Ability activation data - sent when player clicks on a card to activate ability
+ */
+export interface AbilityActivatedData {
+  playerId: number        // Player who activated
+  cardId: string          // ID of the card
+  cardName: string        // Name of the card (for logging)
+  coords: { row: number, col: number }  // Board coordinates
+  abilityType: 'deploy' | 'setup' | 'commit'  // Which ability was activated
+  timestamp: number
+}
+
+/**
+ * Ability mode data - broadcast by host to all clients
+ * Contains targeting mode info for visual rendering
+ */
+export interface AbilityModeData {
+  playerId: number        // Player whose turn it is to select
+  sourceCardId: string    // Card using the ability
+  sourceCardName: string  // For logging
+  sourceCoords: { row: number, col: number }
+  mode: string            // RIOT_PUSH, SELECT_TARGET, etc.
+  actionType?: string     // DESTROY, MOVE, etc.
+  filterType?: string     // Filter for valid targets
+  timestamp: number
+}
+
+/**
+ * Target selected data - sent when player selects a target
+ */
+export interface TargetSelectedData {
+  playerId: number        // Player who selected
+  sourceCoords: { row: number, col: number }
+  targetCoords: { row: number, col: number } | null  // Null for empty cell
+  targetCardId: string | null
+  timestamp: number
+}
+
+/**
+ * Ability completed data - sent when ability execution finishes
+ */
+export interface AbilityCompletedData {
+  playerId: number
+  sourceCoords: { row: number, col: number }
+  success: boolean
+  timestamp: number
 }

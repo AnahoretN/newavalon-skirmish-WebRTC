@@ -236,6 +236,7 @@ export interface GameState {
   deckSelections: DeckSelectionData[]; // Array of deck selection effects to display
   handCardSelections: HandCardSelectionData[]; // Array of hand card selection effects to display
   targetingMode: TargetingModeData | null; // Active targeting mode (shared across all clients)
+  abilityMode?: any; // Active ability mode (for P2P visual sync) - extends AbilityAction with sourceCard, sourceCoords, etc.
 
   // Server-side auto-draw tracking for Setup phase
   autoDrawnPlayers?: number[]; // Player IDs who have already auto-drawn this Setup phase
@@ -331,6 +332,7 @@ export interface CursorStackState {
     onlyFaceDown?: boolean; // Optional restriction - Only cards that are currently hidden (Face down or unrevealed hand)
     targetType?: string; // Optional: Restrict target by card Type (e.g., "Unit")
     isDeployAbility?: boolean; // True if the stack was created by a Deploy ability (for correct consumption tracking)
+    readyStatusToRemove?: string; // The ready status to remove when this action is executed
     requiredTargetStatus?: string; // Optional: target must have this status to be valid
     requireStatusFromSourceOwner?: boolean; // Optional: target status must be added by the player executing the ability
     mustBeAdjacentToSource?: boolean; // Optional: target must be adjacent to sourceCoords
@@ -466,6 +468,7 @@ export interface StateDelta {
     set?: TargetingModeData;
     clear?: boolean;
   };
+  abilityModeDelta?: any; // Active ability mode for P2P visual sync
 
   // Metadata
   timestamp: number;

@@ -76,8 +76,8 @@ export class VisualEffectsManager {
    */
   setTargetingMode(targetingMode: TargetingModeData): void {
     this.connectionManager.broadcast({
-      type: 'TARGETING_MODE_SET',
-      senderId: this.connectionManager.getPeerId(),
+      type: 'SET_TARGETING_MODE',
+      senderId: this.connectionManager.getPeerId() ?? undefined,
       data: { targetingMode },
       timestamp: Date.now()
     })
@@ -89,8 +89,8 @@ export class VisualEffectsManager {
    */
   clearTargetingMode(): void {
     this.connectionManager.broadcast({
-      type: 'TARGETING_MODE_CLEARED',
-      senderId: this.connectionManager.getPeerId(),
+      type: 'CLEAR_TARGETING_MODE',
+      senderId: this.connectionManager.getPeerId() ?? undefined,
       data: { timestamp: Date.now() },
       timestamp: Date.now()
     })

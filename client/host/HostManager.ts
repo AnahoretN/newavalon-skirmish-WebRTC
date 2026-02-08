@@ -408,6 +408,54 @@ export class HostManager {
         this.visualEffects.clearTargetingMode()
         break
 
+      // Ability activation messages
+      case 'ABILITY_ACTIVATED':
+        if (message.data) {
+          this.handleAbilityActivated(message.data, guestPlayerId, fromPeerId)
+        }
+        break
+
+      case 'ABILITY_MODE_SET':
+        // Rebroadcast ability mode to all guests
+        if (message.data?.abilityMode) {
+          this.connectionManager.broadcast({
+            type: 'ABILITY_MODE_SET',
+            senderId: this.connectionManager.getPeerId(),
+            data: { abilityMode: message.data.abilityMode },
+            timestamp: Date.now()
+          })
+        }
+        break
+
+      case 'ABILITY_TARGET_SELECTED':
+        // Rebroadcast target selection to all guests
+        if (message.data) {
+          this.connectionManager.broadcast({
+            type: 'ABILITY_TARGET_SELECTED',
+            senderId: this.connectionManager.getPeerId(),
+            data: message.data,
+            timestamp: Date.now()
+          })
+        }
+        break
+
+      case 'ABILITY_COMPLETED':
+        // Rebroadcast ability completion to all guests
+        if (message.data) {
+          this.connectionManager.broadcast({
+            type: 'ABILITY_COMPLETED',
+            senderId: this.connectionManager.getPeerId(),
+            data: message.data,
+            timestamp: Date.now()
+          })
+        }
+        break
+
+      case 'ABILITY_CANCELLED':
+        // Rebroadcast ability cancellation to all guests
+        this.visualEffects.clearTargetingMode()
+        break
+
       default:
         logger.debug(`[HostManager] Unhandled message type: ${message.type}`)
         break
@@ -440,6 +488,61 @@ export class HostManager {
         logger.debug(`[HostManager] Unhandled action type: ${actionType}`)
         break
     }
+  }
+
+  /**
+   * Handle ability activation from guest
+   * Guest activates ability -> Host broadcasts ability mode to all clients
+   */
+  private handleAbilityActivated(data: any, guestPlayerId: number | undefined, _fromPeerId: string): void {
+    if (guestPlayerId === undefined) {
+      logger.warn('[HostManager] No player ID for ability activation')
+      return
+    }
+
+    const state = this.stateManager.getState()
+    if (!state) {
+      logger.warn('[HostManager] No game state for ability activation')
+      return
+    }
+
+    // Verify it's this player's turn
+    if (state.activePlayerId !== guestPlayerId) {
+      logger.warn(`[HostManager] Player ${guestPlayerId} tried to activate ability but it's player ${state.activePlayerId}'s turn`)
+      return
+    }
+
+    // Find the card and verify it exists and is owned by the activating player
+    const { coords, cardId, cardName } = data
+    const card = state.board[coords.row]?.[coords.col]?.card
+    if (!card) {
+      logger.warn(`[HostManager] No card at coords (${coords.row}, ${coords.col})`)
+      return
+    }
+    if (card.ownerId !== guestPlayerId) {
+      logger.warn(`[HostManager] Player ${guestPlayerId} tried to activate card owned by ${card.ownerId}`)
+      return
+    }
+
+    // Broadcast ability mode to all guests (including the sender for confirmation)
+    const abilityMode: any = {
+      playerId: guestPlayerId,
+      sourceCardId: cardId,
+      sourceCardName: cardName || card.name,
+      sourceCoords: coords,
+      mode: data.mode,
+      actionType: data.actionType,
+      timestamp: Date.now()
+    }
+
+    this.connectionManager.broadcast({
+      type: 'ABILITY_MODE_SET',
+      senderId: this.connectionManager.getPeerId() ?? undefined,
+      data: { abilityMode },
+      timestamp: Date.now()
+    })
+
+    logger.info(`[HostManager] Player ${guestPlayerId} activated ${cardName} ability: ${data.mode}`)
   }
 
   /**

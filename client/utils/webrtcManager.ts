@@ -50,7 +50,7 @@ export type WebrtcMessageType =
 
 export interface WebrtcMessage {
   type: WebrtcMessageType
-  senderId?: string     // Peer ID of sender
+  senderId?: string | null     // Peer ID of sender
   playerId?: number     // Game player ID
   data?: any            // Message-specific data
   timestamp: number

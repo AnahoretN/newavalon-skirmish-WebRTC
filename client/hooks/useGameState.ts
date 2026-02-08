@@ -1721,6 +1721,101 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         })
         break
 
+      // Ability mode synchronization messages
+      case 'ABILITY_MODE_SET':
+        // Host broadcasts ability mode to all clients
+        if (message.data?.abilityMode) {
+          setGameState(prev => ({
+            ...prev,
+            abilityMode: message.data.abilityMode,
+          }))
+          logger.info('[AbilityMode] Received ability mode from host', {
+            playerId: message.data.abilityMode.playerId,
+            mode: message.data.abilityMode.mode,
+          })
+        }
+        break
+
+      case 'ABILITY_TARGET_SELECTED':
+        // Target selected notification
+        logger.info('[Ability] Target selected', message.data)
+        break
+
+      case 'ABILITY_COMPLETED':
+        // Ability completed - clear mode
+        setGameState(prev => ({
+          ...prev,
+          abilityMode: null,
+        }))
+        logger.info('[Ability] Ability completed', message.data)
+        break
+
+      case 'ABILITY_CANCELLED':
+        // Ability cancelled - clear mode
+        setGameState(prev => ({
+          ...prev,
+          abilityMode: null,
+        }))
+        logger.info('[Ability] Ability cancelled')
+        break
+
+      // Visual effects messages (for P2P mode)
+      case 'TRIGGER_HIGHLIGHT':
+        if (message.data?.highlightData) {
+          setLatestHighlight(message.data.highlightData)
+        }
+        break
+
+      case 'TRIGGER_FLOATING_TEXT':
+        if (message.data?.textData) {
+          setGameState(prev => ({
+            ...prev,
+            floatingTexts: [...prev.floatingTexts, message.data.textData].filter(t => Date.now() - t.timestamp < TIMING.FLOATING_TEXT_DURATION)
+          }))
+        }
+        break
+
+      case 'TRIGGER_FLOATING_TEXT_BATCH':
+        if (message.data?.batch) {
+          setGameState(prev => ({
+            ...prev,
+            floatingTexts: [...prev.floatingTexts, ...message.data.batch].filter(t => Date.now() - t.timestamp < TIMING.FLOATING_TEXT_DURATION)
+          }))
+        }
+        break
+
+      case 'TRIGGER_NO_TARGET':
+        if (message.data?.coords) {
+          setLatestNoTarget({ coords: message.data.coords, timestamp: message.data.timestamp })
+        }
+        break
+
+      case 'SET_TARGETING_MODE':
+        // Targeting mode synchronization (P2P)
+        if (message.data?.targetingMode) {
+          const targetingMode = message.data.targetingMode
+          setGameState(prev => ({
+            ...prev,
+            targetingMode: targetingMode,
+          }))
+          gameStateRef.current.targetingMode = targetingMode
+          logger.info('[TargetingMode] Received targeting mode via WebRTC', {
+            playerId: targetingMode.playerId,
+            mode: targetingMode.action.mode,
+          })
+        }
+        break
+
+      case 'CLEAR_TARGETING_MODE':
+        // Clear targeting mode (P2P)
+        setGameState(prev => ({
+          ...prev,
+          targetingMode: null,
+        }))
+        gameStateRef.current.targetingMode = null
+        logger.debug('[TargetingMode] Cleared targeting mode via WebRTC')
+        break
+
       default:
         // Log unknown message types for debugging
         logger.warn(`[handleWebrtcMessage] Unknown message type: ${message.type}`, message)
@@ -2101,6 +2196,37 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           }))
           gameStateRef.current.targetingMode = null
           logger.debug('[TargetingMode] Cleared targeting mode from server')
+        } else if (data.type === 'ABILITY_MODE_SET') {
+          // Host broadcasts ability mode to all clients
+          // All clients show the same visual effects for the ability
+          if (data.abilityMode) {
+            setGameState(prev => ({
+              ...prev,
+              abilityMode: data.abilityMode,
+            }))
+            logger.info('[AbilityMode] Received ability mode from host', {
+              playerId: data.abilityMode.playerId,
+              mode: data.abilityMode.mode,
+              sourceCard: data.abilityMode.sourceCardName,
+            })
+          }
+        } else if (data.type === 'ABILITY_TARGET_SELECTED') {
+          // Target selected notification
+          logger.info('[Ability] Target selected', data.data)
+        } else if (data.type === 'ABILITY_COMPLETED') {
+          // Ability completed - clear mode
+          setGameState(prev => ({
+            ...prev,
+            abilityMode: null,
+          }))
+          logger.info('[Ability] Ability completed', data.data)
+        } else if (data.type === 'ABILITY_CANCELLED') {
+          // Ability cancelled - clear mode
+          setGameState(prev => ({
+            ...prev,
+            abilityMode: null,
+          }))
+          logger.info('[Ability] Ability cancelled')
         } else if (data.type === 'GAME_RESET') {
           // Handle compact game reset message (much smaller than full gameState)
           logger.info('[GameReset] Received GAME_RESET message from server')
@@ -4659,13 +4785,34 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     }))
     gameStateRef.current.targetingMode = targetingModeData
 
-    // Broadcast to all clients via server
+    // Broadcast to all clients via WebSocket server
     if (ws.current?.readyState === WebSocket.OPEN && currentGameState.gameId) {
       ws.current.send(JSON.stringify({
         type: 'SET_TARGETING_MODE',
         gameId: currentGameState.gameId,
         targetingMode: targetingModeData,
       }))
+    }
+
+    // Broadcast via WebRTC (P2P mode)
+    if (webrtcManagerRef.current) {
+      if (webrtcIsHostRef.current) {
+        // Host broadcasts directly to all guests
+        webrtcManagerRef.current.broadcastToGuests({
+          type: 'SET_TARGETING_MODE',
+          senderId: webrtcManagerRef.current.getPeerId?.() ?? undefined,
+          data: { targetingMode: targetingModeData },
+          timestamp: Date.now()
+        })
+      } else {
+        // Guest sends to host for rebroadcasting
+        webrtcManagerRef.current.sendMessageToHost({
+          type: 'SET_TARGETING_MODE',
+          senderId: webrtcManagerRef.current.getPeerId?.() ?? undefined,
+          data: { targetingMode: targetingModeData },
+          timestamp: Date.now()
+        })
+      }
     }
 
     logger.info(`[TargetingMode] Player ${playerId} activated targeting mode`, {
@@ -4688,12 +4835,33 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     }))
     gameStateRef.current.targetingMode = null
 
-    // Broadcast to all clients via server
+    // Broadcast to all clients via WebSocket server
     if (ws.current?.readyState === WebSocket.OPEN && currentGameState.gameId) {
       ws.current.send(JSON.stringify({
         type: 'CLEAR_TARGETING_MODE',
         gameId: currentGameState.gameId,
       }))
+    }
+
+    // Broadcast via WebRTC (P2P mode)
+    if (webrtcManagerRef.current) {
+      if (webrtcIsHostRef.current) {
+        // Host broadcasts directly to all guests
+        webrtcManagerRef.current.broadcastToGuests({
+          type: 'CLEAR_TARGETING_MODE',
+          senderId: webrtcManagerRef.current.getPeerId?.() ?? undefined,
+          data: { timestamp: Date.now() },
+          timestamp: Date.now()
+        })
+      } else {
+        // Guest sends to host for rebroadcasting
+        webrtcManagerRef.current.sendMessageToHost({
+          type: 'CLEAR_TARGETING_MODE',
+          senderId: webrtcManagerRef.current.getPeerId?.() ?? undefined,
+          data: { timestamp: Date.now() },
+          timestamp: Date.now()
+        })
+      }
     }
 
     logger.debug('[TargetingMode] Cleared targeting mode')
@@ -4707,9 +4875,14 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       const newState: GameState = deepCloneState(currentState)
       const card = newState.board[boardCoords.row][boardCoords.col].card
       if (card) {
+        const oldStatusesTypes = card.statuses ? card.statuses.map(s => s.type) : []
         // Remove the ready status if specified (new ready status system)
         if (readyStatusToRemove && card.statuses) {
           card.statuses = card.statuses.filter(s => s.type !== readyStatusToRemove)
+          const newStatusesTypes = card.statuses.map(s => s.type)
+          console.log(`[markAbilityUsed] Removed status '${readyStatusToRemove}' from ${card.name} at [${boardCoords.row},${boardCoords.col}]: [${oldStatusesTypes.join(', ')}] -> [${newStatusesTypes.join(', ')}]`)
+        } else {
+          console.log(`[markAbilityUsed] Called for ${card.name} at [${boardCoords.row},${boardCoords.col}] but no readyStatusToRemove specified. Current statuses: [${oldStatusesTypes.join(', ')}]`)
         }
       }
       return newState
@@ -4804,7 +4977,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   }, [updateState])
 
   // ... (swapCards, transferStatus, transferAllCounters, recoverDiscardedCard, spawnToken, scoreLine, scoreDiagonal kept as is) ...
-  const swapCards = useCallback((coords1: {row: number, col: number}, coords2: {row: number, col: number}, removeReadyStatusFromCoords?: {row: number, col: number}) => {
+  const swapCards = useCallback((coords1: {row: number, col: number}, coords2: {row: number, col: number}) => {
     updateState(currentState => {
       if (!currentState.isGameStarted) {
         return currentState
@@ -4816,15 +4989,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       // Perform swap
       newState.board[coords1.row][coords1.col].card = card2
       newState.board[coords2.row][coords2.col].card = card1
-
-      // Remove ready status from the specified coords (where the card ended up after swap)
-      if (removeReadyStatusFromCoords) {
-        const targetCard = newState.board[removeReadyStatusFromCoords.row][removeReadyStatusFromCoords.col].card
-        if (targetCard && targetCard.statuses) {
-          // Remove readyDeploy/readySetup/readyCommit statuses
-          targetCard.statuses = targetCard.statuses.filter(s => s.type !== 'readyDeploy' && s.type !== 'readySetup' && s.type !== 'readyCommit')
-        }
-      }
 
       newState.board = recalculateBoardStatuses(newState)
       return newState
