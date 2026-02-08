@@ -303,6 +303,7 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
 
   // Apply board cell changes
   if (delta.boardCells && delta.boardCells.length > 0) {
+    console.log(`[applyStateDelta] Applying ${delta.boardCells.length} board cell changes`)
     newState.board = currentState.board.map((row, rowIndex) =>
       row.map((cell, colIndex) => {
         // Find delta for this cell using row/col indices (not cell.coords which doesn't exist)
@@ -313,6 +314,7 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
 
         // Apply card placement/removal
         if (cellDelta.card !== undefined) {
+          console.log(`[applyStateDelta] Cell [${rowIndex},${colIndex}]: card ${cellDelta.card ? 'added' : 'removed'}, name: ${cellDelta.card?.name || 'N/A'}`)
           updatedCell.card = cellDelta.card
         }
 

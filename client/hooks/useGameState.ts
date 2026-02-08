@@ -11,7 +11,7 @@ import { logger } from '../utils/logger'
 import { initializeReadyStatuses, removeAllReadyStatuses } from '../utils/autoAbilities'
 import { deepCloneState, TIMING } from '../utils/common'
 import { getWebrtcManager, type WebrtcEvent } from '../utils/webrtcManager'
-import { toggleActivePlayer as toggleActivePlayerPhase, passTurnToNextPlayer, playerHasCardsOnBoard } from '../host/PhaseManagement'
+import { toggleActivePlayer as toggleActivePlayerPhase, passTurnToNextPlayer, playerHasCardsOnBoard, performPreparationPhase } from '../host/PhaseManagement'
 import {
   createCardMoveDelta,
   createBoardCellDelta,
@@ -983,6 +983,10 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                 // Otherwise preserve local hand (privacy - host might not have our actual cards)
                 const hasOnlyPlaceholders = localPlayer.hand.every(c => c.isPlaceholder) || localPlayer.hand.length === 0
 
+                // Get expected sizes from remote state (host's authoritative sizes)
+                const remoteHandSize = remotePlayer.handSize ?? remotePlayer.hand?.length ?? 0
+                const remoteDeckSize = remotePlayer.deckSize ?? remotePlayer.deck?.length ?? 0
+
                 if (hasOnlyPlaceholders && remotePlayer.hand && remotePlayer.hand.length > 0) {
                   // Guest just joined - use the remote hand/deck from host
                   logger.info(`[STATE_UPDATE] Guest just joined, using remote hand/deck from host`)
@@ -994,10 +998,31 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                   }
                 } else {
                   // Preserve local hand/deck (already have actual cards)
+                  // BUT sync hand/deck sizes if they differ (e.g., Preparation phase drew a card)
+                  let syncedHand = localPlayer.hand
+                  let syncedDeck = localPlayer.deck
+
+                  // If remote expects more cards in hand than we have, draw from deck
+                  if (remoteHandSize > localPlayer.hand.length && syncedDeck.length > 0) {
+                    const cardsToDraw = remoteHandSize - localPlayer.hand.length
+                    const newHand = [...localPlayer.hand]
+                    const newDeck = [...localPlayer.deck]
+
+                    for (let i = 0; i < cardsToDraw && i < newDeck.length; i++) {
+                      const drawnCard = newDeck[0]
+                      newDeck.splice(0, 1)
+                      newHand.push(drawnCard)
+                    }
+
+                    syncedHand = newHand
+                    syncedDeck = newDeck
+                    logger.info(`[STATE_UPDATE] Drew ${cardsToDraw} cards to sync hand size to ${remoteHandSize}`)
+                  }
+
                   return {
                     ...remotePlayer,
-                    hand: localPlayer.hand,
-                    deck: localPlayer.deck,
+                    hand: syncedHand,
+                    deck: syncedDeck,
                     discard: remotePlayer.discard || localPlayer.discard,
                   }
                 }
@@ -1040,11 +1065,25 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         break
 
       case 'STATE_DELTA':
-        // Host broadcasted compact state delta (efficient updates)
-        logger.info(`[STATE_DELTA] Received STATE_DELTA message, data exists: ${!!message.data}, delta exists: ${!!message.data?.delta}`)
+        // Host: received delta from guest, rebroadcast to all other guests
+        // Guest: received delta broadcast from host
+        logger.info(`[STATE_DELTA] Received STATE_DELTA message, isHost: ${webrtcIsHostRef.current}, senderId: ${message.senderId}`)
         if (message.data?.delta) {
           const delta: StateDelta = message.data.delta
-          logger.info(`[STATE_DELTA] Received delta from host: playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, boardCells=${delta.boardCells?.length || 0}, phaseDelta=${!!delta.phaseDelta}`)
+          logger.info(`[STATE_DELTA] Delta: playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, boardCells=${delta.boardCells?.length || 0}, phaseDelta=${!!delta.phaseDelta}`)
+
+          // Log board cells for debugging
+          if (delta.boardCells && delta.boardCells.length > 0) {
+            delta.boardCells.forEach(bc => {
+              logger.info(`[STATE_DELTA] Board cell [${bc.row},${bc.col}]: card=${bc.card?.name || '(empty)'}, owner=${bc.card?.ownerId}`)
+            })
+          }
+
+          // If we're the host, rebroadcast this delta to all OTHER guests
+          if (webrtcIsHostRef.current && message.senderId && webrtcManagerRef.current) {
+            logger.info(`[STATE_DELTA] Host rebroadcasting delta from guest ${message.senderId} to other guests`)
+            webrtcManagerRef.current.broadcastStateDelta(delta, message.senderId)
+          }
 
           // Log phase delta details
           if (delta.phaseDelta) {
@@ -1058,7 +1097,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             })
           }
 
-          // Use functional update to get current localPlayerId
+          // Apply the delta locally
           setGameState(prev => {
             // Find local player ID from current state
             const currentLocalPlayerId = localPlayerIdRef.current || prev.localPlayerId
@@ -1212,8 +1251,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
               // Use the proper toggleActivePlayer function from PhaseManagement
               // This handles the Preparation phase (draw card) and transition to Setup
-              const { toggleActivePlayer: toggleActive } = require('../host/PhaseManagement')
-              const newState = toggleActive(prev, actionData.playerId)
+              const newState = toggleActivePlayerPhase(prev, actionData.playerId)
 
               // Broadcast the state change to all guests
               if (webrtcManagerRef.current) {
@@ -1315,7 +1353,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               const startingPlayerId = allPlayers[randomIndex].id
 
               // Prepare final state with cards drawn for all players
-              const finalState = { ...newState }
+              let finalState = { ...newState }
               finalState.isReadyCheckActive = false
               finalState.isGameStarted = true
               finalState.startingPlayerId = startingPlayerId
@@ -1340,6 +1378,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                 }
                 return player
               })
+
+              // IMPORTANT: Perform Preparation phase for starting player (draws 7th card, transitions to Setup)
+              // This MUST be done before creating minimalState for broadcast
+              finalState = performPreparationPhase(finalState, startingPlayerId)
+              logger.info(`[PLAYER_READY] Preparation phase completed, currentPhase=${finalState.currentPhase}`)
 
               // Broadcast game start notification first
               if (webrtcManagerRef.current) {
@@ -1372,6 +1415,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                     }))
                   }
                   logger.info(`[PLAYER_READY] Broadcasting minimal state, player sizes: P1 deck=${minimalState.players[0]?.deckSize}, hand=${minimalState.players[0]?.handSize}`)
+                  logger.info(`[PLAYER_READY] Broadcasting minimal state with currentPhase=${minimalState.currentPhase}`)
                   broadcastWebrtcState(minimalState)
                   logger.info('[PLAYER_READY] Broadcasted minimal state with card sizes after game start')
                 }, 100)
@@ -1454,17 +1498,20 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               logger.info(`[GAME_START] Player ${p.id} before: deck=${p.deck.length}, hand=${p.hand.length}`)
             })
 
+            const startingPlayerId = message.data.startingPlayerId ?? message.data.activePlayerId
             const newState = {
               ...prev,
               isGameStarted: message.data.isGameStarted ?? true,
               isReadyCheckActive: false,
-              startingPlayerId: message.data.startingPlayerId,
+              startingPlayerId: startingPlayerId,
               activePlayerId: message.data.activePlayerId,
-              currentPhase: 0  // Set to Preparation phase
+              // IMPORTANT: Don't set phase here! Let the host's STATE_UPDATE set the correct phase.
+              // The host will have already executed Preparation phase and will send currentPhase=1 (Setup)
+              currentPhase: prev.currentPhase  // Keep current phase until STATE_UPDATE arrives
             }
 
             // Draw initial hand (6 cards) for the local player only
-            // Other players' deck/hand sizes will be updated via STATE_DELTA from host
+            // Other players' deck/hand sizes will be updated via STATE_UPDATE from host
             const localPlayer = newState.players.find(p => p.id === localPlayerIdRef.current)
             if (localPlayer && localPlayer.hand.length === 0 && localPlayer.deck.length > 0) {
               const cardsToDraw = 6
@@ -1486,6 +1533,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
               logger.info(`[GAME_START] Drew ${newHand.length} cards for local player ${localPlayerIdRef.current}, deck now has ${newDeck.length} cards`)
             }
+
+            // NOTE: Preparation phase for the starting player will be handled via STATE_UPDATE from host
+            // The host has already executed it and will send the correct state
 
             // Log sizes after drawing
             newState.players.forEach(p => {
