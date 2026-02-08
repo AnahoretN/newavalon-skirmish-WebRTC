@@ -27,6 +27,7 @@ interface HeaderProps {
   isPrivate: boolean;
   onPrivacyChange: (isPrivate: boolean) => void;
   isHost: boolean;
+  hostId?: string | null;
   onSyncGame: () => void;
   currentPhase: number;
   onSetPhase: (index: number) => void;
@@ -292,6 +293,7 @@ const InvitePlayerMenu = memo<{
   onPrivacyChange: (isPrivate: boolean) => void;
   isHost: boolean;
   isGameStarted: boolean;
+  hostId?: string | null;
   t: (key: keyof TranslationResource['ui']) => string;
 }>(({
   isOpen,
@@ -302,6 +304,7 @@ const InvitePlayerMenu = memo<{
   onPrivacyChange,
   isHost,
   isGameStarted,
+  hostId,
   t,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null)
@@ -344,8 +347,20 @@ const InvitePlayerMenu = memo<{
   const handleCopyLink = useCallback(() => {
     if (!gameId) {return}
 
-    // Generate context-aware invite link based on current game state
-    const { url: inviteLink } = generateInviteLink(gameId, isGameStarted, isPrivate)
+    // Check if WebRTC mode is enabled
+    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+
+    // For WebRTC mode, generate host link; otherwise use standard invite link
+    let inviteLink: string
+    if (isWebRTCMode && hostId) {
+      // WebRTC P2P mode - use host link
+      const baseUrl = window.location.origin + window.location.pathname
+      inviteLink = `${baseUrl}#hostId=${encodeURIComponent(hostId)}`
+    } else {
+      // Standard server mode - use generateInviteLink
+      const { url: link } = generateInviteLink(gameId, isGameStarted, isPrivate)
+      inviteLink = link
+    }
 
     // Copy to clipboard
     navigator.clipboard.writeText(inviteLink).then(() => {
@@ -354,7 +369,7 @@ const InvitePlayerMenu = memo<{
     }).catch(err => {
       console.error('Failed to copy:', err)
     })
-  }, [gameId, isGameStarted, isPrivate])
+  }, [gameId, isGameStarted, isPrivate, hostId])
 
   if (!isOpen || !anchorEl) {return null}
 
@@ -466,6 +481,7 @@ const Header = memo<HeaderProps>(({
   isPrivate,
   onPrivacyChange,
   isHost,
+  hostId,
   onSyncGame: _onSyncGame, // Currently unused in UI but may be needed later
   currentPhase,
   onSetPhase,
@@ -679,6 +695,7 @@ const Header = memo<HeaderProps>(({
         onPrivacyChange={onPrivacyChange}
         isHost={isHost}
         isGameStarted={isGameStarted}
+        hostId={hostId}
         t={t}
       />
     </>

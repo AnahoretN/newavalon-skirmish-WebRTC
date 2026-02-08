@@ -301,3 +301,11 @@ export function getCardDatabaseMap(): Map<string, CardDefinition> {
 export function getTokenDatabaseMap(): Map<string, CardDefinition> {
   return _tokenDatabase
 }
+
+/**
+ * Get the internal decks data (for reactive updates in components)
+ * This allows components to track when deck data changes
+ */
+export function getDecksData(): Record<string, Card[]> {
+  return _decksData
+}

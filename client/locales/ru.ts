@@ -249,7 +249,7 @@ export const ru: TranslationResource = {
     webrtcModeDesc: 'Включить прямое соединение между игроками без центрального сервера (Хост выступает сервером)',
     peerToPeer: 'Peer-to-Peer',
     directConnection: 'Прямое соединение между браузерами',
-    hostGame: 'Создать игру (P2P)',
+    hostGame: 'Создать игру',
     hostGameDesc: 'Хост игры через WebRTC - центральный сервер не нужен',
     copyHostLink: 'Скопировать ссылку хоста',
     hostLinkCopied: 'Ссылка хоста скопирована!',

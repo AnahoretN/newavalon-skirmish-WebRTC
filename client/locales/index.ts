@@ -222,7 +222,7 @@ const enUI = {
   webrtcModeDesc: 'Enable peer-to-peer connection to play without a central server (Host acts as server)',
   peerToPeer: 'Peer-to-Peer',
   directConnection: 'Direct connection between browsers',
-  hostGame: 'Host Game (P2P)',
+  hostGame: 'Host Game',
   hostGameDesc: 'Host a game using WebRTC - no central server needed',
   copyHostLink: 'Copy Host Link',
   hostLinkCopied: 'Host link copied!',

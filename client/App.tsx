@@ -140,6 +140,8 @@ const App = memo(function App() {
     latestDeckSelections,
     latestHandCardSelections,
     // WebRTC props
+    webrtcHostId,
+    webrtcIsHost,
     initializeWebrtcHost,
     connectAsGuest,
   } = gameStateHook
@@ -1967,6 +1969,7 @@ const App = memo(function App() {
         isPrivate={gameState.isPrivate}
         onPrivacyChange={setGamePrivacy}
         isHost={isHost}
+        hostId={webrtcHostId}
         onSyncGame={handleSyncAndRefresh}
         currentPhase={gameState.currentPhase}
         onSetPhase={setPhase}

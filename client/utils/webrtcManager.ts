@@ -7,20 +7,46 @@
  *
  * Data flow:
  * Guest --> Host --> Broadcast to all guests
+ *
+ * @note For new host-specific functionality, consider using the HostManager module
+ *       located in '../host' which provides better separation of concerns.
  */
 
 import { Peer, DataConnection } from 'peerjs'
-import type { GameState } from '../types'
+import type { GameState, StateDelta } from '../types'
 import { logger } from './logger'
 
 // Message types for WebRTC communication
 export type WebrtcMessageType =
-  | 'JOIN_REQUEST'      // Guest requests to join
-  | 'JOIN_ACCEPT'       // Host accepts guest, sends current state
-  | 'STATE_UPDATE'      // Host broadcasts full state update
-  | 'ACTION'            // Guest sends action to host
-  | 'PLAYER_LEAVE'      // Player is leaving
-  | 'CHAT'              // Chat message (optional future feature)
+  | 'JOIN_REQUEST'         // Guest requests to join
+  | 'JOIN_ACCEPT'          // Host accepts guest, sends current state
+  | 'JOIN_ACCEPT_MINIMAL'  // Host accepts guest with minimal info (to avoid size limit)
+  | 'STATE_UPDATE'         // Host broadcasts full state update
+  | 'STATE_DELTA'          // Compact state change broadcast (NEW)
+  | 'ACTION'               // Guest sends action to host
+  | 'PLAYER_LEAVE'         // Player is leaving
+  | 'CHAT'                 // Chat message (optional future feature)
+  | 'START_READY_CHECK'    // Host starts ready check
+  | 'CANCEL_READY_CHECK'   // Host cancels ready check
+  | 'PLAYER_READY'         // Guest signals ready
+  | 'HOST_READY'           // Host signals ready
+  | 'GAME_START'           // Host starts the game
+  | 'GAME_RESET'           // Reset game to lobby state
+  | 'ASSIGN_TEAMS'         // Host assigns teams
+  | 'SET_GAME_MODE'        // Host sets game mode
+  | 'SET_GAME_PRIVACY'     // Host sets game privacy
+  | 'NEXT_PHASE'           // Phase transition
+  | 'PREV_PHASE'           // Phase transition
+  | 'SET_PHASE'            // Phase transition
+  | 'UPDATE_PLAYER_NAME'   // Player settings update
+  | 'CHANGE_PLAYER_COLOR'  // Player settings update
+  | 'UPDATE_PLAYER_SCORE'  // Player settings update
+  | 'CHANGE_PLAYER_DECK'   // Player settings update
+  | 'SYNC_DECK_SELECTIONS'  // Sync deck selections between all players
+  | 'TOGGLE_ACTIVE_PLAYER' // Toggle active player
+  | 'TOGGLE_AUTO_DRAW'     // Toggle auto draw
+  | 'START_NEXT_ROUND'     // Start next round
+  | 'RESET_DEPLOY_STATUS'  // Reset deploy status
 
 export interface WebrtcMessage {
   type: WebrtcMessageType
@@ -273,20 +299,87 @@ export class WebrtcManager {
   }
 
   /**
+   * Send message to specific guest (host only)
+   */
+  sendToGuest(peerId: string, message: WebrtcMessage): boolean {
+    if (!this.isHost) {
+      logger.warn('Only host can send to specific guest')
+      return false
+    }
+
+    const conn = this.connections.get(peerId)
+    if (!conn) {
+      logger.error(`[sendToGuest] No connection found for guest ${peerId}. Available connections: ${Array.from(this.connections.keys()).join(', ')}`)
+      return false
+    }
+    if (!conn.open) {
+      logger.error(`[sendToGuest] Connection for guest ${peerId} is not open`)
+      return false
+    }
+
+    try {
+      conn.send(message)
+      logger.debug(`Sent message to guest ${peerId}`)
+      return true
+    } catch (err) {
+      logger.error(`[sendToGuest] Failed to send message to ${peerId}:`, err)
+      return false
+    }
+  }
+
+  /**
    * Host accepts guest and sends current game state
    */
   acceptGuest(peerId: string, gameState: GameState, playerId: number): void {
     const conn = this.connections.get(peerId)
-    if (conn && conn.open) {
-      const message: WebrtcMessage = {
-        type: 'JOIN_ACCEPT',
-        senderId: this.peer?.id,
-        playerId: playerId,
-        data: { gameState },
-        timestamp: Date.now()
-      }
+    if (!conn) {
+      logger.error(`[acceptGuest] No connection found for guest ${peerId}. Available connections: ${Array.from(this.connections.keys()).join(', ')}`)
+      return
+    }
+    if (!conn.open) {
+      logger.error(`[acceptGuest] Connection for guest ${peerId} is not open`)
+      return
+    }
+    const message: WebrtcMessage = {
+      type: 'JOIN_ACCEPT',
+      senderId: this.peer?.id,
+      playerId: playerId,
+      data: { gameState },
+      timestamp: Date.now()
+    }
+    try {
       conn.send(message)
       logger.info(`Accepted guest ${peerId} as player ${playerId}`)
+    } catch (err) {
+      logger.error(`[acceptGuest] Failed to send JOIN_ACCEPT to ${peerId}:`, err)
+    }
+  }
+
+  /**
+   * Accept guest with minimal game info (to avoid message size limit)
+   */
+  acceptGuestMinimal(peerId: string, minimalInfo: any, playerId: number): void {
+    const conn = this.connections.get(peerId)
+    if (!conn) {
+      logger.error(`[acceptGuestMinimal] No connection found for guest ${peerId}. Available connections: ${Array.from(this.connections.keys()).join(', ')}`)
+      return
+    }
+    if (!conn.open) {
+      logger.error(`[acceptGuestMinimal] Connection for guest ${peerId} is not open`)
+      return
+    }
+    const message: WebrtcMessage = {
+      type: 'JOIN_ACCEPT_MINIMAL',
+      senderId: this.peer?.id,
+      playerId: playerId,
+      data: minimalInfo,
+      timestamp: Date.now()
+    }
+    try {
+      conn.send(message)
+      logger.info(`Accepted guest ${peerId} as player ${playerId} (minimal)`)
+    } catch (err) {
+      logger.error(`[acceptGuestMinimal] Failed to send JOIN_ACCEPT_MINIMAL to ${peerId}:`, err)
     }
   }
 
@@ -304,6 +397,22 @@ export class WebrtcManager {
   }
 
   /**
+   * Broadcast state delta to all guests (host only)
+   * Sends only the changes that happened, not full state
+   */
+  broadcastStateDelta(delta: StateDelta, excludePeerId?: string): void {
+    const message: WebrtcMessage = {
+      type: 'STATE_DELTA',
+      senderId: this.peer?.id,
+      data: { delta },
+      timestamp: Date.now()
+    }
+    logger.info(`[broadcastStateDelta] Preparing to send STATE_DELTA: playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, boardCells=${delta.boardCells?.length || 0}, phaseDelta=${!!delta.phaseDelta}`)
+    this.broadcastToGuests(message, excludePeerId)
+    logger.info(`[broadcastStateDelta] Sent STATE_DELTA from player ${delta.sourcePlayerId} to ${this.connections.size} guests`)
+  }
+
+  /**
    * Guest sends action to host
    */
   sendAction(actionType: string, actionData: any): boolean {
@@ -311,6 +420,20 @@ export class WebrtcManager {
       type: 'ACTION',
       senderId: this.peer?.id,
       data: { actionType, actionData },
+      timestamp: Date.now()
+    }
+    return this.sendMessageToHost(message)
+  }
+
+  /**
+   * Send state delta to host (for efficient syncing)
+   * Guest uses this to send their state changes to host
+   */
+  sendStateDelta(delta: StateDelta): boolean {
+    const message: WebrtcMessage = {
+      type: 'STATE_DELTA',
+      senderId: this.peer?.id,
+      data: { delta },
       timestamp: Date.now()
     }
     return this.sendMessageToHost(message)

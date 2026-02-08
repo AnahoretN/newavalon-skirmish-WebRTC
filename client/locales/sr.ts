@@ -249,7 +249,7 @@ export const sr: TranslationResource = {
     webrtcModeDesc: 'Omogućite direktnu vezu između igrača bez centralnog servera (Domaćin deluje kao server)',
     peerToPeer: 'Peer-to-Peer',
     directConnection: 'Direktna veza između pregledača',
-    hostGame: 'Domaćin igre (P2P)',
+    hostGame: 'Domaćin igre',
     hostGameDesc: 'Domaćin igre putem WebRTC - centralni server nije potreban',
     copyHostLink: 'Kopiraj vezu domaćina',
     hostLinkCopied: 'Veza domaćina kopirana!',

@@ -423,3 +423,103 @@ export interface TargetSelectionEffect {
     handTarget?: { playerId: number; cardIndex: number }; // For hand targets
     selectedByPlayerId: number; // The player who made the selection
 }
+
+/**
+ * Compact state delta for WebRTC synchronization
+ * Only contains the changes that happened, not the full state
+ */
+export interface StateDelta {
+  // Player-specific changes (by playerId)
+  playerDeltas?: Record<number, PlayerDelta>;
+
+  // Board changes
+  boardCells?: BoardCellDelta[]; // Changed cells on the board
+
+  // Game-wide changes
+  phaseDelta?: {
+    currentPhase?: number;
+    isScoringStep?: boolean;
+    activePlayerId?: number | null;
+    startingPlayerId?: number | null;
+  };
+
+  roundDelta?: {
+    currentRound?: number;
+    turnNumber?: number;
+    roundEndTriggered?: boolean;
+    roundWinners?: Record<number, number[]>;
+    gameWinner?: number | null;
+    isRoundEndModalOpen?: boolean;
+  };
+
+  // Visual effects
+  highlightsDelta?: {
+    add?: HighlightData[];
+    remove?: number[]; // Timestamps to remove
+    clear?: boolean;
+  };
+  floatingTextsDelta?: {
+    add?: FloatingTextData[];
+    clear?: boolean;
+  };
+  targetingModeDelta?: {
+    set?: TargetingModeData;
+    clear?: boolean;
+  };
+
+  // Metadata
+  timestamp: number;
+  sourcePlayerId: number; // Who made the change
+}
+
+/**
+ * Delta for a single player's state
+ */
+export interface PlayerDelta {
+  id: number;
+
+  // Card count changes (only sizes, not full arrays for privacy)
+  handSizeDelta?: number; // Change in hand size (+1, -1, etc.)
+  deckSizeDelta?: number;
+  discardSizeDelta?: number;
+
+  // Full array updates (only when necessary, e.g., for local player)
+  handAdd?: Card[]; // Cards added to hand
+  handRemove?: number; // Number of cards removed from end of hand
+  deckAdd?: Card[]; // Cards added to deck
+  deckRemove?: number; // Number of cards removed from end of deck
+  discardAdd?: Card[]; // Cards added to discard
+  discardClear?: boolean; // Clear discard pile
+
+  // Score changes
+  scoreDelta?: number;
+
+  // Property changes
+  isReady?: boolean;
+  selectedDeck?: DeckType;
+  name?: string;
+  color?: PlayerColor;
+  isDisconnected?: boolean;
+}
+
+/**
+ * Delta for a single board cell
+ */
+export interface BoardCellDelta {
+  row: number;
+  col: number;
+
+  // Card placement/removal
+  card?: Card | null; // null = card removed
+
+  // Card status changes (if card already exists)
+  cardStatuses?: {
+    add?: CardStatus[];
+    remove?: string[]; // Status types to remove
+    clear?: boolean;
+  };
+
+  // Card power changes
+  cardPowerDelta?: number;
+  cardPowerModifier?: number;
+}
