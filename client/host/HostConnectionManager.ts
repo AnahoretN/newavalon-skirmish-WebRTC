@@ -21,6 +21,12 @@ export class HostConnectionManager {
   private guests: Map<string, GuestConnection> = new Map()
   private eventHandlers: Set<WebrtcEventHandler> = new Set()
   private config: HostConfig
+  // Track players who are in reconnection window (by playerId)
+  private reconnectingPlayers: Map<number, {
+    disconnectedAt: number
+    oldPeerId: string | null
+  }> = new Map()
+  private reconnectionTimeout: number = 30000 // 30 seconds
 
   constructor(config: HostConfig = {}) {
     this.config = {
@@ -376,12 +382,161 @@ export class HostConnectionManager {
     this.connections.forEach(conn => conn.close())
     this.connections.clear()
     this.guests.clear()
+    this.reconnectingPlayers.clear()
 
     // Destroy peer
     if (this.peer) {
       this.peer.destroy()
       this.peer = null
     }
+  }
+
+  // ==================== Reconnection Management ====================
+
+  /**
+   * Mark player as in reconnection window
+   */
+  markPlayerReconnecting(playerId: number, peerId: string | null): void {
+    this.reconnectingPlayers.set(playerId, {
+      disconnectedAt: Date.now(),
+      oldPeerId: peerId
+    })
+
+    // Auto-remove after timeout
+    setTimeout(() => {
+      const data = this.reconnectingPlayers.get(playerId)
+      if (data && Date.now() - data.disconnectedAt >= this.reconnectionTimeout) {
+        this.reconnectingPlayers.delete(playerId)
+        logger.info(`[Reconnection] Player ${playerId} reconnection window expired`)
+      }
+    }, this.reconnectionTimeout)
+
+    logger.info(`[Reconnection] Player ${playerId} marked as reconnecting, window: ${this.reconnectionTimeout}ms`)
+  }
+
+  /**
+   * Check if player is in reconnection window
+   */
+  isPlayerReconnecting(playerId: number): boolean {
+    const data = this.reconnectingPlayers.get(playerId)
+    if (!data) return false
+
+    // Check if still within window
+    const elapsed = Date.now() - data.disconnectedAt
+    if (elapsed >= this.reconnectionTimeout) {
+      this.reconnectingPlayers.delete(playerId)
+      return false
+    }
+
+    return true
+  }
+
+  /**
+   * Get remaining reconnection time for player
+   */
+  getPlayerReconnectTimeRemaining(playerId: number): number {
+    const data = this.reconnectingPlayers.get(playerId)
+    if (!data) return 0
+
+    const elapsed = Date.now() - data.disconnectedAt
+    return Math.max(0, this.reconnectionTimeout - elapsed)
+  }
+
+  /**
+   * Handle player reconnection (accept reconnection request)
+   */
+  acceptPlayerReconnect(newPeerId: string, playerId: number, gameState: GameState): boolean {
+    // Check if player is in reconnection window
+    if (!this.isPlayerReconnecting(playerId)) {
+      logger.warn(`[Reconnection] Player ${playerId} not in reconnection window or expired`)
+      return false
+    }
+
+    // Get the connection
+    const conn = this.connections.get(newPeerId)
+    if (!conn || !conn.open) {
+      logger.error(`[Reconnection] No valid connection for ${newPeerId}`)
+      return false
+    }
+
+    // Remove from reconnecting list
+    this.reconnectingPlayers.delete(playerId)
+
+    // Send reconnection acceptance with current state
+    const message: WebrtcMessage = {
+      type: 'RECONNECT_ACCEPT',
+      senderId: this.peer?.id,
+      playerId: playerId,
+      data: { gameState },
+      timestamp: Date.now()
+    }
+
+    try {
+      conn.send(message)
+      logger.info(`[Reconnection] Player ${playerId} reconnected from ${newPeerId}`)
+
+      // Update guest mapping
+      const guest = this.guests.get(newPeerId)
+      if (guest) {
+        guest.playerId = playerId
+      }
+
+      return true
+    } catch (err) {
+      logger.error(`[Reconnection] Failed to send RECONNECT_ACCEPT:`, err)
+      return false
+    }
+  }
+
+  /**
+   * Reject player reconnection (timeout or game over)
+   */
+  rejectPlayerReconnect(peerId: string, reason: 'timeout' | 'game_over'): void {
+    const conn = this.connections.get(peerId)
+    if (!conn || !conn.open) {
+      return
+    }
+
+    const message: WebrtcMessage = {
+      type: 'RECONNECT_REJECT',
+      senderId: this.peer?.id,
+      data: { reason },
+      timestamp: Date.now()
+    }
+
+    try {
+      conn.send(message)
+      conn.close()
+      logger.info(`[Reconnection] Rejected reconnection from ${peerId}, reason: ${reason}`)
+    } catch (err) {
+      logger.error(`[Reconnection] Failed to send RECONNECT_REJECT:`, err)
+    }
+  }
+
+  /**
+   * Get all players currently in reconnection window
+   */
+  getReconnectingPlayers(): number[] {
+    const now = Date.now()
+    const validPlayers: number[] = []
+
+    this.reconnectingPlayers.forEach((data, playerId) => {
+      if (now - data.disconnectedAt < this.reconnectionTimeout) {
+        validPlayers.push(playerId)
+      } else {
+        this.reconnectingPlayers.delete(playerId)
+      }
+    })
+
+    return validPlayers
+  }
+
+  /**
+   * Cancel reconnection window for player (e.g., if they left voluntarily)
+   */
+  cancelPlayerReconnection(playerId: number): void {
+    this.reconnectingPlayers.delete(playerId)
+    logger.info(`[Reconnection] Cancelled reconnection window for player ${playerId}`)
   }
 }
 

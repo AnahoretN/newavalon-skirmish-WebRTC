@@ -49,6 +49,13 @@ export type WebrtcMessageType =
   | 'ABILITY_COMPLETED'    // Ability execution completed
   | 'ABILITY_TARGET_SELECTED' // Target selected for ability
   | 'ABILITY_CANCELLED'    // Ability was cancelled
+  // Reconnection messages
+  | 'RECONNECT_REQUEST'    // Guest requests reconnection after disconnect
+  | 'RECONNECT_ACCEPT'     // Host accepts reconnection, sends current state
+  | 'RECONNECT_REJECT'     // Host rejects reconnection (timeout/game over)
+  | 'PLAYER_DISCONNECTED'  // Host broadcasts player disconnected
+  | 'PLAYER_RECONNECTED'   // Host broadcasts player reconnected
+  | 'PLAYER_CONVERTED_TO_DUMMY' // Host broadcasts player converted to dummy
 
 export interface WebrtcMessage {
   type: WebrtcMessageType

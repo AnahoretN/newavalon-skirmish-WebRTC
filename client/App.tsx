@@ -1991,6 +1991,8 @@ const App = memo(function App() {
         onToggleHideDummyCards={setHideDummyCards}
         currentRound={gameState.currentRound}
         turnNumber={gameState.turnNumber}
+        isReconnecting={isReconnecting}
+        reconnectProgress={reconnectProgress}
       />
 
       {gameState.isRoundEndModalOpen && (

@@ -137,6 +137,9 @@ export class HostManager {
 
     this.stateManager.setInitialState(newState)
 
+    // Mark player as in reconnection window (30 seconds)
+    this.connectionManager.markPlayerReconnecting(playerId, peerId)
+
     // Start disconnect timer if enabled
     if (this.config.enableTimers !== false) {
       this.timerSystem.startPlayerDisconnectTimer(playerId)
@@ -157,6 +160,8 @@ export class HostManager {
       data: { playerId },
       timestamp: Date.now()
     })
+
+    logger.info(`[HostManager] Player ${playerId} disconnected, reconnection window open for 30s`)
   }
 
   /**
@@ -286,6 +291,10 @@ export class HostManager {
     switch (message.type) {
       case 'JOIN_REQUEST':
         this.handleJoinRequest(fromPeerId)
+        break
+
+      case 'RECONNECT_REQUEST':
+        this.handleReconnectRequest(fromPeerId, message.data)
         break
 
       case 'PLAYER_READY':
@@ -607,6 +616,64 @@ export class HostManager {
     }
 
     logger.info(`[HostManager] Added player ${newPlayerId} for guest ${guestPeerId}`)
+  }
+
+  /**
+   * Handle reconnection request from guest
+   */
+  private handleReconnectRequest(guestPeerId: string, data: any): void {
+    const requestedPlayerId = data?.playerId
+    const currentState = this.stateManager.getState()
+
+    if (!currentState) {
+      logger.error('[HostManager] No game state for reconnection')
+      this.connectionManager.rejectPlayerReconnect(guestPeerId, 'timeout')
+      return
+    }
+
+    // Check if player exists and is in reconnection window
+    if (requestedPlayerId === undefined || requestedPlayerId === null) {
+      // No specific player ID - treat as new join
+      logger.info(`[Reconnection] No playerId specified, treating as new join`)
+      this.handleJoinRequest(guestPeerId)
+      return
+    }
+
+    const playerExists = currentState.players.some(p => p.id === requestedPlayerId)
+    if (!playerExists) {
+      logger.warn(`[Reconnection] Player ${requestedPlayerId} does not exist`)
+      this.connectionManager.rejectPlayerReconnect(guestPeerId, 'timeout')
+      return
+    }
+
+    // Check if player is in reconnection window
+    if (!this.connectionManager.isPlayerReconnecting(requestedPlayerId)) {
+      // Player exists but not marked as reconnecting - might be a new connection or expired
+      logger.warn(`[Reconnection] Player ${requestedPlayerId} not in reconnection window`)
+      // Still allow reconnection if the player exists
+    }
+
+    // Accept reconnection
+    const success = this.connectionManager.acceptPlayerReconnect(
+      guestPeerId,
+      requestedPlayerId,
+      currentState
+    )
+
+    if (success) {
+      // Mark player as reconnected
+      this.handlePlayerReconnect(requestedPlayerId, guestPeerId)
+
+      // Broadcast to all players
+      this.broadcast({
+        type: 'PLAYER_RECONNECTED',
+        senderId: this.connectionManager.getPeerId(),
+        data: { playerId: requestedPlayerId },
+        timestamp: Date.now()
+      })
+    } else {
+      this.connectionManager.rejectPlayerReconnect(guestPeerId, 'timeout')
+    }
   }
 
   /**

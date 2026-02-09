@@ -43,27 +43,41 @@ interface HeaderProps {
   onToggleHideDummyCards: (enabled: boolean) => void;
   currentRound?: number;
   turnNumber?: number;
+  // Reconnection props
+  isReconnecting?: boolean;
+  reconnectProgress?: { attempt: number; maxAttempts: number; timeRemaining: number } | null;
 }
 
-const StatusIndicator = memo<{ connectionStatus: ConnectionStatus }>(({ connectionStatus }) => {
+const StatusIndicator = memo<{
+  connectionStatus: ConnectionStatus
+  isReconnecting?: boolean
+  reconnectProgress?: { attempt: number; maxAttempts: number; timeRemaining: number } | null
+}>(({ connectionStatus, isReconnecting, reconnectProgress }) => {
   return (
-    <span className="relative flex h-3 w-3" title={connectionStatus}>
-      {connectionStatus === 'Connected' && (
-        <>
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-        </>
+    <div className="flex items-center gap-2">
+      <span className="relative flex h-3 w-3" title={connectionStatus}>
+        {connectionStatus === 'Connected' && !isReconnecting && (
+          <>
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+          </>
+        )}
+        {(connectionStatus === 'Connecting' || isReconnecting) && (
+          <>
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
+          </>
+        )}
+        {connectionStatus === 'Disconnected' && !isReconnecting && (
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+        )}
+      </span>
+      {isReconnecting && reconnectProgress && (
+        <span className="text-xs text-yellow-400 animate-pulse">
+          Reconnecting ({Math.round(reconnectProgress.timeRemaining / 1000)}s)
+        </span>
       )}
-      {connectionStatus === 'Connecting' && (
-        <>
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
-        </>
-      )}
-      {connectionStatus === 'Disconnected' && (
-        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-      )}
-    </span>
+    </div>
   )
 })
 
@@ -497,6 +511,8 @@ const Header = memo<HeaderProps>(({
   onToggleHideDummyCards,
   currentRound = 1,
   turnNumber = 1,
+  isReconnecting = false,
+  reconnectProgress = null,
 }) => {
   const { t } = useLanguage()
   const [showRoundTooltip, setShowRoundTooltip] = useState(false)
@@ -522,7 +538,7 @@ const Header = memo<HeaderProps>(({
       <header className="fixed top-0 left-0 right-0 h-14 bg-panel-bg bg-opacity-80 backdrop-blur-sm z-50 flex items-center justify-between px-4 shadow-lg">
         {/* Left side: Connection indicator + divider + Game Settings + Invite Player + divider */}
         <div className="flex items-center space-x-3">
-          <StatusIndicator connectionStatus={connectionStatus} />
+          <StatusIndicator connectionStatus={connectionStatus} isReconnecting={isReconnecting} reconnectProgress={reconnectProgress} />
 
           {/* Vertical divider after connection indicator */}
           <div className="w-px h-8 bg-gray-600" />

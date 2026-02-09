@@ -415,6 +415,8 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   const [webrtcHostId, setWebrtcHostId] = useState<string | null>(null)
   const [webrtcIsHost, setWebrtcIsHost] = useState(false)
   const webrtcIsHostRef = useRef<boolean>(false)  // Ref to always have current value
+  const [isReconnecting, setIsReconnecting] = useState(false)
+  const [reconnectProgress, setReconnectProgress] = useState<{ attempt: number; maxAttempts: number; timeRemaining: number } | null>(null)
 
   const ws = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<number | null>(null)
@@ -539,6 +541,12 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       case 'connected_to_host':
         // Guest: Successfully connected to host
         setConnectionStatus('Connected')
+        setIsReconnecting(false)
+        setReconnectProgress(null)
+        // Clear stored reconnection data on successful connect
+        try {
+          localStorage.removeItem('webrtc_reconnection_data')
+        } catch (e) {}
         logger.info('Connected to host via WebRTC')
         break
 
@@ -546,6 +554,27 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       case 'guest_disconnected':
         logger.warn('WebRTC peer disconnected')
         setConnectionStatus('Disconnected')
+
+        // Start automatic reconnection for guests
+        if (!webrtcIsHostRef.current && webrtcHostId && gameState) {
+          // Store current state for reconnection
+          try {
+            const reconnectionData = {
+              hostPeerId: webrtcHostId,
+              playerId: localPlayerId,
+              gameState: gameState,
+              timestamp: Date.now(),
+              isHost: false
+            }
+            localStorage.setItem('webrtc_reconnection_data', JSON.stringify(reconnectionData))
+            logger.info('[Reconnection] Stored reconnection data before disconnect')
+
+            // Start reconnection
+            startGuestReconnection(webrtcHostId)
+          } catch (e) {
+            logger.error('[Reconnection] Failed to store data:', e)
+          }
+        }
         break
 
       case 'message_received':
@@ -557,7 +586,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         logger.error('WebRTC error:', event.data)
         break
     }
-  }, [])
+  }, [gameState, localPlayerId, webrtcHostId, webrtcIsHost])
 
   /**
    * Handle WebRTC guest join request (host only)
@@ -1816,12 +1845,141 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         logger.debug('[TargetingMode] Cleared targeting mode via WebRTC')
         break
 
+      case 'RECONNECT_ACCEPT':
+        // Host accepted our reconnection, sending current game state
+        logger.info('[Reconnection] Host accepted reconnection, restoring state')
+        if (message.data?.gameState) {
+          const restoredState = message.data.gameState
+          setGameState(restoredState)
+          setConnectionStatus('Connected')
+          logger.info(`[Reconnection] State restored with ${restoredState.players?.length || 0} players`)
+
+          // Clear stored reconnection data on successful reconnect
+          try {
+            localStorage.removeItem('webrtc_reconnection_data')
+          } catch (e) {
+            logger.warn('[Reconnection] Failed to clear stored data:', e)
+          }
+        }
+        break
+
+      case 'RECONNECT_REJECT':
+        // Host rejected our reconnection (timeout or game over)
+        const rejectReason = message.data?.reason || 'unknown'
+        logger.warn(`[Reconnection] Reconnection rejected: ${rejectReason}`)
+        setConnectionStatus('Disconnected')
+        // Clear stored data
+        try {
+          localStorage.removeItem('webrtc_reconnection_data')
+        } catch (e) {}
+        break
+
+      case 'PLAYER_DISCONNECTED':
+        // Host broadcast that a player disconnected
+        if (message.data?.playerId !== undefined) {
+          logger.info(`[Reconnection] Player ${message.data.playerId} disconnected, reconnection window open`)
+          setGameState(prev => ({
+            ...prev,
+            players: prev.players.map(p =>
+              p.id === message.data.playerId ? { ...p, isDisconnected: true } : p
+            )
+          }))
+        }
+        break
+
+      case 'PLAYER_RECONNECTED':
+        // Host broadcast that a player reconnected
+        if (message.data?.playerId !== undefined) {
+          logger.info(`[Reconnection] Player ${message.data.playerId} reconnected`)
+          setGameState(prev => ({
+            ...prev,
+            players: prev.players.map(p =>
+              p.id === message.data.playerId ? { ...p, isDisconnected: false } : p
+            )
+          }))
+        }
+        break
+
+      case 'PLAYER_CONVERTED_TO_DUMMY':
+        // Host broadcast that a player was converted to dummy after timeout
+        if (message.data?.playerId !== undefined) {
+          logger.info(`[Reconnection] Player ${message.data.playerId} converted to dummy`)
+          setGameState(prev => ({
+            ...prev,
+            players: prev.players.map(p =>
+              p.id === message.data.playerId ? { ...p, isDummy: true, isDisconnected: true } : p
+            )
+          }))
+        }
+        break
+
       default:
         // Log unknown message types for debugging
         logger.warn(`[handleWebrtcMessage] Unknown message type: ${message.type}`, message)
         break
     }
-  }, [webrtcIsHost, createDeck, broadcastWebrtcState])
+  }, [webrtcIsHost, createDeck, broadcastWebrtcState, gameState, localPlayerId])
+
+  /**
+   * Start guest reconnection process
+   */
+  const startGuestReconnection = useCallback((hostPeerId: string) => {
+    if (!webrtcManagerRef.current || isReconnecting) {
+      return
+    }
+
+    logger.info('[Reconnection] Starting guest reconnection to host:', hostPeerId)
+    setIsReconnecting(true)
+    setConnectionStatus('Connecting')
+
+    const reconnectionTimeout = 30000 // 30 seconds
+    const retryInterval = 1000 // Start with 1 second
+    let attempts = 0
+    const maxAttempts = reconnectionTimeout / retryInterval
+
+    // Store reconnection data
+    try {
+      const reconnectionData = {
+        hostPeerId: hostPeerId,
+        playerId: localPlayerId,
+        gameState: gameState,
+        timestamp: Date.now(),
+        isHost: false
+      }
+      localStorage.setItem('webrtc_reconnection_data', JSON.stringify(reconnectionData))
+    } catch (e) {
+      logger.error('[Reconnection] Failed to store data:', e)
+    }
+
+    const attemptReconnect = async () => {
+      attempts++
+      const timeRemaining = Math.max(0, reconnectionTimeout - (attempts * retryInterval))
+
+      setReconnectProgress({ attempt: attempts, maxAttempts, timeRemaining })
+
+      if (timeRemaining <= 0) {
+        // Timeout expired
+        logger.warn('[Reconnection] Reconnection timeout expired')
+        setIsReconnecting(false)
+        setReconnectProgress(null)
+        return
+      }
+
+      logger.info(`[Reconnection] Attempt ${attempts}/${maxAttempts} (${Math.round(timeRemaining / 1000)}s remaining)`)
+
+      try {
+        // Create new peer and connect
+        await webrtcManagerRef.current!.initializeAsGuest(hostPeerId)
+      } catch (err) {
+        logger.warn('[Reconnection] Reconnection attempt failed:', err)
+        // Schedule next attempt
+        setTimeout(attemptReconnect, retryInterval)
+      }
+    }
+
+    // Start first attempt
+    attemptReconnect()
+  }, [isReconnecting, gameState, localPlayerId])
 
   /**
    * Initialize WebRTC as host
@@ -5414,5 +5572,8 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     initializeWebrtcHost,
     connectAsGuest,
     sendWebrtcAction,
+    // Reconnection state
+    isReconnecting,
+    reconnectProgress,
   }
 }
