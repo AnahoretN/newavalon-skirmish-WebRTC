@@ -24,6 +24,7 @@ import {
   createDeltaFromStates,
   isDeltaEmpty
 } from '../utils/stateDelta'
+import { saveGuestData, saveWebrtcState, loadGuestData, loadHostData, loadWebrtcState, getRestorableSessionType, clearWebrtcData } from '../host/WebrtcStatePersistence'
 
 // Helper to determine the correct WebSocket URL
 const getWebSocketURL = () => {
@@ -463,6 +464,116 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       }
     }
     return undefined
+  }, [])
+
+  // Auto-restore WebRTC session on page load
+  useEffect(() => {
+    // Skip if WebRTC is not enabled
+    const webrtcSetting = localStorage.getItem('webrtc_enabled') === 'true'
+    if (!webrtcSetting) return
+
+    // Skip if URL has hostId parameter (fresh join link)
+    const hash = window.location.hash.slice(1)
+    if (hash) {
+      const params = new URLSearchParams(hash)
+      if (params.get('hostId')) {
+        logger.info('[Auto-restore] Skipping due to hostId in URL (fresh join)')
+        return
+      }
+    }
+
+    // Check if there's a restorable session
+    const sessionType = getRestorableSessionType()
+    if (sessionType === 'none') {
+      logger.info('[Auto-restore] No restorable session found')
+      return
+    }
+
+    logger.info(`[Auto-restore] Found restorable ${sessionType} session, attempting restore...`)
+
+    // Small delay to ensure WebRTC manager is ready
+    setTimeout(async () => {
+      if (!webrtcManagerRef.current) {
+        logger.warn('[Auto-restore] WebRTC manager not ready')
+        return
+      }
+
+      try {
+        if (sessionType === 'host') {
+          // Restore host session
+          const hostData = loadHostData()
+          const stateData = loadWebrtcState()
+
+          if (!hostData || !stateData) {
+            logger.warn('[Auto-restore] Missing host data or state data')
+            clearWebrtcData()
+            return
+          }
+
+          logger.info(`[Auto-restore] Restoring host session: peerId=${hostData.peerId}`)
+
+          // Initialize as host
+          const peerId = await webrtcManagerRef.current.initializeAsHost()
+          setWebrtcIsHost(true)
+          setConnectionStatus('Connected')
+
+          // Restore game state
+          if (stateData.gameState) {
+            setGameState(stateData.gameState)
+            logger.info(`[Auto-restore] Restored game state with ${stateData.gameState.players?.length || 0} players`)
+          }
+
+          if (stateData.localPlayerId !== null) {
+            setLocalPlayerId(stateData.localPlayerId)
+            logger.info(`[Auto-restore] Restored local player ID: ${stateData.localPlayerId}`)
+          }
+
+          logger.info('[Auto-restore] Host session restored successfully')
+
+        } else if (sessionType === 'guest') {
+          // Restore guest session
+          const guestData = loadGuestData()
+          const stateData = loadWebrtcState()
+
+          if (!guestData || !stateData) {
+            logger.warn('[Auto-restore] Missing guest data or state data')
+            clearWebrtcData()
+            return
+          }
+
+          logger.info(`[Auto-restore] Restoring guest session: hostPeerId=${guestData.hostPeerId}, playerId=${guestData.playerId}`)
+
+          setWebrtcIsHost(false)
+          setConnectionStatus('Connecting')
+
+          // Connect to host
+          const connected = await webrtcManagerRef.current.initializeAsGuest(guestData.hostPeerId)
+
+          if (connected) {
+            setConnectionStatus('Connected')
+            logger.info('[Auto-restore] Connected to host')
+
+            // Restore game state if we have it (will also sync with host)
+            if (stateData.gameState) {
+              setGameState(stateData.gameState)
+              logger.info(`[Auto-restore] Restored game state with ${stateData.gameState.players?.length || 0} players`)
+            }
+
+            if (stateData.localPlayerId !== null) {
+              setLocalPlayerId(stateData.localPlayerId)
+              logger.info(`[Auto-restore] Restored local player ID: ${stateData.localPlayerId}`)
+            }
+          } else {
+            logger.error('[Auto-restore] Failed to connect to host')
+            setConnectionStatus('Disconnected')
+            clearWebrtcData()
+          }
+        }
+      } catch (err) {
+        logger.error('[Auto-restore] Failed to restore session:', err)
+        clearWebrtcData()
+      }
+    }, 100)
   }, [])
 
   // Check URL for hostId parameter (WebRTC guest join)
@@ -977,6 +1088,21 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             logger.info(`[JOIN_ACCEPT_MINIMAL] Sent deck selection to host: ${localPlayer.selectedDeck}`)
           }
 
+          // Save guest connection data for page reload recovery
+          try {
+            const hostPeerId = webrtcManagerRef.current?.getHostPeerId()
+            if (hostPeerId) {
+              saveGuestData({
+                hostPeerId,
+                playerId: message.playerId,
+                playerName: localPlayer?.name || null,
+                isHost: false
+              })
+            }
+          } catch (e) {
+            logger.warn('[JOIN_ACCEPT_MINIMAL] Failed to save guest data:', e)
+          }
+
           logger.info('Received minimal game state from host via WebRTC')
         }
         break
@@ -991,6 +1117,22 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           if (message.playerId !== undefined) {
             setLocalPlayerId(message.playerId)
             logger.info(`[handleWebrtcMessage] Set local player ID to ${message.playerId}`)
+
+            // Save guest connection data for page reload recovery
+            try {
+              const hostPeerId = webrtcManagerRef.current?.getHostPeerId()
+              const localPlayer = remoteState.players.find(p => p.id === message.playerId)
+              if (hostPeerId) {
+                saveGuestData({
+                  hostPeerId,
+                  playerId: message.playerId,
+                  playerName: localPlayer?.name || null,
+                  isHost: false
+                })
+              }
+            } catch (e) {
+              logger.warn('[JOIN_ACCEPT] Failed to save guest data:', e)
+            }
           }
           logger.info('Received game state from host via WebRTC')
         }
@@ -1092,6 +1234,22 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             }
           })
           logger.debug('Received state update from host via WebRTC')
+
+          // Persist state for guest after receiving full state update from host
+          if (!webrtcIsHostRef.current) {
+            try {
+              const hostPeerId = webrtcManagerRef.current?.getHostPeerId()
+              if (hostPeerId && localPlayerIdRef.current !== null) {
+                saveWebrtcState({
+                  gameState: remoteState,
+                  localPlayerId: localPlayerIdRef.current,
+                  isHost: false
+                })
+              }
+            } catch (e) {
+              logger.warn('[STATE_UPDATE] Failed to persist guest state:', e)
+            }
+          }
         }
         break
 
@@ -1139,6 +1297,23 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             logger.info(`[STATE_DELTA] Applying delta with localPlayerId=${currentLocalPlayerId}, currentPhase before=${prev.currentPhase}`)
             const result = applyStateDelta(prev, delta, currentLocalPlayerId)
             logger.info(`[STATE_DELTA] Applying delta with localPlayerId=${currentLocalPlayerId}, currentPhase after=${result.currentPhase}`)
+
+            // Persist state for guest after receiving delta from host
+            if (!webrtcIsHostRef.current) {
+              try {
+                const hostPeerId = webrtcManagerRef.current?.getHostPeerId()
+                if (hostPeerId) {
+                  saveWebrtcState({
+                    gameState: result,
+                    localPlayerId: currentLocalPlayerId,
+                    isHost: false
+                  })
+                }
+              } catch (e) {
+                logger.warn('[STATE_DELTA] Failed to persist guest state:', e)
+              }
+            }
+
             return result
           })
         }
@@ -2693,6 +2868,14 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     isManualExitRef.current = true
     const gameIdToLeave = gameStateRef.current.gameId
     const playerIdToLeave = localPlayerIdRef.current
+
+    // Clear WebRTC persistence data on manual exit
+    try {
+      clearWebrtcData()
+      logger.info('[exitGame] Cleared WebRTC persistence data')
+    } catch (e) {
+      logger.warn('[exitGame] Failed to clear WebRTC data:', e)
+    }
 
     setGameState(createInitialState())
     setLocalPlayerId(null)

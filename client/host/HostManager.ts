@@ -26,6 +26,7 @@ import {
   resetDeployStatus
 } from './PhaseManagement'
 import { checkRoundEnd, endRound, startNextRound } from './RoundManagement'
+import { saveHostData, saveWebrtcState, clearWebrtcData } from './WebrtcStatePersistence'
 import { logger } from '../utils/logger'
 
 export interface HostManagerConfig extends HostConfig {
@@ -690,6 +691,13 @@ export class HostManager {
     try {
       const peerId = await this.connectionManager.initialize()
       this.initialized = true
+
+      // Save host data for page reload recovery
+      saveHostData({
+        peerId,
+        isHost: true
+      })
+
       logger.info(`[HostManager] Initialized with peerId: ${peerId}`)
       return peerId
     } catch (err) {
@@ -705,6 +713,8 @@ export class HostManager {
     this.stateManager.setInitialState(state)
     this.gameLogger.setGameState(state)
     this.timerSystem.setGameState(state)
+    // Persist state for page reload recovery
+    this.persistState()
   }
 
   /**
@@ -714,6 +724,26 @@ export class HostManager {
     this.stateManager.setInitialState(state)
     this.gameLogger.setGameState(state)
     this.timerSystem.setGameState(state)
+    // Persist state for page reload recovery
+    this.persistState()
+  }
+
+  /**
+   * Persist current game state to localStorage for page reload recovery
+   */
+  private persistState(): void {
+    const state = this.stateManager.getState()
+    if (!state) return
+
+    try {
+      saveWebrtcState({
+        gameState: state,
+        localPlayerId: this.localPlayerId,
+        isHost: true
+      })
+    } catch (e) {
+      logger.warn('[HostManager] Failed to persist state:', e)
+    }
   }
 
   /**
@@ -1169,6 +1199,13 @@ export class HostManager {
     this.timerSystem.cleanup()
     this.stateManager.cleanup()
     this.connectionManager.cleanup()
+
+    // Clear persisted data - player intentionally left
+    try {
+      clearWebrtcData()
+    } catch (e) {
+      logger.warn('[HostManager] Failed to clear persisted data:', e)
+    }
 
     this.initialized = false
     this.localPlayerId = null

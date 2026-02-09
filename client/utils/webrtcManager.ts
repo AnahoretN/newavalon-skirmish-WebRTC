@@ -474,6 +474,16 @@ export class WebrtcManager {
   }
 
   /**
+   * Get host Peer ID (for guests)
+   */
+  getHostPeerId(): string | null {
+    if (this.isHost) {
+      return this.peer?.id || null
+    }
+    return this.hostConnection?.peer || null
+  }
+
+  /**
    * Check if connected
    */
   isConnected(): boolean {
