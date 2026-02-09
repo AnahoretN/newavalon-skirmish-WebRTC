@@ -34,7 +34,6 @@ import type {
   CommandContext,
   CounterSelectionData,
   AbilityAction,
-  TargetSelectionEffect,
 } from './types'
 import { GameMode, DeckType } from './types'
 import { STATUS_ICONS, STATUS_DESCRIPTIONS } from './constants'
@@ -112,6 +111,9 @@ const App = memo(function App() {
     latestNoTarget,
     triggerNoTarget,
     triggerDeckSelection,
+    triggerHandCardSelection,
+    triggerTargetSelection,
+    targetSelectionEffects,
     syncValidTargets,
     remoteValidTargets,
     setTargetingMode,
@@ -137,12 +139,11 @@ const App = memo(function App() {
     reorderTopDeck,
     reorderCards,
     triggerFloatingText,
-    triggerHandCardSelection,
     latestDeckSelections,
     latestHandCardSelections,
     // WebRTC props
     webrtcHostId,
-    webrtcIsHost,
+    webrtcIsHost, // eslint-disable-line @typescript-eslint/no-unused-vars
     initializeWebrtcHost,
     connectAsGuest,
     // Reconnection props
@@ -213,7 +214,6 @@ const App = memo(function App() {
 
   const [highlight, setHighlight] = useState<HighlightData | null>(null)
   const [activeFloatingTexts, setActiveFloatingTexts] = useState<FloatingTextData[]>([])
-  const [targetSelectionEffects, setTargetSelectionEffects] = useState<TargetSelectionEffect[]>([])
 
   // Track when we last received highlights from server (to prevent clearing them prematurely)
   const [isAutoAbilitiesEnabled, setIsAutoAbilitiesEnabled] = useState(() => {
@@ -292,27 +292,11 @@ const App = memo(function App() {
   const boardContainerRef = useRef<HTMLDivElement>(null)
   const [sidePanelWidth, setSidePanelWidth] = useState<number | undefined>(undefined)
 
-  // Trigger target selection effect (white ripple animation)
-  const triggerTargetSelection = useCallback((location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number; cardIndex: number }) => {
-    if (localPlayerId === null) {
-      return
-    }
-    const effect: TargetSelectionEffect = {
-      timestamp: Date.now(),
-      location,
-      boardCoords,
-      handTarget,
-      selectedByPlayerId: localPlayerId,
-    }
-    setTargetSelectionEffects(prev => [...prev, effect])
-    // Auto-remove after 1 second (animation duration)
-    setTimeout(() => {
-      setTargetSelectionEffects(prev => prev.filter(e => e.timestamp !== effect.timestamp))
-    }, 1000)
-  }, [localPlayerId])
-
   const interactionLock = useRef(false)
   // Track sent highlights to avoid duplicate broadcasts
+
+  // Track if we previously had targeting mode to avoid clearing validTargets too aggressively
+  const prevHadTargetingModeRef = useRef(false)
 
   // Lifted state for cursor stack to resolve circular dependency
   const [cursorStack, setCursorStack] = useState<CursorStackState | null>(null)
@@ -1085,8 +1069,11 @@ const App = memo(function App() {
         setTargetingMode(targetingAction, targetingPlayerId, abilityMode?.sourceCoords || cursorStack?.sourceCoords, boardTargets, commandContext)
       }
     } else if (!hasActiveMode) {
-      // Clear targeting mode when no active mode exists
-      clearTargetingMode()
+      // Clear targeting mode ONLY if it belongs to the local player
+      // Don't clear targeting mode that was set by another player
+      if (gameState.targetingMode?.playerId === localPlayerId) {
+        clearTargetingMode()
+      }
       // Also clear valid hand targets to remove highlights
       setValidHandTargets([])
     }
@@ -1143,6 +1130,36 @@ const App = memo(function App() {
     }
     return undefined
   }, [latestFloatingTexts])
+
+  // Sync validTargets with gameState.targetingMode for WebRTC P2P mode
+  // When gameState.targetingMode changes, update validTargets to show highlights
+  useEffect(() => {
+    if (gameState.targetingMode?.boardTargets) {
+      // Extract boardTargets from targetingMode and update local state
+      const boardTargets = gameState.targetingMode.boardTargets
+      setValidTargets(boardTargets)
+
+      // Also sync handTargets if present
+      if (gameState.targetingMode.handTargets) {
+        setValidHandTargets(gameState.targetingMode.handTargets)
+      }
+
+      // Mark that we now have targeting mode
+      prevHadTargetingModeRef.current = true
+    } else if (!abilityMode && !cursorStack && !playMode) {
+      // Clear validTargets ONLY when we had a targeting mode before and it was cleared
+      // AND it was our targeting mode (not another player's)
+      if (prevHadTargetingModeRef.current && gameState.targetingMode?.playerId !== localPlayerId) {
+        // Don't clear - targeting mode belongs to another player
+        return
+      }
+      if (prevHadTargetingModeRef.current) {
+        setValidTargets([])
+        setValidHandTargets([])
+        prevHadTargetingModeRef.current = false
+      }
+    }
+  }, [gameState.targetingMode, abilityMode, cursorStack, playMode, localPlayerId])
 
   // Scoring Phase Logic
   useEffect(() => {

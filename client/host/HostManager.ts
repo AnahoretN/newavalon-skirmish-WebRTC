@@ -28,6 +28,8 @@ import {
 import { checkRoundEnd, endRound, startNextRound } from './RoundManagement'
 import { saveHostData, saveWebrtcState, clearWebrtcData } from './WebrtcStatePersistence'
 import { logger } from '../utils/logger'
+import { PLAYER_COLOR_NAMES } from '../constants'
+import { DeckType } from '../types'
 
 export interface HostManagerConfig extends HostConfig {
   onStateUpdate?: (newState: GameState) => void
@@ -111,10 +113,12 @@ export class HostManager {
           this.config.onGuestDisconnected(event.data.peerId)
         }
         // Handle player leave
+      {
         const guest = this.connectionManager.getGuest(event.data.peerId)
         if (guest && guest.playerId) {
           this.handlePlayerDisconnect(guest.playerId, event.data.peerId)
         }
+      }
         break
     }
   }
@@ -573,8 +577,6 @@ export class HostManager {
     }
 
     // Create new player
-    const { PLAYER_COLOR_NAMES } = require('../constants')
-    const { DeckType } = require('../types')
     const newPlayer = {
       id: newPlayerId,
       name: `Player ${newPlayerId}`,

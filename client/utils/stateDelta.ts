@@ -4,6 +4,37 @@
  */
 
 import type { GameState, StateDelta, PlayerDelta, BoardCellDelta, Card, DeckType, GridSize } from '../types'
+import { getDecksData } from '../content'
+import { shuffleDeck } from '../../shared/utils/array'
+import { logger } from '../utils/logger'
+
+/**
+ * Helper function to create a deck locally (for dummy player card generation)
+ * Guests use this to generate dummy player decks when not provided in delta
+ */
+function createDeckLocally(deckType: DeckType, playerId: number, playerName: string): Card[] {
+  const currentDecksData = getDecksData()
+
+  // Handle "Random" deck type - use first available deck
+  let actualDeckType = deckType
+  if (deckType === 'Random' || !currentDecksData[deckType]) {
+    const deckKeys = Object.keys(currentDecksData)
+    if (deckKeys.length === 0) {
+      logger.error('[createDeckLocally] No decks loaded yet!')
+      return []
+    }
+    actualDeckType = deckKeys[0] as DeckType
+  }
+
+  const deck = currentDecksData[actualDeckType]
+  if (!deck) {
+    logger.error(`[createDeckLocally] Deck data for ${actualDeckType} not found!`)
+    return []
+  }
+
+  const deckWithOwner = [...deck].map(card => ({ ...card, ownerId: playerId, ownerName: playerName }))
+  return shuffleDeck(deckWithOwner)
+}
 
 /**
  * Create a delta representing a card moving from source to destination
@@ -210,7 +241,7 @@ export function createAbilityModeDelta(
  * For other players: adjust array sizes to match delta (placeholder cards)
  */
 export function applyStateDelta(currentState: GameState, delta: StateDelta, localPlayerId?: number | null): GameState {
-  console.log(`[applyStateDelta] Applying delta: sourcePlayerId=${delta.sourcePlayerId}, boardCells=${delta.boardCells?.length || 0}, playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, phase=${!!delta.phaseDelta}`)
+  logger.debug(`[applyStateDelta] Applying delta: sourcePlayerId=${delta.sourcePlayerId}, boardCells=${delta.boardCells?.length || 0}, playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, phase=${!!delta.phaseDelta}`)
   const newState = { ...currentState }
 
   // Apply player deltas
@@ -218,7 +249,7 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
     const updatedPlayers: any[] = []
     const processedPlayerIds = new Set<number>()
 
-    console.log(`[applyStateDelta] Processing player deltas for ${Object.keys(delta.playerDeltas).length} players`)
+    logger.debug(`[applyStateDelta] Processing player deltas for ${Object.keys(delta.playerDeltas).length} players`)
 
     // First, update existing players and skip removed ones
     for (const player of currentState.players) {
@@ -226,7 +257,7 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
 
       // Player was removed - skip them
       if (playerDelta?.removed) {
-        console.log(`[applyStateDelta] Player ${player.id} removed, filtering out`)
+        logger.debug(`[applyStateDelta] Player ${player.id} removed, filtering out`)
         continue
       }
 
@@ -238,22 +269,34 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
         const isLocalPlayer = player.id === localPlayerId
 
         // Apply full card arrays for dummy players (from delta)
-        if (playerDelta.isDummy && playerDelta.hand && playerDelta.deck && playerDelta.discard) {
-          console.log(`[applyStateDelta] Dummy player ${player.id}: using full card arrays from delta`)
-          updatedPlayer.hand = playerDelta.hand
-          updatedPlayer.deck = playerDelta.deck
-          updatedPlayer.discard = playerDelta.discard
-        } else {
-          // Apply hand size changes (for real players or when full arrays not provided)
+        // Check each array individually - don't require all three to be present
+        const isDummyPlayer = updatedPlayer.isDummy || player.isDummy
+        if (isDummyPlayer) {
+          if (playerDelta.hand) {
+            logger.debug(`[applyStateDelta] Dummy player ${player.id}: using full hand from delta (${playerDelta.hand.length} cards)`)
+            updatedPlayer.hand = playerDelta.hand
+          }
+          if (playerDelta.deck) {
+            logger.debug(`[applyStateDelta] Dummy player ${player.id}: using full deck from delta (${playerDelta.deck.length} cards)`)
+            updatedPlayer.deck = playerDelta.deck
+          }
+          if (playerDelta.discard) {
+            logger.debug(`[applyStateDelta] Dummy player ${player.id}: using full discard from delta (${playerDelta.discard.length} cards)`)
+            updatedPlayer.discard = playerDelta.discard
+          }
+        }
+
+        // For non-dummy players or when full arrays not provided, apply size deltas
+        if (!isDummyPlayer || (!playerDelta.hand && !playerDelta.deck && !playerDelta.discard)) {
           if (playerDelta.handSizeDelta !== undefined) {
             if (isLocalPlayer) {
               // Local player: keep their actual hand (privacy)
               // Size delta is informational only
-              console.log(`[applyStateDelta] Local player ${player.id}: handSizeDelta=${playerDelta.handSizeDelta} (informational, skipping)`)
+              logger.debug(`[applyStateDelta] Local player ${player.id}: handSizeDelta=${playerDelta.handSizeDelta} (informational, skipping)`)
             } else {
               // Other players: adjust hand array size for UI display
               const newSize = player.hand.length + playerDelta.handSizeDelta
-              console.log(`[applyStateDelta] Player ${player.id}: hand ${player.hand.length} -> ${newSize} (delta: ${playerDelta.handSizeDelta})`)
+              logger.debug(`[applyStateDelta] Player ${player.id}: hand ${player.hand.length} -> ${newSize} (delta: ${playerDelta.handSizeDelta})`)
               if (newSize < player.hand.length) {
                 // Cards removed: shrink array
                 updatedPlayer.hand = player.hand.slice(0, newSize)
@@ -264,7 +307,7 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
                   placeholders.push({ id: `placeholder_${player.id}_${i}`, name: '?', isPlaceholder: true })
                 }
                 updatedPlayer.hand = [...player.hand, ...placeholders]
-                console.log(`[applyStateDelta] Added ${placeholders.length} placeholder cards to player ${player.id} hand`)
+                logger.debug(`[applyStateDelta] Added ${placeholders.length} placeholder cards to player ${player.id} hand`)
               }
             }
           }
@@ -276,7 +319,7 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
             } else {
               // Other players: adjust deck array size for UI display
               const newSize = player.deck.length + playerDelta.deckSizeDelta
-              console.log(`[applyStateDelta] Player ${player.id}: deck ${player.deck.length} -> ${newSize} (delta: ${playerDelta.deckSizeDelta})`)
+              logger.debug(`[applyStateDelta] Player ${player.id}: deck ${player.deck.length} -> ${newSize} (delta: ${playerDelta.deckSizeDelta})`)
               if (newSize < player.deck.length) {
                 // Cards removed: shrink array
                 updatedPlayer.deck = player.deck.slice(0, newSize)
@@ -346,7 +389,7 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
 
         // Apply announcedCard changes
         if (playerDelta.announcedCard !== undefined) {
-          console.log(`[applyStateDelta] Player ${player.id} announcedCard updated:`, playerDelta.announcedCard?.id || 'null')
+          logger.debug(`[applyStateDelta] Player ${player.id} announcedCard updated:`, playerDelta.announcedCard?.id || 'null')
           updatedPlayer.announcedCard = playerDelta.announcedCard
         }
 
@@ -374,7 +417,7 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
     for (const [playerIdStr, playerDelta] of Object.entries(delta.playerDeltas)) {
       const playerId = Number(playerIdStr)
       if (!processedPlayerIds.has(playerId) && !playerDelta.removed) {
-        console.log(`[applyStateDelta] Adding new player ${playerId} (${playerDelta.name || 'Unknown'}), isDummy=${playerDelta.isDummy}`)
+        logger.debug(`[applyStateDelta] Adding new player ${playerId} (${playerDelta.name || 'Unknown'}), isDummy=${playerDelta.isDummy}`)
 
         const newPlayer: any = {
           id: playerId,
@@ -401,14 +444,54 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
 
         // For dummy players: if delta has full card arrays, use them; otherwise create placeholders
         // For real players: always create placeholders (privacy)
-        if (playerDelta.isDummy && playerDelta.hand && playerDelta.deck && playerDelta.discard) {
-          // Delta has full card data for dummy player (rare, typically only on initial join)
-          newPlayer.hand = playerDelta.hand
-          newPlayer.deck = playerDelta.deck
-          newPlayer.discard = playerDelta.discard
-          console.log(`[applyStateDelta] New dummy player ${playerId}: using full card arrays from delta, hand=${newPlayer.hand.length}`)
+        // Check each array individually - don't require all three to be present
+        if (playerDelta.isDummy) {
+          // For dummy players, use provided arrays and fill in the rest with placeholders
+          if (playerDelta.hand) {
+            newPlayer.hand = playerDelta.hand
+            logger.debug(`[applyStateDelta] New dummy player ${playerId}: using full hand from delta (${newPlayer.hand.length} cards)`)
+          } else {
+            const handSize = playerDelta.handSizeDelta || 0
+            newPlayer.hand = []
+            for (let i = 0; i < handSize; i++) {
+              newPlayer.hand.push(createPlaceholderCard(i, 'hand'))
+            }
+          }
+          if (playerDelta.deck) {
+            newPlayer.deck = playerDelta.deck
+            logger.debug(`[applyStateDelta] New dummy player ${playerId}: using full deck from delta (${newPlayer.deck.length} cards)`)
+          } else {
+            // For dummy players, generate the actual deck locally using selectedDeck
+            // This allows guests to see real dummy cards without needing full deck in delta
+            const deckType = newPlayer.selectedDeck || 'Random'
+            const generatedDeck = createDeckLocally(deckType as DeckType, playerId, newPlayer.name)
+
+            // The generated deck is full (30 cards), but we may need to match the expected size
+            // If dummy has already drawn cards, the deck size will be smaller
+            const expectedDeckSize = playerDelta.deckSizeDelta || generatedDeck.length
+            if (generatedDeck.length > expectedDeckSize) {
+              // Cards have been drawn - trim from the end (cards are drawn from front)
+              // Actually, in our system, cards are drawn from index 0, so we need to simulate that
+              const drawnCount = generatedDeck.length - expectedDeckSize
+              newPlayer.deck = generatedDeck.slice(drawnCount)
+            } else {
+              newPlayer.deck = generatedDeck
+            }
+            logger.debug(`[applyStateDelta] New dummy player ${playerId}: generated deck locally (${newPlayer.deck.length} cards, deckType=${deckType})`)
+          }
+          if (playerDelta.discard) {
+            newPlayer.discard = playerDelta.discard
+            logger.debug(`[applyStateDelta] New dummy player ${playerId}: using full discard from delta (${newPlayer.discard.length} cards)`)
+          } else {
+            const discardSize = playerDelta.discardSizeDelta || 0
+            newPlayer.discard = []
+            for (let i = 0; i < discardSize; i++) {
+              newPlayer.discard.push(createPlaceholderCard(i, 'discard'))
+            }
+          }
+          logger.debug(`[applyStateDelta] New dummy player ${playerId}: hand=${newPlayer.hand.length}, deck=${newPlayer.deck.length}, discard=${newPlayer.discard.length}`)
         } else {
-          // Create placeholder arrays based on sizes
+          // Real player - always create placeholders (privacy)
           const handSize = playerDelta.handSizeDelta || 0
           const deckSize = playerDelta.deckSizeDelta || 0
           const discardSize = playerDelta.discardSizeDelta || 0
@@ -425,7 +508,7 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
           for (let i = 0; i < discardSize; i++) {
             newPlayer.discard.push(createPlaceholderCard(i, 'discard'))
           }
-          console.log(`[applyStateDelta] New player ${playerId} (isDummy=${playerDelta.isDummy}): created placeholders, hand=${handSize}, deck=${deckSize}, discard=${discardSize}`)
+          logger.debug(`[applyStateDelta] New real player ${playerId}: created placeholders, hand=${handSize}, deck=${deckSize}, discard=${discardSize}`)
         }
 
         // Apply announced card if provided
@@ -439,13 +522,13 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
       }
     }
 
-    console.log(`[applyStateDelta] Player count: ${currentState.players.length} -> ${updatedPlayers.length}`)
+    logger.debug(`[applyStateDelta] Player count: ${currentState.players.length} -> ${updatedPlayers.length}`)
     newState.players = updatedPlayers
   }
 
   // Apply board cell changes
   if (delta.boardCells && delta.boardCells.length > 0) {
-    console.log(`[applyStateDelta] Applying ${delta.boardCells.length} board cell changes`)
+    logger.debug(`[applyStateDelta] Applying ${delta.boardCells.length} board cell changes`)
     newState.board = currentState.board.map((row, rowIndex) =>
       row.map((cell, colIndex) => {
         // Find delta for this cell using row/col indices (not cell.coords which doesn't exist)
@@ -458,13 +541,13 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
         if (cellDelta.card !== undefined) {
           const statusCount = cellDelta.card?.statuses?.length || 0
           const statusTypes = cellDelta.card?.statuses?.map(s => s.type).join(',') || 'none'
-          console.log(`[applyStateDelta] Cell [${rowIndex},${colIndex}]: card ${cellDelta.card ? 'added' : 'removed'}, name: ${cellDelta.card?.name || 'N/A'}, statuses: [${statusTypes}] (count: ${statusCount})`)
+          logger.debug(`[applyStateDelta] Cell [${rowIndex},${colIndex}]: card ${cellDelta.card ? 'added' : 'removed'}, name: ${cellDelta.card?.name || 'N/A'}, statuses: [${statusTypes}] (count: ${statusCount})`)
           updatedCell.card = cellDelta.card
         }
 
         // Apply status changes to existing card (after potential card replacement)
         if (cellDelta.cardStatuses && updatedCell.card) {
-          console.log(`[applyStateDelta] Cell [${rowIndex},${colIndex}]: applying cardStatuses, remove=${cellDelta.cardStatuses.remove?.join(',')}, add count=${cellDelta.cardStatuses.add?.length || 0}`)
+          logger.debug(`[applyStateDelta] Cell [${rowIndex},${colIndex}]: applying cardStatuses, remove=${cellDelta.cardStatuses.remove?.join(',')}, add count=${cellDelta.cardStatuses.add?.length || 0}`)
 
           const updatedCard = { ...updatedCell.card }
           if (!updatedCard.statuses) {
@@ -483,13 +566,13 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
               )
               const afterLength = updatedCard.statuses.length
               if (beforeLength !== afterLength) {
-                console.log(`[applyStateDelta] Cell [${rowIndex},${colIndex}]: removed ${beforeLength - afterLength} statuses with types: ${removeTypes.join(',')}`)
+                logger.debug(`[applyStateDelta] Cell [${rowIndex},${colIndex}]: removed ${beforeLength - afterLength} statuses with types: ${removeTypes.join(',')}`)
               }
             }
             // Add new statuses
             if (cellDelta.cardStatuses.add && cellDelta.cardStatuses.add.length > 0) {
               updatedCard.statuses = [...updatedCard.statuses, ...cellDelta.cardStatuses.add]
-              console.log(`[applyStateDelta] Cell [${rowIndex},${colIndex}]: added ${cellDelta.cardStatuses.add.length} statuses`)
+              logger.debug(`[applyStateDelta] Cell [${rowIndex},${colIndex}]: added ${cellDelta.cardStatuses.add.length} statuses`)
             }
           }
 
@@ -504,7 +587,7 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
         }
 
         if (cellDelta.cardPowerModifier !== undefined && updatedCell.card) {
-          console.log(`[applyStateDelta] Applying powerModifier at [${rowIndex},${colIndex}]: ${updatedCell.card.powerModifier} -> ${cellDelta.cardPowerModifier}`)
+          logger.debug(`[applyStateDelta] Applying powerModifier at [${rowIndex},${colIndex}]: ${updatedCell.card.powerModifier} -> ${cellDelta.cardPowerModifier}`)
           const cardWithPowerModifier: Card = { ...updatedCell.card }
           cardWithPowerModifier.powerModifier = cellDelta.cardPowerModifier
           updatedCell.card = cardWithPowerModifier
@@ -568,20 +651,20 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
           }
           newState.board.push(row)
         }
-        console.log(`[applyStateDelta] Board recreated with size ${size}x${size}`)
+        logger.debug(`[applyStateDelta] Board recreated with size ${size}x${size}`)
       }
     }
     if (delta.settingsDelta.gameMode !== undefined) {
       newState.gameMode = delta.settingsDelta.gameMode
-      console.log(`[applyStateDelta] Game mode changed to ${delta.settingsDelta.gameMode}`)
+      logger.debug(`[applyStateDelta] Game mode changed to ${delta.settingsDelta.gameMode}`)
     }
     if (delta.settingsDelta.isPrivate !== undefined) {
       newState.isPrivate = delta.settingsDelta.isPrivate
-      console.log(`[applyStateDelta] Game privacy changed to ${delta.settingsDelta.isPrivate}`)
+      logger.debug(`[applyStateDelta] Game privacy changed to ${delta.settingsDelta.isPrivate}`)
     }
     if (delta.settingsDelta.dummyPlayerCount !== undefined) {
       newState.dummyPlayerCount = delta.settingsDelta.dummyPlayerCount
-      console.log(`[applyStateDelta] Dummy player count changed to ${delta.settingsDelta.dummyPlayerCount}`)
+      logger.debug(`[applyStateDelta] Dummy player count changed to ${delta.settingsDelta.dummyPlayerCount}`)
     }
   }
 
@@ -677,7 +760,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
       ...(oldState.isPrivate !== newState.isPrivate && { isPrivate: newState.isPrivate }),
       ...(oldState.dummyPlayerCount !== newState.dummyPlayerCount && { dummyPlayerCount: newState.dummyPlayerCount })
     }
-    console.log(`[createDeltaFromStates] Settings changed:`, delta.settingsDelta)
+    logger.debug(`[createDeltaFromStates] Settings changed:`, delta.settingsDelta)
   }
 
   // Detect board cell changes
@@ -702,7 +785,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
       if (oldCardId !== newCardId) {
         const statusCount = newCell?.card?.statuses?.length || 0
         const statusTypes = newCell?.card?.statuses?.map(s => s.type).join(',') || 'none'
-        console.log(`[createDeltaFromStates] Cell [${r},${c}]: card changed, new card: ${newCell?.card?.name || 'null'}, statuses: [${statusTypes}] (count: ${statusCount})`)
+        logger.debug(`[createDeltaFromStates] Cell [${r},${c}]: card changed, new card: ${newCell?.card?.name || 'null'}, statuses: [${statusTypes}] (count: ${statusCount})`)
         boardCellDeltas.push({
           row: r,
           col: c,
@@ -721,7 +804,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
           const oldStatusTypes = oldStatuses.map(s => s.type).join(',')
           const newStatusTypes = newStatuses.map(s => s.type).join(',')
           if (oldStatusTypes !== newStatusTypes) {
-            console.log(`[createDeltaFromStates] Cell [${r},${c}] (${newCell.card.name}): statuses differ - old: [${oldStatusTypes}], new: [${newStatusTypes}]`)
+            logger.debug(`[createDeltaFromStates] Cell [${r},${c}] (${newCell.card.name}): statuses differ - old: [${oldStatusTypes}], new: [${newStatusTypes}]`)
           }
         }
 
@@ -777,7 +860,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
             }
           }
 
-          console.log(`[createDeltaFromStates] Cell [${r},${c}]: status length changed ${oldStatuses.length} -> ${newStatuses.length}, added: ${addedStatuses.length}, removed: ${removedStatusTypes.join(',')}`)
+          logger.debug(`[createDeltaFromStates] Cell [${r},${c}]: status length changed ${oldStatuses.length} -> ${newStatuses.length}, added: ${addedStatuses.length}, removed: ${removedStatusTypes.join(',')}`)
         } else {
           // Same length - check for status replacements (e.g., ready → anotherStatus)
           for (let i = 0; i < oldStatuses.length; i++) {
@@ -789,7 +872,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
               // Status was replaced - remove old, add new
               removedStatusTypes.push(oldStatus.type)
               addedStatuses.push(newStatus)
-              console.log(`[createDeltaFromStates] Cell [${r},${c}]: status replaced at index ${i}: ${oldStatus.type} -> ${newStatus.type}`)
+              logger.debug(`[createDeltaFromStates] Cell [${r},${c}]: status replaced at index ${i}: ${oldStatus.type} -> ${newStatus.type}`)
             }
           }
         }
@@ -799,7 +882,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
             ...(addedStatuses.length > 0 && { add: addedStatuses }),
             ...(removedStatusTypes.length > 0 && { remove: removedStatusTypes })
           }
-          console.log(`[createDeltaFromStates] Cell [${r},${c}]: cardStatuses delta created, remove: [${removedStatusTypes.join(',')}], add: ${addedStatuses.map(s => s.type).join(',')}`)
+          logger.debug(`[createDeltaFromStates] Cell [${r},${c}]: cardStatuses delta created, remove: [${removedStatusTypes.join(',')}], add: ${addedStatuses.map(s => s.type).join(',')}`)
         }
 
         // Check power changes (explicit number comparison)
@@ -814,7 +897,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
         const newPowerModifier = newCell?.card?.powerModifier
         if (oldPowerModifier !== newPowerModifier) {
           cellDelta.cardPowerModifier = newPowerModifier
-          console.log(`[createDeltaFromStates] Power modifier changed at [${r},${c}]: ${oldPowerModifier} -> ${newPowerModifier}`)
+          logger.debug(`[createDeltaFromStates] Power modifier changed at [${r},${c}]: ${oldPowerModifier} -> ${newPowerModifier}`)
         }
 
         if (Object.keys(cellDelta).length > 2) { // More than just row/col
@@ -836,7 +919,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
 
     // NEW PLAYER ADDED (e.g., dummy player added)
     if (!oldPlayer) {
-      console.log(`[createDeltaFromStates] New player added: ${newPlayer.id} (${newPlayer.name}), isDummy=${newPlayer.isDummy}`)
+      logger.debug(`[createDeltaFromStates] New player added: ${newPlayer.id} (${newPlayer.name}), isDummy=${newPlayer.isDummy}`)
 
       const playerDelta: PlayerDelta = {
         id: newPlayer.id,
@@ -855,7 +938,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
         announcedCard: newPlayer.announcedCard
       }
       playerDeltas[newPlayer.id] = playerDelta
-      console.log(`[createDeltaFromStates] New player delta: sizes hand=${newPlayer.hand.length}, deck=${newPlayer.deck.length}, discard=${newPlayer.discard.length}`)
+      logger.debug(`[createDeltaFromStates] New player delta: sizes hand=${newPlayer.hand.length}, deck=${newPlayer.deck.length}, discard=${newPlayer.discard.length}`)
       continue
     }
 
@@ -884,17 +967,54 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
     }
 
     // Check hand/deck/discard size changes
-    if (oldPlayer.hand.length !== newPlayer.hand.length) {
-      playerDelta.handSizeDelta = newPlayer.hand.length - oldPlayer.hand.length
-    }
-    if (oldPlayer.deck.length !== newPlayer.deck.length) {
-      playerDelta.deckSizeDelta = newPlayer.deck.length - oldPlayer.deck.length
-    }
-    if (oldPlayer.discard.length !== newPlayer.discard.length) {
-      playerDelta.discardSizeDelta = newPlayer.discard.length - oldPlayer.discard.length
-      // Track actual cards added to discard (for local player to see their own discarded cards)
-      if (newPlayer.discard.length > oldPlayer.discard.length) {
-        playerDelta.discardAdd = newPlayer.discard.slice(oldPlayer.discard.length)
+    // For dummy players: send FULL hand only during game start (when hand goes from 0 to cards)
+    // NEVER send full deck - too large for WebRTC! Guests will generate deck locally using createDeck()
+    // For real players: always send ONLY size deltas (privacy - don't reveal their cards)
+    if (newPlayer.isDummy) {
+      // Mark this delta as for a dummy player
+      playerDelta.isDummy = true
+
+      // Only send full hand for dummy players during game start (initial draw)
+      // When hand size goes from 0 to >0, that's the initial draw
+      const isInitialDraw = oldPlayer.hand.length === 0 && newPlayer.hand.length > 0
+
+      if (isInitialDraw) {
+        // Game start - send full hand for dummy player so guests can see their cards
+        if (newPlayer.hand.length > 0) {
+          playerDelta.hand = [...newPlayer.hand]
+          logger.debug(`[createDeltaFromStates] Dummy player ${newPlayer.id}: game start, sending full hand (${newPlayer.hand.length} cards)`)
+        }
+        // IMPORTANT: Never send full deck! Guests will generate it locally using createDeck()
+      }
+
+      // Check for hand size changes (send size deltas after initial draw too)
+      if (oldPlayer.hand.length !== newPlayer.hand.length) {
+        playerDelta.handSizeDelta = newPlayer.hand.length - oldPlayer.hand.length
+        logger.debug(`[createDeltaFromStates] Dummy player ${newPlayer.id}: hand size delta: ${playerDelta.handSizeDelta}`)
+      }
+      // For deck, ALWAYS send only size delta (never full deck - too large)
+      if (oldPlayer.deck.length !== newPlayer.deck.length) {
+        playerDelta.deckSizeDelta = newPlayer.deck.length - oldPlayer.deck.length
+        logger.debug(`[createDeltaFromStates] Dummy player ${newPlayer.id}: deck size delta: ${playerDelta.deckSizeDelta}`)
+      }
+      if (oldPlayer.discard.length !== newPlayer.discard.length) {
+        playerDelta.discardSizeDelta = newPlayer.discard.length - oldPlayer.discard.length
+        logger.debug(`[createDeltaFromStates] Dummy player ${newPlayer.id}: discard size delta: ${playerDelta.discardSizeDelta}`)
+      }
+    } else {
+      // Real player - only send size changes (privacy)
+      if (oldPlayer.hand.length !== newPlayer.hand.length) {
+        playerDelta.handSizeDelta = newPlayer.hand.length - oldPlayer.hand.length
+      }
+      if (oldPlayer.deck.length !== newPlayer.deck.length) {
+        playerDelta.deckSizeDelta = newPlayer.deck.length - oldPlayer.deck.length
+      }
+      if (oldPlayer.discard.length !== newPlayer.discard.length) {
+        playerDelta.discardSizeDelta = newPlayer.discard.length - oldPlayer.discard.length
+        // Track actual cards added to discard (for local player to see their own discarded cards)
+        if (newPlayer.discard.length > oldPlayer.discard.length) {
+          playerDelta.discardAdd = newPlayer.discard.slice(oldPlayer.discard.length)
+        }
       }
     }
 
@@ -912,7 +1032,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
       ))
     if (announcedChanged) {
       playerDelta.announcedCard = newAnnounced ? { ...newAnnounced } : null
-      console.log(`[createDeltaFromStates] Player ${newPlayer.id} announcedCard changed:`, oldAnnounced?.id, '->', newAnnounced?.id)
+      logger.debug(`[createDeltaFromStates] Player ${newPlayer.id} announcedCard changed:`, oldAnnounced?.id, '->', newAnnounced?.id)
     }
 
     // Check boardHistory changes (for LastPlayed status)
@@ -927,6 +1047,10 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
     if (oldPlayer.autoDrawEnabled !== newPlayer.autoDrawEnabled) {
       playerDelta.autoDrawEnabled = newPlayer.autoDrawEnabled
     }
+    if (oldPlayer.selectedDeck !== newPlayer.selectedDeck) {
+      playerDelta.selectedDeck = newPlayer.selectedDeck
+      logger.debug(`[createDeltaFromStates] Player ${newPlayer.id} selectedDeck changed: ${oldPlayer.selectedDeck} -> ${newPlayer.selectedDeck}`)
+    }
 
     if (Object.keys(playerDelta).length > 1) { // More than just id
       playerDeltas[newPlayer.id] = playerDelta
@@ -938,7 +1062,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
     const newPlayer = newState.players.find(p => p.id === oldPlayer.id)
     if (!newPlayer) {
       // Player was removed - send removal delta
-      console.log(`[createDeltaFromStates] Player removed: ${oldPlayer.id} (${oldPlayer.name})`)
+      logger.debug(`[createDeltaFromStates] Player removed: ${oldPlayer.id} (${oldPlayer.name})`)
       playerDeltas[oldPlayer.id] = {
         id: oldPlayer.id,
         removed: true  // Flag to indicate player removal
@@ -953,7 +1077,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
   // Detect ability mode changes (for P2P visual sync)
   if (JSON.stringify(oldState.abilityMode) !== JSON.stringify(newState.abilityMode)) {
     delta.abilityModeDelta = newState.abilityMode
-    console.log(`[createDeltaFromStates] abilityMode changed:`, oldState.abilityMode?.mode, '->', newState.abilityMode?.mode)
+    logger.debug(`[createDeltaFromStates] abilityMode changed:`, oldState.abilityMode?.mode, '->', newState.abilityMode?.mode)
   }
 
   // Detect targeting mode changes (for P2P visual sync)
@@ -963,7 +1087,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
     } else {
       delta.targetingModeDelta = { set: newState.targetingMode }
     }
-    console.log(`[createDeltaFromStates] targetingMode changed`)
+    logger.debug(`[createDeltaFromStates] targetingMode changed`)
   }
 
   return delta

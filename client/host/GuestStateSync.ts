@@ -9,7 +9,7 @@
 
 import type { GameState, StateDelta } from '../types'
 import type { WebrtcMessage } from '../host/types'
-import { createDeltaFromStates, isDeltaEmpty } from '../utils/stateDelta'
+import { createDeltaFromStates, isDeltaEmpty, applyStateDelta } from '../utils/stateDelta'
 import { logger } from '../utils/logger'
 
 export interface GuestStateSyncConfig {
@@ -186,7 +186,6 @@ export class GuestStateSync {
       return currentState
     }
 
-    const { applyStateDelta } = require('../utils/stateDelta')
     const newState = applyStateDelta(currentState, delta, this.localPlayerId)
 
     if (this.onStateUpdateCallback && newState !== currentState) {

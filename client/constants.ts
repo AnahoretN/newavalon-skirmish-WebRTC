@@ -38,6 +38,7 @@ export const DECK_THEMES: { [key in DeckType]: { prefix: string, color: string }
   [DeckTypeEnum.Tokens]: { prefix: 'TKN', color: 'border-gray-400' },
   [DeckTypeEnum.Custom]: { prefix: 'CUS', color: 'border-purple-400' },
   [DeckTypeEnum.Neutral]: { prefix: 'NEU', color: 'border-gray-400' },
+  [DeckTypeEnum.Random]: { prefix: 'RND', color: 'border-gray-400' },
 }
 
 /**

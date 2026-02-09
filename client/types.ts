@@ -14,6 +14,7 @@ export enum DeckType {
   Tokens = 'Tokens',
   Custom = 'Custom',
   Neutral = 'Neutral',
+  Random = 'Random',
 }
 
 /**
@@ -66,7 +67,7 @@ export interface Card {
   deck: DeckType | SpecialItemType;
   name: string;
   imageUrl: string; // The primary Cloudinary URL.
-  fallbackImage: string; // The local fallback image path.
+  fallbackImage?: string; // The local fallback image path (optional for placeholder cards).
   power: number;
   powerModifier?: number; // Adjustment to the base power.
   bonusPower?: number; // Temporary power bonus from passive effects (recalculated on board updates).
@@ -82,6 +83,7 @@ export interface Card {
   faction?: string; // The faction this card belongs to (for deck building colors).
   allowedPanels?: string[]; // Controls visibility in UI panels (e.g. 'DECK_BUILDER', 'TOKEN_PANEL')
   enteredThisTurn?: boolean; // True if the card entered the battlefield during the current turn
+  isPlaceholder?: boolean; // True if this is a placeholder card (for WebRTC optimization)
 }
 
 /**
@@ -116,6 +118,10 @@ export interface Player {
   isSpectator?: boolean; // True if this "player" is actually a spectator in the players array.
   disconnectTimestamp?: number; // Timestamp when player disconnected (for timeout tracking)
   position?: number; // Position in turn order (0-based)
+  // Size metadata for WebRTC optimized states
+  handSize?: number; // Hand size (used when hand array is optimized out)
+  deckSize?: number; // Deck size (used when deck array is optimized out)
+  discardSize?: number; // Discard size (used when discard array is optimized out)
 }
 
 /**

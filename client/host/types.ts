@@ -50,6 +50,7 @@ export type WebrtcMessageType =
   | 'ABILITY_COMPLETED'    // Ability execution completed
   | 'ABILITY_TARGET_SELECTED' // Target selected for ability
   | 'ABILITY_CANCELLED'    // Ability was cancelled
+  | 'ACTIVE_PLAYER_CHANGED' // Active player changed notification
   // Reconnection messages
   | 'RECONNECT_REQUEST'    // Guest requests reconnection after disconnect
   | 'RECONNECT_ACCEPT'     // Host accepts reconnection, sends current state

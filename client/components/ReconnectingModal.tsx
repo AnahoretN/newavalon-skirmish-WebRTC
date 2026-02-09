@@ -3,15 +3,27 @@
  */
 import React, { useEffect, useState } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { clearWebrtcData } from '@/host/WebrtcStatePersistence'
 
 interface ReconnectingModalProps {
   isOpen: boolean
   message?: string
+  onExit?: () => void  // Callback when user chooses to exit reconnection
 }
 
-export const ReconnectingModal: React.FC<ReconnectingModalProps> = ({ isOpen, message }) => {
+export const ReconnectingModal: React.FC<ReconnectingModalProps> = ({ isOpen, message, onExit }) => {
   const { t } = useLanguage()
   const [statusMessage, setStatusMessage] = useState<string>('')
+
+  // Handle exit button click - clears stored data and exits
+  const handleExit = () => {
+    clearWebrtcData()
+    if (onExit) {
+      onExit()
+    }
+    // Reload page to start fresh
+    window.location.reload()
+  }
 
   // Update status message every 2 seconds to show activity
   useEffect(() => {
@@ -34,7 +46,7 @@ export const ReconnectingModal: React.FC<ReconnectingModalProps> = ({ isOpen, me
     }, 2000)
 
     return () => clearInterval(interval)
-  }, [isOpen])
+  }, [isOpen, t])
 
   if (!isOpen) {
     return null
@@ -73,11 +85,19 @@ export const ReconnectingModal: React.FC<ReconnectingModalProps> = ({ isOpen, me
         </p>
 
         {/* Pulsing dot indicator */}
-        <div className="flex justify-center gap-2 mt-6">
+        <div className="flex justify-center gap-2 mt-6 mb-6">
           <span className="w-3 h-3 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></span>
           <span className="w-3 h-3 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '200ms' }}></span>
           <span className="w-3 h-3 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '400ms' }}></span>
         </div>
+
+        {/* Exit button - allows user to cancel reconnection and start fresh */}
+        <button
+          onClick={handleExit}
+          className="mt-4 px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition font-medium"
+        >
+          {t('cancel') || 'Cancel'}
+        </button>
       </div>
     </div>
   )

@@ -236,7 +236,7 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
         </div>
 
         <div className="mt-8 pt-6 border-t border-gray-700 flex justify-center gap-6">
-          <a href="https://t.me/Anahoret_NewAvalon" target="_blank" rel="noopener noreferrer" className="transition-transform hover:scale-110" title="Telegram">
+          <a href="https://t.me/NeurohoretApp" target="_blank" rel="noopener noreferrer" className="transition-transform hover:scale-110" title="Telegram">
             <img src="https://res.cloudinary.com/dxxh6meej/image/upload/v1764190409/Telegram_logo.svg_rnhkud.webp" alt="Telegram" className="w-8 h-8" />
           </a>
           <a href="https://discord.gg/U5zKADsZZY" target="_blank" rel="noopener noreferrer" className="transition-transform hover:scale-110" title="Discord">

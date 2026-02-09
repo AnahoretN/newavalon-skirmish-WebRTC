@@ -173,7 +173,6 @@ export function toggleActivePlayer(gameState: GameState, targetPlayerId: number)
 
     // Check for round end when deselecting the starting player during Setup phase
     if (targetPlayerId === gameState.startingPlayerId && gameState.currentPhase === 1) {
-      const { checkRoundEnd, endRound } = require('./RoundManagement')
       if (checkRoundEnd(newState).shouldEnd) {
         logger.info(`[toggleActivePlayer] Round end detected`)
         return endRound(newState)

@@ -10,8 +10,9 @@
 
 import type { GameState, StateDelta } from '../types'
 import type { HostConnectionManager } from './HostConnectionManager'
-import { createDeltaFromStates, isDeltaEmpty } from '../utils/stateDelta'
+import { createDeltaFromStates, isDeltaEmpty, applyStateDelta } from '../utils/stateDelta'
 import { logger } from '../utils/logger'
+import { performPreparationPhase } from './PhaseManagement'
 
 export interface StateUpdateOptions {
   excludeSender?: boolean  // Don't send back to the player who made the change
@@ -147,7 +148,6 @@ export class HostStateManager {
     }
 
     // Apply delta to current state
-    const { applyStateDelta } = require('../utils/stateDelta')
     const oldState = this.currentState
     const newState = applyStateDelta(oldState, delta, guestPlayerId)
 
@@ -303,7 +303,6 @@ export class HostStateManager {
     })
 
     // Perform Preparation phase for starting player (draws 7th card and transitions to Setup)
-    const { performPreparationPhase } = require('./PhaseManagement')
     newState = performPreparationPhase(newState, startingPlayerId)
 
     logger.info(`[HostStateManager] Preparation phase completed, now in phase ${newState.currentPhase} (Setup)`)

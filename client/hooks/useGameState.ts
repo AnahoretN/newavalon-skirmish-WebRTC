@@ -1,10 +1,10 @@
 // ... existing imports
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { DeckType, GameMode as GameModeEnum } from '../types'
-import type { GameState, Player, Board, GridSize, Card, DragItem, DropTarget, PlayerColor, RevealRequest, CardIdentifier, CustomDeckFile, HighlightData, FloatingTextData, DeckSelectionData, HandCardSelectionData, TargetingModeData, AbilityAction, CommandContext, StateDelta, PlayerDelta } from '../types'
+import type { GameState, Player, Board, GridSize, Card, DragItem, DropTarget, PlayerColor, RevealRequest, CardIdentifier, CustomDeckFile, HighlightData, FloatingTextData, DeckSelectionData, HandCardSelectionData, TargetingModeData, AbilityAction, CommandContext, StateDelta } from '../types'
 import { PLAYER_COLOR_NAMES, MAX_PLAYERS } from '../constants'
 import { shuffleDeck } from '@shared/utils/array'
-import { getDecksData, decksData, countersDatabase, rawJsonData, getCardDefinition, getCardDefinitionByName, commandCardIds } from '../content'
+import { getDecksData, countersDatabase, rawJsonData, getCardDefinition, getCardDefinitionByName, commandCardIds } from '../content'
 import { createInitialBoard, recalculateBoardStatuses } from '@server/utils/boardUtils'
 import { calculateValidTargets } from '@server/utils/targeting'
 import { logger } from '../utils/logger'
@@ -13,13 +13,6 @@ import { deepCloneState, TIMING } from '../utils/common'
 import { getWebrtcManager, type WebrtcEvent } from '../utils/webrtcManager'
 import { toggleActivePlayer as toggleActivePlayerPhase, passTurnToNextPlayer, playerHasCardsOnBoard, performPreparationPhase } from '../host/PhaseManagement'
 import {
-  createCardMoveDelta,
-  createBoardCellDelta,
-  createCardStatusDelta,
-  createPhaseDelta,
-  createRoundDelta,
-  createScoreDelta,
-  createPlayerPropertyDelta,
   applyStateDelta,
   createDeltaFromStates,
   isDeltaEmpty
@@ -364,10 +357,10 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     isSpectator: false,
   }), [])
 
-  const [gameState, setGameState] = useState<GameState>(createInitialState)
+  const [gameState, setGameState] = useState<GameState>(createInitialState())
 
   // Previous state ref for delta calculation
-  const prevStateRef = useRef<GameState>(createInitialState)
+  const prevStateRef = useRef<GameState>(createInitialState())
 
   // Wrapper for setGameState that broadcasts delta in WebRTC mode
   const setGameStateWithDelta = useCallback((updater: React.SetStateAction<GameState>, sourcePlayerId?: number) => {
@@ -403,6 +396,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   const [latestNoTarget, setLatestNoTarget] = useState<{coords: {row: number, col: number}, timestamp: number} | null>(null)
   const [latestDeckSelections, setLatestDeckSelections] = useState<DeckSelectionData[]>([])
   const [latestHandCardSelections, setLatestHandCardSelections] = useState<HandCardSelectionData[]>([])
+  const [targetSelectionEffects, setTargetSelectionEffects] = useState<any[]>([])
   // Valid targets received from other players (for synchronized targeting UI)
   const [remoteValidTargets, setRemoteValidTargets] = useState<{
     playerId: number
@@ -417,7 +411,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   const [webrtcIsHost, setWebrtcIsHost] = useState(false)
   const webrtcIsHostRef = useRef<boolean>(false)  // Ref to always have current value
   const [isReconnecting, setIsReconnecting] = useState(false)
-  const [reconnectProgress, setReconnectProgress] = useState<{ attempt: number; maxAttempts; timeRemaining: number } | null>(null)
+  const [reconnectProgress, setReconnectProgress] = useState<{ attempt: number; maxAttempts: number; timeRemaining: number } | null>(null)
   const recentlyRestoredFromStorageRef = useRef<boolean>(false)  // Track if we just restored from localStorage (to avoid overwriting with stale state)
 
   const ws = useRef<WebSocket | null>(null)
@@ -618,7 +612,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             } catch (err) {
               logger.error('[Auto-restore] Failed to reconnect to host:', err)
               setConnectionStatus('Disconnected')
-              // Don't clear data - let the reconnection system handle it
+              // Clear stale guest data so next refresh starts fresh instead of trying to reconnect again
+              clearWebrtcData()
+              logger.info('[Auto-restore] Cleared stale guest data due to failed reconnection')
               isRestoringSessionRef.current = false
               return
             }
@@ -1062,7 +1058,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
    * Only includes necessary data, not full card arrays for privacy and size
    * CRITICAL: Never send full card arrays - only sizes - to avoid WebRTC message size limit
    */
-  const createOptimizedStateForBroadcast = useCallback((fullState: GameState, excludePlayerHand = true): GameState => {
+  const createOptimizedStateForBroadcast = useCallback((fullState: GameState): GameState => {
     // Create a lightweight version of the state
     // Only send SIZES, not full card arrays (for privacy and bandwidth)
     const optimizedState: GameState = {
@@ -1185,37 +1181,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     webrtcManagerRef.current.broadcastGameState(optimizedState)
     logger.info('[broadcastWebrtcState] Broadcasted optimized state')
   }, [createOptimizedStateForBroadcast])
-
-  /**
-   * Broadcast state delta via WebRTC (host only)
-   * Compares old and new state, broadcasts only changes
-   * More efficient than full state broadcasts
-   */
-  const broadcastWebrtcDelta = useCallback((oldState: GameState, newState: GameState, sourcePlayerId: number) => {
-    if (!webrtcManagerRef.current || !webrtcIsHostRef.current) {return}
-
-    const delta = createDeltaFromStates(oldState, newState, sourcePlayerId)
-
-    if (!isDeltaEmpty(delta)) {
-      webrtcManagerRef.current.broadcastStateDelta(delta)
-      logger.debug(`[broadcastWebrtcDelta] Broadcast delta: phase=${!!delta.phaseDelta}, round=${!!delta.roundDelta}, board=${delta.boardCells?.length || 0}, players=${Object.keys(delta.playerDeltas || {}).length}`)
-    }
-  }, [])
-
-  /**
-   * Send state delta to host (guest only)
-   * Guest sends their local changes to host for rebroadcasting
-   */
-  const sendDeltaToHost = useCallback((oldState: GameState, newState: GameState) => {
-    if (!webrtcManagerRef.current || webrtcIsHostRef.current) {return} // Only guests send to host
-
-    const delta = createDeltaFromStates(oldState, newState, localPlayerIdRef.current || 0)
-
-    if (!isDeltaEmpty(delta)) {
-      webrtcManagerRef.current.sendStateDelta(delta)
-      logger.debug(`[sendDeltaToHost] Sent delta to host`)
-    }
-  }, [])
 
   /**
    * Handle incoming WebRTC message
@@ -2386,8 +2351,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             // Clear other state
             targetingMode: null,
             floatingTexts: [],
-            currentCommand: null,
-            validTargets: [],
           }
           gameStateRef.current = resetState
           logger.info('[GameReset] Game reset complete in WebRTC mode')
@@ -2435,13 +2398,86 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       // Visual effects messages (for P2P mode)
       case 'TRIGGER_HIGHLIGHT':
+        // Guest sent highlight trigger to host - host needs to apply locally AND broadcast to all guests
         if (message.data?.highlightData) {
-          setLatestHighlight(message.data.highlightData)
+          const highlightData = message.data.highlightData
+          // Apply locally (host sees the effect)
+          setLatestHighlight(highlightData)
+
+          // Host: broadcast to all other guests (excluding the sender)
+          if (webrtcIsHostRef.current && webrtcManagerRef.current && message.senderId) {
+            webrtcManagerRef.current.broadcastToGuests({
+              type: 'HIGHLIGHT_TRIGGERED',
+              senderId: message.senderId,
+              data: highlightData,
+              timestamp: Date.now()
+            }, message.senderId)  // Exclude sender from broadcast
+          }
+        }
+        break
+
+      case 'HIGHLIGHT_TRIGGERED':
+        // Host broadcasted highlight to all guests
+        if (message.data) {
+          // Ignore if we're the sender (host doesn't send to self, but guest might receive echo)
+          const myPeerId = webrtcManagerRef.current?.getPeerId()
+          if (message.senderId !== myPeerId) {
+            setLatestHighlight(message.data)
+          }
         }
         break
 
       case 'TRIGGER_FLOATING_TEXT':
+        // Guest sent floating text trigger to host - host applies locally and broadcasts
         if (message.data?.textData) {
+          const textData = message.data.textData
+          setGameState(prev => ({
+            ...prev,
+            floatingTexts: [...prev.floatingTexts, textData].filter(t => Date.now() - t.timestamp < TIMING.FLOATING_TEXT_DURATION)
+          }))
+          // Host: broadcast to all other guests
+          if (webrtcIsHostRef.current && webrtcManagerRef.current && message.senderId) {
+            webrtcManagerRef.current.broadcastToGuests({
+              type: 'FLOATING_TEXT_TRIGGERED',
+              senderId: message.senderId,
+              data: textData,
+              timestamp: Date.now()
+            }, message.senderId)
+          }
+        }
+        break
+
+      case 'TRIGGER_FLOATING_TEXT_BATCH':
+        // Guest sent floating text batch trigger to host
+        if (message.data?.batch) {
+          const batch = message.data.batch
+          setGameState(prev => ({
+            ...prev,
+            floatingTexts: [...prev.floatingTexts, ...batch].filter(t => Date.now() - t.timestamp < TIMING.FLOATING_TEXT_DURATION)
+          }))
+          // Host: broadcast to all other guests
+          if (webrtcIsHostRef.current && webrtcManagerRef.current && message.senderId) {
+            webrtcManagerRef.current.broadcastToGuests({
+              type: 'FLOATING_TEXT_BATCH_TRIGGERED',
+              senderId: message.senderId,
+              data: { batch },
+              timestamp: Date.now()
+            }, message.senderId)
+          }
+        }
+        break
+
+      case 'FLOATING_TEXT_TRIGGERED':
+      case 'FLOATING_TEXT_BATCH_TRIGGERED':
+        // Host broadcasted floating texts to all guests
+        // Ignore if we're the sender (to avoid duplicate)
+        const myPeerIdFloat = webrtcManagerRef.current?.getPeerId()
+        if (message.data?.batch && message.senderId !== myPeerIdFloat) {
+          setGameState(prev => ({
+            ...prev,
+            floatingTexts: [...prev.floatingTexts, ...message.data.batch].filter(t => Date.now() - t.timestamp < TIMING.FLOATING_TEXT_DURATION)
+          }))
+        } else if (message.data?.textData && message.senderId !== myPeerIdFloat) {
           setGameState(prev => ({
             ...prev,
             floatingTexts: [...prev.floatingTexts, message.data.textData].filter(t => Date.now() - t.timestamp < TIMING.FLOATING_TEXT_DURATION)
@@ -2449,18 +2485,133 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
 
-      case 'TRIGGER_FLOATING_TEXT_BATCH':
-        if (message.data?.batch) {
-          setGameState(prev => ({
-            ...prev,
-            floatingTexts: [...prev.floatingTexts, ...message.data.batch].filter(t => Date.now() - t.timestamp < TIMING.FLOATING_TEXT_DURATION)
-          }))
+      case 'TRIGGER_NO_TARGET':
+        // Guest sent no-target trigger to host
+        if (message.data?.coords) {
+          const coords = message.data.coords
+          const timestamp = message.data.timestamp
+          setLatestNoTarget({ coords, timestamp })
+          // Host: broadcast to all other guests
+          if (webrtcIsHostRef.current && webrtcManagerRef.current && message.senderId) {
+            webrtcManagerRef.current.broadcastToGuests({
+              type: 'NO_TARGET_TRIGGERED',
+              senderId: message.senderId,
+              data: { coords, timestamp },
+              timestamp: Date.now()
+            }, message.senderId)
+          }
         }
         break
 
-      case 'TRIGGER_NO_TARGET':
+      case 'NO_TARGET_TRIGGERED':
+        // Host broadcasted no-target overlay to all guests
         if (message.data?.coords) {
-          setLatestNoTarget({ coords: message.data.coords, timestamp: message.data.timestamp })
+          const myPeerId = webrtcManagerRef.current?.getPeerId()
+          if (message.senderId !== myPeerId) {
+            setLatestNoTarget({ coords: message.data.coords, timestamp: message.data.timestamp })
+          }
+        }
+        break
+
+      case 'TRIGGER_DECK_SELECTION':
+        // Guest sent deck selection trigger to host - host applies locally and broadcasts
+        if (message.data) {
+          const deckSelectionData = message.data
+          setLatestDeckSelections(prev => [...prev, deckSelectionData])
+          // Auto-remove after 1 second
+          setTimeout(() => {
+            setLatestDeckSelections(prev => prev.filter(ds => ds.timestamp !== deckSelectionData.timestamp))
+          }, 1000)
+
+          // Host: broadcast to all other guests
+          if (webrtcIsHostRef.current && webrtcManagerRef.current && message.senderId) {
+            webrtcManagerRef.current.broadcastToGuests({
+              type: 'DECK_SELECTION_TRIGGERED',
+              senderId: message.senderId,
+              data: deckSelectionData,
+              timestamp: Date.now()
+            }, message.senderId)
+          }
+        }
+        break
+
+      case 'TRIGGER_HAND_CARD_SELECTION':
+        // Guest sent hand card selection trigger to host - host applies locally and broadcasts
+        if (message.data) {
+          const handCardSelectionData = message.data
+          setLatestHandCardSelections(prev => [...prev, handCardSelectionData])
+          // Auto-remove after 1 second
+          setTimeout(() => {
+            setLatestHandCardSelections(prev => prev.filter(cs => cs.timestamp !== handCardSelectionData.timestamp))
+          }, 1000)
+
+          // Host: broadcast to all other guests
+          if (webrtcIsHostRef.current && webrtcManagerRef.current && message.senderId) {
+            webrtcManagerRef.current.broadcastToGuests({
+              type: 'HAND_CARD_SELECTION_TRIGGERED',
+              senderId: message.senderId,
+              data: handCardSelectionData,
+              timestamp: Date.now()
+            }, message.senderId)
+          }
+        }
+        break
+
+      case 'TRIGGER_TARGET_SELECTION':
+        // Guest sent target selection effect to host - host applies locally and broadcasts
+        if (message.data) {
+          const targetSelectionData = message.data
+          setTargetSelectionEffects(prev => [...prev, targetSelectionData])
+          // Auto-remove after 1 second
+          setTimeout(() => {
+            setTargetSelectionEffects(prev => prev.filter(e => e.timestamp !== targetSelectionData.timestamp))
+          }, 1000)
+
+          // Host: broadcast to all other guests
+          if (webrtcIsHostRef.current && webrtcManagerRef.current && message.senderId) {
+            webrtcManagerRef.current.broadcastToGuests({
+              type: 'TARGET_SELECTION_TRIGGERED',
+              senderId: message.senderId,
+              data: targetSelectionData,
+              timestamp: Date.now()
+            }, message.senderId)
+          }
+        }
+        break
+
+      case 'TARGET_SELECTION_TRIGGERED':
+        // Host broadcasted target selection effect to all guests
+        // Ignore if we sent this message ourselves (to avoid duplicate)
+        if (message.data && message.senderId !== webrtcManagerRef.current?.getPeerId()) {
+          setTargetSelectionEffects(prev => [...prev, message.data])
+          // Auto-remove after 1 second
+          setTimeout(() => {
+            setTargetSelectionEffects(prev => prev.filter(e => e.timestamp !== message.data.timestamp))
+          }, 1000)
+        }
+        break
+
+      case 'DECK_SELECTION_TRIGGERED':
+        // Host (or relay) broadcasted deck selection to all
+        // Ignore if we sent this message ourselves
+        if (message.data && message.senderId !== webrtcManagerRef.current?.getPeerId()) {
+          setLatestDeckSelections(prev => [...prev, message.data])
+          // Auto-remove after 1 second
+          setTimeout(() => {
+            setLatestDeckSelections(prev => prev.filter(ds => ds.timestamp !== message.data.timestamp))
+          }, 1000)
+        }
+        break
+
+      case 'HAND_CARD_SELECTION_TRIGGERED':
+        // Host (or relay) broadcasted hand card selection to all
+        // Ignore if we sent this message ourselves
+        if (message.data && message.senderId !== webrtcManagerRef.current?.getPeerId()) {
+          setLatestHandCardSelections(prev => [...prev, message.data])
+          // Auto-remove after 1 second
+          setTimeout(() => {
+            setLatestHandCardSelections(prev => prev.filter(cs => cs.timestamp !== message.data.timestamp))
+          }, 1000)
         }
         break
 
@@ -2490,6 +2641,21 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         logger.debug('[TargetingMode] Cleared targeting mode via WebRTC')
         break
 
+      case 'SYNC_VALID_TARGETS':
+        // Receive valid targets from other players (P2P)
+        if (message.data?.playerId !== localPlayerIdRef.current) {
+          setRemoteValidTargets({
+            playerId: message.data.playerId,
+            validHandTargets: message.data.validHandTargets || [],
+            isDeckSelectable: message.data.isDeckSelectable || false,
+          })
+          // Auto-clear after 10 seconds to prevent stale data
+          setTimeout(() => {
+            setRemoteValidTargets(prev => prev?.playerId === message.data.playerId ? null : prev)
+          }, 10000)
+        }
+        break
+
       case 'RECONNECT_ACCEPT':
         // Host accepted our reconnection, sending current game state
         logger.info('[Reconnection] Host accepted reconnection, restoring state')
@@ -2508,7 +2674,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
 
-      case 'RECONNECT_REJECT':
+      case 'RECONNECT_REJECT': {
         // Host rejected our reconnection (timeout or game over)
         const rejectReason = message.data?.reason || 'unknown'
         logger.warn(`[Reconnection] Reconnection rejected: ${rejectReason}`)
@@ -2518,6 +2684,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           localStorage.removeItem('webrtc_reconnection_data')
         } catch (e) {}
         break
+      }
 
       case 'PLAYER_DISCONNECTED':
         // Host broadcast that a player disconnected
@@ -2605,10 +2772,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       setReconnectProgress({ attempt: attempts, maxAttempts, timeRemaining })
 
       if (timeRemaining <= 0) {
-        // Timeout expired
-        logger.warn('[Reconnection] Reconnection timeout expired')
+        // Timeout expired - clear stale data so user can start fresh
+        logger.warn('[Reconnection] Reconnection timeout expired - clearing stale data')
         setIsReconnecting(false)
         setReconnectProgress(null)
+        clearWebrtcData()
         return
       }
 
@@ -3045,6 +3213,16 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               setRemoteValidTargets(prev => prev?.playerId === data.playerId ? null : prev)
             }, 10000)
           }
+        } else if (data.type === 'TARGET_SELECTION_TRIGGERED') {
+          // Target selection effect (white ripple animation)
+          // Only apply if sent by another player (ignore echoes of our own messages)
+          if (data.effect && data.playerId !== localPlayerIdRef.current) {
+            setTargetSelectionEffects(prev => [...prev, data.effect])
+            // Auto-remove after 1 second
+            setTimeout(() => {
+              setTargetSelectionEffects(prev => prev.filter(e => e.timestamp !== data.effect.timestamp))
+            }, 1000)
+          }
         } else if (data.type === 'TARGETING_MODE_SET') {
           // Receive targeting mode from any player (including ourselves for confirmation)
           const targetingMode = data.targetingMode
@@ -3136,8 +3314,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               // Clear other state
               targetingMode: null,
               floatingTexts: [],
-              currentCommand: null,
-              validTargets: [],
             }
             gameStateRef.current = resetState
             return resetState
@@ -4784,8 +4960,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         // Clear other state
         targetingMode: null,
         floatingTexts: [],
-        currentCommand: null,
-        validTargets: [],
       }
 
       // Update local state (this will broadcast delta in WebRTC mode)
@@ -5552,9 +5726,27 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     // Immediately update local state so the acting player sees the effect without waiting for round-trip
     setLatestHighlight(fullHighlightData)
 
-    // Also broadcast to other players via WebSocket
+    // Broadcast to other players
     if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
+      // WebSocket mode
       ws.current.send(JSON.stringify({ type: 'TRIGGER_HIGHLIGHT', gameId: gameStateRef.current.gameId, highlightData: fullHighlightData }))
+    } else if (webrtcManagerRef.current) {
+      // WebRTC P2P mode
+      const webrtcMessage = {
+        type: 'HIGHLIGHT_TRIGGERED',
+        senderId: webrtcManagerRef.current.getPeerId(),
+        data: fullHighlightData,
+        timestamp: Date.now()
+      }
+
+      // Host broadcasts to all guests, guest sends to host who will broadcast
+      if (webrtcIsHostRef.current) {
+        // Host: broadcast to all guests (not to self)
+        webrtcManagerRef.current.broadcastToGuests(webrtcMessage)
+      } else {
+        // Guest: send to host, who will broadcast to everyone including us
+        webrtcManagerRef.current.sendMessageToHost(webrtcMessage)
+      }
     }
   }, [])
 
@@ -5566,13 +5758,31 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     // Immediately update local state so the acting player sees the effect without waiting for round-trip
     setLatestFloatingTexts(batch)
 
-    // Also broadcast to other players via WebSocket
+    // Broadcast to other players
     if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
+      // WebSocket mode
       ws.current.send(JSON.stringify({
         type: 'TRIGGER_FLOATING_TEXT_BATCH',
         gameId: gameStateRef.current.gameId,
         batch,
       }))
+    } else if (webrtcManagerRef.current) {
+      // WebRTC P2P mode
+      const webrtcMessage = {
+        type: 'FLOATING_TEXT_BATCH_TRIGGERED',
+        senderId: webrtcManagerRef.current.getPeerId(),
+        data: { batch },
+        timestamp: Date.now()
+      }
+
+      // Host broadcasts to all guests, guest sends to host who will broadcast
+      if (webrtcIsHostRef.current) {
+        // Host: broadcast to all guests (not to self)
+        webrtcManagerRef.current.broadcastToGuests(webrtcMessage)
+      } else {
+        // Guest: send to host, who will broadcast to everyone including us
+        webrtcManagerRef.current.sendMessageToHost(webrtcMessage)
+      }
     }
   }, [])
 
@@ -5581,14 +5791,32 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     // Immediately update local state so the acting player sees the effect without waiting for round-trip
     setLatestNoTarget({ coords, timestamp })
 
-    // Also broadcast to other players via WebSocket
+    // Broadcast to other players
     if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
+      // WebSocket mode
       ws.current.send(JSON.stringify({
         type: 'TRIGGER_NO_TARGET',
         gameId: gameStateRef.current.gameId,
         coords,
         timestamp,
       }))
+    } else if (webrtcManagerRef.current) {
+      // WebRTC P2P mode
+      const webrtcMessage = {
+        type: 'NO_TARGET_TRIGGERED',
+        senderId: webrtcManagerRef.current.getPeerId(),
+        data: { coords, timestamp },
+        timestamp: Date.now()
+      }
+
+      // Host broadcasts to all guests, guest sends to host who will broadcast
+      if (webrtcIsHostRef.current) {
+        // Host: broadcast to all guests (not to self)
+        webrtcManagerRef.current.broadcastToGuests(webrtcMessage)
+      } else {
+        // Guest: send to host, who will broadcast to everyone including us
+        webrtcManagerRef.current.sendMessageToHost(webrtcMessage)
+      }
     }
   }, [])
 
@@ -5602,14 +5830,32 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     // Immediately update local state so the acting player sees the effect without waiting for round-trip
     setLatestDeckSelections(prev => [...prev, deckSelectionData])
 
-    // Also broadcast to other players via WebSocket
+    // Broadcast to other players
     if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
+      // WebSocket mode
       const message = {
         type: 'TRIGGER_DECK_SELECTION',
         gameId: gameStateRef.current.gameId,
         deckSelectionData,
       }
       ws.current.send(JSON.stringify(message))
+    } else if (webrtcManagerRef.current) {
+      // WebRTC P2P mode
+      const webrtcMessage = {
+        type: 'DECK_SELECTION_TRIGGERED',
+        senderId: webrtcManagerRef.current.getPeerId(),
+        data: deckSelectionData,
+        timestamp: Date.now()
+      }
+
+      // Host broadcasts to all guests, guest sends to host who will broadcast
+      if (webrtcIsHostRef.current) {
+        // Host: broadcast to all guests (not to self)
+        webrtcManagerRef.current.broadcastToGuests(webrtcMessage)
+      } else {
+        // Guest: send to host, who will broadcast to everyone including us
+        webrtcManagerRef.current.sendMessageToHost(webrtcMessage)
+      }
     }
 
     // Auto-remove after 1 second
@@ -5629,14 +5875,32 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     // Immediately update local state so the acting player sees the effect without waiting for round-trip
     setLatestHandCardSelections(prev => [...prev, handCardSelectionData])
 
-    // Also broadcast to other players via WebSocket
+    // Broadcast to other players
     if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
+      // WebSocket mode
       const message = {
         type: 'TRIGGER_HAND_CARD_SELECTION',
         gameId: gameStateRef.current.gameId,
         handCardSelectionData,
       }
       ws.current.send(JSON.stringify(message))
+    } else if (webrtcManagerRef.current) {
+      // WebRTC P2P mode
+      const webrtcMessage = {
+        type: 'HAND_CARD_SELECTION_TRIGGERED',
+        senderId: webrtcManagerRef.current.getPeerId(),
+        data: handCardSelectionData,
+        timestamp: Date.now()
+      }
+
+      // Host broadcasts to all guests, guest sends to host who will broadcast
+      if (webrtcIsHostRef.current) {
+        // Host: broadcast to all guests (not to self)
+        webrtcManagerRef.current.broadcastToGuests(webrtcMessage)
+      } else {
+        // Guest: send to host, who will broadcast to everyone including us
+        webrtcManagerRef.current.sendMessageToHost(webrtcMessage)
+      }
     }
 
     // Auto-remove after 1 second
@@ -5649,15 +5913,97 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     validHandTargets: { playerId: number, cardIndex: number }[]
     isDeckSelectable: boolean
   }) => {
-    // Broadcast valid targets to other players via WebSocket
+    // Broadcast valid targets to other players
     if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
+      // WebSocket mode
       ws.current.send(JSON.stringify({
         type: 'SYNC_VALID_TARGETS',
         gameId: gameStateRef.current.gameId,
         playerId: localPlayerIdRef.current,
         ...validTargetsData,
       }))
+    } else if (webrtcManagerRef.current) {
+      // WebRTC P2P mode
+      const webrtcMessage = {
+        type: 'SYNC_VALID_TARGETS',
+        senderId: webrtcManagerRef.current.getPeerId(),
+        data: {
+          playerId: localPlayerIdRef.current,
+          ...validTargetsData,
+        },
+        timestamp: Date.now()
+      }
+
+      // Host broadcasts to all guests, guest sends to host who will broadcast
+      if (webrtcIsHostRef.current) {
+        // Host: broadcast to all guests (not to self)
+        webrtcManagerRef.current.broadcastToGuests(webrtcMessage)
+      } else {
+        // Guest: send to host, who will broadcast to everyone including us
+        webrtcManagerRef.current.sendMessageToHost(webrtcMessage)
+      }
     }
+  }, [])
+
+  /**
+   * Trigger target selection effect (white ripple animation)
+   * Broadcasts to all players in P2P mode
+   */
+  const triggerTargetSelection = useCallback((
+    location: 'board' | 'hand' | 'deck',
+    boardCoords?: { row: number; col: number },
+    handTarget?: { playerId: number; cardIndex: number }
+  ) => {
+    if (localPlayerIdRef.current === null) {
+      return
+    }
+
+    const effect = {
+      timestamp: Date.now(),
+      location,
+      boardCoords,
+      handTarget,
+      selectedByPlayerId: localPlayerIdRef.current,
+    }
+
+    // Immediately update local state
+    setTargetSelectionEffects(prev => [...prev, effect])
+
+    // Broadcast to other players
+    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
+      // WebSocket mode
+      ws.current.send(JSON.stringify({
+        type: 'TRIGGER_TARGET_SELECTION',
+        gameId: gameStateRef.current.gameId,
+        effect,
+      }))
+    } else if (webrtcManagerRef.current) {
+      // WebRTC P2P mode
+      if (webrtcIsHostRef.current) {
+        // Host: broadcast TRIGGERED message directly to all guests
+        const webrtcMessage = {
+          type: 'TARGET_SELECTION_TRIGGERED',
+          senderId: webrtcManagerRef.current.getPeerId(),
+          data: effect,
+          timestamp: Date.now()
+        }
+        webrtcManagerRef.current.broadcastToGuests(webrtcMessage)
+      } else {
+        // Guest: send TRIGGER message to host, who will apply locally and broadcast to all guests
+        const webrtcMessage = {
+          type: 'TRIGGER_TARGET_SELECTION',
+          senderId: webrtcManagerRef.current.getPeerId(),
+          data: effect,
+          timestamp: Date.now()
+        }
+        webrtcManagerRef.current.sendMessageToHost(webrtcMessage)
+      }
+    }
+
+    // Auto-remove after 1 second (animation duration)
+    setTimeout(() => {
+      setTargetSelectionEffects(prev => prev.filter(e => e.timestamp !== effect.timestamp))
+    }, 1000)
   }, [])
 
   /**
@@ -6323,11 +6669,15 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     toggleActivePlayer,
     toggleAutoDraw,
     forceReconnect,
+    // Visual effects triggers
     triggerHighlight,
     triggerFloatingText,
     triggerNoTarget,
     triggerDeckSelection,
     triggerHandCardSelection,
+    triggerTargetSelection,
+    // Visual effects state
+    targetSelectionEffects,
     syncValidTargets,
     remoteValidTargets,
     setTargetingMode,
