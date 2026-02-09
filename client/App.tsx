@@ -144,6 +144,9 @@ const App = memo(function App() {
     webrtcIsHost,
     initializeWebrtcHost,
     connectAsGuest,
+    // Reconnection props
+    isReconnecting,
+    reconnectProgress,
   } = gameStateHook
 
   const [modalsState, setModalsState] = useState({
