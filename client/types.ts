@@ -454,6 +454,14 @@ export interface StateDelta {
     isRoundEndModalOpen?: boolean;
   };
 
+  // Game settings changes
+  settingsDelta?: {
+    activeGridSize?: GridSize;
+    gameMode?: GameMode;
+    isPrivate?: boolean;
+    dummyPlayerCount?: number;
+  };
+
   // Visual effects
   highlightsDelta?: {
     add?: HighlightData[];
@@ -481,12 +489,18 @@ export interface StateDelta {
 export interface PlayerDelta {
   id: number;
 
+  // Player removal flag
+  removed?: boolean;  // true if player was removed from game
+
   // Card count changes (only sizes, not full arrays for privacy)
   handSizeDelta?: number; // Change in hand size (+1, -1, etc.)
   deckSizeDelta?: number;
   discardSizeDelta?: number;
 
-  // Full array updates (only when necessary, e.g., for local player)
+  // Full array updates (only when necessary, e.g., for local player or dummy players)
+  hand?: Card[]; // Full hand array (for dummy players)
+  deck?: Card[]; // Full deck array (for dummy players)
+  discard?: Card[]; // Full discard array (for dummy players)
   handAdd?: Card[]; // Cards added to hand
   handRemove?: number; // Number of cards removed from end of hand
   deckAdd?: Card[]; // Cards added to deck
@@ -508,6 +522,7 @@ export interface PlayerDelta {
   selectedDeck?: DeckType;
   name?: string;
   color?: PlayerColor;
+  isDummy?: boolean;
   isDisconnected?: boolean;
   teamId?: number;
   autoDrawEnabled?: boolean;

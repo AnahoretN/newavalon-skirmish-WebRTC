@@ -14,6 +14,7 @@ export type WebrtcMessageType =
   | 'STATE_DELTA'          // Compact state change broadcast
   | 'ACTION'               // Guest sends action to host
   | 'PLAYER_LEAVE'         // Player is leaving
+  | 'PLAYER_RECONNECT'     // Guest reconnecting after page reload
   | 'CHAT'                 // Chat message (optional future feature)
   | 'START_READY_CHECK'    // Host starts ready check
   | 'CANCEL_READY_CHECK'   // Host cancels ready check

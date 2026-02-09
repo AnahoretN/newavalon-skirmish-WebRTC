@@ -99,7 +99,7 @@ export class GuestReconnectionManager {
     // Check localStorage
     try {
       const stored = localStorage.getItem('webrtc_reconnection_data')
-      if (!stored) return null
+      if (!stored) {return null}
 
       const data = JSON.parse(stored) as ReconnectionData
 
@@ -451,7 +451,7 @@ export class HostReconnectionManager {
   private handleReconnectTimeout(playerId: number): void {
     const playerData = this.reconnectingPlayers.get(playerId)
 
-    if (!playerData) return
+    if (!playerData) {return}
 
     logger.info(`[Reconnection] Player ${playerId} reconnection timeout expired`)
 
@@ -510,7 +510,7 @@ export class HostReconnectionManager {
   cancelPlayerReconnection(playerId: number): void {
     const playerData = this.reconnectingPlayers.get(playerId)
 
-    if (!playerData) return
+    if (!playerData) {return}
 
     if (playerData.reconnectTimer) {
       clearTimeout(playerData.reconnectTimer)

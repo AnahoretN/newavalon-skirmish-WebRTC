@@ -25,7 +25,7 @@ export interface ParsedInviteLink {
 
 export function parseInviteLink(): ParsedInviteLink | null {
   const hash = window.location.hash.slice(1) // Remove #
-  if (!hash) return null
+  if (!hash) {return null}
 
   const params = new URLSearchParams(hash)
   const result: ParsedInviteLink = {}

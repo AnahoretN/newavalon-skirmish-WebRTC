@@ -189,7 +189,7 @@ export class TimerSystem {
    */
   getRemainingTime(timerKey: string): number {
     const timer = this.timers.get(timerKey)
-    if (!timer) return 0
+    if (!timer) {return 0}
 
     const elapsed = Date.now() - timer.startTime
     return Math.max(0, timer.duration - elapsed)
@@ -207,7 +207,7 @@ export class TimerSystem {
    */
   hasActiveDisconnectTimers(): boolean {
     for (const [key, timer] of this.timers) {
-      if (timer.type === 'disconnect') return true
+      if (timer.type === 'disconnect') {return true}
     }
     return false
   }

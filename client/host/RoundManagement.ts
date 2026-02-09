@@ -104,7 +104,8 @@ export function endRound(gameState: GameState): GameState {
     ...gameState,
     roundWinners: newRoundWinners,
     gameWinner,
-    isRoundEndModalOpen: true
+    isRoundEndModalOpen: true,
+    roundEndTriggered: true
   }
 }
 

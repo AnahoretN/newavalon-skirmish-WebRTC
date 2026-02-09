@@ -25,6 +25,7 @@ export type WebrtcMessageType =
   | 'STATE_DELTA'          // Compact state change broadcast (NEW)
   | 'ACTION'               // Guest sends action to host
   | 'PLAYER_LEAVE'         // Player is leaving
+  | 'PLAYER_RECONNECT'     // Guest reconnecting after page reload
   | 'CHAT'                 // Chat message (optional future feature)
   | 'START_READY_CHECK'    // Host starts ready check
   | 'CANCEL_READY_CHECK'   // Host cancels ready check
@@ -87,6 +88,7 @@ export class WebrtcManager {
   private isHost: boolean = false
   private hostConnection: DataConnection | null = null
   private eventHandlers: Set<WebrtcEventHandler> = new Set()
+  private isReconnecting: boolean = false  // Track if this is a reconnection attempt
   // Reserved for future reconnection logic
   // private reconnectAttempts: number = 0
   // private maxReconnectAttempts: number = 5
@@ -101,18 +103,21 @@ export class WebrtcManager {
 
   /**
    * Initialize as Host - creates Peer and waits for connections
+   * @param existingPeerId - If provided, try to reuse this peerId (for F5 restore)
    */
-  async initializeAsHost(): Promise<string> {
+  async initializeAsHost(existingPeerId?: string): Promise<string> {
     if (this.peer) {
       this.cleanup()
     }
 
     this.isHost = true
-    logger.info('Initializing WebRTC as Host...')
+    logger.info('Initializing WebRTC as Host...' + (existingPeerId ? ` with existing peerId: ${existingPeerId}` : ''))
 
     return new Promise((resolve, reject) => {
       // Create Peer with default PeerJS cloud server
-      this.peer = new Peer()
+      // If existingPeerId is provided, try to reuse it (for F5 restore)
+      const peerConfig = existingPeerId ? { id: existingPeerId } : undefined
+      this.peer = new Peer(peerConfig)
 
       this.peer.on('open', (peerId) => {
         logger.info(`WebRTC Host initialized with peerId: ${peerId}`)
@@ -189,6 +194,67 @@ export class WebrtcManager {
       this.peer.on('error', (err) => {
         logger.error(`WebRTC Peer error:`, err)
         this.emitEvent({ type: 'error', data: err })
+        reject(err)
+      })
+    })
+  }
+
+  /**
+   * Initialize as Guest after page reload - connects to host with reconnection message
+   */
+  async initializeAsReconnectingGuest(hostPeerId: string, playerId: number): Promise<void> {
+    if (this.peer) {
+      this.cleanup()
+    }
+
+    this.isHost = false
+    this.isReconnecting = true
+    logger.info(`Initializing WebRTC as Reconnecting Guest, connecting to host: ${hostPeerId}, playerId: ${playerId}`)
+
+    return new Promise((resolve, reject) => {
+      // Create Peer for guest
+      this.peer = new Peer()
+
+      this.peer.on('open', (peerId) => {
+        logger.info(`WebRTC Reconnecting Guest initialized with peerId: ${peerId}`)
+
+        // Connect to host
+        const conn = this.peer!.connect(hostPeerId, {
+          reliable: true,
+          serialization: 'json'
+        })
+
+        this.setupHostConnection(conn)
+
+        conn.on('open', () => {
+          logger.info(`Connected to host for reconnection: ${hostPeerId}`)
+          this.hostConnection = conn
+          this.emitEvent({ type: 'connected_to_host', data: { hostPeerId } })
+
+          // Send PLAYER_RECONNECT instead of JOIN_REQUEST
+          this.sendMessageToHost({
+            type: 'PLAYER_RECONNECT',
+            senderId: peerId,
+            playerId: playerId,
+            timestamp: Date.now()
+          })
+
+          this.isReconnecting = false
+          resolve()
+        })
+
+        conn.on('error', (err) => {
+          logger.error('Host connection error:', err)
+          this.emitEvent({ type: 'error', data: err })
+          this.isReconnecting = false
+          reject(err)
+        })
+      })
+
+      this.peer.on('error', (err) => {
+        logger.error(`WebRTC Peer error:`, err)
+        this.emitEvent({ type: 'error', data: err })
+        this.isReconnecting = false
         reject(err)
       })
     })

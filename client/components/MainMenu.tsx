@@ -73,7 +73,7 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
   const actualWebrtcEnabled = localStorage.getItem('webrtc_enabled') === 'true'
 
   const handleHostGame = async () => {
-    if (!initializeWebrtcHost) return
+    if (!initializeWebrtcHost) {return}
     setIsInitializingHost(true)
     try {
       const peerId = await initializeWebrtcHost()

@@ -16,6 +16,7 @@ import { logger } from '../utils/logger'
 const WEBRTC_STATE_KEY = 'webrtc_game_state'
 const WEBRTC_HOST_KEY = 'webrtc_host_data'
 const WEBRTC_GUEST_KEY = 'webrtc_guest_data'
+const WEBRTC_CURRENT_HOST_PEER_ID = 'webrtc_current_host_peerId'  // Live peerId for reconnection
 
 // Maximum age for saved state (30 minutes)
 const MAX_STATE_AGE = 30 * 60 * 1000
@@ -119,7 +120,7 @@ export function saveWebrtcState(stateData: Omit<WebrtcStateData, 'timestamp'>): 
 export function loadHostData(): WebrtcHostData | null {
   try {
     const stored = localStorage.getItem(WEBRTC_HOST_KEY)
-    if (!stored) return null
+    if (!stored) {return null}
 
     const data = JSON.parse(stored) as WebrtcHostData
 
@@ -144,7 +145,7 @@ export function loadHostData(): WebrtcHostData | null {
 export function loadGuestData(): WebrtcGuestData | null {
   try {
     const stored = localStorage.getItem(WEBRTC_GUEST_KEY)
-    if (!stored) return null
+    if (!stored) {return null}
 
     const data = JSON.parse(stored) as WebrtcGuestData
 
@@ -169,7 +170,7 @@ export function loadGuestData(): WebrtcGuestData | null {
 export function loadWebrtcState(): WebrtcStateData | null {
   try {
     const stored = localStorage.getItem(WEBRTC_STATE_KEY)
-    if (!stored) return null
+    if (!stored) {return null}
 
     const data = JSON.parse(stored) as WebrtcStateData
 
@@ -196,6 +197,62 @@ export function clearWebrtcData(): void {
   localStorage.removeItem(WEBRTC_STATE_KEY)
   localStorage.removeItem(WEBRTC_HOST_KEY)
   localStorage.removeItem(WEBRTC_GUEST_KEY)
+  localStorage.removeItem(WEBRTC_CURRENT_HOST_PEER_ID)
+}
+
+/**
+ * Broadcast current host peerId (for guest reconnection)
+ * This is called periodically by host so guests can discover new peerId after reconnect
+ * Uses gameId as key so guests can find their specific host
+ */
+export function broadcastHostPeerId(peerId: string, gameId: string): void {
+  try {
+    const key = `webrtc_host_${gameId}`
+    const data = {
+      peerId,
+      gameId,
+      timestamp: Date.now()
+    }
+    localStorage.setItem(key, JSON.stringify(data))
+    logger.debug(`[WebRTC Persistence] Broadcasted host peerId for game ${gameId}:`, peerId)
+  } catch (e) {
+    logger.error('[WebRTC Persistence] Failed to broadcast host peerId:', e)
+  }
+}
+
+/**
+ * Get current host peerId for a specific game (for guest reconnection)
+ */
+export function getHostPeerIdForGame(gameId: string): { peerId: string; timestamp: number } | null {
+  try {
+    const key = `webrtc_host_${gameId}`
+    const stored = localStorage.getItem(key)
+    if (!stored) {return null}
+
+    const data = JSON.parse(stored)
+    // Only return if recent (within 15 seconds)
+    if (Date.now() - data.timestamp > 15000) {
+      return null
+    }
+
+    return { peerId: data.peerId, timestamp: data.timestamp }
+  } catch (e) {
+    logger.error('[WebRTC Persistence] Failed to get host peerId:', e)
+    return null
+  }
+}
+
+/**
+ * Clear host peerId broadcast for a specific game
+ */
+export function clearHostPeerIdBroadcast(gameId: string): void {
+  try {
+    const key = `webrtc_host_${gameId}`
+    localStorage.removeItem(key)
+    logger.debug(`[WebRTC Persistence] Cleared host peerId broadcast for game ${gameId}`)
+  } catch (e) {
+    logger.error('[WebRTC Persistence] Failed to clear host peerId broadcast:', e)
+  }
 }
 
 /**

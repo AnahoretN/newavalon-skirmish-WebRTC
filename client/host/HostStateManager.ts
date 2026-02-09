@@ -174,7 +174,7 @@ export class HostStateManager {
    * Broadcast full state to all guests (use sparingly)
    */
   broadcastFullState(excludePeerId?: string): void {
-    if (!this.currentState) return
+    if (!this.currentState) {return}
     this.connectionManager.broadcastGameState(this.currentState, excludePeerId)
   }
 
@@ -182,7 +182,7 @@ export class HostStateManager {
    * Start ready check
    */
   startReadyCheck(): void {
-    if (!this.currentState) return
+    if (!this.currentState) {return}
 
     const updatedState: GameState = {
       ...this.currentState,
@@ -201,7 +201,7 @@ export class HostStateManager {
    * Cancel ready check
    */
   cancelReadyCheck(): void {
-    if (!this.currentState) return
+    if (!this.currentState) {return}
 
     const updatedState: GameState = {
       ...this.currentState,
@@ -220,7 +220,7 @@ export class HostStateManager {
    * Update player property (name, color, deck, etc.)
    */
   updatePlayerProperty(playerId: number, properties: Partial<GameState['players'][0]>): void {
-    if (!this.currentState) return
+    if (!this.currentState) {return}
 
     const updatedPlayers = this.currentState.players.map(p =>
       p.id === playerId ? { ...p, ...properties } : p
@@ -338,7 +338,7 @@ export class HostStateManager {
    * Get state for new guest (minimal, privacy-preserving)
    */
   getStateForGuest(): any {
-    if (!this.currentState) return null
+    if (!this.currentState) {return null}
 
     return {
       gameId: this.currentState.gameId,

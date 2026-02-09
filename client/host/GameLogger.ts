@@ -322,8 +322,8 @@ export class GameLogger {
    * Get player name from ID
    */
   private getPlayerName(playerId?: number): string {
-    if (playerId === undefined) return 'System'
-    if (!this.gameState) return `Player ${playerId}`
+    if (playerId === undefined) {return 'System'}
+    if (!this.gameState) {return `Player ${playerId}`}
 
     const player = this.gameState.players.find(p => p.id === playerId)
     return player?.name || `Player ${playerId}`

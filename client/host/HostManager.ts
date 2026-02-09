@@ -124,7 +124,7 @@ export class HostManager {
    */
   private handlePlayerDisconnect(playerId: number, peerId: string): void {
     const state = this.stateManager.getState()
-    if (!state) return
+    if (!state) {return}
 
     // Mark player as disconnected
     const updatedPlayers = state.players.map(p =>
@@ -170,7 +170,7 @@ export class HostManager {
    */
   handlePlayerReconnect(playerId: number, _peerId: string): void {
     const state = this.stateManager.getState()
-    if (!state) return
+    if (!state) {return}
 
     // Cancel disconnect timer
     this.timerSystem.cancelPlayerDisconnectTimer(playerId)
@@ -204,7 +204,7 @@ export class HostManager {
    */
   private handlePlayerDisconnectTimeout(playerId: number): void {
     const state = this.stateManager.getState()
-    if (!state) return
+    if (!state) {return}
 
     // Convert player to dummy
     const updatedPlayers = state.players.map(p =>
@@ -277,7 +277,7 @@ export class HostManager {
    * Handle incoming message from guest
    */
   private handleIncomingMessage(message: any, fromPeerId: string): void {
-    if (!message || !message.type) return
+    if (!message || !message.type) {return}
 
     const guest = this.connectionManager.getGuest(fromPeerId)
     const guestPlayerId = guest?.playerId || message.playerId
@@ -733,7 +733,7 @@ export class HostManager {
    */
   private persistState(): void {
     const state = this.stateManager.getState()
-    if (!state) return
+    if (!state) {return}
 
     try {
       saveWebrtcState({
@@ -803,7 +803,7 @@ export class HostManager {
    */
   advancePhase(): void {
     const state = this.stateManager.getState()
-    if (!state) return
+    if (!state) {return}
 
     const oldPhase = state.currentPhase
     const newState = nextPhase(state)
@@ -839,7 +839,7 @@ export class HostManager {
    */
   regressPhase(): void {
     const state = this.stateManager.getState()
-    if (!state) return
+    if (!state) {return}
 
     const oldPhase = state.currentPhase
     const newState = prevPhase(state)
@@ -856,7 +856,7 @@ export class HostManager {
    */
   changePhase(phaseIndex: number): void {
     const state = this.stateManager.getState()
-    if (!state) return
+    if (!state) {return}
 
     const oldPhase = state.currentPhase
     const newState = setPhase(state, phaseIndex)
@@ -874,7 +874,7 @@ export class HostManager {
    */
   toggleActivePlayer(playerId: number): void {
     const state = this.stateManager.getState()
-    if (!state) return
+    if (!state) {return}
 
     const oldPlayerId = state.activePlayerId
     const newState = toggleActivePlayer(state, playerId)
@@ -888,7 +888,7 @@ export class HostManager {
     if (oldPlayerId !== newState.activePlayerId) {
       // Cancel old turn timer, start new one if new player is selected
       if (this.config.enableTimers !== false) {
-        if (oldPlayerId) this.timerSystem.cancelTurnTimer(oldPlayerId)
+        if (oldPlayerId) {this.timerSystem.cancelTurnTimer(oldPlayerId)}
         if (newState.activePlayerId) {
           this.timerSystem.startTurnTimer(newState.activePlayerId)
         }
@@ -904,11 +904,11 @@ export class HostManager {
    */
   advanceTurn(): void {
     const state = this.stateManager.getState()
-    if (!state) return
+    if (!state) {return}
 
     // Get all connected players (including dummies)
     const allPlayers = state.players.filter(p => !p.isDisconnected)
-    if (allPlayers.length === 0) return
+    if (allPlayers.length === 0) {return}
 
     // Find current active player index
     const currentIndex = allPlayers.findIndex(p => p.id === state.activePlayerId)
@@ -925,7 +925,7 @@ export class HostManager {
    */
   togglePlayerAutoDraw(playerId: number): void {
     const state = this.stateManager.getState()
-    if (!state) return
+    if (!state) {return}
 
     const newState = toggleAutoDraw(state, playerId)
     this.updateFromLocal(newState)
@@ -936,7 +936,7 @@ export class HostManager {
    */
   clearDeployStatus(): void {
     const state = this.stateManager.getState()
-    if (!state) return
+    if (!state) {return}
 
     const newState = resetDeployStatus(state)
     this.updateFromLocal(newState)
@@ -947,7 +947,7 @@ export class HostManager {
    */
   proceedToNextRound(): void {
     const state = this.stateManager.getState()
-    if (!state) return
+    if (!state) {return}
 
     const newState = startNextRound(state)
     this.updateFromLocal(newState)
@@ -1106,7 +1106,7 @@ export class HostManager {
    */
   setGameMode(mode: string): void {
     const state = this.stateManager.getState()
-    if (!state) return
+    if (!state) {return}
 
     const newState: GameState = { ...state, gameMode: mode as any }
     this.stateManager.setInitialState(newState)
@@ -1126,7 +1126,7 @@ export class HostManager {
    */
   setGamePrivacy(isPrivate: boolean): void {
     const state = this.stateManager.getState()
-    if (!state) return
+    if (!state) {return}
 
     const newState: GameState = { ...state, isPrivate }
     this.stateManager.setInitialState(newState)
@@ -1146,7 +1146,7 @@ export class HostManager {
    */
   assignTeams(assignments: Record<string, number[]>): void {
     const state = this.stateManager.getState()
-    if (!state) return
+    if (!state) {return}
 
     const updatedPlayers = state.players.map(p => {
       let teamId = p.teamId || 1

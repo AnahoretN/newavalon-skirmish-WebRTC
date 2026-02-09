@@ -3,7 +3,7 @@
  * Compact state synchronization - only sends changes, not full state
  */
 
-import type { GameState, StateDelta, PlayerDelta, BoardCellDelta, Card, DeckType } from '../types'
+import type { GameState, StateDelta, PlayerDelta, BoardCellDelta, Card, DeckType, GridSize } from '../types'
 
 /**
  * Create a delta representing a card moving from source to destination
@@ -215,139 +215,232 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
 
   // Apply player deltas
   if (delta.playerDeltas) {
-    newState.players = currentState.players.map(player => {
+    const updatedPlayers: any[] = []
+    const processedPlayerIds = new Set<number>()
+
+    console.log(`[applyStateDelta] Processing player deltas for ${Object.keys(delta.playerDeltas).length} players`)
+
+    // First, update existing players and skip removed ones
+    for (const player of currentState.players) {
       const playerDelta = delta.playerDeltas![player.id]
-      if (!playerDelta) return player
 
-      const updatedPlayer = { ...player }
-      const isLocalPlayer = player.id === localPlayerId
+      // Player was removed - skip them
+      if (playerDelta?.removed) {
+        console.log(`[applyStateDelta] Player ${player.id} removed, filtering out`)
+        continue
+      }
 
-      // Apply hand size changes
-      if (playerDelta.handSizeDelta !== undefined) {
-        if (isLocalPlayer) {
-          // Local player: keep their actual hand (privacy)
-          // Size delta is informational only
-          console.log(`[applyStateDelta] Local player ${player.id}: handSizeDelta=${playerDelta.handSizeDelta} (informational, skipping)`)
+      processedPlayerIds.add(player.id)
+
+      if (playerDelta) {
+        // Update existing player with delta
+        const updatedPlayer = { ...player }
+        const isLocalPlayer = player.id === localPlayerId
+
+        // Apply full card arrays for dummy players (from delta)
+        if (playerDelta.isDummy && playerDelta.hand && playerDelta.deck && playerDelta.discard) {
+          console.log(`[applyStateDelta] Dummy player ${player.id}: using full card arrays from delta`)
+          updatedPlayer.hand = playerDelta.hand
+          updatedPlayer.deck = playerDelta.deck
+          updatedPlayer.discard = playerDelta.discard
         } else {
-          // Other players: adjust hand array size for UI display
-          const newSize = player.hand.length + playerDelta.handSizeDelta
-          console.log(`[applyStateDelta] Player ${player.id}: hand ${player.hand.length} -> ${newSize} (delta: ${playerDelta.handSizeDelta})`)
-          if (newSize < player.hand.length) {
-            // Cards removed: shrink array
-            updatedPlayer.hand = player.hand.slice(0, newSize)
-          } else if (newSize > player.hand.length) {
-            // Cards added: add placeholder cards
-            const placeholders: any[] = []
-            for (let i = player.hand.length; i < newSize; i++) {
-              placeholders.push({ id: `placeholder_${player.id}_${i}`, name: '?', isPlaceholder: true })
+          // Apply hand size changes (for real players or when full arrays not provided)
+          if (playerDelta.handSizeDelta !== undefined) {
+            if (isLocalPlayer) {
+              // Local player: keep their actual hand (privacy)
+              // Size delta is informational only
+              console.log(`[applyStateDelta] Local player ${player.id}: handSizeDelta=${playerDelta.handSizeDelta} (informational, skipping)`)
+            } else {
+              // Other players: adjust hand array size for UI display
+              const newSize = player.hand.length + playerDelta.handSizeDelta
+              console.log(`[applyStateDelta] Player ${player.id}: hand ${player.hand.length} -> ${newSize} (delta: ${playerDelta.handSizeDelta})`)
+              if (newSize < player.hand.length) {
+                // Cards removed: shrink array
+                updatedPlayer.hand = player.hand.slice(0, newSize)
+              } else if (newSize > player.hand.length) {
+                // Cards added: add placeholder cards
+                const placeholders: any[] = []
+                for (let i = player.hand.length; i < newSize; i++) {
+                  placeholders.push({ id: `placeholder_${player.id}_${i}`, name: '?', isPlaceholder: true })
+                }
+                updatedPlayer.hand = [...player.hand, ...placeholders]
+                console.log(`[applyStateDelta] Added ${placeholders.length} placeholder cards to player ${player.id} hand`)
+              }
             }
-            updatedPlayer.hand = [...player.hand, ...placeholders]
-            console.log(`[applyStateDelta] Added ${placeholders.length} placeholder cards to player ${player.id} hand`)
+          }
+
+          // Apply deck size changes
+          if (playerDelta.deckSizeDelta !== undefined) {
+            if (isLocalPlayer) {
+              // Local player: keep their actual deck
+            } else {
+              // Other players: adjust deck array size for UI display
+              const newSize = player.deck.length + playerDelta.deckSizeDelta
+              console.log(`[applyStateDelta] Player ${player.id}: deck ${player.deck.length} -> ${newSize} (delta: ${playerDelta.deckSizeDelta})`)
+              if (newSize < player.deck.length) {
+                // Cards removed: shrink array
+                updatedPlayer.deck = player.deck.slice(0, newSize)
+              } else if (newSize > player.deck.length) {
+                // Cards added: add placeholder cards
+                const placeholders: any[] = []
+                for (let i = player.deck.length; i < newSize; i++) {
+                  placeholders.push({ id: `placeholder_${player.id}_deck_${i}`, name: '?', isPlaceholder: true })
+                }
+                updatedPlayer.deck = [...player.deck, ...placeholders]
+              }
+            }
+          }
+
+          // Apply discard changes
+          if (playerDelta.discardAdd) {
+            // Cards added to discard - append them for local player
+            updatedPlayer.discard = [...updatedPlayer.discard, ...playerDelta.discardAdd]
+          }
+          if (playerDelta.discardClear) {
+            updatedPlayer.discard = []
+          }
+          if (playerDelta.discardSizeDelta !== undefined && !playerDelta.discardAdd) {
+            // Only adjust size if we don't have exact cards (for other players' discards)
+            if (!isLocalPlayer) {
+              // Other players: adjust discard array size for UI display
+              const newSize = player.discard.length + playerDelta.discardSizeDelta
+              if (newSize < player.discard.length) {
+                // Cards removed: shrink array
+                updatedPlayer.discard = player.discard.slice(0, newSize)
+              } else if (newSize > player.discard.length) {
+                // Cards added: add placeholder cards
+                const placeholders: any[] = []
+                for (let i = player.discard.length; i < newSize; i++) {
+                  placeholders.push({ id: `placeholder_${player.id}_discard_${i}`, name: '?', isPlaceholder: true })
+                }
+                updatedPlayer.discard = [...player.discard, ...placeholders]
+              }
+            }
           }
         }
-      }
 
-      // Apply deck size changes
-      if (playerDelta.deckSizeDelta !== undefined) {
-        if (isLocalPlayer) {
-          // Local player: keep their actual deck
+        // Apply score changes
+        if (playerDelta.scoreDelta !== undefined) {
+          updatedPlayer.score = Math.max(0, player.score + playerDelta.scoreDelta)
+        }
+
+        // Apply property changes
+        if (playerDelta.isReady !== undefined) {
+          updatedPlayer.isReady = playerDelta.isReady
+        }
+        if (playerDelta.selectedDeck !== undefined) {
+          updatedPlayer.selectedDeck = playerDelta.selectedDeck
+        }
+        if (playerDelta.name !== undefined) {
+          updatedPlayer.name = playerDelta.name
+        }
+        if (playerDelta.color !== undefined) {
+          updatedPlayer.color = playerDelta.color
+        }
+        if (playerDelta.isDisconnected !== undefined) {
+          updatedPlayer.isDisconnected = playerDelta.isDisconnected
+        }
+        if (playerDelta.isDummy !== undefined) {
+          updatedPlayer.isDummy = playerDelta.isDummy
+        }
+
+        // Apply announcedCard changes
+        if (playerDelta.announcedCard !== undefined) {
+          console.log(`[applyStateDelta] Player ${player.id} announcedCard updated:`, playerDelta.announcedCard?.id || 'null')
+          updatedPlayer.announcedCard = playerDelta.announcedCard
+        }
+
+        // Apply boardHistory changes
+        if (playerDelta.boardHistory !== undefined) {
+          updatedPlayer.boardHistory = [...playerDelta.boardHistory]
+        }
+
+        // Apply other property changes
+        if (playerDelta.teamId !== undefined) {
+          updatedPlayer.teamId = playerDelta.teamId
+        }
+        if (playerDelta.autoDrawEnabled !== undefined) {
+          updatedPlayer.autoDrawEnabled = playerDelta.autoDrawEnabled
+        }
+
+        updatedPlayers.push(updatedPlayer)
+      } else {
+        // No delta, keep player as-is
+        updatedPlayers.push(player)
+      }
+    }
+
+    // Then, add new players that weren't in current state
+    for (const [playerIdStr, playerDelta] of Object.entries(delta.playerDeltas)) {
+      const playerId = Number(playerIdStr)
+      if (!processedPlayerIds.has(playerId) && !playerDelta.removed) {
+        console.log(`[applyStateDelta] Adding new player ${playerId} (${playerDelta.name || 'Unknown'}), isDummy=${playerDelta.isDummy}`)
+
+        const newPlayer: any = {
+          id: playerId,
+          name: playerDelta.name || `Player ${playerId}`,
+          color: playerDelta.color || 'blue',
+          isDummy: playerDelta.isDummy || false,
+          isReady: playerDelta.isReady || false,
+          score: 0,
+          selectedDeck: playerDelta.selectedDeck || 'Random',
+          boardHistory: playerDelta.boardHistory || [],
+          isDisconnected: playerDelta.isDisconnected || false,
+          autoDrawEnabled: playerDelta.autoDrawEnabled !== undefined ? playerDelta.autoDrawEnabled : true,
+        }
+
+        // Helper to create placeholder card with proper ownership
+        const createPlaceholderCard = (index: number, location: string): any => ({
+          id: `placeholder_${playerId}_${location}_${index}`,
+          name: '?',
+          isPlaceholder: true,
+          ownerId: playerId,
+          color: newPlayer.color,
+          deck: newPlayer.selectedDeck,
+        })
+
+        // For dummy players: if delta has full card arrays, use them; otherwise create placeholders
+        // For real players: always create placeholders (privacy)
+        if (playerDelta.isDummy && playerDelta.hand && playerDelta.deck && playerDelta.discard) {
+          // Delta has full card data for dummy player (rare, typically only on initial join)
+          newPlayer.hand = playerDelta.hand
+          newPlayer.deck = playerDelta.deck
+          newPlayer.discard = playerDelta.discard
+          console.log(`[applyStateDelta] New dummy player ${playerId}: using full card arrays from delta, hand=${newPlayer.hand.length}`)
         } else {
-          // Other players: adjust deck array size for UI display
-          const newSize = player.deck.length + playerDelta.deckSizeDelta
-          console.log(`[applyStateDelta] Player ${player.id}: deck ${player.deck.length} -> ${newSize} (delta: ${playerDelta.deckSizeDelta})`)
-          if (newSize < player.deck.length) {
-            // Cards removed: shrink array
-            updatedPlayer.deck = player.deck.slice(0, newSize)
-          } else if (newSize > player.deck.length) {
-            // Cards added: add placeholder cards
-            const placeholders: any[] = []
-            for (let i = player.deck.length; i < newSize; i++) {
-              placeholders.push({ id: `placeholder_${player.id}_deck_${i}`, name: '?', isPlaceholder: true })
-            }
-            updatedPlayer.deck = [...player.deck, ...placeholders]
+          // Create placeholder arrays based on sizes
+          const handSize = playerDelta.handSizeDelta || 0
+          const deckSize = playerDelta.deckSizeDelta || 0
+          const discardSize = playerDelta.discardSizeDelta || 0
+
+          newPlayer.hand = []
+          for (let i = 0; i < handSize; i++) {
+            newPlayer.hand.push(createPlaceholderCard(i, 'hand'))
           }
-        }
-      }
-
-      // Apply discard changes
-      if (playerDelta.discardAdd) {
-        // Cards added to discard - append them for local player
-        updatedPlayer.discard = [...updatedPlayer.discard, ...playerDelta.discardAdd]
-      }
-      if (playerDelta.discardClear) {
-        updatedPlayer.discard = []
-      }
-      if (playerDelta.discardSizeDelta !== undefined && !playerDelta.discardAdd) {
-        // Only adjust size if we don't have exact cards (for other players' discards)
-        if (!isLocalPlayer) {
-          // Other players: adjust discard array size for UI display
-          const newSize = player.discard.length + playerDelta.discardSizeDelta
-          if (newSize < player.discard.length) {
-            // Cards removed: shrink array
-            updatedPlayer.discard = player.discard.slice(0, newSize)
-          } else if (newSize > player.discard.length) {
-            // Cards added: add placeholder cards
-            const placeholders: any[] = []
-            for (let i = player.discard.length; i < newSize; i++) {
-              placeholders.push({ id: `placeholder_${player.id}_discard_${i}`, name: '?', isPlaceholder: true })
-            }
-            updatedPlayer.discard = [...player.discard, ...placeholders]
+          newPlayer.deck = []
+          for (let i = 0; i < deckSize; i++) {
+            newPlayer.deck.push(createPlaceholderCard(i, 'deck'))
           }
+          newPlayer.discard = []
+          for (let i = 0; i < discardSize; i++) {
+            newPlayer.discard.push(createPlaceholderCard(i, 'discard'))
+          }
+          console.log(`[applyStateDelta] New player ${playerId} (isDummy=${playerDelta.isDummy}): created placeholders, hand=${handSize}, deck=${deckSize}, discard=${discardSize}`)
         }
-      }
 
-      // Apply score changes
-      if (playerDelta.scoreDelta !== undefined) {
-        updatedPlayer.score = Math.max(0, player.score + playerDelta.scoreDelta)
-      }
+        // Apply announced card if provided
+        if (playerDelta.announcedCard !== undefined) {
+          newPlayer.announcedCard = playerDelta.announcedCard
+        } else {
+          newPlayer.announcedCard = null
+        }
 
-      // Apply property changes
-      if (playerDelta.isReady !== undefined) {
-        updatedPlayer.isReady = playerDelta.isReady
+        updatedPlayers.push(newPlayer)
       }
-      if (playerDelta.selectedDeck !== undefined) {
-        updatedPlayer.selectedDeck = playerDelta.selectedDeck
-      }
-      if (playerDelta.name !== undefined) {
-        updatedPlayer.name = playerDelta.name
-      }
-      if (playerDelta.color !== undefined) {
-        updatedPlayer.color = playerDelta.color
-      }
-      if (playerDelta.isDisconnected !== undefined) {
-        updatedPlayer.isDisconnected = playerDelta.isDisconnected
-      }
+    }
 
-      // Apply announcedCard changes
-      if (playerDelta.announcedCard !== undefined) {
-        console.log(`[applyStateDelta] Player ${player.id} announcedCard updated:`, playerDelta.announcedCard?.id || 'null')
-        updatedPlayer.announcedCard = playerDelta.announcedCard
-      }
-
-      // Apply boardHistory changes
-      if (playerDelta.boardHistory !== undefined) {
-        updatedPlayer.boardHistory = [...playerDelta.boardHistory]
-      }
-
-      // Apply other property changes
-      if (playerDelta.teamId !== undefined) {
-        updatedPlayer.teamId = playerDelta.teamId
-      }
-      if (playerDelta.autoDrawEnabled !== undefined) {
-        updatedPlayer.autoDrawEnabled = playerDelta.autoDrawEnabled
-      }
-      if (playerDelta.readySetup !== undefined) {
-        updatedPlayer.readySetup = playerDelta.readySetup
-      }
-      if (playerDelta.readyCommit !== undefined) {
-        updatedPlayer.readyCommit = playerDelta.readyCommit
-      }
-      if (playerDelta.position !== undefined) {
-        updatedPlayer.position = playerDelta.position
-      }
-
-      return updatedPlayer
-    })
+    console.log(`[applyStateDelta] Player count: ${currentState.players.length} -> ${updatedPlayers.length}`)
+    newState.players = updatedPlayers
   }
 
   // Apply board cell changes
@@ -357,7 +450,7 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
       row.map((cell, colIndex) => {
         // Find delta for this cell using row/col indices (not cell.coords which doesn't exist)
         const cellDelta = delta.boardCells!.find(d => d.row === rowIndex && d.col === colIndex)
-        if (!cellDelta) return cell
+        if (!cellDelta) {return cell}
 
         const updatedCell = { ...cell }
 
@@ -460,6 +553,38 @@ export function applyStateDelta(currentState: GameState, delta: StateDelta, loca
     }
   }
 
+  // Apply settings changes
+  if (delta.settingsDelta) {
+    if (delta.settingsDelta.activeGridSize !== undefined) {
+      newState.activeGridSize = delta.settingsDelta.activeGridSize
+      // Recreate board if size changed
+      if (currentState.board.length !== delta.settingsDelta.activeGridSize) {
+        const size: GridSize = delta.settingsDelta.activeGridSize
+        newState.board = []
+        for (let i = 0; i < size; i++) {
+          const row: any[] = []
+          for (let j = 0; j < size; j++) {
+            row.push({ card: null })
+          }
+          newState.board.push(row)
+        }
+        console.log(`[applyStateDelta] Board recreated with size ${size}x${size}`)
+      }
+    }
+    if (delta.settingsDelta.gameMode !== undefined) {
+      newState.gameMode = delta.settingsDelta.gameMode
+      console.log(`[applyStateDelta] Game mode changed to ${delta.settingsDelta.gameMode}`)
+    }
+    if (delta.settingsDelta.isPrivate !== undefined) {
+      newState.isPrivate = delta.settingsDelta.isPrivate
+      console.log(`[applyStateDelta] Game privacy changed to ${delta.settingsDelta.isPrivate}`)
+    }
+    if (delta.settingsDelta.dummyPlayerCount !== undefined) {
+      newState.dummyPlayerCount = delta.settingsDelta.dummyPlayerCount
+      console.log(`[applyStateDelta] Dummy player count changed to ${delta.settingsDelta.dummyPlayerCount}`)
+    }
+  }
+
   // Apply highlight changes
   if (delta.highlightsDelta) {
     if (delta.highlightsDelta.clear) {
@@ -541,6 +666,20 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
     }
   }
 
+  // Detect settings changes
+  if (oldState.activeGridSize !== newState.activeGridSize ||
+      oldState.gameMode !== newState.gameMode ||
+      oldState.isPrivate !== newState.isPrivate ||
+      oldState.dummyPlayerCount !== newState.dummyPlayerCount) {
+    delta.settingsDelta = {
+      ...(oldState.activeGridSize !== newState.activeGridSize && { activeGridSize: newState.activeGridSize }),
+      ...(oldState.gameMode !== newState.gameMode && { gameMode: newState.gameMode }),
+      ...(oldState.isPrivate !== newState.isPrivate && { isPrivate: newState.isPrivate }),
+      ...(oldState.dummyPlayerCount !== newState.dummyPlayerCount && { dummyPlayerCount: newState.dummyPlayerCount })
+    }
+    console.log(`[createDeltaFromStates] Settings changed:`, delta.settingsDelta)
+  }
+
   // Detect board cell changes
   const boardCellDeltas: BoardCellDelta[] = []
   const maxRows = Math.max(oldState.board.length, newState.board.length)
@@ -554,7 +693,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
       const newCell = newState.board[r]?.[c]
 
       // Skip if both cells are undefined
-      if (!oldCell && !newCell) continue
+      if (!oldCell && !newCell) {continue}
 
       // Check if card changed (handle undefined cells)
       const oldCardId = oldCell?.card?.id
@@ -599,13 +738,13 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
 
           for (const s of oldStatuses) {
             const key = `${s.type}_${s.addedByPlayerId}`
-            if (!oldStatusMap.has(key)) oldStatusMap.set(key, [])
+            if (!oldStatusMap.has(key)) {oldStatusMap.set(key, [])}
             oldStatusMap.get(key)!.push(s)
           }
 
           for (const s of newStatuses) {
             const key = `${s.type}_${s.addedByPlayerId}`
-            if (!newStatusMap.has(key)) newStatusMap.set(key, [])
+            if (!newStatusMap.has(key)) {newStatusMap.set(key, [])}
             newStatusMap.get(key)!.push(s)
           }
 
@@ -632,7 +771,6 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
 
             if (newCount > oldCount) {
               // Some of these statuses were added
-              const addCount = newCount - oldCount
               for (let i = oldCount; i < newCount; i++) {
                 addedStatuses.push(newList[i])
               }
@@ -695,7 +833,31 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
 
   for (const newPlayer of newState.players) {
     const oldPlayer = oldState.players.find(p => p.id === newPlayer.id)
-    if (!oldPlayer) continue
+
+    // NEW PLAYER ADDED (e.g., dummy player added)
+    if (!oldPlayer) {
+      console.log(`[createDeltaFromStates] New player added: ${newPlayer.id} (${newPlayer.name}), isDummy=${newPlayer.isDummy}`)
+
+      const playerDelta: PlayerDelta = {
+        id: newPlayer.id,
+        // Send all initial data for new player
+        name: newPlayer.name,
+        color: newPlayer.color,
+        isDummy: newPlayer.isDummy,
+        isReady: newPlayer.isReady,
+        selectedDeck: newPlayer.selectedDeck,
+        isDisconnected: newPlayer.isDisconnected,
+        // Send hand/deck/discard sizes only (to avoid WebRTC size limit)
+        // Guests will generate dummy cards locally using createDeck()
+        handSizeDelta: newPlayer.hand.length,
+        deckSizeDelta: newPlayer.deck.length,
+        discardSizeDelta: newPlayer.discard.length,
+        announcedCard: newPlayer.announcedCard
+      }
+      playerDeltas[newPlayer.id] = playerDelta
+      console.log(`[createDeltaFromStates] New player delta: sizes hand=${newPlayer.hand.length}, deck=${newPlayer.deck.length}, discard=${newPlayer.discard.length}`)
+      continue
+    }
 
     const playerDelta: PlayerDelta = { id: newPlayer.id }
 
@@ -765,18 +927,22 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
     if (oldPlayer.autoDrawEnabled !== newPlayer.autoDrawEnabled) {
       playerDelta.autoDrawEnabled = newPlayer.autoDrawEnabled
     }
-    if (oldPlayer.readySetup !== newPlayer.readySetup) {
-      playerDelta.readySetup = newPlayer.readySetup
-    }
-    if (oldPlayer.readyCommit !== newPlayer.readyCommit) {
-      playerDelta.readyCommit = newPlayer.readyCommit
-    }
-    if (oldPlayer.position !== newPlayer.position) {
-      playerDelta.position = newPlayer.position
-    }
 
     if (Object.keys(playerDelta).length > 1) { // More than just id
       playerDeltas[newPlayer.id] = playerDelta
+    }
+  }
+
+  // Check for removed players
+  for (const oldPlayer of oldState.players) {
+    const newPlayer = newState.players.find(p => p.id === oldPlayer.id)
+    if (!newPlayer) {
+      // Player was removed - send removal delta
+      console.log(`[createDeltaFromStates] Player removed: ${oldPlayer.id} (${oldPlayer.name})`)
+      playerDeltas[oldPlayer.id] = {
+        id: oldPlayer.id,
+        removed: true  // Flag to indicate player removal
+      }
     }
   }
 
@@ -809,6 +975,7 @@ export function createDeltaFromStates(oldState: GameState, newState: GameState, 
 export function isDeltaEmpty(delta: StateDelta): boolean {
   return !delta.phaseDelta &&
          !delta.roundDelta &&
+         !delta.settingsDelta &&
          !delta.boardCells?.length &&
          !delta.playerDeltas &&
          !delta.highlightsDelta &&

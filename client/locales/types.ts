@@ -122,6 +122,9 @@ export interface TranslationResource {
     revealed: string;
     connecting: string;
     reconnecting: string;
+    reconnectingDescription: string;
+    pleaseWait: string;
+    doNotClose: string;
     error: string;
     loading: string;
     create: string;

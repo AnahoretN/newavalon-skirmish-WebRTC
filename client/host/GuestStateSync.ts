@@ -96,7 +96,7 @@ export class GuestStateSync {
    * Send player ready to host
    */
   sendPlayerReady(): boolean {
-    if (this.localPlayerId === null) return false
+    if (this.localPlayerId === null) {return false}
 
     const message: WebrtcMessage = {
       type: 'PLAYER_READY',
@@ -113,7 +113,7 @@ export class GuestStateSync {
    * Send player deck change to host
    */
   sendChangeDeck(deckType: string): boolean {
-    if (this.localPlayerId === null) return false
+    if (this.localPlayerId === null) {return false}
 
     const message: WebrtcMessage = {
       type: 'CHANGE_PLAYER_DECK',
@@ -130,7 +130,7 @@ export class GuestStateSync {
    * Send player name change to host
    */
   sendUpdateName(name: string): boolean {
-    if (this.localPlayerId === null) return false
+    if (this.localPlayerId === null) {return false}
 
     const message: WebrtcMessage = {
       type: 'UPDATE_PLAYER_NAME',
@@ -147,7 +147,7 @@ export class GuestStateSync {
    * Send player color change to host
    */
   sendChangeColor(color: string): boolean {
-    if (this.localPlayerId === null) return false
+    if (this.localPlayerId === null) {return false}
 
     const message: WebrtcMessage = {
       type: 'CHANGE_PLAYER_COLOR',
@@ -164,7 +164,7 @@ export class GuestStateSync {
    * Send score change to host
    */
   sendUpdateScore(delta: number): boolean {
-    if (this.localPlayerId === null) return false
+    if (this.localPlayerId === null) {return false}
 
     const message: WebrtcMessage = {
       type: 'UPDATE_PLAYER_SCORE',

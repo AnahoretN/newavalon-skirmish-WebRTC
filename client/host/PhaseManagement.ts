@@ -6,6 +6,7 @@
 
 import type { GameState } from '../types'
 import { logger } from '../utils/logger'
+import { checkRoundEnd, endRound } from './RoundManagement'
 
 /**
  * Phase indices
@@ -72,6 +73,14 @@ export function performPreparationPhase(gameState: GameState, activePlayerId: nu
     ...gameState,
     players: newPlayers,
     currentPhase: 1  // Setup
+  }
+
+  // Check for round end after entering Setup phase
+  // This check happens after every preparation phase, so when first player's turn comes around
+  // and they enter Setup phase with phase=1, we check if round should end
+  if (checkRoundEnd(newState).shouldEnd) {
+    logger.info(`[performPreparationPhase] Round end detected for activePlayerId=${activePlayerId}`)
+    return endRound(newState)
   }
 
   logger.info(`[performPreparationPhase] Transitioned to Setup phase, activePlayerId=${newState.activePlayerId}`)
@@ -207,7 +216,7 @@ export function toggleActivePlayer(gameState: GameState, targetPlayerId: number)
  */
 export function toggleAutoDraw(gameState: GameState, playerId: number): GameState {
   const player = gameState.players.find(p => p.id === playerId)
-  if (!player) return gameState
+  if (!player) {return gameState}
 
   const newAutoDraw = !player.autoDrawEnabled
   logger.info(`[toggleAutoDraw] Player ${playerId} auto-draw: ${newAutoDraw}`)

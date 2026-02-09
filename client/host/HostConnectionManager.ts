@@ -419,7 +419,7 @@ export class HostConnectionManager {
    */
   isPlayerReconnecting(playerId: number): boolean {
     const data = this.reconnectingPlayers.get(playerId)
-    if (!data) return false
+    if (!data) {return false}
 
     // Check if still within window
     const elapsed = Date.now() - data.disconnectedAt
@@ -436,7 +436,7 @@ export class HostConnectionManager {
    */
   getPlayerReconnectTimeRemaining(playerId: number): number {
     const data = this.reconnectingPlayers.get(playerId)
-    if (!data) return 0
+    if (!data) {return 0}
 
     const elapsed = Date.now() - data.disconnectedAt
     return Math.max(0, this.reconnectionTimeout - elapsed)

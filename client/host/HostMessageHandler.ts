@@ -62,7 +62,7 @@ export class HostMessageHandler {
    * Handle incoming message from guest
    */
   private handleMessage(message: WebrtcMessage, fromPeerId: string): void {
-    if (!message || !message.type) return
+    if (!message || !message.type) {return}
 
     logger.info(`[HostMessageHandler] Received ${message.type} from ${fromPeerId}`)
 
@@ -191,7 +191,7 @@ export class HostMessageHandler {
    * Handle action from guest
    */
   private handleAction(message: WebrtcMessage, fromPeerId: string): void {
-    if (!message.data) return
+    if (!message.data) {return}
 
     const { actionType, actionData } = message.data
     logger.info(`[HostMessageHandler] Received action: ${actionType}`)
@@ -225,7 +225,7 @@ export class HostMessageHandler {
    * Handle state update action from guest
    */
   private handleStateUpdateAction(actionData: any, guestPlayerId: number): void {
-    if (!actionData?.gameState || !this.gameState) return
+    if (!actionData?.gameState || !this.gameState) {return}
 
     const guestState = actionData.gameState
 
@@ -263,7 +263,7 @@ export class HostMessageHandler {
    * Handle state delta action from guest
    */
   private handleStateDeltaAction(actionData: any, guestPlayerId: number): void {
-    if (!actionData?.delta || !this.gameState) return
+    if (!actionData?.delta || !this.gameState) {return}
 
     const delta: StateDelta = actionData.delta
 
@@ -279,7 +279,7 @@ export class HostMessageHandler {
    * Handle player ready
    */
   private handlePlayerReady(message: WebrtcMessage, fromPeerId: string): void {
-    if (!this.gameState) return
+    if (!this.gameState) {return}
 
     const guest = this.connectionManager.getGuest(fromPeerId)
     const playerId = guest?.playerId || message.playerId
@@ -326,7 +326,7 @@ export class HostMessageHandler {
    * Start the game
    */
   private startGame(): void {
-    if (!this.gameState || !this.localPlayerId) return
+    if (!this.gameState || !this.localPlayerId) {return}
 
     logger.info('[HostMessageHandler] All players ready! Starting game...')
 
@@ -398,7 +398,7 @@ export class HostMessageHandler {
    * Handle player deck change
    */
   private handleChangePlayerDeck(message: WebrtcMessage, fromPeerId: string): void {
-    if (!this.gameState || !message.data) return
+    if (!this.gameState || !message.data) {return}
 
     const { playerId, deckType } = message.data
 
@@ -432,7 +432,7 @@ export class HostMessageHandler {
    * Handle player name update
    */
   private handleUpdatePlayerName(message: WebrtcMessage, fromPeerId: string): void {
-    if (!this.gameState || !message.data) return
+    if (!this.gameState || !message.data) {return}
 
     const { playerId, name } = message.data
 
@@ -464,7 +464,7 @@ export class HostMessageHandler {
    * Handle player color change
    */
   private handleChangePlayerColor(message: WebrtcMessage, fromPeerId: string): void {
-    if (!this.gameState || !message.data) return
+    if (!this.gameState || !message.data) {return}
 
     const { playerId, color } = message.data
 
@@ -496,7 +496,7 @@ export class HostMessageHandler {
    * Handle player score update
    */
   private handleUpdatePlayerScore(message: WebrtcMessage, fromPeerId: string): void {
-    if (!this.gameState || !message.data) return
+    if (!this.gameState || !message.data) {return}
 
     const { playerId, delta } = message.data
 
@@ -531,7 +531,7 @@ export class HostMessageHandler {
    * Handle state delta from guest
    */
   private handleStateDelta(message: WebrtcMessage, fromPeerId: string): void {
-    if (!message.data?.delta || !this.gameState) return
+    if (!message.data?.delta || !this.gameState) {return}
 
     const delta: StateDelta = message.data.delta
 
@@ -559,7 +559,7 @@ export class HostMessageHandler {
    * Broadcast game state to all guests
    */
   broadcastGameState(excludePeerId?: string): void {
-    if (!this.gameState) return
+    if (!this.gameState) {return}
     this.connectionManager.broadcastGameState(this.gameState, excludePeerId)
   }
 

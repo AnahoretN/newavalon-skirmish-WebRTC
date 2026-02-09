@@ -15,6 +15,7 @@ import { MainMenu } from './components/MainMenu'
 import { RoundEndModal } from './components/RoundEndModal'
 import { CounterSelectionModal } from './components/CounterSelectionModal'
 import { TopDeckView } from './components/TopDeckView'
+import { ReconnectingModal } from './components/ReconnectingModal'
 import { useGameState } from './hooks/useGameState'
 import { useAppAbilities } from './hooks/useAppAbilities'
 import { useAppCommand } from './hooks/useAppCommand'
@@ -484,8 +485,23 @@ const App = memo(function App() {
   )
 
   const isGameActive = useMemo(
-    () => gameState?.gameId && (localPlayer || isSpectator),
-    [gameState?.gameId, localPlayer, isSpectator],
+    () => {
+      const active = gameState?.gameId && (localPlayer || isSpectator)
+      // Debug logging for WebRTC P2P restore
+      if (localStorage.getItem('webrtc_enabled') === 'true') {
+        console.log('[isGameActive] Check:', {
+          hasGameId: !!gameState?.gameId,
+          gameId: gameState?.gameId,
+          hasLocalPlayer: !!localPlayer,
+          hasIsSpectator: isSpectator,
+          localPlayerId,
+          playersCount: gameState?.players?.length || 0,
+          isActive: active
+        })
+      }
+      return active
+    },
+    [gameState?.gameId, localPlayer, isSpectator, localPlayerId],
   )
 
   const playerColorMap = useMemo(() => {
@@ -1371,7 +1387,9 @@ const App = memo(function App() {
     const inviteHostId = sessionStorage.getItem('invite_host_id')
     const autoJoinFlag = sessionStorage.getItem('invite_auto_join')
 
-    if (inviteHostId && autoJoinFlag) {
+    console.log('[App] WebRTC Invite Check - inviteHostId:', inviteHostId, 'autoJoinFlag:', autoJoinFlag, 'connectAsGuest exists:', typeof connectAsGuest)
+
+    if (inviteHostId && autoJoinFlag && typeof connectAsGuest === 'function') {
       console.log('[App] Auto-connecting to WebRTC host:', inviteHostId)
       // Clear the stored invite data
       sessionStorage.removeItem('invite_host_id')
@@ -1388,7 +1406,7 @@ const App = memo(function App() {
         console.error('[App] Error connecting to WebRTC host:', err)
       })
     }
-  }, []) // Empty dependency array - run once on mount
+  }, [connectAsGuest]) // Run when connectAsGuest is available
 
   // Handle invite link - auto-join game as new player or spectator
   useEffect(() => {
@@ -1996,6 +2014,11 @@ const App = memo(function App() {
         turnNumber={gameState.turnNumber}
         isReconnecting={isReconnecting}
         reconnectProgress={reconnectProgress}
+      />
+
+      {/* Reconnection Modal - Shows when WebRTC connection is lost and attempting to reconnect */}
+      <ReconnectingModal
+        isOpen={isReconnecting}
       />
 
       {gameState.isRoundEndModalOpen && (
