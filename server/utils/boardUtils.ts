@@ -5,6 +5,10 @@
  * Card IDs for Hero passives:
  * - Mr. Pearl (mrPearlDoF): +1 Power to other own units in lines
  * - Reverend of The Choir (reverendOfTheChoir): Support to all own units in lines
+ *
+ * Card IDs for conditional abilities:
+ * - Threat Analyst (threatAnalyst): Units can threaten cards with owner's Exploit tokens
+ *   when having Support.
  */
 
 import type { Board, GameState } from '../types/types.js'
@@ -14,6 +18,26 @@ const GRID_MAX_SIZE = 7
 // Hero card baseIds for passive abilities (direct ID matching)
 const HERO_MR_PEARL_ID = 'mrPearlDoF'
 const HERO_REVEREND_ID = 'reverendOfTheChoir'
+const CARD_THREAT_ANALYST_ID = 'threatAnalyst'
+const THREAT_ANALYST_HERO_ID = 'threatAnalyst' // Alternative name for type checking
+
+/**
+ * Check if a card is threatened by a player with active Threat Analyst.
+ * A card is threatened if it has an Exploit token from a player
+ * whose threatAnalyst is on board and has Support.
+ *
+ * @param card The card to check
+ * @param threatAnalystPlayers Map of player IDs with active Threat Analysts
+ * @returns true if card is threatened
+ */
+function isCardThreatened(card: any, threatAnalystPlayers: Set<number>): boolean {
+  if (!card?.statuses) {
+    return false
+  }
+  return card.statuses.some((s: {type: string; addedByPlayerId?: number}) =>
+    s.type === 'Exploit' && s.addedByPlayerId !== undefined &&
+    threatAnalystPlayers.has(s.addedByPlayerId))
+}
 
 /**
  * Optimized deep clone for board data structure.
@@ -166,7 +190,125 @@ export const recalculateBoardStatuses = (gameState: GameState): Board => {
     }
   }
 
-  // 3. Hero Passives (Reverend & Mr. Pearl) - Optimized version
+  // 3. Threat Analyst Ability - Units can threaten cards with owner's Exploit tokens
+  // If threatAnalyst is on board with Support, its owner's units gain ability to threaten.
+  // Cards with player's Exploit tokens can be threatened by that player's units (even individually).
+
+  // Collect player IDs who have active Threat Analyst with Support
+  const threatAnalystPlayersWithSupport = new Set<number>()
+
+  for (let r = 0; r < GRID_SIZE; r++) {
+    for (let c = 0; c < GRID_SIZE; c++) {
+      const card = newBoard[r][c].card
+      const isStunned = card?.statuses?.some((s: {type: string}) => s.type === 'Stun')
+
+      if (card?.baseId === CARD_THREAT_ANALYST_ID && !card.isFaceDown &&
+          card.ownerId !== undefined && !isStunned) {
+        // Check if this threatAnalyst has Support
+        const neighborsPos = [
+          { r: r - 1, c: c }, { r: r + 1, c: c },
+          { r: r, c: c - 1 }, { r: r, c: c + 1 },
+        ]
+
+        let hasSupport = false
+        const ownerId = card.ownerId
+        const ownerTeamId = playerTeamMap.get(ownerId)
+
+        for (const pos of neighborsPos) {
+          const { r: nr, c: nc } = pos
+          if (nr >= 0 && nr < GRID_SIZE && nc >= 0 && nc < GRID_SIZE) {
+            const neighborCard = newBoard[nr][nc].card
+            if (neighborCard?.ownerId !== undefined && !neighborCard.isFaceDown) {
+              const neighborOwnerId = neighborCard.ownerId
+              const neighborTeamId = playerTeamMap.get(neighborOwnerId)
+              const isFriendly = ownerId === neighborOwnerId ||
+                (ownerTeamId !== undefined && ownerTeamId === neighborTeamId)
+              const neighborIsStunned = neighborCard?.statuses?.some((s: {type: string}) => s.type === 'Stun')
+
+              if (isFriendly && !neighborIsStunned) {
+                hasSupport = true
+                break
+              }
+            }
+          }
+        }
+
+        if (hasSupport) {
+          threatAnalystPlayersWithSupport.add(ownerId)
+        }
+      }
+    }
+  }
+
+  // Apply modified Threat logic - cards can be threatened by units of players with active Threat Analyst
+  for (let r = 0; r < GRID_SIZE; r++) {
+    for (let c = 0; c < GRID_SIZE; c++) {
+      const card = newBoard[r][c].card
+      if (!card || card.isFaceDown || card.ownerId === undefined) {
+        continue
+      }
+
+      const ownerId = card.ownerId
+      const ownerTeamId = playerTeamMap.get(ownerId)
+
+      const neighborsPos = [
+        { r: r - 1, c: c }, { r: r + 1, c: c },
+        { r: r, c: c - 1 }, { r: r, c: c + 1 },
+      ]
+
+      // Count enemy neighbors by player
+      const enemyNeighborsByPlayer: { [key: number]: number } = {}
+
+      for (const pos of neighborsPos) {
+        const { r: nr, c: nc } = pos
+        if (nr >= 0 && nr < GRID_SIZE && nc >= 0 && nc < GRID_SIZE) {
+          const neighborCard = newBoard[nr][nc].card
+          const isNeighborStunned = neighborCard?.statuses?.some((s: {type: string}) => s.type === 'Stun')
+
+          if (neighborCard?.ownerId !== undefined && !neighborCard.isFaceDown && !isNeighborStunned) {
+            const neighborOwnerId = neighborCard.ownerId
+            const neighborTeamId = playerTeamMap.get(neighborOwnerId)
+            const isFriendly = ownerId === neighborOwnerId ||
+              (ownerTeamId !== undefined && ownerTeamId === neighborTeamId)
+
+            if (!isFriendly) {
+              // Check if this neighbor belongs to a player with active Threat Analyst
+              const canThreaten = threatAnalystPlayersWithSupport.has(neighborOwnerId)
+
+              // Also check if this card has player's Exploit token
+              const hasExploitToken = isCardThreatened(card, threatAnalystPlayersWithSupport)
+
+              if (canThreaten && hasExploitToken) {
+                // This card is threatened by this player
+                if (!enemyNeighborsByPlayer[neighborOwnerId]) {
+                  enemyNeighborsByPlayer[neighborOwnerId] = 0
+                }
+                enemyNeighborsByPlayer[neighborOwnerId]++
+              }
+            }
+          }
+        }
+      }
+
+      // Apply Threat status based on enemy neighbors (modified logic for Threat Analyst)
+      const hasEnemyNeighbor = Object.keys(enemyNeighborsByPlayer).length > 0
+
+      if (hasEnemyNeighbor) {
+        if (!card.statuses) {
+          card.statuses = []
+        }
+        // Find all enemy player IDs who can threaten this card
+        const threateningPlayerIds = Object.keys(enemyNeighborsByPlayer).map(id => parseInt(id, 10))
+        for (const threateningPlayerId of threateningPlayerIds) {
+          if (!card.statuses.some((s: {type: string; addedByPlayerId?: number}) => s.type === 'Threat' && s.addedByPlayerId === threateningPlayerId)) {
+            card.statuses.push({ type: 'Threat', addedByPlayerId: threateningPlayerId })
+          }
+        }
+      }
+    }
+  }
+
+  // 4. Hero Passives (Reverend & Mr. Pearl) - Optimized version
   // Collect hero positions first, then apply effects row/column by row/column
   // to reduce redundant iterations
 

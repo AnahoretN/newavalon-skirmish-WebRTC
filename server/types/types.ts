@@ -371,7 +371,7 @@ export interface CounterSelectionData {
  * Represents a structured action for the auto-ability system.
  */
 export type AbilityAction = {
-    type: 'CREATE_STACK' | 'ENTER_MODE' | 'OPEN_MODAL' | 'GLOBAL_AUTO_APPLY' | 'ABILITY_COMPLETE' | 'REVEREND_SETUP_SCORE';
+    type: 'CREATE_STACK' | 'ENTER_MODE' | 'OPEN_MODAL' | 'GLOBAL_AUTO_APPLY' | 'ABILITY_COMPLETE' | 'REVEREND_SETUP_SCORE' | 'MODIFY_SCORE';
     mode?: string;
     tokenType?: string;
     count?: number;

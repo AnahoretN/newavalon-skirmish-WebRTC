@@ -2468,7 +2468,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         break
 
       case 'FLOATING_TEXT_TRIGGERED':
-      case 'FLOATING_TEXT_BATCH_TRIGGERED':
+      case 'FLOATING_TEXT_BATCH_TRIGGERED': {
         // Host broadcasted floating texts to all guests
         // Ignore if we're the sender (to avoid duplicate)
         const myPeerIdFloat = webrtcManagerRef.current?.getPeerId()
@@ -2484,6 +2484,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           }))
         }
         break
+      }
 
       case 'TRIGGER_NO_TARGET':
         // Guest sent no-target trigger to host

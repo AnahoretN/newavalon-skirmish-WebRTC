@@ -1168,6 +1168,7 @@ export const useAppAbilities = ({
                 abilityMode.mode !== 'SELECT_LINE_START' &&
                 abilityMode.mode !== 'INTEGRATOR_LINE_SELECT' &&
                 abilityMode.mode !== 'ZIUS_LINE_SELECT' &&
+                abilityMode.mode !== 'IP_AGENT_THREAT_SCORING' &&
                 abilityMode.mode !== 'SELECT_UNIT_FOR_MOVE' &&
                 abilityMode.mode !== 'SELECT_TARGET' &&
                 abilityMode.mode !== 'RIOT_PUSH' &&
@@ -1609,6 +1610,50 @@ export const useAppAbilities = ({
         setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
         return
       }
+      if (mode === 'IP_AGENT_THREAT_SCORING' && sourceCoords && sourceCoords.row >= 0) {
+        // IP Dept Agent: Score 2 points per Threat in selected line (row or column)
+        // Must select a cell in same row or column as the agent card
+        if (boardCoords.row !== sourceCoords.row && boardCoords.col !== sourceCoords.col) {
+          return
+        }
+
+        const gridSize = gameState.board.length
+        let threatCount = 0
+
+        if (boardCoords.row === sourceCoords.row) {
+          // Horizontal line - count Threats in this row
+          for (let c = 0; c < gridSize; c++) {
+            const cell = gameState.board[boardCoords.row][c]
+            if (cell.card) {
+              threatCount += cell.card.statuses?.filter(s => s.type === 'Threat' && s.addedByPlayerId === actorId).length || 0
+            }
+          }
+        } else {
+          // Vertical line - count Threats in this column
+          for (let r = 0; r < gridSize; r++) {
+            const cell = gameState.board[r][boardCoords.col]
+            if (cell.card) {
+              threatCount += cell.card.statuses?.filter(s => s.type === 'Threat' && s.addedByPlayerId === actorId).length || 0
+            }
+          }
+        }
+
+        // Award 2 points per Threat
+        const points = threatCount * 2
+        if (points > 0) {
+          triggerFloatingText({
+            row: sourceCoords.row,
+            col: sourceCoords.col,
+            text: `+${points}`,
+            playerId: actorId!,
+          })
+          updatePlayerScore(actorId!, points)
+        }
+
+        markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+        setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+        return
+      }
       if (mode === 'ZIUS_LINE_SELECT' && sourceCoords && sourceCoords.row >= 0) {
         // Same logic as INTEGRATOR_LINE_SELECT, but sourceCoords points to the target card (where Exploit was placed)
         if (boardCoords.row !== sourceCoords.row && boardCoords.col !== sourceCoords.col) {
@@ -1973,6 +2018,50 @@ export const useAppAbilities = ({
         triggerFloatingText(floatingTextBatch)
         updatePlayerScore(actorId!, totalExploits)
       }
+      markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+      setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+      return
+    }
+    if (mode === 'IP_AGENT_THREAT_SCORING' && sourceCoords && sourceCoords.row >= 0) {
+      // IP Dept Agent: Score 2 points per Threat in selected line (row or column)
+      // Must select a cell in same row or column as the agent card
+      if (boardCoords.row !== sourceCoords.row && boardCoords.col !== sourceCoords.col) {
+        return
+      }
+
+      const gridSize = gameState.board.length
+      let threatCount = 0
+
+      if (boardCoords.row === sourceCoords.row) {
+        // Horizontal line - count Threats in this row
+        for (let c = 0; c < gridSize; c++) {
+          const cell = gameState.board[boardCoords.row][c]
+          if (cell.card) {
+            threatCount += cell.card.statuses?.filter(s => s.type === 'Threat' && s.addedByPlayerId === actorId).length || 0
+          }
+        }
+      } else {
+        // Vertical line - count Threats in this column
+        for (let r = 0; r < gridSize; r++) {
+          const cell = gameState.board[r][boardCoords.col]
+          if (cell.card) {
+            threatCount += cell.card.statuses?.filter(s => s.type === 'Threat' && s.addedByPlayerId === actorId).length || 0
+          }
+        }
+      }
+
+      // Award 2 points per Threat
+      const points = threatCount * 2
+      if (points > 0) {
+        triggerFloatingText({
+          row: sourceCoords.row,
+          col: sourceCoords.col,
+          text: `+${points}`,
+          playerId: actorId!,
+        })
+        updatePlayerScore(actorId!, points)
+      }
+
       markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
       setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
       return

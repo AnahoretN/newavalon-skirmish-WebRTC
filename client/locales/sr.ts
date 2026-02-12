@@ -310,7 +310,7 @@ export const sr: TranslationResource = {
   cards: {
     ipDeptAgent: {
       name: 'Agent IP Odeljenja',
-      ability: 'Deploy: Pomešta 2 žetona Oglušеnja na kartu s vašim žetonom Eksploita.\nCommit (zahteva Podršku): Odbacuje iz ruke oponenta vama otkrivenu kartu.',
+      ability: 'Deploy: Pomešta 2 žetona Oglušеnja na kartu s vašom Ugrozom.\nSetup (zahteva Podršku): Dobija 2 poena za svaku vašu Ugrozu u izabranoj liniji.',
       flavorText: '- "Kršili ste autorska prava. Otvorite vrata. Imamo nalog za pretragu."',
     },
     tacticalAgent: {
@@ -330,7 +330,7 @@ export const sr: TranslationResource = {
     },
     threatAnalyst: {
       name: 'Analitičar Pretnji',
-      ability: 'Deploy: Pomešta žeton Eksploita na bilo koju kartu.\nCommit (zahteva Podršku): Otkriva kartu u ruci oponenta za svaki vaš žeton Eksploita na bojnom polju.',
+      ability: 'Deploy: Pomešta žeton Eksploita na bilo koju kartu.\nPass (zahteva Podršku): Vaše jedinice mogu da ugroze karte protivnika sa vašim žetonom Eksploita.',
       flavorText: '',
     },
     recklessProvocateur: {

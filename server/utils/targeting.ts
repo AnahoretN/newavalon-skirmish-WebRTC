@@ -511,6 +511,19 @@ export const calculateValidTargets = (
       targets.push({ row: r, col: sourceCol })
     }
   }
+  // 11.6. IP Agent Threat Scoring (same as Integrator - select any cell in same row or col)
+  else if (mode === 'IP_AGENT_THREAT_SCORING' && sourceCoords) {
+    const { row: sourceRow, col: sourceCol } = sourceCoords
+
+    // Add all cells in the same row (within active bounds)
+    for (let c = minBound; c <= maxBound; c++) {
+      targets.push({ row: sourceRow, col: c })
+    }
+    // Add all cells in the same col (within active bounds)
+    for (let r = minBound; r <= maxBound; r++) {
+      targets.push({ row: r, col: sourceCol })
+    }
+  }
   // 12. Select Diagonal
   else if (mode === 'SELECT_DIAGONAL') {
     if (!payload.firstCoords) {

@@ -98,25 +98,21 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
       type: 'CREATE_STACK',
       tokenType: 'Stun',
       count: 2,
-      requiredTargetStatus: 'Exploit',
+      requiredTargetStatus: 'Threat',
       requireStatusFromSourceOwner: true,
       placeAllAtOnce: true,
     })
   },
   {
     baseId: 'ipDeptAgent',
-    activationType: 'commit',
+    activationType: 'setup',
     supportRequired: true,
-    getAction: (_card, _gameState, _ownerId, coords) => ({
+    getAction: (_card, _gameState, ownerId, coords) => ({
       type: 'ENTER_MODE',
-      mode: 'SELECT_TARGET',
+      mode: 'IP_AGENT_THREAT_SCORING',
       sourceCard: _card,
       sourceCoords: coords,
-      payload: {
-        actionType: 'DESTROY',
-        filter: (target: Card) => hasStatus(target, 'Revealed', _ownerId),
-        handOnly: true, // Only target cards in hand, not on board
-      },
+      payload: {}
     })
   },
 
