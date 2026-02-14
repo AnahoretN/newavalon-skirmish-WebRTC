@@ -5,7 +5,6 @@
 
 import React, { useEffect, useRef } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { MODAL_SIZE_CLASSES, MODAL_COMMON_CLASSES } from '@/constants'
 
 export interface BaseModalProps {
   isOpen: boolean
@@ -19,7 +18,13 @@ export interface BaseModalProps {
   closeOnBackdropClick?: boolean
 }
 
-// Use constants from constants.ts instead of local definition
+const sizeClasses = {
+  sm: 'max-w-md',
+  md: 'max-w-lg',
+  lg: 'max-w-2xl',
+  xl: 'max-w-4xl',
+  full: 'max-w-full max-h-full',
+}
 
 /**
  * Base modal component with consistent styling and behavior
@@ -80,17 +85,17 @@ export const BaseModal: React.FC<BaseModalProps> = ({
       onClick={handleBackdropClick}
     >
       <div
-        className={`${MODAL_COMMON_CLASSES.base} ${MODAL_SIZE_CLASSES[size]} border border-white/10`}
+        className={`bg-gray-800 rounded-lg shadow-2xl w-full ${sizeClasses[size]} border border-white/10`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         {(title || showCloseButton) && (
-          <div className={MODAL_COMMON_CLASSES.header}>
+          <div className="flex items-center justify-between p-4 border-b border-gray-700">
             {title && <h2 className="text-xl font-bold text-white">{title}</h2>}
             {showCloseButton && (
               <button
                 onClick={onClose}
-                className={MODAL_COMMON_CLASSES.closeButton}
+                className="text-gray-400 hover:text-white transition-colors p-1 rounded"
                 aria-label={t('close') || 'Close'}
               >
                 <svg
@@ -113,7 +118,7 @@ export const BaseModal: React.FC<BaseModalProps> = ({
         )}
 
         {/* Content */}
-        <div className={MODAL_COMMON_CLASSES.inner}>
+        <div className="p-4">
           {children}
         </div>
       </div>
@@ -131,7 +136,7 @@ export interface ModalFooterProps {
 
 export const ModalFooter: React.FC<ModalFooterProps> = ({ children, className = '' }) => {
   return (
-    <div className={`${MODAL_COMMON_CLASSES.footer} ${className}`}>
+    <div className={`flex items-center justify-end gap-2 mt-4 pt-4 border-t border-gray-700 ${className}`}>
       {children}
     </div>
   )

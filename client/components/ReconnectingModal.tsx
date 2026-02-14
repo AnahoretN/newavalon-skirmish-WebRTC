@@ -3,6 +3,7 @@
  */
 import React, { useEffect, useState } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { clearWebrtcData } from '@/host/WebrtcStatePersistence'
 
 interface ReconnectingModalProps {
   isOpen: boolean
@@ -16,10 +17,7 @@ export const ReconnectingModal: React.FC<ReconnectingModalProps> = ({ isOpen, me
 
   // Handle exit button click - clears stored data and exits
   const handleExit = () => {
-    // Clear stored WebRTC data if exists
-    localStorage.removeItem('webrtc_guest_data')
-    localStorage.removeItem('webrtc_host_data')
-    localStorage.removeItem('webrtc_session_type')
+    clearWebrtcData()
     if (onExit) {
       onExit()
     }

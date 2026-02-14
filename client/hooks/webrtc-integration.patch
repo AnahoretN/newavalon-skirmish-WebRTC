@@ -1,0 +1,112 @@
+# WebRTC Integration Patch for useGameState.ts
+# This patch adds imports and helper functions to use the new WebRTC managers
+
+# Add after line 13 (after existing imports)
+import type { WebrtcMessage } from '../webrtc/types'
+import type { WebrtcEvent } from '../utils/webrtcManager'
+import { HostManager } from '../webrtc/host/HostManager'
+import { GuestManager } from '../webrtc/guest/GuestManager'
+
+# Add after line 2910 (before webrtcManagerRef initialization)
+  // Initialize WebRTC managers
+  const hostManagerRef = useRef<HostManager | null>(null)
+  const guestManagerRef = useRef<GuestManager | null>(null)
+
+  // Get current manager (host or guest) based on mode
+  const getCurrentManager = useCallback(() => {
+    return webrtcIsHostRef.current ? hostManagerRef.current : guestManagerRef.current
+  }, [webrtcIsHostRef])
+
+# Replace line 2911-2913 (webrtcManagerRef initialization)
+  with (hostManagerRef, guestManagerRef, getCurrentManager) {
+    // Initialize managers on first use
+    if (!hostManagerRef.current && !guestManagerRef.current && webrtcManagerRef.current) {
+      const manager = webrtcManagerRef.current
+
+      // Setup event handlers
+      manager.on('peer_open', (data) => {
+        setWebrtcHostId(data.peerId)
+        setConnectionStatus('Connected')
+      })
+      manager.on('guest_connected', (data) => {
+        setWebrtcHostId(data.peerId)
+      })
+      manager.on('guest_disconnected', () => {
+        logger.info('Guest disconnected')
+      })
+      manager.on('message_received', (data) => {
+        handleWebrtcMessage(data)
+      })
+      manager.on('error', (data) => {
+        logger.error('WebRTC error:', data)
+      })
+
+      hostManagerRef.current = manager
+      setWebrtcIsHost(true)
+    }
+    }
+
+# Replace line 2915-2917 (guest initialization)
+    with (hostManagerRef, guestManagerRef, getCurrentManager) {
+    // Initialize guest manager on first use
+    if (!guestManagerRef.current && !hostManagerRef.current && webrtcManagerRef.current) {
+      const manager = webrtcManagerRef.current
+
+      // Setup event handlers
+      manager.on('connected_to_host', () => {
+        setConnectionStatus('Connected')
+        recentlyRestoredFromStorageRef.current = false
+        // Clear stored reconnection data on successful connect
+        try {
+          localStorage.removeItem('webrtc_reconnection_data')
+        } catch (e) {}
+      })
+      manager.on('host_disconnected', () => {
+        setConnectionStatus('Disconnected')
+        setIsReconnecting(true)
+      })
+      manager.on('message_received', (data) => {
+        handleWebrtcMessage(data)
+      })
+      manager.on('error', (data) => {
+        logger.error('WebRTC error:', data)
+      })
+
+      guestManagerRef.current = manager
+      setWebrtcIsHost(false)
+    }
+    }
+  }
+
+# Add after line 3020 (before broadcastToGuests helper function)
+  // Helper to get current manager for broadcasting
+  const getManagerForBroadcast = useCallback(() => {
+    const manager = getCurrentManager()
+    if (!manager) {
+      logger.warn('No manager available for broadcast')
+      return null
+    }
+    return manager
+  }, [getCurrentManager, webrtcManagerRef.current])
+
+# Add after line 4630 (before sendWebrtcAction)
+  // Use current manager instead of direct webrtcManager calls
+  // This ensures proper state management through the managers
+  const sendWebrtcAction = useCallback((actionType: string, actionData: any) => {
+    const manager = getCurrentManager()
+    if (!manager) {
+      logger.warn('Cannot send action: no manager available')
+      return
+    }
+    return manager.sendAction(actionType, actionData)
+  }, [getCurrentManager])
+
+# Replace lines 1795-1805 (syncGameStateImages function)
+  // Remove manual syncing from useGameState - managers handle this
+  // (This function is now handled internally by the managers)
+
+# Note: This is a simplified patch focusing on:
+# 1. Adding imports for new managers
+# 2. Creating manager refs
+# 3. Initializing managers based on isHost
+# 4. Replacing direct webrtcManager calls with manager method calls

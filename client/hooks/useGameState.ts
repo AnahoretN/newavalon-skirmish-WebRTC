@@ -11,11 +11,13 @@ import { logger } from '../utils/logger'
 import { initializeReadyStatuses, removeAllReadyStatuses } from '../utils/autoAbilities'
 import { deepCloneState, TIMING } from '../utils/common'
 import { getWebrtcManager, type WebrtcEvent } from '../utils/webrtcManager'
+import { toggleActivePlayer as toggleActivePlayerPhase, passTurnToNextPlayer, playerHasCardsOnBoard, performPreparationPhase } from '../host/PhaseManagement'
 import {
   applyStateDelta,
   createDeltaFromStates,
   isDeltaEmpty
 } from '../utils/stateDelta'
+import { saveGuestData, saveHostData, saveWebrtcState, loadGuestData, loadHostData, loadWebrtcState, getRestorableSessionType, clearWebrtcData, broadcastHostPeerId, getHostPeerIdForGame, clearHostPeerIdBroadcast } from '../host/WebrtcStatePersistence'
 
 // Helper to determine the correct WebSocket URL
 const getWebSocketURL = () => {
@@ -476,8 +478,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     }
 
     // Check if there's a restorable session
-    // NOTE: WebRTC P2P mode has been removed - this code is kept for future reference
-    const sessionType = 'none' // getRestorableSessionType() - function removed with host/ directory
+    const sessionType = getRestorableSessionType()
     if (sessionType === 'none') {
       logger.info('[Auto-restore] No restorable session found')
       return
