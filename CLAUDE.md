@@ -14,6 +14,7 @@ npm run dev   # Start development server (tsx + Vite HMR)
 This version uses a **split deployment** strategy:
 - **Client**: Static files hosted on GitHub Pages
 - **Server**: Runs locally, exposed via ngrok for remote players
+- **Shared**: Common code shared between client and server
 
 Players configure the WebSocket URL in Settings to connect to any game server.
 
@@ -103,10 +104,10 @@ Before commit **MANDATORY**:
 ```text
 /
 ├── client/                       # Client-side application
-│   ├── components/               # React UI components (23 files)
+│   ├── components/               # React UI components (24 files)
 │   │   ├── GameBoard.tsx         # React.FC({board: Board, isGameStarted: boolean, activeGridSize: GridSize, handleDrop: (item: DragItem, target: DropTarget) => void, draggedItem: DragItem | null, setDraggedItem: (item: DragItem | null) => void, openContextMenu: (e: React.MouseEvent, type: 'boardItem' | 'emptyBoardCell', data: any) => void, playMode: { card: Card; sourceItem: DragItem; faceDown?: boolean } | null, setPlayMode: (mode: null) => void, highlight: HighlightData | null, playerColorMap: Map<number, PlayerColor>, localPlayerId: number | null, onCardDoubleClick: (card: Card, boardCoords: { row: number; col: number }) => void, onEmptyCellDoubleClick: (boardCoords: { row: number; col: number }) => void, imageRefreshVersion?: number, cursorStack: { type: string; count: number } | null, currentPhase?: number, activePlayerId?: number, onCardClick?: (card: Card, boardCoords: { row: number; col: number }) => void, onEmptyCellClick?: (boardCoords: { row: number; col: number }) => void, validTargets?: {row: number, col: number}[], noTargetOverlay?: {row: number, col: number} | null, disableActiveHighlights?: boolean, preserveDeployAbilities?: boolean, activeFloatingTexts?: FloatingTextData[], abilitySourceCoords?: { row: number, col: number } | null, abilityCheckKey?: number})
 │   │   ├── PlayerPanel.tsx       # React.FC({player: Player, isLocalPlayer: boolean, localPlayerId: number | null, isSpectator: boolean, isGameStarted: boolean, onNameChange: (name: string) => void, onColorChange: (color: PlayerColor) => void, onScoreChange: (delta: number) => void, onDeckChange: (deckType: DeckType) => void, onLoadCustomDeck: (deckFile: CustomDeckFile) => void, onDrawCard: () => void, handleDrop: (item: DragItem, target: DropTarget) => void, draggedItem: DragItem | null, setDraggedItem: (item: DragItem | null) => void, openContextMenu: (e: React.MouseEvent, type: ContextMenuParams['type'], data: ContextMenuData) => void, onHandCardDoubleClick: (player: Player, card: Card, index: number) => void, playerColorMap: Map<number, PlayerColor>, allPlayers: Player[], localPlayerTeamId?: number, activePlayerId?: number, onToggleActivePlayer: (playerId: number) => void, imageRefreshVersion: number, layoutMode: 'list-local' | 'list-remote', onCardClick?: (player: Player, card: Card, index: number) => void, validHandTargets?: { playerId: number, cardIndex: number }[], onAnnouncedCardDoubleClick?: (player: Player, card: Card) => void, currentPhase: number, disableActiveHighlights?: boolean, preserveDeployAbilities?: boolean, roundWinners?: Record<number, number[]>, startingPlayerId?: number, onDeckClick?: (playerId: number) => void, isDeckSelectable?: boolean})
-│   │   ├── Card.tsx              # React.FC with split props: CardCoreProps({card: Card, isFaceUp: boolean, playerColorMap: Map<number, PlayerColor>, imageRefreshVersion?: number, smallStatusIcons?: boolean, extraPowerSpacing?: boolean, hidePower?: boolean}) and CardInteractionProps({localPlayerId?: number | null, disableTooltip?: boolean, activePhaseIndex?: number, activePlayerId?: number, disableActiveHighlights?: boolean, preserveDeployAbilities?: boolean, activeAbilitySourceCoords?: { row: number, col: number } | null, boardCoords?: { row: number, col: number } | null, abilityCheckKey?: number})
+│   │   ├── Card.tsx              # React.FC with split props: CardCoreProps({card: Card, isFaceUp: boolean, playerColorMap: Map<number, PlayerColor>, imageRefreshVersion?: number, smallStatusIcons?: boolean, extraPowerSpacing?: boolean, hidePower?: boolean}) and CardInteractionProps({localPlayerId?: number | null, disableTooltip?: boolean, activePhaseIndex?: number, activePlayerId?: number, disableActiveHighlights?: boolean, preserveDeployAbilities?: boolean, activeAbilitySourceCoords?: { row: number, col: number } | null, boardCoords?: { row: number; col: number } | null, abilityCheckKey?: number})
 │   │   ├── Header.tsx            # React.FC with InvitePlayerMenu for game invites (copy link with gameId + encoded server URL), StatusIndicator (connection status), RoundTracker, PhaseControls, GameSettings menu
 │   │   ├── MainMenu.tsx          # React.FC with connectionStatus and forceReconnect props, passes to SettingsModal
 │   │   ├── TopDeckView.tsx       # React.FC({players: Player[], localPlayerId: number | null, gameState: GameState | null, onPlayerClick: (playerId: number) => void, t: (key: string) => string})
@@ -114,7 +115,7 @@ Before commit **MANDATORY**:
 │   │   ├── TeamAssignmentModal.tsx # React.FC({players: Player[], gameMode: GameMode, onCancel: () => void, onConfirm: (teams: any) => void})
 │   │   ├── ReadyCheckModal.tsx   # React.FC({players: Player[], localPlayer: Player, onReady: () => void, onCancel: () => void})
 │   │   ├── CardDetailModal.tsx   # React.FC({card: Card | null, ownerPlayer: Player | null, onClose: () => void, statusDescriptions: Record<string, string>, allPlayers: Player[], imageRefreshVersion?: number})
-│   │   ├── DeckViewModal.tsx     # React.FC({isOpen: boolean, onClose: () => void, title: string, player: Player, cards: Card[], setDraggedItem: (item: DragItem | null) => void, onCardContextMenu: (e: React.MouseEvent, card: Card, source: string) => void, onCardDoubleClick: (card: Card, source: string) => void, onCardClick: (card: Card, source: string) => void, canInteract: boolean, isDeckView?: boolean, playerColorMap: Map<number, PlayerColor>, localPlayerId: number | null, imageRefreshVersion?: number, highlightFilter?: string})
+│   │   ├── DeckViewModal.tsx     # React.FC({isOpen: boolean, onClose: () => void, title: string, player: Player, cards: Card[], setDraggedItem: (item: DragItem | null) => void, onCardContextMenu: (e: React.MouseEvent, card: Card, source: string) => void, onCardDoubleClick: (card: Card, source: string) => void, onCardClick: (card: Card, source: string) => void, canInteract: boolean, isDeckView?: boolean, playerColorMap: Map<number, PlayerColor>, localPlayerId: number | null, imageRefreshVersion?: number, highlightFilter?: (card: Card) => boolean})
 │   │   ├── TokensModal.tsx       # React.FC({isOpen: boolean, onClose: () => void, setDraggedItem: (item: DragItem | null) => void, openContextMenu: (e: React.MouseEvent, type: string, data: any) => void, canInteract: boolean, anchorEl: HTMLElement | null, imageRefreshVersion?: number, draggedItem: DragItem | null})
 │   │   ├── CountersModal.tsx     # React.FC({isOpen: boolean, onClose: () => void, setDraggedItem: (item: DragItem | null) => void, canInteract: boolean, anchorEl: HTMLElement | null, imageRefreshVersion?: number, onCounterMouseDown: (counter: any) => void, cursorStack: { type: string; count: number } | null})
 │   │   ├── DeckBuilderModal.tsx  # React.FC({isOpen: boolean, onClose: () => void, setViewingCard: (card: Card | null) => void}) - Now supports text deck format (.txt) export/import with format "Nx Card Name"
@@ -125,29 +126,47 @@ Before commit **MANDATORY**:
 │   │   ├── RevealRequestModal.tsx # React.FC({fromPlayer: Player, cardCount: number, onAccept: () => void, onDecline: () => void})
 │   │   ├── RoundEndModal.tsx     # React.FC({gameState: GameState, onConfirm: () => void, localPlayerId: number | null, onExit: () => void})
 │   │   ├── ContextMenu.tsx       # React.FC({x: number, y: number, items: ContextMenuItem[], onClose: () => void})
-│   │   └── Tooltip.tsx           # React.FC({x: number; y: number; children: React.ReactNode}) + export { Tooltip, CardTooltipContent }
+│   │   ├── Tooltip.tsx           # React.FC({x: number; y: number; children: React.ReactNode}) + export { Tooltip, CardTooltipContent }
+│   │   ├── BaseModal.tsx         # NEW: Base modal component with consistent styling and behavior
+│   │   └── TargetSelectionEffect.tsx
 │   ├── contexts/                 # React Context providers
-│   └── LanguageContext.tsx       # export const LanguageProvider: React.FC<{ children: ReactNode }>, export const useLanguage: () => {language: LanguageCode; setLanguage: (lang: LanguageCode) => void; t: (key: keyof TranslationResource['ui']) => string; getCardTranslation: (cardId: string) => CardTranslation | undefined; getCounterTranslation: (type: string) => { name: string; description: string } | undefined; resources: TranslationResource; isRTL: boolean}
+│   │   └── LanguageContext.tsx       # export const LanguageProvider: React.FC<{ children: ReactNode }>, export const useLanguage: () => {language: LanguageCode; setLanguage: (lang: LanguageCode) => void; t: (key: string) => string; getCardTranslation: (cardId: string) => CardTranslation | undefined; getCounterTranslation: (type: string) => { name: string; description: string } | undefined; resources: TranslationResource; isRTL: boolean}
 │   ├── hooks/                    # Custom React hooks (4 files)
 │   │   ├── useGameState.ts       # export const useGameState: () => {gameState: GameState, localPlayerId: number | null, setLocalPlayerId: (id: number | null) => void, draggedItem: DragItem | null, setDraggedItem: (item: DragItem | null) => void, connectionStatus: ConnectionStatus ('Connecting' | 'Connected' | 'Disconnected'), gamesList: any[], latestHighlight: HighlightData | null, latestFloatingTexts: FloatingTextData[], latestNoTarget: {row: number, col: number} | null, setTargetingMode, clearTargetingMode, createGame, joinGame, requestGamesList, exitGame, startReadyCheck, cancelReadyCheck, playerReady, assignTeams, setGameMode, setGamePrivacy, setActiveGridSize, setDummyPlayerCount, updatePlayerName, changePlayerColor, updatePlayerScore, changePlayerDeck, loadCustomDeck, drawCard, shufflePlayerDeck, playCard, moveCard, returnCardToHand, announceCard, endTurn, playCounter, playToken, destroyCard, addCommand, cancelPendingCommand, executePendingCommand, handleQuickDrop, forceReconnect}
 │   │   ├── useAppCommand.ts      # export const useAppCommand: ({gameState, localPlayerId, draggedItem, setDraggedItem, openContextMenu, playMode, setPlayMode, setCursorStack, playerColorMap}) => {playCard, moveCard, returnCardToHand, announceCard, endTurn, playCounter, playToken, destroyCard, addCommand, cancelPendingCommand, executePendingCommand, handleQuickDrop}
 │   │   ├── useAppAbilities.ts    # export const useAppAbilities: ({gameState, localPlayerId, setCursorStack, playerColorMap}) => {handleDeployAbility}
 │   │   └── useAppCounters.ts     # export const useAppCounters: ({gameState, localPlayerId}) => {handleStackInteraction}
-│   ├── utils/                    # Client-side utilities (6 files)
-│   │   ├── boardUtils.ts         # export const createInitialBoard: () => Board, export const recalculateBoardStatuses: (gameState: GameState) => Board
-│   │   ├── targeting.ts          # export const validateTarget: (action: AbilityAction, sourceCardId: string, targetCardId: string, sourceCoords: {row: number, col: number}, targetCoords: {row: number, col: number}, gameState: GameState, playerId: number) => boolean, export const calculateValidTargets: (action: AbilityAction, sourceCardId: string, sourceCoords: {row: number, col: number}, gameState: GameState, playerId: number, commandContext?: CommandContext) => {row: number, col: number}[], export const checkActionHasTargets: (action: AbilityAction, currentGameState: GameState, playerId: number | null, commandContext?: CommandContext) => boolean
+│   ├── host/                     # WebRTC P2P host system (11 files)
+│   │   ├── types.ts              # Type definitions for WebRTC host
+│   │   ├── HostManager.ts        # Main host class
+│   │   ├── HostConnectionManager.ts # Connection management
+│   │   ├── HostStateManager.ts   # State management
+│   │   ├── GuestStateSync.ts    # Guest state synchronization
+│   │   ├── HostMessageHandler.ts # Message handling
+│   │   ├── VisualEffects.ts      # Visual effects broadcasting
+│   │   ├── TimerSystem.ts       # Disconnect/inactivity timers
+│   │   ├── GameLogger.ts        # Game action logging
+│   │   ├── PhaseManagement.ts   # Phase transitions, round management
+│   │   └── ReconnectionManager.ts
+│   ├── utils/                    # Client-side utilities (7 files)
+│   │   ├── boardUtils.ts         # export const createInitialBoard: () => Board, export const recalculateBoardStatuses: (gameState: GameState) => Board - NOW IMPORTED FROM SHARED
+│   │   ├── targeting.ts          # export const validateTarget: (action: AbilityAction, sourceCardId: string, targetCardId: string, sourceCoords: {row: number, col: number}, targetCoords: {row: number, col: number}, gameState: GameState, playerId: number) => boolean, export const calculateValidTargets: (action: AbilityAction, sourceCardId: string, sourceCoords: {row: number, col: number}, gameState: GameState, playerId: number) => {row: number, col: number}[], export const checkActionHasTargets: (action: AbilityAction, currentGameState: GameState, playerId: number | null, commandContext?: CommandContext) => boolean - NOW IMPORTED FROM SHARED
 │   │   ├── commandLogic.ts       # export const getCommandAction: (cardId: string) => AbilityAction[]
-│   │   ├── autoAbilities.ts      # export const canActivateAbility: (card: Card, phaseIndex: number, activeTurnPlayerId: number | undefined) => boolean, export const getCardAbilityAction: (card: Card, gameState: GameState, trigger: 'deploy' | 'turn_start' | 'turn_end', sourceCoords?: {row: number, col: number}) => AbilityAction[]
+│   │   ├── autoAbilities.ts      # Re-exports server autoAbilities for client
 │   │   ├── textFormatters.ts     # export const formatAbilityText: (ability: string) => React.ReactNode
 │   │   ├── textDeckFormat.ts     # Text-based deck format parser/exporter (format: "Nx Card Name"), export const parseTextDeckFormat: (textContent: string) => TextDeckParseResult, export const exportToTextDeckFormat: (deckFile: CustomDeckFile) => string
-│   │   └── deckValidation.ts     # export const validateDeckData: (data: any) => DeckValidationResult
+│   │   ├── deckValidation.ts     # export const validateDeckData: (data: any) => DeckValidationResult
+│   │   ├── common.ts             # Shared utilities (deepCloneState, TIMING, color functions)
+│   │   ├── inviteLinks.ts        # Invite link generation/parsing
+│   │   ├── stateDelta.ts         # State delta utilities for WebRTC optimization
+│   │   └── webrtcManager.ts      # WebRTC P2P connection manager
 │   ├── locales/                  # Translation system
 │   │   ├── index.ts              # export const resources: Record<LanguageCode, TranslationResource>, export const LANGUAGE_NAMES: Record<LanguageCode, string>, export const AVAILABLE_LANGUAGES (en, ru, sr), includes new translations: saveJson, saveText, loadTextDeck, cannotSaveEmptyDeck
 │   │   ├── types.ts              # type LanguageCode, interface CardTranslation, interface CounterTranslation, interface TranslationResource
 │   │   └── ru.ts, sr.ts          # Translation files with same structure as en
 │   ├── App.tsx                   # export default function App - includes useEffect for auto-joining games from invite links (checks sessionStorage for invite_game_id)
 │   ├── index.tsx                 # Entry point - parses URL params (game, s) for invite links, stores invite_game_id in sessionStorage, decodes and saves WebSocket URL to localStorage
-│   ├── types.ts                  # enum DeckType, enum GameMode, type SpecialItemType, type PlayerColor, type GridSize, interface CardStatus, interface CounterDefinition, interface Card, interface Player, interface Cell, type Board, type CardIdentifier, interface RevealRequest, interface HighlightData, interface FloatingTextData, interface TargetingModeData, interface GameState, interface DragItem, interface DropTarget, interface CustomDeckCard, interface CustomDeckFile, type ContextMenuItem, type ContextMenuParams, interface CursorStackState, interface CommandContext
+│   ├── types.ts                  # enum DeckType, enum GameMode, type SpecialItemType, type PlayerColor, type GridSize, interface CardStatus, interface CounterDefinition, interface Card, interface Player, interface Cell, type Board, type CardIdentifier, interface RevealRequest, interface HighlightData, interface FloatingTextData, interface DeckSelectionData, interface HandCardSelectionData, interface TargetingModeData, interface GameState, interface DragItem, interface DropTarget, interface CustomDeckCard, interface CustomDeckFile, type ContextMenuItem, type ContextMenuParams, interface CursorStackState, interface CommandContext
 │   ├── constants.ts              # export const MAX_PLAYERS, DECK_THEMES, PLAYER_COLORS, FLOATING_TEXT_COLORS, PLAYER_COLOR_NAMES, TURN_PHASES, STATUS_ICONS, STATUS_DESCRIPTIONS, AVAILABLE_COUNTERS, COUNTERS, shuffleDeck, PLAYER_POSITIONS
 │   ├── contentDatabase.ts        # export const rawJsonData, export type CardDefinition, export const cardDatabase, export const tokenDatabase, export const countersDatabase, export const deckFiles, export const commandCardIds, export const decksData, export const getSelectableDecks, export function getCardDefinition, export function getCardDefinitionByName, export function getAllCards
 │   ├── vite.config.ts            # export default defineConfig: (options: { command: string }) => UserConfig
@@ -167,7 +186,7 @@ Before commit **MANDATORY**:
 │   │   ├── deckData.ts           # export function handleUpdateDeckData(ws, data)
 │   │   ├── playerSettings.ts     # export function handleUpdatePlayerName(ws, data), export function handleChangePlayerColor(ws, data), export function handleUpdatePlayerScore(ws, data), export function handleChangePlayerDeck(ws, data), export function handleLoadCustomDeck(ws, data), export function handleSetDummyPlayerCount(ws, data), export function handleLogGameAction(ws, data), export function handleGetGameLogs(ws, data)
 │   │   └── phaseManagement.ts    # export function handleToggleAutoAbilities(ws, data), export function handleNextPhase(ws, data), export function handlePrevPhase(ws, data), export function handleSetPhase(ws, data), export function performDrawPhase(gameState), export function handleToggleAutoDraw(ws, data), export function handleToggleActivePlayer(ws, data), export function handleStartNextRound(ws, data), export function handleStartNewMatch(ws, data), includes getRoundVictoryThreshold(round), checkRoundEnd(gameState), endRound(gameState)
-│   ├── utils/                    # Server utilities (4 files)
+│   ├── utils/                    # Server utilities (4 files - boardUtils and targeting moved to shared)
 │   │   ├── logger.ts             # export const logger: Logger (info, warn, error, debug methods)
 │   │   ├── config.ts             # export const CONFIG: {MAX_PLAYERS, MAX_ACTIVE_GAMES, MAX_MESSAGE_SIZE, MAX_GAME_STATE_SIZE, MAX_STRING_LENGTH, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW, INACTIVITY_TIMEOUT, GAME_CLEANUP_DELAY, PLAYER_DUMMY_DELAY}, export function validateConfig()
 │   │   ├── security.ts           # export function sanitizeString(input, maxLength), export function sanitizePlayerName(name), export function validateGameStateSize(gameState), export function validateMessageSize(message), export function generateSecureGameId()
@@ -177,6 +196,13 @@ Before commit **MANDATORY**:
 │   ├── content/                  # Game content data
 │   │   └── contentDatabase.json  # Cards, tokens, decks definitions
 │   └── dev.ts                    # Development server entry point (no exports)
+├── shared/                     # Shared code between client and server
+│   ├── types/                    # Shared type definitions
+│   │   └── index.ts              # All shared types (DeckType, GameMode, PlayerColor, Card, Player, Board, GameState, etc.)
+│   ├── utils/                    # Shared utilities
+│   │   ├── array.ts              # Shared array utilities (shuffleDeck)
+│   │   ├── boardUtils.ts         # Board utilities (createInitialBoard, recalculateBoardStatuses)
+│   │   └── targeting.ts          # Targeting utilities (validateTarget, calculateValidTargets, checkActionHasTargets)
 ├── Dockerfile                    # (no exports - build configuration)
 ├── index.html                    # (no exports - HTML template)
 ├── package.json                  # (no exports - dependencies and scripts)
@@ -229,7 +255,7 @@ Before commit **MANDATORY**:
 
 ### Games List Request
 1. **client/hooks/useGameState.ts** - `ws.current.send(JSON.stringify({ type: 'GET_GAMES_LIST' }))` (line 317)
-2. **server/services/websocket.ts** - `routeMessage` → `handleGetGamesList` (line 167, line 343)
+2. **server/services/websocket.ts** - `routeMessage` → `handleGetGamesList` (line 167)
 3. **server/services/gameState.ts** - `getPublicGames()` filters non-private games (line 151)
 4. **server/services/websocket.ts** - `sendToClient(ws, { type: 'GAMES_LIST', games: publicGames })` (line 345)
 5. **client/hooks/useGameState.ts** - `if (data.type === 'GAMES_LIST') { setGamesList(data.games) }` (line 204)
@@ -239,7 +265,7 @@ Before commit **MANDATORY**:
 2. **server/services/websocket.ts** - `routeMessage` → `handleJoinGame` (line 170)
 3. **server/handlers/gameManagement.ts** - `associateClientWithGame(ws, gameId)` (line 119)
 4. **server/handlers/gameManagement.ts** - `ws.send(JSON.stringify({ type: 'JOIN_SUCCESS', playerId, playerToken }))` (line 204-207)
-5. **server/handlers/gameManagement.ts** - `broadcastToGame(gameId, gameState)` (line 210)
+5. **server/services/websocket.ts** - `broadcastToGame(gameId, gameState)` (line 210)
 6. **client/hooks/useGameState.ts** - `if (data.type === 'JOIN_SUCCESS') { setLocalPlayerId(data.playerId) }` (line 206)
 
 ### Invite Link System
@@ -267,13 +293,6 @@ Before commit **MANDATORY**:
 - **websocket_url**: Active/verified server URL (saved by getWebSocketURL and onopen handler)
 - **client/hooks/useGameState.ts** - `getWebSocketURL()` saves validated URL to `websocket_url` (line 41)
 - **client/hooks/useGameState.ts** - `ws.current.onopen` saves active URL to `websocket_url` (line 370)
-
-### Copy Game Link (SettingsModal)
-1. **client/components/SettingsModal.tsx** - `handleCopyGameLink()` (line 95-121)
-2. Gets baseUrl: `window.location.origin`
-3. Gets active server URL: `localStorage.getItem('websocket_url')`
-4. Creates link: `${baseUrl}?s=${encodedServerUrl}` (no game ID, just server config)
-5. Button only active when `isConnected && !hasUnsavedChanges`
 
 ### Host Game Creation & Deck Sync
 1. **client/hooks/useGameState.ts** - Player 1 sends: `ws.current.send(JSON.stringify({ type: 'UPDATE_DECK_DATA', deckData: rawJsonData }))` (line 311)
@@ -303,7 +322,7 @@ The universal targeting mode system provides a synchronized way to show valid ta
 
 #### Targeting Mode Activation
 1. **client/hooks/useGameState.ts** - `setTargetingMode(action, playerId, sourceCoords?, commandContext?)` (line 2515-2561)
-   - Calculates valid board targets using `calculateValidTargetsUtil` from server/utils/targeting.ts
+   - Calculates valid board targets using `calculateValidTargets` from **shared/utils/targeting.ts**
    - Creates `TargetingModeData` object with action, playerId, sourceCoords, timestamp, boardTargets
    - Updates local gameState.targetingMode immediately
    - Broadcasts `SET_TARGETING_MODE` message to server
@@ -314,7 +333,7 @@ The universal targeting mode system provides a synchronized way to show valid ta
    - Broadcasts `TARGETING_MODE_SET` to all clients
 4. **client/hooks/useGameState.ts** - `if (data.type === 'TARGETING_MODE_SET')` (line 641-654)
    - All clients update their local gameState.targetingMode
-   - Visual highlights appear on GameBoard using the targeting player's color
+   - Visual highlights appear on GameBoard using targeting player's color
 
 #### Targeting Mode Clearing
 1. **client/hooks/useGameState.ts** - `clearTargetingMode()` (line 2567-2586)
@@ -331,7 +350,7 @@ The universal targeting mode system provides a synchronized way to show valid ta
 #### Visual Display (GameBoard)
 - **client/components/GameBoard.tsx** - `targetingMode` prop (line 37)
 - Valid targets from `targetingMode.boardTargets` are combined with local `validTargets`
-- Each valid target cell is highlighted with dashed border in the targeting player's color
+- Each valid target cell is highlighted with dashed border in targeting player's color
 - Highlights are visible to ALL players, but only the targeting player can click to select
 
 #### TargetingModeData Structure
@@ -412,4 +431,3 @@ interface TargetingModeData {
    - `Math.floor(Math.random() * allPlayers.length)` selects index
    - Sets both `startingPlayerId` and `activePlayerId` to selected player
    - Triggers Draw phase for starting player (7th card after initial 6)
-

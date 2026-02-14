@@ -5,19 +5,17 @@ import type { GameState, Player, Board, GridSize, Card, DragItem, DropTarget, Pl
 import { PLAYER_COLOR_NAMES, MAX_PLAYERS } from '../constants'
 import { shuffleDeck } from '@shared/utils/array'
 import { getDecksData, countersDatabase, rawJsonData, getCardDefinition, getCardDefinitionByName, commandCardIds } from '../content'
-import { createInitialBoard, recalculateBoardStatuses } from '@server/utils/boardUtils'
-import { calculateValidTargets } from '@server/utils/targeting'
+import { createInitialBoard, recalculateBoardStatuses } from '@shared/utils/boardUtils'
+import { calculateValidTargets } from '@shared/utils/targeting'
 import { logger } from '../utils/logger'
 import { initializeReadyStatuses, removeAllReadyStatuses } from '../utils/autoAbilities'
 import { deepCloneState, TIMING } from '../utils/common'
 import { getWebrtcManager, type WebrtcEvent } from '../utils/webrtcManager'
-import { toggleActivePlayer as toggleActivePlayerPhase, passTurnToNextPlayer, playerHasCardsOnBoard, performPreparationPhase } from '../host/PhaseManagement'
 import {
   applyStateDelta,
   createDeltaFromStates,
   isDeltaEmpty
 } from '../utils/stateDelta'
-import { saveGuestData, saveHostData, saveWebrtcState, loadGuestData, loadHostData, loadWebrtcState, getRestorableSessionType, clearWebrtcData, broadcastHostPeerId, getHostPeerIdForGame, clearHostPeerIdBroadcast } from '../host/WebrtcStatePersistence'
 
 // Helper to determine the correct WebSocket URL
 const getWebSocketURL = () => {
@@ -478,7 +476,8 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     }
 
     // Check if there's a restorable session
-    const sessionType = getRestorableSessionType()
+    // NOTE: WebRTC P2P mode has been removed - this code is kept for future reference
+    const sessionType = 'none' // getRestorableSessionType() - function removed with host/ directory
     if (sessionType === 'none') {
       logger.info('[Auto-restore] No restorable session found')
       return

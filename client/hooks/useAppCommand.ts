@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import type { Card, GameState, AbilityAction, CommandContext, DragItem, CounterSelectionData } from '@/types'
 import { getCommandAction } from '@server/utils/commandLogic'
 import { deepCloneState } from '@/utils/common'
-import { recalculateBoardStatuses } from '@server/utils/boardUtils'
+import { recalculateBoardStatuses } from '@shared/utils/boardUtils'
 
 interface UseAppCommandProps {
     gameState: GameState;

@@ -57,6 +57,25 @@ export const PLAYER_COLORS: { [key in PlayerColor]: { bg: string, border: string
 }
 
 /**
+ * Common CSS constants for modals and panels.
+ */
+export const MODAL_SIZE_CLASSES = {
+  sm: 'max-w-md',
+  md: 'max-w-lg',
+  lg: 'max-w-2xl',
+  xl: 'max-w-4xl',
+  full: 'max-w-full',
+} as const
+
+export const MODAL_COMMON_CLASSES = {
+  base: 'bg-gray-800 rounded-lg shadow-xl w-auto',
+  inner: 'p-4',
+  header: 'bg-gray-800 rounded-lg p-4 border-b border-gray-700',
+  footer: 'flex items-center justify-end gap-2 mt-4 pt-4 border-t border-gray-700',
+  closeButton: 'text-gray-400 hover:text-white transition-colors p-1 rounded',
+} as const
+
+/**
  * RGB color values for player colors (used in gradients).
  */
 export const PLAYER_COLOR_RGB: Record<PlayerColor, { r: number; g: number; b: number }> = {

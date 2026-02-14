@@ -1,7 +1,7 @@
 import { useCallback, useEffect } from 'react'
 import type { Card, GameState, AbilityAction, CommandContext, DragItem, Player, CounterSelectionData, CursorStackState, FloatingTextData } from '@/types'
 import { getCardAbilityAction, canActivateAbility } from '@server/utils/autoAbilities'
-import { checkActionHasTargets, validateTarget } from '@server/utils/targeting'
+import { checkActionHasTargets, validateTarget } from '@shared/utils/targeting'
 import { hasReadyAbilityInCurrentPhase } from '@/utils/autoAbilities'
 import { TIMING } from '@/utils/common'
 

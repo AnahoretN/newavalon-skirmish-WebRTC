@@ -38,7 +38,7 @@ import type {
 import { GameMode, DeckType } from './types'
 import { STATUS_ICONS, STATUS_DESCRIPTIONS } from './constants'
 import { countersDatabase, fetchContentDatabase } from './content'
-import { validateTarget, calculateValidTargets, checkActionHasTargets } from '@server/utils/targeting'
+import { validateTarget, calculateValidTargets, checkActionHasTargets } from '@shared/utils/targeting'
 import { getCommandAction } from '@server/utils/commandLogic'
 import { useLanguage } from './contexts/LanguageContext'
 import { TIMING } from './utils/common'
