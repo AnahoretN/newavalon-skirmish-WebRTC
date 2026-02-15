@@ -143,7 +143,6 @@ const App = memo(function App() {
     latestHandCardSelections,
     // WebRTC props
     webrtcHostId,
-    webrtcIsHost, // eslint-disable-line @typescript-eslint/no-unused-vars
     initializeWebrtcHost,
     connectAsGuest,
     // Reconnection props
@@ -893,9 +892,9 @@ const App = memo(function App() {
           // For complex commands, we need to get the actions that will be available
           // Try option 0 (first option) to see what targets it needs
           try {
-            const optionActions = getCommandAction(commandModalCard.id, 0, commandModalCard, gameState, commandModalCard.ownerId!)
-            optionActions.forEach(action => {
-              const targets = calculateValidTargets(action, gameState, commandModalCard.ownerId!, commandContext)
+            const optionActions = getCommandAction(commandModalCard.id, 0, commandModalCard as any, gameState as any, commandModalCard.ownerId!)
+            optionActions.forEach((action: any) => {
+              const targets = calculateValidTargets(action as any, gameState as any, commandModalCard.ownerId!, commandContext)
               targets.forEach(t => {
                 if (!boardTargets.some(bt => bt.row === t.row && bt.col === t.col)) {
                   boardTargets.push(t)
@@ -1983,7 +1982,6 @@ const App = memo(function App() {
         isGameStarted={gameState.isGameStarted}
         isPrivate={gameState.isPrivate}
         initializeWebrtcHost={initializeWebrtcHost}
-        connectAsGuest={connectAsGuest}
       />
     )
   }

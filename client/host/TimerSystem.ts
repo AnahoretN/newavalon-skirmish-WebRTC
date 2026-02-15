@@ -48,14 +48,12 @@ export interface TimerEvents {
  * Timer System Manager
  */
 export class TimerSystem {
-  private connectionManager: HostConnectionManager
   private timers: Map<string, TimerEntry> = new Map()
   private events: TimerEvents
   private lastActivityTime: number = Date.now()
   private gameState: GameState | null = null
 
-  constructor(connectionManager: HostConnectionManager, events: TimerEvents = {}) {
-    this.connectionManager = connectionManager
+  constructor(_connectionManager: HostConnectionManager, events: TimerEvents = {}) {
     this.events = events
   }
 
@@ -206,7 +204,7 @@ export class TimerSystem {
    * Check if any disconnect timers are active
    */
   hasActiveDisconnectTimers(): boolean {
-    for (const [key, timer] of this.timers) {
+    for (const [, timer] of this.timers) {
       if (timer.type === 'disconnect') {return true}
     }
     return false
@@ -217,7 +215,7 @@ export class TimerSystem {
    */
   getPlayerTimers(playerId: number): TimerType[] {
     const playerTimers: TimerType[] = []
-    for (const [key, timer] of this.timers) {
+    for (const [, timer] of this.timers) {
       if (timer.playerId === playerId) {
         playerTimers.push(timer.type)
       }
@@ -254,7 +252,7 @@ export class TimerSystem {
    * Clear all timers
    */
   clearAllTimers(): void {
-    for (const [key, timer] of this.timers) {
+    for (const [, timer] of this.timers) {
       clearTimeout(timer.timeoutId)
     }
     this.timers.clear()

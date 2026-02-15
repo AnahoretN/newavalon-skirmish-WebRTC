@@ -28,7 +28,7 @@ export interface WebrtcHostData {
   peerId: string
   isHost: true
   timestamp: number
-  playerName?: string
+  playerName?: string | null
 }
 
 /**

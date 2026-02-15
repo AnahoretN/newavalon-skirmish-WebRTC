@@ -48,6 +48,41 @@ export type WebrtcMessageType =
   | 'TOGGLE_AUTO_DRAW'     // Toggle auto draw
   | 'START_NEXT_ROUND'     // Start next round
   | 'RESET_DEPLOY_STATUS'  // Reset deploy status
+  // Visual effects messages (rebroadcast by host to all guests)
+  | 'TRIGGER_HIGHLIGHT'    // Highlight a cell on the board
+  | 'TRIGGER_FLOATING_TEXT'// Show floating text
+  | 'TRIGGER_FLOATING_TEXT_BATCH' // Show multiple floating texts
+  | 'TRIGGER_NO_TARGET'    // Show "no target" overlay
+  | 'SET_TARGETING_MODE'   // Set targeting/selection mode for ability
+  | 'CLEAR_TARGETING_MODE' // Clear targeting mode
+  | 'SYNC_VALID_TARGETS'   // Sync valid targets for ability
+  | 'TRIGGER_DECK_SELECTION' // Trigger deck selection
+  | 'TRIGGER_HAND_CARD_SELECTION' // Trigger hand card selection
+  // Ability activation messages
+  | 'ABILITY_ACTIVATED'    // Player activated an ability (guest -> host)
+  | 'ABILITY_MODE_SET'     // Host broadcasts ability mode to all
+  | 'ABILITY_COMPLETED'    // Ability execution completed
+  | 'ABILITY_TARGET_SELECTED' // Target selected for ability
+  | 'ABILITY_CANCELLED'    // Ability was cancelled
+  | 'ACTIVE_PLAYER_CHANGED' // Active player changed notification
+  // Reconnection messages
+  | 'RECONNECT_REQUEST'    // Guest requests reconnection after disconnect
+  | 'RECONNECT_ACCEPT'     // Host accepts reconnection, sends current state
+  | 'RECONNECT_REJECT'     // Host rejects reconnection (timeout/game over)
+  | 'PLAYER_DISCONNECTED'  // Host broadcasts player disconnected
+  | 'PLAYER_RECONNECTED'   // Host broadcasts player reconnected
+  | 'PLAYER_CONVERTED_TO_DUMMY' // Host broadcasts player converted to dummy
+  | 'RECONNECT_SNAPSHOT'   // Snapshot for reconnection
+  | 'HIGHLIGHT_TRIGGERED'  // Highlight was triggered
+  | 'FLOATING_TEXT_TRIGGERED' // Floating text was triggered
+  | 'FLOATING_TEXT_BATCH_TRIGGERED' // Batch floating text was triggered
+  | 'NO_TARGET_TRIGGERED'  // No target overlay was triggered
+  | 'DECK_SELECTION_TRIGGERED' // Deck selection was triggered
+  | 'HAND_CARD_SELECTION_TRIGGERED' // Hand card selection was triggered
+  | 'TARGET_SELECTION_TRIGGERED' // Target selection was triggered
+  | 'HIGHLIGHTS_SYNC'      // Sync highlights
+  | 'CLEAR_ALL_EFFECTS'    // Clear all effects
+  | 'VALID_TARGETS_SYNC'   // Sync valid targets
 
 export interface WebrtcMessage {
   type: WebrtcMessageType
@@ -88,7 +123,7 @@ export class WebrtcManager {
   private isHost: boolean = false
   private hostConnection: DataConnection | null = null
   private eventHandlers: Set<WebrtcEventHandler> = new Set()
-  private isReconnecting: boolean = false  // Track if this is a reconnection attempt
+  public isReconnecting: boolean = false
   // Reserved for future reconnection logic
   // private reconnectAttempts: number = 0
   // private maxReconnectAttempts: number = 5
@@ -116,8 +151,7 @@ export class WebrtcManager {
     return new Promise((resolve, reject) => {
       // Create Peer with default PeerJS cloud server
       // If existingPeerId is provided, try to reuse it (for F5 restore)
-      const peerConfig = existingPeerId ? { id: existingPeerId } : undefined
-      this.peer = new Peer(peerConfig)
+      this.peer = existingPeerId ? new Peer(existingPeerId) : new Peer()
 
       this.peer.on('open', (peerId) => {
         logger.info(`WebRTC Host initialized with peerId: ${peerId}`)

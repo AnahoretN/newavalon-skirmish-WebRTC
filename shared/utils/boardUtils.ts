@@ -11,7 +11,7 @@
  *   when having Support.
  */
 
-import type { Board, GameState, Card, Player } from '../../client/types.js'
+import type { Board, GameState } from '../../client/types.js'
 
 const GRID_MAX_SIZE = 7
 
@@ -19,7 +19,6 @@ const GRID_MAX_SIZE = 7
 const HERO_MR_PEARL_ID = 'mrPearlDoF'
 const HERO_REVEREND_ID = 'reverendOfTheChoir'
 const CARD_THREAT_ANALYST_ID = 'threatAnalyst'
-const THREAT_ANALYST_HERO_ID = 'threatAnalyst' // Alternative name for type checking
 
 /**
  * Check if a card is threatened by a player with active Threat Analyst.

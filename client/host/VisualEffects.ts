@@ -4,7 +4,6 @@
  * Ported from server/handlers/visualEffects.ts
  */
 
-import type { GameState } from '../types'
 import type { HostConnectionManager } from './HostConnectionManager'
 import type { HighlightData, FloatingTextData, TargetingModeData } from '../types'
 import { logger } from '../utils/logger'
@@ -42,7 +41,7 @@ export class VisualEffectsManager {
       data: { textData },
       timestamp: Date.now()
     })
-    logger.info(`[VisualEffects] Floating text: "${textData.text}" at (${textData.x}, ${textData.y})`)
+    logger.info(`[VisualEffects] Floating text: "${textData.text}" at (${textData.row}, ${textData.col})`)
   }
 
   /**

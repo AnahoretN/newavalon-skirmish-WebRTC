@@ -46,7 +46,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, ownerPla
     }
 
     if (currentImageSrc !== fallback) {
-      setCurrentImageSrc(fallback)
+      setCurrentImageSrc(fallback ?? '')
     }
   }
 

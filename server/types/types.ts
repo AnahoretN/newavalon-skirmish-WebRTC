@@ -14,6 +14,7 @@ export enum DeckType {
   Tokens = 'Tokens',
   Custom = 'Custom',
   Neutral = 'Neutral',
+  Random = 'Random',
 }
 
 /**

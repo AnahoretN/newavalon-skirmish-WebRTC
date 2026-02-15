@@ -1168,10 +1168,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           power: cell.card.power,
           ability: cell.card.ability,
           isFaceDown: cell.card.isFaceDown,
+          deck: cell.card.deck,
           // Omit heavy data: fallbackImage, flavorText, types, etc.
         } : null
       }))
-    )
+    ) as Board
 
     return optimizedState
   }, [])
@@ -1189,7 +1190,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     }
 
     // Create optimized state (don't send full hands for privacy and size)
-    const optimizedState = createOptimizedStateForBroadcast(newState, true)
+    const optimizedState = createOptimizedStateForBroadcast(newState)
 
     webrtcManagerRef.current.broadcastGameState(optimizedState)
     logger.info('[broadcastWebrtcState] Broadcasted optimized state')
@@ -1423,7 +1424,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             // Save guest connection data for page reload recovery
             try {
               const hostPeerId = webrtcManagerRef.current?.getHostPeerId()
-              const localPlayer = remoteState.players.find(p => p.id === message.playerId)
+              const localPlayer = remoteState.players.find((p: any) => p.id === message.playerId)
               if (hostPeerId) {
                 saveGuestData({
                   hostPeerId,
@@ -1468,7 +1469,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           // Use functional update to get the absolute latest state
           setGameState(currentState => {
             // Merge remote state with local state, preserving local player's full hand
-            const mergedPlayers = remoteState.players.map(remotePlayer => {
+            const mergedPlayers = remoteState.players.map((remotePlayer: any) => {
               const localPlayer = currentState.players.find(p => p.id === remotePlayer.id)
 
               if (remotePlayer.id === localPlayerIdRef.current && localPlayer) {
@@ -1479,7 +1480,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
                 // Get expected sizes from remote state (host's authoritative sizes)
                 const remoteHandSize = remotePlayer.handSize ?? remotePlayer.hand?.length ?? 0
-                const remoteDeckSize = remotePlayer.deckSize ?? remotePlayer.deck?.length ?? 0
 
                 if (hasOnlyPlaceholders && remotePlayer.hand && remotePlayer.hand.length > 0) {
                   // Guest just joined - use the remote hand/deck from host
@@ -1612,7 +1612,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         logger.info('[RECONNECT_SNAPSHOT] Received compact reconnect snapshot from host')
         receivedServerStateRef.current = true
         if (message.data) {
-          const snapshot = message.data
+          const snapshot = message.data as any
           setGameState(prev => {
             // Build players from snapshot data
             const localPlayerId = localPlayerIdRef.current
@@ -1628,7 +1628,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                 if (hasRealCards) {
                   // Keep local player's actual cards, sync sizes if needed
                   let syncedHand = [...existingLocal.hand]
-                  let syncedDeck = [...existingLocal.deck]
+                  const syncedDeck = [...existingLocal.deck]
 
                   // Adjust hand size
                   if (sp.handSize > syncedHand.length) {
@@ -1713,17 +1713,21 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               dummyPlayerCount: snapshot.dummyPlayerCount,
               players: rebuiltPlayers,
               board: snapshot.board,
+              spectators: prev.spectators,
+              hostId: prev.hostId,
+              revealRequests: prev.revealRequests,
+              preserveDeployAbilities: prev.preserveDeployAbilities,
               highlights: prev.highlights,
               floatingTexts: prev.floatingTexts,
               targetingMode: prev.targetingMode,
               abilityMode: prev.abilityMode
-            }
+            } as GameState
 
             // Persist state for guest auto-restore
             if (!webrtcIsHostRef.current && localPlayerId !== null) {
               try {
                 saveWebrtcState({
-                  gameState: resultState,
+                  gameState: resultState as any,
                   localPlayerId,
                   isHost: false
                 })
@@ -1843,7 +1847,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               const guestState = actionData.gameState
               // Merge players: preserve deck/discard/score from host state for players that aren't the guest
               // IMPORTANT: Host is authoritative for scores, decks, and discards - guests may have stale data after F5
-              const mergedPlayers = guestState.players.map(guestPlayer => {
+              const mergedPlayers = guestState.players.map((guestPlayer: any) => {
                 const hostPlayer = prev.players.find(p => p.id === guestPlayer.id)
                 if (hostPlayer && guestPlayer.id !== localPlayerIdRef.current) {
                   // This is another player (not guest, not local) - preserve authoritative data from host
@@ -2569,7 +2573,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           // Host: broadcast to all other guests (excluding the sender)
           if (webrtcIsHostRef.current && webrtcManagerRef.current && message.senderId) {
             webrtcManagerRef.current.broadcastToGuests({
-              type: 'HIGHLIGHT_TRIGGERED',
+              type: 'HIGHLIGHT_TRIGGERED' as const,
               senderId: message.senderId,
               data: highlightData,
               timestamp: Date.now()
@@ -2600,7 +2604,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           // Host: broadcast to all other guests
           if (webrtcIsHostRef.current && webrtcManagerRef.current && message.senderId) {
             webrtcManagerRef.current.broadcastToGuests({
-              type: 'FLOATING_TEXT_TRIGGERED',
+              type: 'FLOATING_TEXT_TRIGGERED' as const,
               senderId: message.senderId,
               data: textData,
               timestamp: Date.now()
@@ -2620,7 +2624,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           // Host: broadcast to all other guests
           if (webrtcIsHostRef.current && webrtcManagerRef.current && message.senderId) {
             webrtcManagerRef.current.broadcastToGuests({
-              type: 'FLOATING_TEXT_BATCH_TRIGGERED',
+              type: 'FLOATING_TEXT_BATCH_TRIGGERED' as const,
               senderId: message.senderId,
               data: { batch },
               timestamp: Date.now()
@@ -2657,7 +2661,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           // Host: broadcast to all other guests
           if (webrtcIsHostRef.current && webrtcManagerRef.current && message.senderId) {
             webrtcManagerRef.current.broadcastToGuests({
-              type: 'NO_TARGET_TRIGGERED',
+              type: 'NO_TARGET_TRIGGERED' as const,
               senderId: message.senderId,
               data: { coords, timestamp },
               timestamp: Date.now()
@@ -2689,7 +2693,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           // Host: broadcast to all other guests
           if (webrtcIsHostRef.current && webrtcManagerRef.current && message.senderId) {
             webrtcManagerRef.current.broadcastToGuests({
-              type: 'DECK_SELECTION_TRIGGERED',
+              type: 'DECK_SELECTION_TRIGGERED' as const,
               senderId: message.senderId,
               data: deckSelectionData,
               timestamp: Date.now()
@@ -2711,7 +2715,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           // Host: broadcast to all other guests
           if (webrtcIsHostRef.current && webrtcManagerRef.current && message.senderId) {
             webrtcManagerRef.current.broadcastToGuests({
-              type: 'HAND_CARD_SELECTION_TRIGGERED',
+              type: 'HAND_CARD_SELECTION_TRIGGERED' as const,
               senderId: message.senderId,
               data: handCardSelectionData,
               timestamp: Date.now()
@@ -2733,7 +2737,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           // Host: broadcast to all other guests
           if (webrtcIsHostRef.current && webrtcManagerRef.current && message.senderId) {
             webrtcManagerRef.current.broadcastToGuests({
-              type: 'TARGET_SELECTION_TRIGGERED',
+              type: 'TARGET_SELECTION_TRIGGERED' as const,
               senderId: message.senderId,
               data: targetSelectionData,
               timestamp: Date.now()
@@ -3951,7 +3955,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         webrtcManagerRef.current!.broadcastToGuests({
           type: 'HOST_READY',
           senderId: webrtcManagerRef.current!.getPeerId(),
-          playerId: localPlayerIdRef.current,
+          playerId: localPlayerIdRef.current ?? undefined,
           timestamp: Date.now()
         })
 
@@ -5154,7 +5158,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               discardSize: p.discard.length,
               // For dummy players, send minimized card data so guests can see them
               ...(p.isDummy && {
-                hand: p.hand.map(card => ({
+                hand: p.hand.map((card: any) => ({
                   id: card.id,
                   baseId: card.baseId,
                   name: card.name,
@@ -5170,7 +5174,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                   faction: card.faction,
                   statuses: card.statuses,
                 })),
-                deck: p.deck.map(card => ({
+                deck: p.deck.map((card: any) => ({
                   id: card.id,
                   baseId: card.baseId,
                   name: card.name,
@@ -5186,7 +5190,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                   faction: card.faction,
                   statuses: card.statuses,
                 })),
-                discard: p.discard.map(card => ({
+                discard: p.discard.map((card: any) => ({
                   id: card.id,
                   baseId: card.baseId,
                   name: card.name,
@@ -5897,7 +5901,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     } else if (webrtcManagerRef.current) {
       // WebRTC P2P mode
       const webrtcMessage = {
-        type: 'HIGHLIGHT_TRIGGERED',
+        type: 'HIGHLIGHT_TRIGGERED' as const,
         senderId: webrtcManagerRef.current.getPeerId(),
         data: fullHighlightData,
         timestamp: Date.now()
@@ -5933,7 +5937,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     } else if (webrtcManagerRef.current) {
       // WebRTC P2P mode
       const webrtcMessage = {
-        type: 'FLOATING_TEXT_BATCH_TRIGGERED',
+        type: 'FLOATING_TEXT_BATCH_TRIGGERED' as const,
         senderId: webrtcManagerRef.current.getPeerId(),
         data: { batch },
         timestamp: Date.now()
@@ -5967,7 +5971,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     } else if (webrtcManagerRef.current) {
       // WebRTC P2P mode
       const webrtcMessage = {
-        type: 'NO_TARGET_TRIGGERED',
+        type: 'NO_TARGET_TRIGGERED' as const,
         senderId: webrtcManagerRef.current.getPeerId(),
         data: { coords, timestamp },
         timestamp: Date.now()
@@ -6006,7 +6010,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     } else if (webrtcManagerRef.current) {
       // WebRTC P2P mode
       const webrtcMessage = {
-        type: 'DECK_SELECTION_TRIGGERED',
+        type: 'DECK_SELECTION_TRIGGERED' as const,
         senderId: webrtcManagerRef.current.getPeerId(),
         data: deckSelectionData,
         timestamp: Date.now()
@@ -6051,7 +6055,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     } else if (webrtcManagerRef.current) {
       // WebRTC P2P mode
       const webrtcMessage = {
-        type: 'HAND_CARD_SELECTION_TRIGGERED',
+        type: 'HAND_CARD_SELECTION_TRIGGERED' as const,
         senderId: webrtcManagerRef.current.getPeerId(),
         data: handCardSelectionData,
         timestamp: Date.now()
@@ -6089,7 +6093,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     } else if (webrtcManagerRef.current) {
       // WebRTC P2P mode
       const webrtcMessage = {
-        type: 'SYNC_VALID_TARGETS',
+        type: 'SYNC_VALID_TARGETS' as const,
         senderId: webrtcManagerRef.current.getPeerId(),
         data: {
           playerId: localPlayerIdRef.current,
@@ -6146,7 +6150,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       if (webrtcIsHostRef.current) {
         // Host: broadcast TRIGGERED message directly to all guests
         const webrtcMessage = {
-          type: 'TARGET_SELECTION_TRIGGERED',
+          type: 'TARGET_SELECTION_TRIGGERED' as const,
           senderId: webrtcManagerRef.current.getPeerId(),
           data: effect,
           timestamp: Date.now()
@@ -6155,7 +6159,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       } else {
         // Guest: send TRIGGER message to host, who will apply locally and broadcast to all guests
         const webrtcMessage = {
-          type: 'TRIGGER_TARGET_SELECTION',
+          type: 'SET_TARGETING_MODE' as const,
           senderId: webrtcManagerRef.current.getPeerId(),
           data: effect,
           timestamp: Date.now()

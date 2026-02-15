@@ -93,7 +93,7 @@ export const hasReadyAbilityInCurrentPhase = (
   // - Stun status check
   // - Support requirement check
   // - Phase-appropriate ready status check
-  return serverCanActivateAbility(card, phaseIndex, activePlayerId ?? undefined, gameState)
+  return serverCanActivateAbility(card as any, phaseIndex, activePlayerId ?? undefined, gameState as any)
 }
 
 /**
@@ -137,7 +137,7 @@ export const initializeReadyStatuses = (card: Card, ownerId: number): void => {
   const oldStatusesTypes = card.statuses.map(s => s.type)
 
   // Use server-side ability definitions to determine which ready statuses to add
-  const abilityTypes = getCardAbilityTypes(card)
+  const abilityTypes = getCardAbilityTypes(card as any)
 
   console.log(`[initializeReadyStatuses] Card: ${card.name} (${card.id}), ownerId: ${ownerId}, abilities: [${abilityTypes.join(', ')}]`)
 
@@ -185,7 +185,7 @@ export const resetPhaseReadyStatuses = (card: Card, ownerId: number): void => {
   }
 
   // Use server-side ability definitions to determine which ready statuses to add
-  const abilityTypes = getCardAbilityTypes(card)
+  const abilityTypes = getCardAbilityTypes(card as any)
 
   for (const abilityType of abilityTypes) {
     // Skip deploy - it's only added once when entering battlefield

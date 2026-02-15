@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.2.10] - 2026-02-15
+
+### Added
+- **WebRTC P2P Mode**: Added peer-to-peer WebRTC support for direct player connections
+  - Host can create P2P games without requiring external server
+  - Guest can connect directly to host using peer ID
+  - State synchronization optimized for P2P with state deltas
+  - Reconnection support after page reload
+  - Visual effects broadcasting across P2P connections
+
+### Changed
+- **IP Dept Agent**: Modified ability - now enters "IP_AGENT_THREAT_SCORING" mode instead of direct scoring
+- **Threat Analyst**: Now grants Threat ability to own units when they have Support status
+  - Units with Threat can destroy cards with owner's Exploit tokens
+  - Creates new tactical opportunities with Exploit token interactions
+- **Code Cleanup**: Removed unused files and duplicate code
+  - Removed `client/unused_host_webrtc_old/` directory
+  - Removed `client/webrtc/` old implementation
+  - Removed unused hooks: `useContentDatabase.ts`, `useWebRTC.ts`
+  - Removed duplicate utilities: `server/utils/boardUtils.ts`, `server/utils/targeting.ts`
+  - Removed duplicate `client/utils/webrtcStatePersistence.ts`
+- **TypeScript**: Fixed all type errors
+  - Added missing `Random` to server `DeckType` enum
+  - Added `MODIFY_SCORE` to `AbilityAction` type
+  - Unified `WebrtcMessageType` across modules
+  - Added type assertions for client/server type compatibility
+- **Version**: Updated project version to 0.2.10
+
+
 ## [0.2.8t] - 2026-01-27
 
 ### Added

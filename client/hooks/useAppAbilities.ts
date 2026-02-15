@@ -857,11 +857,11 @@ export const useAppAbilities = ({
       return
     }
 
-    if (!canActivateAbility(card, gameState.currentPhase, gameState.activePlayerId, gameState)) {
+    if (!canActivateAbility(card as any, gameState.currentPhase, gameState.activePlayerId, gameState as any)) {
       return
     }
 
-    const action = getCardAbilityAction(card, gameState, card.ownerId!, boardCoords)
+    const action = getCardAbilityAction(card as any, gameState as any, card.ownerId!, boardCoords)
     if (action) {
       // NEW FLOW: Remove ready status FIRST, then execute
       // This ensures the visual highlight disappears immediately on click
@@ -1117,7 +1117,7 @@ export const useAppAbilities = ({
       }
 
       const isValid = validateTarget(
-        { card, ownerId: card.ownerId, location: 'board' },
+        { card, ownerId: card.ownerId ?? 0, location: 'board' },
         constraints,
         gameState.activePlayerId,
         gameState.players,
@@ -2233,7 +2233,7 @@ export const useAppAbilities = ({
     if (gameState.activePlayerId !== player.id) {
       return
     }
-    if (!canActivateAbility(card, gameState.currentPhase, gameState.activePlayerId, gameState)) {
+    if (!canActivateAbility(card as any, gameState.currentPhase, gameState.activePlayerId, gameState as any)) {
       return
     }
     activateAbility(card, { row: -1, col: -1 })

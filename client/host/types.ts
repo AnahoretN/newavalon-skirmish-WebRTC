@@ -3,7 +3,7 @@
  * Type definitions for WebRTC host functionality
  */
 
-import type { GameState, Player, StateDelta } from '../types'
+// Types are imported from other modules where needed
 
 // Message types for WebRTC communication
 export type WebrtcMessageType =
@@ -44,6 +44,8 @@ export type WebrtcMessageType =
   | 'SET_TARGETING_MODE'   // Set targeting/selection mode for ability
   | 'CLEAR_TARGETING_MODE' // Clear targeting mode
   | 'SYNC_VALID_TARGETS'   // Sync valid targets for ability
+  | 'TRIGGER_DECK_SELECTION' // Trigger deck selection
+  | 'TRIGGER_HAND_CARD_SELECTION' // Trigger hand card selection
   // Ability activation messages
   | 'ABILITY_ACTIVATED'    // Player activated an ability (guest -> host)
   | 'ABILITY_MODE_SET'     // Host broadcasts ability mode to all
@@ -58,6 +60,18 @@ export type WebrtcMessageType =
   | 'PLAYER_DISCONNECTED'  // Host broadcasts player disconnected
   | 'PLAYER_RECONNECTED'   // Host broadcasts player reconnected
   | 'PLAYER_CONVERTED_TO_DUMMY' // Host broadcasts player converted to dummy
+  | 'RECONNECT_SNAPSHOT'   // Snapshot for reconnection
+  | 'HIGHLIGHT_TRIGGERED'  // Highlight was triggered
+  | 'FLOATING_TEXT_TRIGGERED' // Floating text was triggered
+  | 'FLOATING_TEXT_BATCH_TRIGGERED' // Batch floating text was triggered
+  | 'NO_TARGET_TRIGGERED'  // No target overlay was triggered
+  | 'DECK_SELECTION_TRIGGERED' // Deck selection was triggered
+  | 'HAND_CARD_SELECTION_TRIGGERED' // Hand card selection was triggered
+  | 'TARGET_SELECTION_TRIGGERED' // Target selection was triggered
+  | 'HIGHLIGHTS_SYNC'      // Sync highlights
+  | 'CLEAR_ALL_EFFECTS'    // Clear all effects
+  | 'VALID_TARGETS_SYNC'   // Sync valid targets
+  | 'GAME_LOGS'            // Game logs for debugging
 
 export interface WebrtcMessage {
   type: WebrtcMessageType

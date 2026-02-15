@@ -134,19 +134,9 @@ export class HostConnection {
   }
 
   /**
-   * Get the DataConnection for a guest
-   */
-  private getConnection(peerId: string): DataConnection | null {
-    // We need to access the underlying PeerJS connection
-    // Since we're storing GuestConnection, we need to get the actual DataConnection
-    // This is a limitation - we'll need to store the connection separately
-    return null // Will be implemented with proper connection storage
-  }
-
-  /**
    * Accept guest and send minimal game info
    */
-  acceptGuestMinimal(peerId: string, minimalInfo: any, playerId: number): boolean {
+  acceptGuestMinimal(peerId: string, _minimalInfo: any, playerId: number): boolean {
     const guest = this.guests.get(peerId)
     if (!guest) {
       logger.error(`[acceptGuestMinimal] No guest found for ${peerId}`)
@@ -164,7 +154,7 @@ export class HostConnection {
   /**
    * Broadcast message to all connected guests
    */
-  broadcast(message: WebrtcMessage, excludePeerId?: string): number {
+  broadcast(_message: WebrtcMessage, excludePeerId?: string): number {
     let successCount = 0
 
     this.guests.forEach((guest, peerId) => {

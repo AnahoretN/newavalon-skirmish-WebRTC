@@ -107,7 +107,7 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
     baseId: 'ipDeptAgent',
     activationType: 'setup',
     supportRequired: true,
-    getAction: (_card, _gameState, ownerId, coords) => ({
+    getAction: (_card, _gameState, _ownerId, coords) => ({
       type: 'ENTER_MODE',
       mode: 'IP_AGENT_THREAT_SCORING',
       sourceCard: _card,

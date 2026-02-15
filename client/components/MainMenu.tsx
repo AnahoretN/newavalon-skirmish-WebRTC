@@ -65,7 +65,6 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
   isGameStarted = false,
   isPrivate = false,
   initializeWebrtcHost,
-  connectAsGuest,
 }) => {
   const [isInitializingHost, setIsInitializingHost] = useState(false)
 

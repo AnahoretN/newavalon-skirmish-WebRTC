@@ -82,7 +82,7 @@ export function endRound(gameState: GameState): GameState {
 
   // Check for game winner (first to 2 round wins)
   const playerRoundWins = new Map<number, number>()
-  for (const [rnd, winners] of Object.entries(newRoundWinners)) {
+  for (const [, winners] of Object.entries(newRoundWinners)) {
     for (const winnerId of winners) {
       const current = playerRoundWins.get(winnerId) || 0
       playerRoundWins.set(winnerId, current + 1)

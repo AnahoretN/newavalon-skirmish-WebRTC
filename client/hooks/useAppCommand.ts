@@ -73,14 +73,14 @@ export const useAppCommand = ({
     } else {
       // Simple Command (e.g. Mobilization)
       // Just execute Main Logic
-      const actions = getCommandAction(card.id, -1, card, gameState, source.playerId!)
+      const actions = getCommandAction(card.id, -1, card as any, gameState as any, source.playerId!)
 
       // Queue actions + Cleanup
       if (actions.length > 0) {
         // If the first action has targets, queue it. If not, maybe skip?
         // For safety, we queue it and let the processor handle "No Target".
         setActionQueue([
-          ...actions,
+          ...(actions as any),
           { type: 'GLOBAL_AUTO_APPLY', payload: { cleanupCommand: true, card: card, ownerId: source.playerId! }, sourceCard: card },
         ])
       } else {
@@ -102,7 +102,7 @@ export const useAppCommand = ({
 
     // 1. Get ALL actions for this choice (actions may include main parts and selected option parts)
     // We call -1 (main) and then the option index.
-    const mainActions = getCommandAction(commandModalCard.id, -1, commandModalCard, gameState, ownerId)
+    const mainActions = getCommandAction(commandModalCard.id, -1, commandModalCard as any, gameState as any, ownerId)
 
     let rewardType: 'DRAW_REMOVED' | 'SCORE_REMOVED' | undefined
 
@@ -126,7 +126,7 @@ export const useAppCommand = ({
     })
 
     // 2. Option Actions
-    const optActions = getCommandAction(commandModalCard.id, optionIndex, commandModalCard, gameState, ownerId)
+    const optActions = getCommandAction(commandModalCard.id, optionIndex, commandModalCard as any, gameState as any, ownerId)
     optActions.forEach(action => {
       queue.push(action)
     })

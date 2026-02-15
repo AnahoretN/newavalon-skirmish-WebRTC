@@ -1119,7 +1119,7 @@ export function isDeltaEmpty(delta: StateDelta): boolean {
  * - Board state (full board with cards - needed for game continuity)
  * - Phase/round info
  */
-export function createReconnectSnapshot(gameState: GameState, localPlayerId?: number | null): {
+export function createReconnectSnapshot(gameState: GameState, _localPlayerId?: number | null): {
   type: 'RECONNECT_SNAPSHOT'
   data: {
     gameId: string
@@ -1162,7 +1162,7 @@ export function createReconnectSnapshot(gameState: GameState, localPlayerId?: nu
   return {
     type: 'RECONNECT_SNAPSHOT',
     data: {
-      gameId: gameState.gameId,
+      gameId: gameState.gameId ?? '',
       gameMode: gameState.gameMode,
       isPrivate: gameState.isPrivate,
       isGameStarted: gameState.isGameStarted,
@@ -1181,19 +1181,19 @@ export function createReconnectSnapshot(gameState: GameState, localPlayerId?: nu
       players: gameState.players.map(p => ({
         id: p.id,
         name: p.name,
-        color: p.color,
-        isDummy: p.isDummy,
-        isReady: p.isReady,
-        isDisconnected: p.isDisconnected,
+        color: typeof p.color === 'string' ? p.color : 'blue',
+        isDummy: p.isDummy ?? false,
+        isReady: p.isReady ?? false,
+        isDisconnected: p.isDisconnected ?? false,
         score: p.score,
         selectedDeck: p.selectedDeck,
-        autoDrawEnabled: p.autoDrawEnabled,
+        autoDrawEnabled: p.autoDrawEnabled ?? false,
         teamId: p.teamId,
         handSize: p.hand.length,
         deckSize: p.deck.length,
         discardSize: p.discard.length,
         announcedCard: p.announcedCard,
-        boardHistory: p.boardHistory
+        boardHistory: p.boardHistory ?? []
       })),
       board: gameState.board
     }

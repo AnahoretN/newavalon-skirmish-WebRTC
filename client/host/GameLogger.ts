@@ -24,7 +24,7 @@ export interface GameLogEntry {
 /**
  * Game Logger configuration
  */
-interface GameLoggerConfig {
+export interface GameLoggerConfig {
   maxLogEntries?: number  // Maximum entries to keep in memory
   enableConsoleLogging?: boolean  // Whether to log to console
 }
@@ -310,11 +310,11 @@ export class GameLogger {
    */
   broadcastLogs(): void {
     this.connectionManager.broadcast({
-      type: 'GAME_LOGS',
+      type: 'GAME_LOGS' as const,
       senderId: this.connectionManager.getPeerId(),
       data: { logs: this.logs },
       timestamp: Date.now()
-    })
+    } as any)
     logger.info(`[GameLogger] Broadcasted ${this.logs.length} log entries`)
   }
 

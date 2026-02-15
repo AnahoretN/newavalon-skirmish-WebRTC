@@ -4,7 +4,8 @@
  */
 
 import type { GameState, Player, DeckType } from '../types'
-import type { WebrtcMessage, StateDelta } from '../types'
+import type { StateDelta } from '../types'
+import type { WebrtcMessage } from '../utils/webrtcManager'
 import type { HostConnectionManager } from './HostConnectionManager'
 import { logger } from '../utils/logger'
 import { createDeltaFromStates, isDeltaEmpty } from '../utils/stateDelta'
@@ -397,7 +398,7 @@ export class HostMessageHandler {
   /**
    * Handle player deck change
    */
-  private handleChangePlayerDeck(message: WebrtcMessage, fromPeerId: string): void {
+  private handleChangePlayerDeck(message: WebrtcMessage, _fromPeerId: string): void {
     if (!this.gameState || !message.data) {return}
 
     const { playerId, deckType } = message.data
@@ -431,7 +432,7 @@ export class HostMessageHandler {
   /**
    * Handle player name update
    */
-  private handleUpdatePlayerName(message: WebrtcMessage, fromPeerId: string): void {
+  private handleUpdatePlayerName(message: WebrtcMessage, _fromPeerId: string): void {
     if (!this.gameState || !message.data) {return}
 
     const { playerId, name } = message.data
@@ -463,7 +464,7 @@ export class HostMessageHandler {
   /**
    * Handle player color change
    */
-  private handleChangePlayerColor(message: WebrtcMessage, fromPeerId: string): void {
+  private handleChangePlayerColor(message: WebrtcMessage, _fromPeerId: string): void {
     if (!this.gameState || !message.data) {return}
 
     const { playerId, color } = message.data
@@ -495,7 +496,7 @@ export class HostMessageHandler {
   /**
    * Handle player score update
    */
-  private handleUpdatePlayerScore(message: WebrtcMessage, fromPeerId: string): void {
+  private handleUpdatePlayerScore(message: WebrtcMessage, _fromPeerId: string): void {
     if (!this.gameState || !message.data) {return}
 
     const { playerId, delta } = message.data
@@ -545,7 +546,7 @@ export class HostMessageHandler {
    * Broadcast a message to all guests
    */
   broadcast(message: WebrtcMessage, excludePeerId?: string): number {
-    return this.connectionManager.broadcast(message, excludePeerId)
+    return this.connectionManager.broadcast(message as any, excludePeerId)
   }
 
   /**

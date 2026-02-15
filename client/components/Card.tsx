@@ -164,7 +164,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     }
 
     if (currentImageSrc !== fallback) {
-      setCurrentImageSrc(fallback)
+      setCurrentImageSrc(fallback ?? '')
     }
   }
 

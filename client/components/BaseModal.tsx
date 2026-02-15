@@ -46,7 +46,9 @@ export const BaseModal: React.FC<BaseModalProps> = ({
 
   // Handle escape key press
   useEffect(() => {
-    if (!isOpen || !closeOnEscape) return
+    if (!isOpen || !closeOnEscape) {
+      return
+    }
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -70,7 +72,9 @@ export const BaseModal: React.FC<BaseModalProps> = ({
     }
   }, [isOpen])
 
-  if (!isOpen) return null
+  if (!isOpen) {
+    return null
+  }
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (closeOnBackdropClick && e.target === modalRef.current) {
