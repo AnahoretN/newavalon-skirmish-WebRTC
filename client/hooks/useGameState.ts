@@ -1,113 +1,69 @@
 // ... existing imports
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { DeckType, GameMode as GameModeEnum } from '../types'
-import type { GameState, Player, Board, GridSize, Card, DragItem, DropTarget, PlayerColor, RevealRequest, CardIdentifier, CustomDeckFile, HighlightData, FloatingTextData, DeckSelectionData, HandCardSelectionData, TargetingModeData, AbilityAction, CommandContext, StateDelta } from '../types'
-import { PLAYER_COLOR_NAMES, MAX_PLAYERS } from '../constants'
-import { shuffleDeck } from '@shared/utils/array'
-import { getDecksData, countersDatabase, rawJsonData, getCardDefinition, getCardDefinitionByName, commandCardIds } from '../content'
-import { createInitialBoard, recalculateBoardStatuses } from '@shared/utils/boardUtils'
-import { calculateValidTargets } from '@shared/utils/targeting'
+import type { GameState, Player, Board, GridSize, DragItem, HighlightData, FloatingTextData, DeckSelectionData, HandCardSelectionData, StateDelta } from '../types'
+import { PLAYER_COLOR_NAMES } from '../constants'
+import { rawJsonData, getCardDefinition, getCardDefinitionByName, commandCardIds } from '../content'
+import { createInitialBoard } from '@shared/utils/boardUtils'
 import { logger } from '../utils/logger'
-import { initializeReadyStatuses, removeAllReadyStatuses } from '../utils/autoAbilities'
 import { deepCloneState, TIMING } from '../utils/common'
 import { getWebrtcManager, type WebrtcEvent } from '../utils/webrtcManager'
-import { toggleActivePlayer as toggleActivePlayerPhase, passTurnToNextPlayer, playerHasCardsOnBoard, performPreparationPhase } from '../host/PhaseManagement'
+import { toggleActivePlayer as toggleActivePlayerPhase, performPreparationPhase } from '../host/PhaseManagement'
 import {
   applyStateDelta,
   createDeltaFromStates,
   isDeltaEmpty,
   createReconnectSnapshot
 } from '../utils/stateDelta'
-import { saveGuestData, saveHostData, saveWebrtcState, loadGuestData, loadHostData, loadWebrtcState, getRestorableSessionType, clearWebrtcData, broadcastHostPeerId, getHostPeerIdForGame, clearHostPeerIdBroadcast } from '../host/WebrtcStatePersistence'
-
-// Helper to determine the correct WebSocket URL
-const getWebSocketURL = () => {
-  const customUrl = localStorage.getItem('custom_ws_url')
-  if (!customUrl || customUrl.trim() === '') {
-    // No custom URL configured - user must set one in settings
-    logger.warn('No custom WebSocket URL configured in settings.')
-    return null
-  }
-
-  let url = customUrl.trim()
-  // Remove trailing slash
-  if (url.endsWith('/')) {
-    url = url.slice(0, -1)
-  }
-
-  // Auto-correct protocol if user pasted http/https
-  if (url.startsWith('https://')) {
-    url = url.replace('https://', 'wss://')
-  } else if (url.startsWith('http://')) {
-    url = url.replace('http://', 'ws://')
-  }
-
-  // Ensure the URL has a valid WebSocket protocol
-  if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
-    logger.warn('Invalid WebSocket URL format (must start with ws:// or wss://)')
-    return null
-  }
-
-  logger.info(`Using custom WebSocket URL: ${url}`)
-  // Store the validated URL for link sharing
-  localStorage.setItem('websocket_url', url)
-  return url
-}
-
-export type ConnectionStatus = 'Connecting' | 'Connected' | 'Disconnected';
-
-const generateGameId = () => Math.random().toString(36).substring(2, 18).toUpperCase()
-
-const syncLastPlayed = (board: Board, player: Player) => {
-  board.forEach(row => row.forEach(cell => {
-    if (cell.card?.statuses) {
-      cell.card.statuses = cell.card.statuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === player.id))
-    }
-  }))
-
-  // Safety check for boardHistory existence
-  if (!player.boardHistory) {
-    player.boardHistory = []
-  }
-
-  let found = false
-  while (player.boardHistory.length > 0 && !found) {
-    const lastId = player.boardHistory[player.boardHistory.length - 1]
-    for (let r = 0; r < board.length; r++) {
-      for (let c = 0; c < board[r].length; c++) {
-        if (board[r][c].card?.id === lastId) {
-          const card = board[r][c].card
-          if (!card) {
-            continue
-          }
-          // CRITICAL: Only assign LastPlayed status if the card is owned by this player
-          // For dummy players, we check the actual card ownership (ownerId)
-          if (card.ownerId !== player.id) {
-            // Card exists on board but belongs to a different player
-            // Skip this card and continue searching
-            continue
-          }
-          if (!card.statuses) {
-            card.statuses = []
-          }
-          card.statuses.push({ type: 'LastPlayed', addedByPlayerId: player.id })
-          found = true
-          break
-        }
-      }
-      if (found) {
-        break
-      }
-    }
-    if (!found) {
-      player.boardHistory.pop()
-    }
-  }
-}
-
-// localStorage keys for game state persistence
-const GAME_STATE_KEY = 'avalon_game_state'
-const RECONNECTION_DATA_KEY = 'reconnection_data'
+// Optimized WebRTC serialization
+import {
+  deserializeDelta,
+  deserializeFromBinary,
+  expandMinimalGameState
+} from '../utils/webrtcSerialization'
+import { saveGuestData, saveWebrtcState, loadGuestData, loadHostData, loadWebrtcState, getRestorableSessionType, clearWebrtcData, broadcastHostPeerId, getHostPeerIdForGame } from '../host/WebrtcStatePersistence'
+// Storage functions extracted to gameStateStorage.ts
+import {
+  syncGameStateImages,
+  saveGameState,
+  loadGameState,
+  clearGameState,
+  RECONNECTION_DATA_KEY
+} from './core/gameStateStorage'
+// Game creator functions extracted to gameCreators.ts
+import {
+  generateGameId,
+  createDeck,
+  createInitialState
+} from './core/gameCreators'
+// WebSocket helpers extracted to websocketHelpers.ts
+import { getWebSocketURL } from './core/websocketHelpers'
+// Common types extracted to types.ts
+import type { ConnectionStatus, UseGameStateProps } from './core/types'
+// Visual effects extracted to useVisualEffects.ts
+import { useVisualEffects } from './core/useVisualEffects'
+// Game settings extracted to useGameSettings.ts
+import { useGameSettings } from './core/useGameSettings'
+// Ready check extracted to useReadyCheck.ts
+import { useReadyCheck } from './core/useReadyCheck'
+// Player actions extracted to usePlayerActions.ts
+import { usePlayerActions } from './core/usePlayerActions'
+// Card operations extracted to useCardOperations.ts
+import { useCardOperations } from './core/useCardOperations'
+// Card status extracted to useCardStatus.ts
+import { useCardStatus } from './core/useCardStatus'
+// Deck management extracted to useDeckManagement.ts
+import { useDeckManagement } from './core/useDeckManagement'
+// Phase management extracted to usePhaseManagement.ts
+import { usePhaseManagement } from './core/usePhaseManagement'
+// Scoring extracted to useScoring.ts
+import { useScoring } from './core/useScoring'
+// Board manipulation extracted to useBoardManipulation.ts
+import { useBoardManipulation } from './core/useBoardManipulation'
+import { useCardMovement } from './core/useCardMovement'
+import { useTargetingMode } from './core/useTargetingMode'
+import { useWebRTC } from './core/useWebRTC'
+import { useGameLifecycle } from './core/useGameLifecycle'
 
 /**
  * Accumulates score change deltas for each player.
@@ -116,247 +72,8 @@ const RECONNECTION_DATA_KEY = 'reconnection_data'
  */
 const scoreDeltaAccumulator = new Map<number, { delta: number, timerId: ReturnType<typeof setTimeout> }>()
 
-/**
- * Sync card data (imageUrl, fallbackImage) from database
- * This is needed after restoring from localStorage or receiving state from server
- */
-const syncCardImages = (card: any): any => {
-  if (!card || !rawJsonData) {return card}
-  const { cardDatabase, tokenDatabase } = rawJsonData
-
-  // Special handling for tokens
-  if (card.deck === DeckType.Tokens || card.id?.startsWith('TKN_')) {
-    // Try baseId first (most reliable)
-    if (card.baseId && tokenDatabase[card.baseId]) {
-      const dbCard = tokenDatabase[card.baseId]
-      return { ...card, imageUrl: dbCard.imageUrl, fallbackImage: dbCard.fallbackImage }
-    }
-    // Try to find by name (fallback for tokens without proper baseId)
-    const tokenKey = Object.keys(tokenDatabase).find(key => tokenDatabase[key].name === card.name)
-    if (tokenKey) {
-      const dbCard = tokenDatabase[tokenKey]
-      return { ...card, imageUrl: dbCard.imageUrl, fallbackImage: dbCard.fallbackImage, baseId: tokenKey }
-    }
-  }
-  // Regular cards
-  else if (card.baseId && cardDatabase[card.baseId]) {
-    const dbCard = cardDatabase[card.baseId]
-    return { ...card, imageUrl: dbCard.imageUrl, fallbackImage: dbCard.fallbackImage }
-  }
-  return card
-}
-
-/**
- * Sync all card images in a game state with the current database
- */
-const syncGameStateImages = (gameState: GameState): GameState => {
-  if (!rawJsonData) {return gameState}
-
-  // Sync all cards in the board
-  const syncedBoard = gameState.board?.map(row =>
-    row.map(cell => ({
-      ...cell,
-      card: cell.card ? syncCardImages(cell.card) : null
-    }))
-  ) || gameState.board
-
-  // Sync all cards in players' hands, decks, discard
-  const syncedPlayers = gameState.players?.map(player => ({
-    ...player,
-    hand: player.hand?.map(syncCardImages) || [],
-    deck: player.deck?.map(syncCardImages) || [],
-    discard: player.discard?.map(syncCardImages) || [],
-    announcedCard: player.announcedCard ? syncCardImages(player.announcedCard) : null,
-  })) || gameState.players
-
-  return {
-    ...gameState,
-    board: syncedBoard,
-    players: syncedPlayers,
-    // Ensure visual effects arrays exist (for backwards compatibility)
-    floatingTexts: gameState.floatingTexts || [],
-    highlights: gameState.highlights || [],
-  }
-}
-
-// Save full game state to localStorage (persists across tab close/reopen)
-// Restore logic based on navigation type:
-// - Normal reload (F5) - restore state
-// - Hard reload (Shift+F5, Ctrl+Shift+R) - DON'T restore
-// - Tab close/reopen - restore state
-// - Browser cache clear - DON'T restore (localStorage is cleared)
-const saveGameState = (gameState: GameState, localPlayerId: number | null, playerToken?: string) => {
-  try {
-    // Sync images before saving to ensure all cards have proper imageUrl
-    const syncedState = syncGameStateImages(gameState)
-
-    const data = {
-      gameState: syncedState,
-      localPlayerId,
-      playerToken,
-      timestamp: Date.now(),
-    }
-    // Use localStorage to persist across tab close/reopen
-    localStorage.setItem(GAME_STATE_KEY, JSON.stringify(data))
-    // Also update reconnection_data for backward compatibility
-    if (syncedState.gameId && localPlayerId !== null) {
-      localStorage.setItem(RECONNECTION_DATA_KEY, JSON.stringify({
-        gameId: syncedState.gameId,
-        playerId: localPlayerId,
-        playerToken: playerToken || null,
-        timestamp: Date.now(),
-      }))
-    }
-  } catch (e) {
-    console.warn('Failed to save game state:', e)
-  }
-}
-
-// Load game state from localStorage
-const loadGameState = (): { gameState: GameState; localPlayerId: number; playerToken?: string } | null => {
-  try {
-    const stored = localStorage.getItem(GAME_STATE_KEY)
-    if (!stored) {return null}
-    const data = JSON.parse(stored)
-    // Check if state is not too old (24 hours max)
-    const maxAge = 24 * 60 * 60 * 1000
-    if (Date.now() - data.timestamp > maxAge) {
-      localStorage.removeItem(GAME_STATE_KEY)
-      localStorage.removeItem(RECONNECTION_DATA_KEY)
-      return null
-    }
-
-    const restoredState = data.gameState as GameState
-    // Sync card images from database
-    const syncedState = syncGameStateImages(restoredState)
-
-    return { gameState: syncedState, localPlayerId: data.localPlayerId, playerToken: data.playerToken }
-  } catch (e) {
-    console.warn('Failed to load game state:', e)
-    return null
-  }
-}
-
-// Clear saved game state
-const clearGameState = () => {
-  localStorage.removeItem(GAME_STATE_KEY)
-  localStorage.removeItem(RECONNECTION_DATA_KEY)
-}
-
-interface UseGameStateProps {
-  abilityMode?: AbilityAction | null;
-  setAbilityMode?: React.Dispatch<React.SetStateAction<AbilityAction | null>>;
-}
-
 export const useGameState = (props: UseGameStateProps = {}) => {
   const { abilityMode, setAbilityMode } = props;
-  const createDeck = useCallback((deckType: DeckType, playerId: number, playerName: string): Card[] => {
-    // Use getDecksData() to always get fresh data instead of cached import
-    const currentDecksData = getDecksData()
-
-    // Handle "Random" deck type - use first available deck
-    let actualDeckType = deckType
-    if (deckType === 'Random' || !currentDecksData[deckType]) {
-      const deckKeys = Object.keys(currentDecksData)
-      if (deckKeys.length === 0) {
-        console.error('[createDeck] No decks loaded yet!')
-        return []
-      }
-      actualDeckType = deckKeys[0] as DeckType
-      if (deckType === 'Random') {
-        console.log(`[createDeck] Random deck selected, using ${actualDeckType} instead`)
-      } else {
-        console.warn(`[createDeck] Deck ${deckType} not found, using ${actualDeckType} instead`)
-      }
-    }
-
-    const deck = currentDecksData[actualDeckType]
-    if (!deck) {
-      console.error(`Deck data for ${actualDeckType} not loaded! Returning empty deck. Available decks:`, Object.keys(currentDecksData))
-      return []
-    }
-    const deckWithOwner = [...deck].map(card => ({ ...card, ownerId: playerId, ownerName: playerName }))
-    return shuffleDeck(deckWithOwner)
-  }, [])
-
-  const createNewPlayer = useCallback((id: number, isDummy = false): Player => {
-    // Use getDecksData() to always get fresh data instead of cached import
-    const currentDecksData = getDecksData()
-    const deckKeys = Object.keys(currentDecksData)
-    if (deckKeys.length === 0) {
-      console.error('[createNewPlayer] No decks loaded yet!')
-      // Return minimal player without deck
-      return {
-        id,
-        name: isDummy ? `Dummy ${id - 1}` : `Player ${id}`,
-        score: 0,
-        hand: [],
-        deck: [],
-        discard: [],
-        announcedCard: null,
-        selectedDeck: 'Damanaki' as DeckType,
-        color: PLAYER_COLOR_NAMES[id - 1] || 'blue',
-        isDummy,
-        isReady: false,
-        boardHistory: [],
-        autoDrawEnabled: true,
-      }
-    }
-
-    const initialDeckType = deckKeys[0] as DeckType
-    const player = {
-      id,
-      name: isDummy ? `Dummy ${id - 1}` : `Player ${id}`,
-      score: 0,
-      hand: [],
-      deck: [] as Card[],
-      discard: [],
-      announcedCard: null,
-      selectedDeck: initialDeckType,
-      color: PLAYER_COLOR_NAMES[id - 1] || 'blue',
-      isDummy,
-      isReady: false,
-      boardHistory: [],
-      autoDrawEnabled: true, // Auto-draw is enabled by default for all players
-    }
-    player.deck = createDeck(initialDeckType, id, player.name)
-    return player
-  }, [createDeck])
-
-  const createInitialState = useCallback((): GameState => ({
-    players: [],
-    spectators: [],
-    board: createInitialBoard(),
-    activeGridSize: 7,
-    gameId: null,
-    hostId: 1, // Default to player 1 as host
-    dummyPlayerCount: 0,
-    isGameStarted: false,
-    gameMode: GameModeEnum.FreeForAll,
-    isPrivate: true,
-    isReadyCheckActive: false,
-    revealRequests: [],
-    activePlayerId: null, // Aligned with server default (null)
-    startingPlayerId: null, // Aligned with server default (null)
-    currentPhase: 0,
-    isScoringStep: false,
-    preserveDeployAbilities: false,
-    autoAbilitiesEnabled: true, // Match server default
-    autoDrawEnabled: true, // Match server default
-    currentRound: 1,
-    turnNumber: 1,
-    roundEndTriggered: false,
-    roundWinners: {},
-    gameWinner: null,
-    isRoundEndModalOpen: false,
-    floatingTexts: [],
-    highlights: [],
-    deckSelections: [],
-    handCardSelections: [],
-    targetingMode: null,
-    localPlayerId: null,
-    isSpectator: false,
-  }), [])
 
   const [gameState, setGameState] = useState<GameState>(createInitialState())
 
@@ -389,6 +106,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   }, [])
 
   const [localPlayerId, setLocalPlayerId] = useState<number | null>(null)
+
+  // Create refs early for use in hooks and effects
+  const gameStateRef = useRef(gameState)
+  const localPlayerIdRef = useRef(localPlayerId)
+
   const [draggedItem, setDraggedItem] = useState<DragItem | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('Connecting')
   const [gamesList, setGamesList] = useState<{gameId: string, playerCount: number}[]>([])
@@ -429,6 +151,24 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   // Ref for setGameStateWithDelta (used in callbacks)
   const setGameStateWithDeltaRef = useRef<(updater: React.SetStateAction<GameState>, sourcePlayerId?: number) => void>(() => {})
 
+  // WebRTC P2P hook - handles WebRTC host/guest functions
+  const webrtc = useWebRTC({
+    webrtcManagerRef,
+    webrtcIsHostRef,
+    setWebrtcIsHost,
+    setConnectionStatus,
+    setWebrtcHostId,
+    gameStateRef,
+    localPlayerIdRef,
+  })
+
+  // Destructure WebRTC functions for direct access
+  const {
+    initializeWebrtcHost,
+    connectAsGuest,
+    sendWebrtcAction,
+  } = webrtc
+
   // Update ref when function changes
   useEffect(() => {
     setGameStateWithDeltaRef.current = setGameStateWithDelta
@@ -457,6 +197,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       return () => {
         cleanup()
         // Don't destroy manager on unmount, just cleanup listeners
+        // Note: This cleanup runs on HMR and unmount - we only remove listeners
       }
     }
     return undefined
@@ -478,10 +219,20 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       }
     }
 
+    // IMPORTANT: Prevent duplicate auto-restore on React Fast Refresh (HMR)
+    // Use sessionStorage flag since it persists across HMR but not page reload
+    const restoreKey = 'webrtc_auto_restore_attempted'
+    if (sessionStorage.getItem(restoreKey)) {
+      logger.info('[Auto-restore] Skipping - already attempted in this session')
+      return
+    }
+    sessionStorage.setItem(restoreKey, 'true')
+
     // Check if there's a restorable session
     const sessionType = getRestorableSessionType()
     if (sessionType === 'none') {
       logger.info('[Auto-restore] No restorable session found')
+      sessionStorage.removeItem(restoreKey)
       return
     }
 
@@ -508,6 +259,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             logger.warn('[Auto-restore] Missing host data or state data')
             clearWebrtcData()
             isRestoringSessionRef.current = false
+            sessionStorage.removeItem('webrtc_auto_restore_attempted')
             return
           }
 
@@ -580,6 +332,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             logger.warn('[Auto-restore] Missing guest data or state data')
             clearWebrtcData()
             isRestoringSessionRef.current = false
+            sessionStorage.removeItem('webrtc_auto_restore_attempted')
             return
           }
 
@@ -617,6 +370,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               clearWebrtcData()
               logger.info('[Auto-restore] Cleared stale guest data due to failed reconnection')
               isRestoringSessionRef.current = false
+              sessionStorage.removeItem('webrtc_auto_restore_attempted')
               return
             }
           } else {
@@ -674,6 +428,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         logger.error('[Auto-restore] Failed to restore session:', err)
         clearWebrtcData()
         isRestoringSessionRef.current = false
+        sessionStorage.removeItem('webrtc_auto_restore_attempted')
       }
     }, 100)
   }, [])
@@ -695,15 +450,30 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     }
   }, [webrtcEnabled])
 
-  const gameStateRef = useRef(gameState)
+  // Sync refs with state values
   useEffect(() => {
     gameStateRef.current = gameState
   }, [gameState])
 
-  const localPlayerIdRef = useRef(localPlayerId)
   useEffect(() => {
     localPlayerIdRef.current = localPlayerId
   }, [localPlayerId])
+
+  // Visual effects hook - handles all visual effect triggers and broadcasts
+  const visualEffects = useVisualEffects({
+    ws,
+    webrtcManager: webrtcManagerRef,
+    gameStateRef,
+    localPlayerIdRef,
+    webrtcIsHostRef,
+    setLatestHighlight,
+    setLatestFloatingTexts,
+    setLatestNoTarget,
+    setLatestDeckSelections,
+    setLatestHandCardSelections,
+    setTargetSelectionEffects,
+    setGameState,
+  })
 
   // Track if restoration is in progress to prevent exitGame from clearing data
   const isRestoringSessionRef = useRef(false)
@@ -1441,6 +1211,42 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
 
+      case 'JOIN_ACCEPT_BINARY':
+        // Host accepted our join request with optimized binary game state
+        logger.info(`[handleWebrtcMessage] Received JOIN_ACCEPT_BINARY, playerId: ${message.playerId}`)
+        if (message.data instanceof Uint8Array) {
+          try {
+            const minimal = deserializeFromBinary(message.data) as any
+            const remoteState = expandMinimalGameState(minimal)
+            logger.info(`[handleWebrtcMessage] Expanded binary state with ${remoteState.players?.length || 0} players`)
+            setGameState(remoteState)
+            if (message.playerId !== undefined) {
+              setLocalPlayerId(message.playerId)
+              logger.info(`[handleWebrtcMessage] Set local player ID to ${message.playerId}`)
+
+              // Save guest connection data for page reload recovery
+              try {
+                const hostPeerId = webrtcManagerRef.current?.getHostPeerId()
+                const localPlayer = remoteState.players.find((p: any) => p.id === message.playerId)
+                if (hostPeerId) {
+                  saveGuestData({
+                    hostPeerId,
+                    playerId: message.playerId,
+                    playerName: localPlayer?.name || null,
+                    isHost: false
+                  })
+                }
+              } catch (e) {
+                logger.warn('[JOIN_ACCEPT_BINARY] Failed to save guest data:', e)
+              }
+            }
+            logger.info(`[handleWebrtcMessage] Received optimized binary game state: ${message.data.byteLength} bytes`)
+          } catch (e) {
+            logger.error('[handleWebrtcMessage] Failed to deserialize binary game state:', e)
+          }
+        }
+        break
+
       case 'STATE_UPDATE':
         // Host broadcasted state update
         // Mark that we've received state from host (similar to server state in WebSocket mode)
@@ -1804,6 +1610,52 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
             return result
           })
+        }
+        break
+
+      case 'STATE_DELTA_BINARY':
+        // Optimized binary state delta (MessagePack + short keys)
+        if (!webrtcIsHostRef.current) {
+          receivedServerStateRef.current = true
+        }
+        logger.info(`[STATE_DELTA_BINARY] Received binary delta, isHost: ${webrtcIsHostRef.current}, senderId: ${message.senderId}`)
+        if (message.data instanceof Uint8Array) {
+          try {
+            const delta = deserializeDelta(message.data)
+            logger.info(`[STATE_DELTA_BINARY] Deserialized delta: playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, boardCells=${delta.boardCells?.length || 0}, phaseDelta=${!!delta.phaseDelta}`)
+
+            // If we're the host, rebroadcast this delta to all OTHER guests
+            if (webrtcIsHostRef.current && message.senderId && webrtcManagerRef.current) {
+              logger.info(`[STATE_DELTA_BINARY] Host rebroadcasting binary delta from guest ${message.senderId} to other guests`)
+              webrtcManagerRef.current.broadcastStateDelta(delta, message.senderId)
+            }
+
+            // Apply the delta locally
+            setGameState(prev => {
+              const currentLocalPlayerId = localPlayerIdRef.current || prev.localPlayerId
+              logger.info(`[STATE_DELTA_BINARY] Applying delta with localPlayerId=${currentLocalPlayerId}, currentPhase before=${prev.currentPhase}`)
+              const result = applyStateDelta(prev, delta, currentLocalPlayerId)
+              logger.info(`[STATE_DELTA_BINARY] Applying delta with localPlayerId=${currentLocalPlayerId}, currentPhase after=${result.currentPhase}`)
+
+              // Persist state after receiving delta
+              try {
+                if (result.gameId && currentLocalPlayerId !== null) {
+                  saveWebrtcState({
+                    gameState: result,
+                    localPlayerId: currentLocalPlayerId,
+                    isHost: webrtcIsHostRef.current
+                  })
+                  logger.debug(`[STATE_DELTA_BINARY] Saved state for ${webrtcIsHostRef.current ? 'host' : 'guest'} auto-restore`)
+                }
+              } catch (e) {
+                logger.warn('[STATE_DELTA_BINARY] Failed to persist state:', e)
+              }
+
+              return result
+            })
+          } catch (e) {
+            logger.error('[STATE_DELTA_BINARY] Failed to deserialize delta:', e)
+          }
         }
         break
 
@@ -3000,75 +2852,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     attemptReconnect()
   }, [isReconnecting, gameState, localPlayerId])
 
-  /**
-   * Initialize WebRTC as host
-   */
-  const initializeWebrtcHost = useCallback(async (): Promise<string | null> => {
-    if (!webrtcManagerRef.current) {
-      logger.error('WebRTC manager not initialized')
-      return null
-    }
-
-    try {
-      setWebrtcIsHost(true)
-      setConnectionStatus('Connecting')
-      const peerId = await webrtcManagerRef.current.initializeAsHost()
-      setWebrtcHostId(peerId)  // Store host peer ID for invite links
-      setConnectionStatus('Connected')
-
-      // Broadcast peerId immediately so guests can discover/reconnect
-      const currentGameId = gameStateRef.current.gameId
-      if (currentGameId) {
-        broadcastHostPeerId(peerId, currentGameId)
-      }
-
-      // Save host data for auto-restore after F5
-      const localPlayer = gameStateRef.current.players?.find(p => p.id === localPlayerIdRef.current)
-      saveHostData({
-        peerId,
-        isHost: true,
-        playerName: localPlayer?.name || null
-      })
-      logger.info('[initializeWebrtcHost] Saved host data for auto-restore')
-
-      return peerId
-    } catch (err) {
-      logger.error('Failed to initialize WebRTC host:', err)
-      setConnectionStatus('Disconnected')
-      return null
-    }
-  }, [])
-
-  /**
-   * Connect as guest to host via WebRTC
-   */
-  const connectAsGuest = useCallback(async (hostId: string): Promise<boolean> => {
-    if (!webrtcManagerRef.current) {
-      logger.error('WebRTC manager not initialized')
-      return false
-    }
-
-    try {
-      setWebrtcIsHost(false)
-      setWebrtcHostId(hostId)  // Store host ID immediately for reconnection tracking
-      setConnectionStatus('Connecting')
-      await webrtcManagerRef.current.initializeAsGuest(hostId)
-      return true
-    } catch (err) {
-      logger.error('Failed to connect as guest:', err)
-      setConnectionStatus('Disconnected')
-      return false
-    }
-  }, [])
-
-  /**
-   * Send action to host via WebRTC (guest only)
-   */
-  const sendWebrtcAction = useCallback((actionType: string, actionData: any) => {
-    if (!webrtcManagerRef.current || webrtcIsHostRef.current) {return false}
-    return webrtcManagerRef.current.sendAction(actionType, actionData)
-  }, [])
-
   const updateState = useCallback((newStateOrFn: GameState | ((prevState: GameState) => GameState)) => {
     setGameState((prevState) => {
       // Guard against undefined prevState
@@ -3148,6 +2931,110 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       return newState
     })
   }, [webrtcEnabled, webrtcIsHost, broadcastWebrtcState])
+
+  // Game settings hook - handles game configuration functions
+  const gameSettings = useGameSettings({
+    ws,
+    webrtcManager: webrtcManagerRef,
+    gameStateRef,
+    webrtcIsHostRef,
+    setGameState,
+    updateState,
+  })
+
+  // Ready check hook - handles ready check functions
+  const readyCheck = useReadyCheck({
+    ws,
+    webrtcManager: webrtcManagerRef,
+    gameStateRef,
+    localPlayerIdRef,
+    webrtcIsHostRef,
+    setGameState,
+  })
+
+  // Player actions hook - handles simple player operations
+  const playerActions = usePlayerActions({
+    updateState,
+  })
+
+  // Card operations hook - handles card drawing, shuffling, flipping
+  const cardOperations = useCardOperations({
+    ws,
+    webrtcManager: webrtcManagerRef,
+    gameStateRef,
+    localPlayerIdRef,
+    webrtcIsHostRef,
+    updateState,
+  })
+
+  // Card status hook - handles adding/removing statuses from cards
+  const cardStatus = useCardStatus({
+    localPlayerIdRef,
+    updateState,
+  })
+
+  // Destructure card status functions for direct access
+  const {
+    addBoardCardStatus,
+    removeBoardCardStatus,
+    removeBoardCardStatusByOwner,
+    modifyBoardCardPower,
+    addAnnouncedCardStatus,
+    removeAnnouncedCardStatus,
+    modifyAnnouncedCardPower,
+    addHandCardStatus,
+    removeHandCardStatus,
+    revealHandCard,
+    revealBoardCard,
+    requestCardReveal,
+    respondToRevealRequest,
+    removeRevealedStatus,
+  } = cardStatus
+
+  // Deck management hook - handles deck operations
+  const deckManagement = useDeckManagement({
+    webrtcIsHostRef,
+    getCardDefinition,
+    commandCardIds,
+    createDeck,
+    updateState,
+  })
+
+  // Destructure deck management functions for direct access
+  const {
+    changePlayerDeck,
+    loadCustomDeck,
+    resurrectDiscardedCard,
+    reorderTopDeck,
+    reorderCards,
+    recoverDiscardedCard,
+  } = deckManagement
+
+  // Phase management hook - handles phase and round management
+  const phaseManagement = usePhaseManagement({
+    ws,
+    webrtcManagerRef,
+    webrtcIsHostRef,
+    gameStateRef,
+    scoreDeltaAccumulator,
+    setGameState,
+    updateState,
+    abilityMode,
+    setAbilityMode,
+    createDeck,
+  })
+
+  // Destructure phase management functions for direct access
+  const {
+    toggleActivePlayer,
+    toggleAutoDraw,
+    setPhase,
+    nextPhase,
+    prevPhase,
+    closeRoundEndModal,
+    closeRoundEndModalOnly,
+    resetGame,
+  } = phaseManagement
 
   // ... WebSocket logic (connectWebSocket, forceReconnect, joinGame, etc.) kept as is ...
   const connectWebSocket = useCallback(() => {
@@ -3561,48 +3448,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     ws.current.onerror = (event) => console.error('WebSocket error event:', event)
   }, [setGameState, createInitialState])
 
-  const forceReconnect = useCallback(() => {
-    if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
-      ws.current.close()
-    } else {
-      // If the socket was not open (e.g. initially missing URL), we must trigger connection manually.
-      connectWebSocket()
-    }
-  }, [connectWebSocket])
-
-  const joinGame = useCallback((gameId: string): void => {
-    isManualExitRef.current = false
-    if (ws.current?.readyState === WebSocket.OPEN) {
-      joiningGameIdRef.current = gameId
-      let reconnectionData = null
-      try {
-        const storedData = localStorage.getItem(RECONNECTION_DATA_KEY)
-        if (storedData) {
-          reconnectionData = JSON.parse(storedData)
-        }
-      } catch (e) {
-        clearGameState()
-      }
-      const payload: { type: string; gameId: string; playerToken?: string } = { type: 'JOIN_GAME', gameId }
-      if (reconnectionData?.gameId === gameId && reconnectionData.playerToken) {
-        payload.playerToken = reconnectionData.playerToken
-        logger.info(`JoinGame: Sending reconnection with token ${reconnectionData.playerToken.substring(0, 8)}... for player ${reconnectionData.playerId}`)
-      } else {
-        logger.info(`JoinGame: No reconnection data or gameId mismatch. storedGameId=${reconnectionData?.gameId}, requestedGameId=${gameId}`)
-      }
-      ws.current.send(JSON.stringify(payload))
-    } else {
-      connectWebSocket()
-      joiningGameIdRef.current = gameId
-    }
-  }, [connectWebSocket])
-
-  // Join game via Join Game modal - sets flag to show "already started" error if needed
-  const joinGameViaModal = useCallback((gameId: string): void => {
-    isJoinAttemptRef.current = true
-    joinGame(gameId)
-  }, [joinGame])
-
   // Join as invite - automatically joins as new player or spectator
   const joinAsInvite = useCallback((gameId: string, playerName: string = 'Player'): void => {
     isManualExitRef.current = false
@@ -3719,359 +3564,36 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     return () => clearInterval(checkInterval)
   }, [contentLoaded])
 
-  const createGame = useCallback(() => {
-    isManualExitRef.current = false
-    clearGameState()
-    const newGameId = generateGameId()
-    const initialState = {
-      ...createInitialState(),
-      gameId: newGameId,
-      players: [createNewPlayer(1)],
-    }
-    // Mark that we're creating a new game - client is the authority here
-    receivedServerStateRef.current = true
-    updateState(initialState)
-    // Wait for server to process UPDATE_STATE and assign playerId before sending other messages
-    setTimeout(() => {
-      if (ws.current?.readyState === WebSocket.OPEN) {
-        ws.current.send(JSON.stringify({ type: 'SUBSCRIBE', gameId: newGameId }))
-        ws.current.send(JSON.stringify({ type: 'UPDATE_DECK_DATA', deckData: rawJsonData }))
-      }
-    }, 100)
-  }, [updateState, createInitialState, createNewPlayer])
+  // Ready check functions from useReadyCheck hook
+  const {
+    startReadyCheck,
+    cancelReadyCheck,
+    playerReady,
+  } = readyCheck
 
-  const requestGamesList = useCallback(() => {
-    if (ws.current?.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify({ type: 'GET_GAMES_LIST' }))
-    }
-  }, [])
+  // Player actions from usePlayerActions hook
+  const {
+    updatePlayerName,
+    changePlayerColor,
+  } = playerActions
 
-  const exitGame = useCallback(() => {
-    // Don't exit if we're in the middle of restoring a session
-    if (isRestoringSessionRef.current) {
-      logger.info('[exitGame] Skipping exit during session restoration')
-      return
-    }
+  // Card operations from useCardOperations hook
+  const {
+    drawCard,
+    drawCardsBatch,
+    shufflePlayerDeck,
+    flipBoardCard,
+    flipBoardCardFaceDown,
+  } = cardOperations
 
-    isManualExitRef.current = true
-    const gameIdToLeave = gameStateRef.current.gameId
-    const playerIdToLeave = localPlayerIdRef.current
-
-    // Clear host peerId broadcast if we're the host
-    if (gameIdToLeave && webrtcIsHostRef.current) {
-      clearHostPeerIdBroadcast(gameIdToLeave)
-    }
-
-    // Clear WebRTC persistence data on manual exit
-    try {
-      clearWebrtcData()
-      logger.info('[exitGame] Cleared WebRTC persistence data')
-    } catch (e) {
-      logger.warn('[exitGame] Failed to clear WebRTC data:', e)
-    }
-
-    setGameState(createInitialState())
-    setLocalPlayerId(null)
-    clearGameState()
-
-    if (ws.current) {
-      ws.current.onclose = null
-    }
-
-    if (ws.current?.readyState === WebSocket.OPEN && gameIdToLeave && playerIdToLeave !== null) {
-      ws.current.send(JSON.stringify({ type: 'EXIT_GAME', gameId: gameIdToLeave, playerId: playerIdToLeave }))
-    }
-
-    if (ws.current) {
-      ws.current.close()
-    }
-
-    setTimeout(() => {
-      isManualExitRef.current = false
-      connectWebSocket()
-    }, 100)
-
-  }, [createInitialState, connectWebSocket])
-
-  // ... (startReadyCheck, cancelReadyCheck, playerReady, assignTeams, setGameMode, setGamePrivacy, syncGame, setActiveGridSize, setDummyPlayerCount methods kept as is) ...
-  const startReadyCheck = useCallback(() => {
-    // Check localStorage directly for WebRTC mode (more reliable than state)
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
-
-    // WebRTC P2P mode
-    if (isWebRTCMode && webrtcManagerRef.current && webrtcIsHostRef.current) {
-      logger.info('[startReadyCheck] Starting ready check via WebRTC')
-      // Update local state
-      setGameState(prev => ({ ...prev, isReadyCheckActive: true, isPrivate: true }))
-      // Broadcast only the flags, not full gameState (to avoid size limit)
-      webrtcManagerRef.current.broadcastToGuests({
-        type: 'START_READY_CHECK',
-        senderId: webrtcManagerRef.current.getPeerId(),
-        data: { isReadyCheckActive: true, isPrivate: true },
-        timestamp: Date.now()
-      })
-      return
-    }
-    // WebSocket server mode
-    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
-      ws.current.send(JSON.stringify({ type: 'START_READY_CHECK', gameId: gameStateRef.current.gameId }))
-    }
-  }, [webrtcIsHostRef])
-
-  const cancelReadyCheck = useCallback(() => {
-    // Check localStorage directly for WebRTC mode
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
-
-    // WebRTC P2P mode
-    if (isWebRTCMode && webrtcManagerRef.current && webrtcIsHostRef.current) {
-      logger.info('[cancelReadyCheck] Cancelling ready check via WebRTC')
-      // Update local state
-      setGameState(prev => ({ ...prev, isReadyCheckActive: false }))
-      // Broadcast only the flag (to avoid size limit)
-      webrtcManagerRef.current.broadcastToGuests({
-        type: 'CANCEL_READY_CHECK',
-        senderId: webrtcManagerRef.current.getPeerId(),
-        data: { isReadyCheckActive: false },
-        timestamp: Date.now()
-      })
-      return
-    }
-    // WebSocket server mode
-    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
-      ws.current.send(JSON.stringify({ type: 'CANCEL_READY_CHECK', gameId: gameStateRef.current.gameId }))
-    } else {
-      // When disconnected, cancel locally only
-      setGameState(prev => ({ ...prev, isReadyCheckActive: false }))
-    }
-  }, [webrtcIsHostRef])
-
-  const playerReady = useCallback(() => {
-    // Check localStorage directly for WebRTC mode (more reliable than state)
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
-
-    // WebRTC P2P mode - host
-    if (isWebRTCMode && webrtcManagerRef.current && webrtcIsHostRef.current && localPlayerIdRef.current !== null) {
-      logger.info('[playerReady] Host marking self as ready via WebRTC')
-      // Mark self as ready locally and check if all players are ready
-      setGameState(prev => {
-        const updatedPlayers = prev.players.map(p =>
-          p.id === localPlayerIdRef.current ? { ...p, isReady: true } : p
-        )
-        const newState = { ...prev, players: updatedPlayers }
-
-        // Check if all real players are ready
-        const realPlayers = newState.players.filter(p => !p.isDummy && !p.isDisconnected)
-        const allReady = realPlayers.length > 0 && realPlayers.every(p => p.isReady)
-
-        if (allReady && newState.isReadyCheckActive && !newState.isGameStarted) {
-          logger.info('[playerReady] All players ready! Starting game...')
-          // All players ready - start the game!
-          const allPlayers = newState.players.filter(p => !p.isDisconnected)
-          const randomIndex = Math.floor(Math.random() * allPlayers.length)
-          const startingPlayerId = allPlayers[randomIndex].id
-
-          // Draw initial hands for ALL players (host does this for everyone, guests draw themselves)
-          const finalState = { ...newState }
-          finalState.isReadyCheckActive = false
-          finalState.isGameStarted = true
-          finalState.startingPlayerId = startingPlayerId
-          finalState.activePlayerId = startingPlayerId
-          finalState.currentPhase = 0  // Preparation phase
-
-          // Draw cards for each player (including host)
-          finalState.players = finalState.players.map(player => {
-            if (player.hand.length === 0 && player.deck.length > 0) {
-              const cardsToDraw = 6
-              const newHand = [...player.hand]
-              const newDeck = [...player.deck]
-
-              for (let i = 0; i < cardsToDraw && i < newDeck.length; i++) {
-                const drawnCard = newDeck[0]
-                newDeck.splice(0, 1)
-                newHand.push(drawnCard)
-              }
-
-              logger.info(`[playerReady] Drew initial ${newHand.length} cards for player ${player.id}, deck now has ${newDeck.length} cards`)
-              return { ...player, hand: newHand, deck: newDeck }
-            }
-            return player
-          })
-
-          // Perform Preparation phase for starting player (draws 7th card and transitions to Setup)
-          const startingPlayer = finalState.players.find(p => p.id === startingPlayerId)
-          if (startingPlayer && startingPlayer.deck.length > 0) {
-            // Draw 7th card for starting player
-            const drawnCard = startingPlayer.deck[0]
-            const newDeck = [...startingPlayer.deck.slice(1)]
-            const newHand = [...startingPlayer.hand, drawnCard]
-
-            finalState.players = finalState.players.map(p =>
-              p.id === startingPlayerId
-                ? { ...p, deck: newDeck, hand: newHand, readySetup: false, readyCommit: false }
-                : p
-            )
-
-            // Transition to Setup phase
-            finalState.currentPhase = 1
-            logger.info(`[playerReady] Preparation phase: Starting player ${startingPlayerId} drew 7th card, now in Setup phase (${finalState.currentPhase})`)
-          }
-
-          // Use createDeltaFromStates to automatically detect all changes
-          // This is more reliable than manually creating the delta
-          const initialDrawDelta = createDeltaFromStates(newState, finalState, localPlayerIdRef.current || 0)
-          logger.info(`[playerReady] Created delta with ${Object.keys(initialDrawDelta.playerDeltas || {}).length} player changes, phaseDelta=${!!initialDrawDelta.phaseDelta}, roundDelta=${!!initialDrawDelta.roundDelta}`)
-          logger.info(`[playerReady] Delta content:`, JSON.stringify(initialDrawDelta, null, 2))
-          logger.info(`[playerReady] isDeltaEmpty result:`, isDeltaEmpty(initialDrawDelta))
-
-          // Broadcast game start notification first (for immediate UI feedback)
-          webrtcManagerRef.current!.broadcastToGuests({
-            type: 'GAME_START',
-            senderId: webrtcManagerRef.current!.getPeerId(),
-            data: {
-              startingPlayerId,
-              activePlayerId: startingPlayerId,
-              isGameStarted: true,
-              isReadyCheckActive: false
-            },
-            timestamp: Date.now()
-          })
-
-          // Then broadcast the delta (efficient - only size changes, not full hands)
-          setTimeout(() => {
-            const emptyCheck = isDeltaEmpty(initialDrawDelta)
-            logger.info(`[playerReady] Timeout callback - isDeltaEmpty: ${emptyCheck}`)
-            if (!emptyCheck) {
-              webrtcManagerRef.current!.broadcastStateDelta(initialDrawDelta)
-              logger.info('[playerReady] Broadcasted initial draw delta to guests')
-            } else {
-              logger.warn('[playerReady] Delta is empty, NOT broadcasting!')
-            }
-          }, 50)
-
-          return finalState
-        }
-
-        // Broadcast ready status to guests (if not all ready)
-        webrtcManagerRef.current!.broadcastToGuests({
-          type: 'HOST_READY',
-          senderId: webrtcManagerRef.current!.getPeerId(),
-          playerId: localPlayerIdRef.current ?? undefined,
-          timestamp: Date.now()
-        })
-
-        return newState
-      })
-      return
-    }
-
-    // WebRTC P2P mode - guest
-    if (isWebRTCMode && webrtcManagerRef.current && !webrtcIsHostRef.current && localPlayerIdRef.current !== null) {
-      logger.info('[playerReady] Guest sending PLAYER_READY via WebRTC')
-      webrtcManagerRef.current.sendMessageToHost({
-        type: 'PLAYER_READY',
-        senderId: webrtcManagerRef.current.getPeerId(),
-        playerId: localPlayerIdRef.current,
-        timestamp: Date.now()
-      })
-      // Mark self as ready locally
-      setGameState(prev => ({
-        ...prev,
-        players: prev.players.map(p =>
-          p.id === localPlayerIdRef.current ? { ...p, isReady: true } : p
-        )
-      }))
-      return
-    }
-    // WebSocket server mode
-    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId && localPlayerIdRef.current !== null) {
-      ws.current.send(JSON.stringify({ type: 'PLAYER_READY', gameId: gameStateRef.current.gameId, playerId: localPlayerIdRef.current }))
-    }
-  }, [webrtcIsHostRef, broadcastWebrtcState])
-
-  const assignTeams = useCallback((teamAssignments: Record<number, number[]>) => {
-    // Check localStorage directly for WebRTC mode
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
-
-    // WebRTC P2P mode
-    if (isWebRTCMode && webrtcManagerRef.current && webrtcIsHostRef.current) {
-      logger.info('[assignTeams] Assigning teams via WebRTC')
-      // Update player teamIds locally
-      setGameState(prev => {
-        const updatedPlayers = prev.players.map(p => {
-          // Find which team this player is in
-          let teamId = 1
-          for (const [team, playerIds] of Object.entries(teamAssignments)) {
-            if (playerIds.includes(p.id)) {
-              teamId = parseInt(team)
-              break
-            }
-          }
-          return { ...p, teamId }
-        })
-        return { ...prev, players: updatedPlayers }
-      })
-      // Broadcast only assignments (to avoid size limit)
-      webrtcManagerRef.current.broadcastToGuests({
-        type: 'ASSIGN_TEAMS',
-        senderId: webrtcManagerRef.current.getPeerId(),
-        data: { assignments: teamAssignments },
-        timestamp: Date.now()
-      })
-      return
-    }
-    // WebSocket server mode
-    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
-      ws.current.send(JSON.stringify({ type: 'ASSIGN_TEAMS', gameId: gameStateRef.current.gameId, assignments: teamAssignments }))
-    }
-  }, [webrtcIsHostRef])
-
-  const setGameMode = useCallback((mode: GameModeEnum) => {
-    // Check localStorage directly for WebRTC mode
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
-
-    // WebRTC P2P mode
-    if (isWebRTCMode && webrtcManagerRef.current && webrtcIsHostRef.current) {
-      logger.info('[setGameMode] Setting game mode via WebRTC')
-      // Update local state
-      setGameState(prev => ({ ...prev, gameMode: mode }))
-      // Broadcast only mode value (to avoid size limit)
-      webrtcManagerRef.current.broadcastToGuests({
-        type: 'SET_GAME_MODE',
-        senderId: webrtcManagerRef.current.getPeerId(),
-        data: { mode },
-        timestamp: Date.now()
-      })
-      return
-    }
-    // WebSocket server mode
-    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
-      ws.current.send(JSON.stringify({ type: 'SET_GAME_MODE', gameId: gameStateRef.current.gameId, mode }))
-    }
-  }, [webrtcIsHostRef])
-
-  const setGamePrivacy = useCallback((isPrivate: boolean) => {
-    // Check localStorage directly for WebRTC mode
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
-
-    // WebRTC P2P mode
-    if (isWebRTCMode && webrtcManagerRef.current && webrtcIsHostRef.current) {
-      logger.info('[setGamePrivacy] Setting game privacy via WebRTC')
-      // Update local state
-      setGameState(prev => ({ ...prev, isPrivate }))
-      // Broadcast only flag (to avoid size limit)
-      webrtcManagerRef.current.broadcastToGuests({
-        type: 'SET_GAME_PRIVACY',
-        senderId: webrtcManagerRef.current.getPeerId(),
-        data: { isPrivate },
-        timestamp: Date.now()
-      })
-      return
-    }
-    // WebSocket server mode
-    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
-      ws.current.send(JSON.stringify({ type: 'SET_GAME_PRIVACY', gameId: gameStateRef.current.gameId, isPrivate }))
-    }
-  }, [webrtcIsHostRef])
+  // Game settings functions from useGameSettings hook
+  const {
+    assignTeams,
+    setGameMode,
+    setGamePrivacy,
+    setActiveGridSize,
+    setDummyPlayerCount,
+  } = gameSettings
 
   const syncGame = useCallback(() => {
     if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId && localPlayerIdRef.current === 1) {
@@ -4109,454 +3631,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       setGameState(refreshedState)
     }
   }, [])
-
-  const setActiveGridSize = useCallback((size: GridSize) => {
-    updateState(currentState => {
-      if (currentState.isGameStarted) {
-        return currentState
-      }
-      const newState = { ...currentState, activeGridSize: size }
-
-      // Recreate board if size changed to ensure proper dimensions
-      const currentSize = currentState.board.length
-      if (currentSize !== size) {
-        // Create new board with the new size
-        newState.board = []
-        for (let i = 0; i < size; i++) {
-          const row: any[] = []
-          for (let j = 0; j < size; j++) {
-            row.push({ card: null })
-          }
-          newState.board.push(row)
-        }
-      } else {
-        newState.board = recalculateBoardStatuses(newState)
-      }
-      return newState
-    })
-  }, [updateState])
-
-  const setDummyPlayerCount = useCallback((count: number) => {
-    updateState(currentState => {
-      if (currentState.isGameStarted) {
-        return currentState
-      }
-      const realPlayers = currentState.players.filter(p => !p.isDummy)
-      if (realPlayers.length + count > MAX_PLAYERS) {
-        return currentState
-      }
-      const newPlayers = [...realPlayers]
-      // Find the highest player ID and increment from there
-      const maxId = Math.max(...realPlayers.map(p => p.id), 0)
-      for (let i = 0; i < count; i++) {
-        const dummyId = maxId + i + 1
-        const dummyPlayer = createNewPlayer(dummyId, true)
-        dummyPlayer.name = `Dummy ${i + 1}`
-        newPlayers.push(dummyPlayer)
-      }
-      return { ...currentState, players: newPlayers, dummyPlayerCount: count }
-    })
-  }, [updateState, createNewPlayer])
-
-  const addBoardCardStatus = useCallback((boardCoords: { row: number; col: number }, status: string, addedByPlayerId: number) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const card = newState.board[boardCoords.row][boardCoords.col].card
-      if (card) {
-        // Lucius, The Immortal Immunity: Cannot be stunned
-        // Uses strict baseId check OR Name+Hero check as a fallback
-        if (status === 'Stun') {
-          if (card.baseId === 'luciusTheImmortal') {
-            return currentState
-          }
-          // Robust Fallback: Name + Hero Type
-          if (card.name.includes('Lucius') && card.types?.includes('Hero')) {
-            return currentState
-          }
-        }
-
-        if (['Support', 'Threat', 'Revealed', 'Shield'].includes(status)) {
-          const alreadyHasStatusFromPlayer = card.statuses?.some(s => s.type === status && s.addedByPlayerId === addedByPlayerId)
-          if (alreadyHasStatusFromPlayer) {
-            return currentState
-          }
-        }
-        if (!card.statuses) {
-          card.statuses = []
-        }
-        card.statuses.push({ type: status, addedByPlayerId })
-      }
-      return newState
-    })
-  }, [updateState])
-
-  const removeBoardCardStatus = useCallback((boardCoords: { row: number; col: number }, status: string) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const card = newState.board[boardCoords.row][boardCoords.col].card
-      if (card?.statuses) {
-        const lastIndex = card.statuses.map(s => s.type).lastIndexOf(status)
-        if (lastIndex > -1) {
-          card.statuses.splice(lastIndex, 1)
-        }
-      }
-      newState.board = recalculateBoardStatuses(newState)
-      return newState
-    })
-  }, [updateState])
-
-  const removeBoardCardStatusByOwner = useCallback((boardCoords: { row: number; col: number }, status: string, ownerId: number) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const card = newState.board[boardCoords.row][boardCoords.col].card
-      if (card?.statuses) {
-        const index = card.statuses.findIndex(s => s.type === status && s.addedByPlayerId === ownerId)
-        if (index > -1) {
-          card.statuses.splice(index, 1)
-        }
-      }
-      newState.board = recalculateBoardStatuses(newState)
-      return newState
-    })
-  }, [updateState])
-
-  const modifyBoardCardPower = useCallback((boardCoords: { row: number; col: number }, delta: number) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const card = newState.board[boardCoords.row][boardCoords.col].card
-      if (card) {
-        if (card.powerModifier === undefined) {
-          card.powerModifier = 0
-        }
-        card.powerModifier += delta
-      }
-      return newState
-    })
-  }, [updateState])
-
-  // ... (Other status/card modification methods kept as is: addAnnouncedCardStatus, removeAnnouncedCardStatus, modifyAnnouncedCardPower, addHandCardStatus, removeHandCardStatus, flipBoardCard, flipBoardCardFaceDown, revealHandCard, revealBoardCard, requestCardReveal, respondToRevealRequest, removeRevealedStatus) ...
-  const addAnnouncedCardStatus = useCallback((playerId: number, status: string, addedByPlayerId: number) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const player = newState.players.find(p => p.id === playerId)
-      if (player?.announcedCard) {
-        if (['Support', 'Threat', 'Revealed'].includes(status)) {
-          const alreadyHasStatusFromPlayer = player.announcedCard.statuses?.some(s => s.type === status && s.addedByPlayerId === addedByPlayerId)
-          if (alreadyHasStatusFromPlayer) {
-            return currentState
-          }
-        }
-        if (!player.announcedCard.statuses) {
-          player.announcedCard.statuses = []
-        }
-        player.announcedCard.statuses.push({ type: status, addedByPlayerId })
-      }
-      return newState
-    })
-  }, [updateState])
-
-  const removeAnnouncedCardStatus = useCallback((playerId: number, status: string) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const player = newState.players.find(p => p.id === playerId)
-      if (player?.announcedCard?.statuses) {
-        const lastIndex = player.announcedCard.statuses.map(s => s.type).lastIndexOf(status)
-        if (lastIndex > -1) {
-          player.announcedCard.statuses.splice(lastIndex, 1)
-        }
-      }
-      return newState
-    })
-  }, [updateState])
-
-  const modifyAnnouncedCardPower = useCallback((playerId: number, delta: number) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const player = newState.players.find(p => p.id === playerId)
-      if (player?.announcedCard) {
-        if (player.announcedCard.powerModifier === undefined) {
-          player.announcedCard.powerModifier = 0
-        }
-        player.announcedCard.powerModifier += delta
-      }
-      return newState
-    })
-  }, [updateState])
-
-  const addHandCardStatus = useCallback((playerId: number, cardIndex: number, status: string, addedByPlayerId: number) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const player = newState.players.find(p => p.id === playerId)
-      if (player?.hand[cardIndex]) {
-        const card = player.hand[cardIndex]
-        // Check for duplicate statuses that should only exist once per player
-        if (['Support', 'Threat', 'Revealed', 'Shield', 'Resurrected'].includes(status)) {
-          const alreadyHasStatusFromPlayer = card.statuses?.some(s => s.type === status && s.addedByPlayerId === addedByPlayerId)
-          if (alreadyHasStatusFromPlayer) {
-            return currentState
-          }
-        }
-        if (!card.statuses) {
-          card.statuses = []
-        }
-        card.statuses.push({ type: status, addedByPlayerId })
-      }
-      return newState
-    })
-  }, [updateState])
-
-  const removeHandCardStatus = useCallback((playerId: number, cardIndex: number, status: string) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const player = newState.players.find(p => p.id === playerId)
-      const card = player?.hand[cardIndex]
-      if (card?.statuses) {
-        const lastIndex = card.statuses.map(s => s.type).lastIndexOf(status)
-        if (lastIndex > -1) {
-          card.statuses.splice(lastIndex, 1)
-        }
-        if (status === 'Revealed') {
-          const hasRevealed = card.statuses.some(s => s.type === 'Revealed')
-          if (!hasRevealed) {
-            delete card.revealedTo
-          }
-        }
-      }
-      return newState
-    })
-  }, [updateState])
-
-  const flipBoardCard = useCallback((boardCoords: { row: number; col: number }) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const card = newState.board[boardCoords.row][boardCoords.col].card
-      if (card) {
-        card.isFaceDown = false
-      }
-      newState.board = recalculateBoardStatuses(newState)
-      return newState
-    })
-  }, [updateState])
-
-  const flipBoardCardFaceDown = useCallback((boardCoords: { row: number; col: number }) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const card = newState.board[boardCoords.row][boardCoords.col].card
-      if (card) {
-        card.isFaceDown = true
-      }
-      newState.board = recalculateBoardStatuses(newState)
-      return newState
-    })
-  }, [updateState])
-
-  const revealHandCard = useCallback((playerId: number, cardIndex: number, revealTarget: 'all' | number[]) => {
-    updateState(currentState => {
-      const player = currentState.players.find(p => p.id === playerId)
-      if (!player?.hand[cardIndex]) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const cardToReveal = newState.players.find(p => p.id === playerId)!.hand[cardIndex]
-      if (revealTarget === 'all') {
-        cardToReveal.revealedTo = 'all'
-        if (!cardToReveal.statuses) {
-          cardToReveal.statuses = []
-        }
-        if (!cardToReveal.statuses.some(s => s.type === 'Revealed' && s.addedByPlayerId === playerId)) {
-          cardToReveal.statuses.push({ type: 'Revealed', addedByPlayerId: playerId })
-        }
-      } else {
-        if (!cardToReveal.revealedTo || cardToReveal.revealedTo === 'all' || !Array.isArray(cardToReveal.revealedTo)) {
-          cardToReveal.revealedTo = []
-        }
-        const newRevealedIds = revealTarget.filter(id => !(cardToReveal.revealedTo as number[]).includes(id));
-        (cardToReveal.revealedTo).push(...newRevealedIds)
-      }
-      return newState
-    })
-  }, [updateState])
-
-  const revealBoardCard = useCallback((boardCoords: { row: number, col: number }, revealTarget: 'all' | number[]) => {
-    updateState(currentState => {
-      const cardToReveal = currentState.board[boardCoords.row][boardCoords.col].card
-      if (!cardToReveal) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const cardInNewState = newState.board[boardCoords.row][boardCoords.col].card!
-      const ownerId = cardInNewState.ownerId
-      if (revealTarget === 'all') {
-        cardInNewState.revealedTo = 'all'
-        if (ownerId !== undefined) {
-          if (!cardInNewState.statuses) {
-            cardInNewState.statuses = []
-          }
-          if (!cardInNewState.statuses.some(s => s.type === 'Revealed' && s.addedByPlayerId === ownerId)) {
-            cardInNewState.statuses.push({ type: 'Revealed', addedByPlayerId: ownerId })
-          }
-        }
-      } else {
-        if (!cardInNewState.revealedTo || cardInNewState.revealedTo === 'all' || !Array.isArray(cardInNewState.revealedTo)) {
-          cardInNewState.revealedTo = []
-        }
-        const newRevealedIds = revealTarget.filter(id => !(cardInNewState.revealedTo as number[]).includes(id));
-        (cardInNewState.revealedTo).push(...newRevealedIds)
-      }
-      return newState
-    })
-  }, [updateState])
-
-  const requestCardReveal = useCallback((cardIdentifier: CardIdentifier, requestingPlayerId: number) => {
-    updateState(currentState => {
-      const ownerId = cardIdentifier.boardCoords
-        ? currentState.board[cardIdentifier.boardCoords.row][cardIdentifier.boardCoords.col].card?.ownerId
-        : cardIdentifier.ownerId
-      if (!ownerId) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const existingRequest = newState.revealRequests.find(
-        (req: RevealRequest) => req.fromPlayerId === requestingPlayerId && req.toPlayerId === ownerId,
-      )
-      if (existingRequest) {
-        const cardAlreadyRequested = existingRequest.cardIdentifiers.some(ci =>
-          JSON.stringify(ci) === JSON.stringify(cardIdentifier),
-        )
-        if (!cardAlreadyRequested) {
-          existingRequest.cardIdentifiers.push(cardIdentifier)
-        }
-      } else {
-        newState.revealRequests.push({
-          fromPlayerId: requestingPlayerId,
-          toPlayerId: ownerId,
-          cardIdentifiers: [cardIdentifier],
-        })
-      }
-      return newState
-    })
-  }, [updateState])
-
-  const respondToRevealRequest = useCallback((fromPlayerId: number, accepted: boolean) => {
-    updateState(currentState => {
-      const requestIndex = currentState.revealRequests.findIndex(
-        (req: RevealRequest) => req.toPlayerId === localPlayerIdRef.current && req.fromPlayerId === fromPlayerId,
-      )
-      if (requestIndex === -1) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const request = newState.revealRequests[requestIndex]
-      if (accepted) {
-        const { cardIdentifiers } = request
-        for (const cardIdentifier of cardIdentifiers) {
-          let cardToUpdate: Card | null = null
-          if (cardIdentifier.source === 'board' && cardIdentifier.boardCoords) {
-            cardToUpdate = newState.board[cardIdentifier.boardCoords.row][cardIdentifier.boardCoords.col].card
-          } else if (cardIdentifier.source === 'hand' && cardIdentifier.ownerId && cardIdentifier.cardIndex !== undefined) {
-            const owner = newState.players.find(p => p.id === cardIdentifier.ownerId)
-            if (owner) {
-              cardToUpdate = owner.hand[cardIdentifier.cardIndex]
-            }
-          }
-          if (cardToUpdate) {
-            if (!cardToUpdate.statuses) {
-              cardToUpdate.statuses = []
-            }
-            if (!cardToUpdate.statuses.some(s => s.type === 'Revealed' && s.addedByPlayerId === fromPlayerId)) {
-              cardToUpdate.statuses.push({ type: 'Revealed', addedByPlayerId: fromPlayerId })
-            }
-          }
-        }
-      }
-      newState.revealRequests.splice(requestIndex, 1)
-      return newState
-    })
-  }, [updateState])
-
-  const removeRevealedStatus = useCallback((cardIdentifier: { source: 'hand' | 'board'; playerId?: number; cardIndex?: number; boardCoords?: { row: number, col: number }}) => {
-    updateState(currentState => {
-      const newState: GameState = deepCloneState(currentState)
-      let cardToUpdate: Card | null = null
-      if (cardIdentifier.source === 'board' && cardIdentifier.boardCoords) {
-        cardToUpdate = newState.board[cardIdentifier.boardCoords.row][cardIdentifier.boardCoords.col].card
-      } else if (cardIdentifier.source === 'hand' && cardIdentifier.playerId && cardIdentifier.cardIndex !== undefined) {
-        const owner = newState.players.find(p => p.id === cardIdentifier.playerId)
-        if (owner) {
-          cardToUpdate = owner.hand[cardIdentifier.cardIndex]
-        }
-      }
-      if (cardToUpdate) {
-        if (cardToUpdate.statuses) {
-          cardToUpdate.statuses = cardToUpdate.statuses.filter(s => s.type !== 'Revealed')
-        }
-        delete cardToUpdate.revealedTo
-      }
-      return newState
-    })
-  }, [updateState])
-
-
-  const updatePlayerName = useCallback((playerId: number, name:string) => {
-    updateState(currentState => {
-      if (currentState.isGameStarted) {
-        return currentState
-      }
-      return {
-        ...currentState,
-        players: currentState.players.map(p => p.id === playerId ? { ...p, name } : p),
-      }
-    })
-  }, [updateState])
-
-  const changePlayerColor = useCallback((playerId: number, color: PlayerColor) => {
-    updateState(currentState => {
-      if (currentState.isGameStarted) {
-        return currentState
-      }
-      const isColorTaken = currentState.players.some(p => p.id !== playerId && !p.isDummy && p.color === color)
-      if (isColorTaken) {
-        return currentState
-      }
-      return {
-        ...currentState,
-        players: currentState.players.map(p => p.id === playerId ? { ...p, color } : p),
-      }
-    })
-  }, [updateState])
 
   const updatePlayerScore = useCallback((playerId: number, delta: number) => {
     const currentState = gameStateRef.current
@@ -4644,2141 +3718,89 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     }
   }, [setGameState, updateState])
 
-  const changePlayerDeck = useCallback((playerId: number, deckType: DeckType) => {
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
-
-    updateState(currentState => {
-      if (currentState.isGameStarted) {
-        return currentState
-      }
-      return {
-        ...currentState,
-        players: currentState.players.map(p =>
-          p.id === playerId
-            ? { ...p, deck: createDeck(deckType, playerId, p.name), selectedDeck: deckType, hand: [], discard: [], announcedCard: null, boardHistory: [] }
-            : p,
-        ),
-      }
-    })
-
-    // In WebRTC mode, also send deck change to host for broadcasting
-    if (isWebRTCMode && !webrtcIsHostRef.current && sendWebrtcAction) {
-      sendWebrtcAction('CHANGE_PLAYER_DECK', { playerId, deckType })
-      logger.info(`[changePlayerDeck] Sent deck change to host: player ${playerId}, deck ${deckType}`)
-    }
-  }, [updateState, createDeck, sendWebrtcAction])
-
-  const loadCustomDeck = useCallback((playerId: number, deckFile: CustomDeckFile) => {
-    updateState(currentState => {
-      if (currentState.isGameStarted) {
-        return currentState
-      }
-      const player = currentState.players.find(p => p.id === playerId)
-      if (!player) {
-        return currentState
-      }
-      const newDeck: Card[] = []
-      const cardInstanceCounter = new Map<string, number>()
-      for (const { cardId, quantity } of deckFile.cards) {
-        const cardDef = getCardDefinition(cardId)
-        if (!cardDef) {
-          continue
-        }
-        const isCommandCard = commandCardIds.has(cardId)
-        const deckType = isCommandCard ? DeckType.Command : DeckType.Custom
-        const prefix = isCommandCard ? 'CMD' : 'CUS'
-        for (let i = 0; i < quantity; i++) {
-          const instanceNum = (cardInstanceCounter.get(cardId) || 0) + 1
-          cardInstanceCounter.set(cardId, instanceNum)
-          newDeck.push({
-            ...cardDef,
-            id: `${prefix}_${cardId.toUpperCase()}_${instanceNum}`,
-            baseId: cardId, // Ensure baseId is set for localization and display
-            deck: deckType,
-            ownerId: playerId,
-            ownerName: player.name,
-          })
-        }
-      }
-      return {
-        ...currentState,
-        players: currentState.players.map(p =>
-          p.id === playerId
-            ? { ...p, deck: shuffleDeck(newDeck), selectedDeck: DeckType.Custom, hand: [], discard: [], announcedCard: null, boardHistory: [] }
-            : p,
-        ),
-      }
-    })
-  }, [updateState])
-
-  const drawCard = useCallback((playerId: number) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const player = currentState.players.find(p => p.id === playerId)
-      if (!player || player.deck.length === 0) {
-        return currentState
-      }
-      const newState = deepCloneState(currentState)
-      const playerToUpdate = newState.players.find((p: Player) => p.id === playerId)!
-      const cardDrawn = playerToUpdate.deck.shift()
-      if (cardDrawn) {
-        playerToUpdate.hand.push(cardDrawn)
-      }
-      return newState
-    })
-  }, [updateState])
-
-  // Batch version of drawCard - draws multiple cards in a single state update
-  // This prevents multiple UPDATE_STATE messages and race conditions with server sync
-  const drawCardsBatch = useCallback((playerId: number, count: number) => {
-    if (count <= 0) {return}
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const player = currentState.players.find(p => p.id === playerId)
-      if (!player || player.deck.length === 0) {
-        return currentState
-      }
-      const newState = deepCloneState(currentState)
-      const playerToUpdate = newState.players.find((p: Player) => p.id === playerId)!
-      // Draw up to 'count' cards (or as many as available)
-      const cardsToDraw = Math.min(count, playerToUpdate.deck.length)
-      for (let i = 0; i < cardsToDraw; i++) {
-        const cardDrawn = playerToUpdate.deck.shift()
-        if (cardDrawn) {
-          playerToUpdate.hand.push(cardDrawn)
-        }
-      }
-      return newState
-    })
-  }, [updateState])
-
-  const shufflePlayerDeck = useCallback((playerId: number) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const player = currentState.players.find(p => p.id === playerId)
-      if (!player) {
-        return currentState
-      }
-      const newState = deepCloneState(currentState)
-      const playerToUpdate = newState.players.find((p: Player) => p.id === playerId)!
-      playerToUpdate.deck = shuffleDeck(playerToUpdate.deck)
-      return newState
-    })
-  }, [updateState])
-
-  const toggleActivePlayer = useCallback((playerId: number) => {
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
-
-    if (isWebRTCMode && webrtcManagerRef.current) {
-      // WebRTC P2P mode
-      if (webrtcIsHostRef.current) {
-        // Host: process locally using toggleActivePlayer from PhaseManagement
-        logger.info(`[toggleActivePlayer] Host toggling active player to ${playerId}`)
-        setGameState(prev => {
-          // Use the imported toggleActivePlayer function from PhaseManagement
-          const newState = toggleActivePlayerPhase(prev, playerId)
-          // Broadcast to guests via WebRTC
-          if (webrtcManagerRef.current) {
-            webrtcManagerRef.current.broadcastToGuests({
-              type: 'ACTIVE_PLAYER_CHANGED',
-              senderId: webrtcManagerRef.current.getPeerId(),
-              data: {
-                activePlayerId: newState.activePlayerId,
-                currentPhase: newState.currentPhase,
-                turnNumber: newState.turnNumber
-              },
-              timestamp: Date.now()
-            })
-          }
-          return newState
-        })
-      } else {
-        // Guest: send to host
-        webrtcManagerRef.current.sendMessageToHost({
-          type: 'TOGGLE_ACTIVE_PLAYER',
-          senderId: undefined,
-          data: { playerId },
-          timestamp: Date.now()
-        })
-        logger.info(`[toggleActivePlayer] Sent TOGGLE_ACTIVE_PLAYER for player ${playerId} via WebRTC`)
-      }
-    } else if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      // Flush any pending score deltas before toggling active player
-      // This ensures server has up-to-date scores for round end check
-      scoreDeltaAccumulator.forEach((accumulated, pid) => {
-        clearTimeout(accumulated.timerId)
-        logger.info(`[ScoreFlush] Flushing on toggle: player=${pid}, delta=${accumulated.delta}`)
-        ws.current!.send(JSON.stringify({
-          type: 'UPDATE_PLAYER_SCORE',
-          gameId: gameStateRef.current.gameId,
-          playerId: pid,
-          delta: accumulated.delta
-        }))
-      })
-      scoreDeltaAccumulator.clear()
-
-      ws.current.send(JSON.stringify({
-        type: 'TOGGLE_ACTIVE_PLAYER',
-        gameId: gameStateRef.current.gameId,
-        playerId
-      }))
-    }
-  }, [])
-
-  const toggleAutoDraw = useCallback((playerId: number, enabled: boolean) => {
-    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify({
-        type: 'TOGGLE_AUTO_DRAW',
-        gameId: gameStateRef.current.gameId,
-        playerId,
-        enabled
-      }))
-    }
-  }, [])
-
-  const setPhase = useCallback((phaseIndex: number) => {
-    // Check if we need to clear line selection mode
-    const isClearingLineSelectionMode = abilityMode && setAbilityMode && abilityMode.mode &&
-      ['SCORE_LAST_PLAYED_LINE', 'SELECT_LINE_END', 'INTEGRATOR_LINE_SELECT', 'ZIUS_LINE_SELECT'].includes(abilityMode.mode);
-
-    if (isClearingLineSelectionMode) {
-      setAbilityMode(null);
-    }
-
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-
-      // Allow phases 1-4 (Setup, Main, Commit, Scoring), phase 0 (Preparation) is hidden
-      const newPhase = Math.max(1, Math.min(phaseIndex, 4))
-      const enteringScoringPhase = newPhase === 4
-
-      // When entering Scoring phase from any phase, enable scoring step
-      // This matches the behavior of nextPhase
-      // If clearing line selection mode, also close isScoringStep to prevent re-triggering
-      return {
-        ...currentState,
-        currentPhase: newPhase,
-        ...(enteringScoringPhase && !isClearingLineSelectionMode ? { isScoringStep: true } : {}),
-        ...(isClearingLineSelectionMode ? { isScoringStep: false } : {}),
-      }
-    })
-  }, [updateState, abilityMode, setAbilityMode])
-
-  const nextPhase = useCallback(() => {
-    // Always clear line selection modes when changing phase
-    if (abilityMode && setAbilityMode && abilityMode.mode) {
-      const lineSelectionModes = ['SCORE_LAST_PLAYED_LINE', 'SELECT_LINE_END', 'INTEGRATOR_LINE_SELECT', 'ZIUS_LINE_SELECT'];
-      if (lineSelectionModes.includes(abilityMode.mode)) {
-        setAbilityMode(null);
-      }
-    }
-
-    const currentState = gameStateRef.current
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
-
-    // When at Scoring phase (4) or in scoring step, send NEXT_PHASE to server
-    // Server will handle turn passing and Preparation phase for next player
-    // CRITICAL: Only send to server if BOTH conditions are aligned - prevent race conditions
-    // where isScoringStep might be true but currentPhase has already changed
-    // NOTE: In WebRTC mode, we skip server-side turn passing and handle it locally
-    if (currentState.isGameStarted && currentState.currentPhase === 4 && currentState.isScoringStep && !isWebRTCMode) {
-      // CRITICAL: Flush any pending score deltas BEFORE passing turn
-      // This ensures server has up-to-date scores for round end check
-      if (ws.current?.readyState === WebSocket.OPEN) {
-        // Send all accumulated score deltas immediately
-        scoreDeltaAccumulator.forEach((accumulated, playerId) => {
-          clearTimeout(accumulated.timerId)
-          logger.info(`[ScoreFlush] Flushing pending score: player=${playerId}, delta=${accumulated.delta}`)
-          ws.current!.send(JSON.stringify({
-            type: 'UPDATE_PLAYER_SCORE',
-            gameId: currentState.gameId,
-            playerId: playerId,
-            delta: accumulated.delta
-          }))
-        })
-        scoreDeltaAccumulator.clear()
-
-        // Now send NEXT_PHASE
-        ws.current.send(JSON.stringify({
-          type: 'NEXT_PHASE',
-          gameId: currentState.gameId
-        }))
-      }
-      return
-    }
-
-    // WebRTC mode: Handle turn passing when at Scoring phase and in scoring step
-    // Case 1: Auto-pass turn after finishing Scoring phase
-    if (isWebRTCMode && currentState.isGameStarted && currentState.currentPhase === 4 && currentState.isScoringStep) {
-      updateState(currentState => {
-        // Use passTurnToNextPlayer to properly transition to next player
-        // This handles: Preparation phase, card drawing, includes dummy players
-        return passTurnToNextPlayer(currentState)
-      })
-      return
-    }
-
-    // For normal phase transitions (1->2, 2->3, 3->4), use local updateState
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-
-      const nextPhaseIndex = currentState.currentPhase + 1
-
-      // Only consume deploy abilities if preserveDeployAbilities is false (new ready status system)
-      if (!currentState.preserveDeployAbilities) {
-        newState.board.forEach(row => {
-          row.forEach(cell => {
-            if (cell.card?.statuses) {
-              // Remove readyDeploy status from all cards
-              cell.card.statuses = cell.card.statuses.filter(s => s.type !== 'readyDeploy')
-            }
-          })
-        })
-      }
-
-      // When transitioning from Commit (phase 3) to Scoring (phase 4), enable scoring step
-      // Case 2: If player has no cards on board during Commit phase, auto-pass turn
-      if (isWebRTCMode && nextPhaseIndex === 4 && currentState.currentPhase === 3) {
-        // Check if active player has any cards on board
-        const hasCards = playerHasCardsOnBoard(currentState, currentState.activePlayerId!)
-
-        if (!hasCards) {
-          logger.info(`[nextPhase] Player ${currentState.activePlayerId} has no cards on board in Commit phase, auto-passing turn`)
-          // Auto-pass to next player - this will put us in their Preparation phase
-          return passTurnToNextPlayer(currentState)
-        }
-
-        // Entering Scoring phase from Commit - enable scoring
-        newState.isScoringStep = true
-        newState.currentPhase = 4
-        return newState
-      }
-
-      // Non-WebRTC mode: normal transition from Commit to Scoring
-      if (nextPhaseIndex === 4 && currentState.currentPhase === 3) {
-        // Entering Scoring phase from Commit - enable scoring
-        newState.isScoringStep = true
-        newState.currentPhase = 4
-        return newState
-      }
-
-      // Handle Resurrected expiration for normal phase transitions
-      newState.board.forEach(row => {
-        row.forEach(cell => {
-          if (cell.card?.statuses) {
-            const resurrectedIdx = cell.card.statuses.findIndex(s => s.type === 'Resurrected')
-            if (resurrectedIdx !== -1) {
-              const addedBy = cell.card.statuses[resurrectedIdx].addedByPlayerId
-              cell.card.statuses.splice(resurrectedIdx, 1)
-              if (cell.card.baseId !== 'luciusTheImmortal') {
-                cell.card.statuses.push({ type: 'Stun', addedByPlayerId: addedBy })
-                cell.card.statuses.push({ type: 'Stun', addedByPlayerId: addedBy })
-              }
-            }
-          }
-        })
-      })
-      // Recalculate for phase transitions where Resurrected might expire
-      newState.board = recalculateBoardStatuses(newState)
-
-      newState.currentPhase = nextPhaseIndex
-      return newState
-    })
-  }, [updateState, abilityMode, setAbilityMode])
-
-  const prevPhase = useCallback(() => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      // Always clear line selection modes when changing phase
-      if (abilityMode && setAbilityMode && abilityMode.mode) {
-        const lineSelectionModes = ['SCORE_LAST_PLAYED_LINE', 'SELECT_LINE_END', 'INTEGRATOR_LINE_SELECT', 'ZIUS_LINE_SELECT'];
-        if (lineSelectionModes.includes(abilityMode.mode)) {
-          setAbilityMode(null);
-        }
-      }
-
-      // If in scoring step, exit it AND move to previous phase (Commit or Setup)
-      if (currentState.isScoringStep) {
-        return { ...currentState, isScoringStep: false, currentPhase: Math.max(1, currentState.currentPhase - 1) }
-      }
-      // Otherwise just move to previous phase (but not below Setup/1)
-      // Preparation (0) is only accessed via turn passing, not manual navigation
-      return {
-        ...currentState,
-        currentPhase: Math.max(1, currentState.currentPhase - 1),
-      }
-    })
-  }, [updateState, abilityMode, setAbilityMode])
-
-  /**
-   * closeRoundEndModal - Start the next round
-   * Resets player scores and closes the modal
-   * Does optimistic updates for immediate UI feedback
-   */
-  const closeRoundEndModal = useCallback(() => {
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
-
-    if (isWebRTCMode) {
-      // WebRTC mode: Update state locally and broadcast via updateState
-      updateState(prev => ({
-        ...prev,
-        isRoundEndModalOpen: false,
-        currentRound: (prev.currentRound || 1) + 1,
-        players: prev.players.map(p => ({
-          ...p,
-          score: 0,
-        })),
-      }))
-    } else if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
-      // Server mode: Optimistic updates + WebSocket message
-      setGameState(prev => ({
-        ...prev,
-        isRoundEndModalOpen: false,
-        currentRound: (prev.currentRound || 1) + 1,
-        players: prev.players.map(p => ({
-          ...p,
-          score: 0,
-        })),
-      }))
-
-      // Send START_NEXT_ROUND to server to sync with all clients
-      ws.current.send(JSON.stringify({
-        type: 'START_NEXT_ROUND',
-        gameId: gameStateRef.current.gameId,
-      }))
-    }
-  }, [setGameState, updateState])
-
-  /**
-   * closeRoundEndModalOnly - Just close the modal (for "Continue Game" button after match ends)
-   * Does NOT reset scores or start new round - just lets players view the board
-   */
-  const closeRoundEndModalOnly = useCallback(() => {
-    setGameState(prev => ({
-      ...prev,
-      isRoundEndModalOpen: false,
-    }))
-  }, [setGameState])
-
-  /**
-   * resetGame - Reset game to lobby state while preserving players and deck selections
-   * Supports both WebSocket (server) and WebRTC (P2P) modes
-   */
-  const resetGame = useCallback(() => {
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
-
-    if (isWebRTCMode) {
-      // WebRTC P2P mode: Reset locally and broadcast
-      const currentState = gameStateRef.current
-
-      // Create fresh decks for all players based on their selectedDeck
-      const resetPlayers = currentState.players.map(p => {
-        const deckType = p.selectedDeck || 'SynchroTech'
-        return {
-          ...p,
-          hand: [],
-          deck: createDeck(deckType as any, p.id, p.name),
-          discard: [],
-          score: 0,
-          isReady: false,
-          announcedCard: null,
-          boardHistory: [],
-        }
-      })
-
-      // Create fresh board with correct grid size
-      const gridSize: number = (currentState.activeGridSize as unknown as number) || 8
-      const newBoard: Board = []
-      for (let i = 0; i < gridSize; i++) {
-        const row: any[] = []
-        for (let j = 0; j < gridSize; j++) {
-          row.push({ card: null })
-        }
-        newBoard.push(row)
-      }
-
-      const resetState: GameState = {
-        ...currentState,
-        players: resetPlayers,
-        board: newBoard,
-        isGameStarted: false,
-        currentPhase: 0,
-        currentRound: 1,
-        turnNumber: 1,
-        activePlayerId: null,
-        startingPlayerId: null,
-        roundWinners: {},
-        gameWinner: null,
-        roundEndTriggered: false,
-        isRoundEndModalOpen: false,
-        isReadyCheckActive: false,
-        // Clear other state
-        targetingMode: null,
-        floatingTexts: [],
-      }
-
-      // Update local state (this will broadcast delta in WebRTC mode)
-      setGameState(resetState)
-      gameStateRef.current = resetState
-
-      logger.info('[GameReset] Game reset in WebRTC mode')
-
-      // Broadcast GAME_RESET message to all WebRTC peers
-      // Send minimal data to avoid WebRTC message size limit
-      // Guests will recreate their decks locally using createDeck()
-      if (webrtcManagerRef.current) {
-        webrtcManagerRef.current.broadcastToGuests({
-          type: 'GAME_RESET',
-          senderId: webrtcManagerRef.current.getPeerId(),
-          data: {
-            players: resetPlayers.map(p => ({
-              id: p.id,
-              name: p.name,
-              color: p.color,
-              selectedDeck: p.selectedDeck,
-              isDummy: p.isDummy,
-              isDisconnected: p.isDisconnected,
-              autoDrawEnabled: p.autoDrawEnabled,
-              // Only send sizes, not full card arrays (guests create decks locally)
-              handSize: p.hand.length,
-              deckSize: p.deck.length,
-              discardSize: p.discard.length,
-              // For dummy players, send minimized card data so guests can see them
-              ...(p.isDummy && {
-                hand: p.hand.map((card: any) => ({
-                  id: card.id,
-                  baseId: card.baseId,
-                  name: card.name,
-                  imageUrl: card.imageUrl,
-                  power: card.power,
-                  powerModifier: card.powerModifier,
-                  ability: card.ability,
-                  ownerId: card.ownerId,
-                  color: card.color,
-                  deck: card.deck,
-                  isFaceDown: card.isFaceDown,
-                  types: card.types,
-                  faction: card.faction,
-                  statuses: card.statuses,
-                })),
-                deck: p.deck.map((card: any) => ({
-                  id: card.id,
-                  baseId: card.baseId,
-                  name: card.name,
-                  imageUrl: card.imageUrl,
-                  power: card.power,
-                  powerModifier: card.powerModifier,
-                  ability: card.ability,
-                  ownerId: card.ownerId,
-                  color: card.color,
-                  deck: card.deck,
-                  isFaceDown: card.isFaceDown,
-                  types: card.types,
-                  faction: card.faction,
-                  statuses: card.statuses,
-                })),
-                discard: p.discard.map((card: any) => ({
-                  id: card.id,
-                  baseId: card.baseId,
-                  name: card.name,
-                  imageUrl: card.imageUrl,
-                  power: card.power,
-                  powerModifier: card.powerModifier,
-                  ability: card.ability,
-                  ownerId: card.ownerId,
-                  color: card.color,
-                  deck: card.deck,
-                  isFaceDown: card.isFaceDown,
-                  types: card.types,
-                  faction: card.faction,
-                  statuses: card.statuses,
-                })),
-              }),
-              score: p.score,
-              isReady: p.isReady,
-              announcedCard: p.announcedCard,
-            })),
-            gameMode: resetState.gameMode,
-            isPrivate: resetState.isPrivate,
-            activeGridSize: resetState.activeGridSize,
-            dummyPlayerCount: resetState.dummyPlayerCount,
-            autoAbilitiesEnabled: resetState.autoAbilitiesEnabled,
-            isGameStarted: false,
-            currentPhase: 0,
-            currentRound: 1,
-            turnNumber: 1,
-            activePlayerId: null,
-            startingPlayerId: null,
-            roundWinners: {},
-            gameWinner: null,
-            isRoundEndModalOpen: false,
-            isReadyCheckActive: false,
-          },
-          timestamp: Date.now()
-        })
-        logger.info('[GameReset] Broadcasted GAME_RESET message to guests')
-      }
-    } else if (ws.current?.readyState === WebSocket.OPEN) {
-      // WebSocket mode: Send RESET_GAME message to server
-      ws.current.send(JSON.stringify({
-        type: 'RESET_GAME',
-        gameId: gameStateRef.current.gameId,
-      }))
-    }
-  }, [])
-
-  /**
-   * moveItem - Move a dragged item to a target location
-   *
-   * Ready-Status Lifecycle:
-   * - Reads auto_abilities_enabled from localStorage to drive auto-transition to Main phase
-   * - Preserves card state for board-to-board moves via actualCardState (deep copy)
-   * - Blocks moving stunned allied/teammate cards unless item.isManual is true
-   * - Initializes ready statuses (readyDeploy/readySetup/readyCommit) on cards entering the board
-   * - Cleans up ready statuses with removeAllReadyStatuses when cards leave the board
-   *
-   * These behaviors ensure proper auto-ability tracking while respecting game rules.
-   */
-  const moveItem = useCallback((item: DragItem, target: DropTarget) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-
-      if (target.target === 'board' && target.boardCoords) {
-        const targetCell = currentState.board[target.boardCoords.row][target.boardCoords.col]
-        if (targetCell.card !== null && item.source !== 'counter_panel') {
-          return currentState
-        }
-      }
-
-      // Auto-phase transition: Setup -> Main when playing a unit or command card from hand
-      // Only if auto-abilities is enabled (check localStorage for client-side setting)
-      let autoAbilitiesEnabled = false
-      try {
-        const saved = localStorage.getItem('auto_abilities_enabled')
-        autoAbilitiesEnabled = saved === null ? true : saved === 'true'
-      } catch {
-        autoAbilitiesEnabled = true
-      }
-
-      const shouldAutoTransitionToMain = autoAbilitiesEnabled &&
-        currentState.currentPhase === 1 && // Setup phase
-        item.source === 'hand' &&
-        target.target === 'board' &&
-        (item.card.types?.includes('Unit') || item.card.types?.includes('Command'))
-
-      const newState: GameState = deepCloneState(currentState)
-
-      if (item.source === 'board' && ['hand', 'deck', 'discard'].includes(target.target) && !item.bypassOwnershipCheck) {
-        const cardOwnerId = item.card.ownerId
-        const cardOwner = newState.players.find(p => p.id === cardOwnerId)
-        const isOwner = cardOwnerId === localPlayerIdRef.current
-        const isDummyCard = !!cardOwner?.isDummy
-
-        if (!isOwner && !isDummyCard) {
-          return currentState
-        }
-      }
-
-      // Store the actual current card state for board-to-board moves
-      // This ensures we preserve all statuses (including ready statuses) when moving
-      let actualCardState: Card | null = null
-      if (item.source === 'board' && target.target === 'board' && item.boardCoords) {
-        // Get the actual card state from newState (after cloning)
-        // This must be done AFTER newState is created
-        const cell = newState.board[item.boardCoords.row][item.boardCoords.col]
-        if (cell.card) {
-          actualCardState = cell.card
-        }
-
-        // Also check stun status from currentState for the early return
-        const currentCell = currentState.board[item.boardCoords.row][item.boardCoords.col]
-        const currentCardState = currentCell.card || actualCardState
-        if (currentCardState) {
-          const isStunned = currentCardState.statuses?.some(s => s.type === 'Stun')
-
-          if (isStunned) {
-            const moverId = localPlayerIdRef.current
-            const ownerId = currentCardState.ownerId
-            const moverPlayer = currentState.players.find(p => p.id === moverId)
-            const ownerPlayer = currentState.players.find(p => p.id === ownerId)
-            const isOwner = moverId === ownerId
-            const isTeammate = moverPlayer?.teamId !== undefined && ownerPlayer?.teamId !== undefined && moverPlayer.teamId === ownerPlayer.teamId
-
-            if ((isOwner || isTeammate) && !item.isManual) {
-              return currentState
-            }
-          }
-        }
-      }
-
-      if (item.source === 'counter_panel' && item.statusType) {
-        const counterDef = countersDatabase[item.statusType]
-        // Use nullish coalescing (??) instead of logical OR (||) to respect empty arrays
-        // Empty array means "no valid targets" (e.g., Resurrected token)
-        const allowedTargets = counterDef?.allowedTargets ?? ['board', 'hand']
-        if (!allowedTargets.includes(target.target)) {
-          return currentState
-        }
-        let targetCard: Card | null = null
-        if (target.target === 'board' && target.boardCoords) {
-          targetCard = newState.board[target.boardCoords.row][target.boardCoords.col].card
-        } else if (target.playerId !== undefined) {
-          const targetPlayer = newState.players.find(p => p.id === target.playerId)
-          if (targetPlayer) {
-            if (target.target === 'hand' && target.cardIndex !== undefined) {
-              targetCard = targetPlayer.hand[target.cardIndex]
-            }
-            if (target.target === 'announced') {
-              targetCard = targetPlayer.announcedCard || null
-            }
-            if (target.target === 'deck' && targetPlayer.deck.length > 0) {
-              if (target.deckPosition === 'top' || !target.deckPosition) {
-                targetCard = targetPlayer.deck[0]
-              } else {
-                targetCard = targetPlayer.deck[targetPlayer.deck.length - 1]
-              }
-            } else if (target.target === 'discard' && targetPlayer.discard.length > 0) {
-              targetCard = targetPlayer.discard[targetPlayer.discard.length - 1]
-            }
-          }
-        }
-        if (targetCard) {
-          // Lucius Immunity Logic
-          if (item.statusType === 'Stun') {
-            if (targetCard.baseId === 'luciusTheImmortal') {
-              return newState
-            }
-            if (targetCard.name.includes('Lucius') && targetCard.types?.includes('Hero')) {
-              return newState
-            }
-          }
-
-          const count = item.count || 1
-
-          // Determine effectiveActorId: use item.ownerId if provided (for counter_panel from abilities),
-          // otherwise fall back to card owner, active player (if dummy), or local player
-          let effectiveActorId: number
-          if (item.ownerId !== undefined) {
-            // For counter_panel items, ownerId comes from the source card that created the stack
-            effectiveActorId = item.ownerId
-          } else if (item.card.ownerId !== undefined) {
-            // For regular card moves, use the card's owner
-            effectiveActorId = item.card.ownerId
-          } else {
-            const activePlayer = newState.players.find(p => p.id === newState.activePlayerId)
-            effectiveActorId = (activePlayer?.isDummy) ? activePlayer.id : (localPlayerIdRef.current !== null ? localPlayerIdRef.current : 0)
-          }
-          if (item.statusType === 'Power+') {
-            if (targetCard.powerModifier === undefined) {
-              targetCard.powerModifier = 0
-            }
-            targetCard.powerModifier += (1 * count)
-          } else if (item.statusType === 'Power-') {
-            if (targetCard.powerModifier === undefined) {
-              targetCard.powerModifier = 0
-            }
-            targetCard.powerModifier -= (1 * count)
-          } else {
-            if (!targetCard.statuses) {
-              targetCard.statuses = []
-            }
-
-            // Handle status replacement (e.g., Censor: Exploit -> Stun)
-            if (item.replaceStatusType && item.statusType) {
-              for (let i = 0; i < count; i++) {
-                // Find the status to replace (owned by effectiveActorId)
-                const replaceIndex = targetCard.statuses.findIndex(
-                  s => s.type === item.replaceStatusType && s.addedByPlayerId === effectiveActorId
-                )
-                if (replaceIndex !== -1) {
-                  // Replace with new status
-                  targetCard.statuses[replaceIndex] = { type: item.statusType, addedByPlayerId: effectiveActorId }
-                } else {
-                  // If no status to replace found, just add the new status
-                  targetCard.statuses.push({ type: item.statusType, addedByPlayerId: effectiveActorId })
-                }
-              }
-            } else {
-              // Normal status addition
-              for (let i = 0; i < count; i++) {
-                if (['Support', 'Threat', 'Revealed'].includes(item.statusType)) {
-                  const exists = targetCard.statuses.some(s => s.type === item.statusType && s.addedByPlayerId === effectiveActorId)
-                  if (!exists) {
-                    targetCard.statuses.push({ type: item.statusType, addedByPlayerId: effectiveActorId })
-                  }
-                } else {
-                  targetCard.statuses.push({ type: item.statusType, addedByPlayerId: effectiveActorId })
-                }
-              }
-            }
-          }
-          if (target.target === 'board') {
-            newState.board = recalculateBoardStatuses(newState)
-          }
-          return newState
-        }
-        return currentState
-      }
-
-      const cardToMove: Card = actualCardState ? { ...actualCardState } : { ...item.card }
-
-      if (item.source === 'hand' && item.playerId !== undefined && item.cardIndex !== undefined) {
-        const player = newState.players.find(p => p.id === item.playerId)
-        if (player) {
-          // IMPORTANT: Verify the card at the index matches the expected ID AND ownerId
-          // This prevents duplicate removals when multiple players target the same card type
-          const cardAtIndex = player.hand[item.cardIndex]
-          if (cardAtIndex && cardAtIndex.id === item.card.id && cardAtIndex.ownerId === item.card.ownerId) {
-            player.hand.splice(item.cardIndex, 1)
-          } else {
-            // Card at index doesn't match expected ID/ownerId - it was likely already removed by another player
-            // Try to find and remove the card by ID AND ownerId instead
-            const actualIndex = player.hand.findIndex(c => c.id === item.card.id && c.ownerId === item.card.ownerId)
-            if (actualIndex !== -1) {
-              player.hand.splice(actualIndex, 1)
-            } else {
-              // Card not found - already removed, skip this move entirely
-              return currentState
-            }
-          }
-        }
-      } else if (item.source === 'board' && item.boardCoords) {
-        // IMPORTANT: Verify the card at the coords matches the expected ID AND ownerId
-        // This prevents duplicate removals when multiple players target the same card type
-        const cell = newState.board[item.boardCoords.row][item.boardCoords.col]
-        if (cell.card && cell.card.id === item.card.id && cell.card.ownerId === item.card.ownerId) {
-          newState.board[item.boardCoords.row][item.boardCoords.col].card = null
-        } else {
-          // Card at coords doesn't match expected ID - it was likely already removed/moved by another player
-          // Skip this move entirely to avoid ghost duplications
-          return currentState
-        }
-      } else if (item.source === 'discard' && item.playerId !== undefined) {
-        const player = newState.players.find(p => p.id === item.playerId)
-        if (player) {
-          let removed = false
-          // If cardIndex is provided, try to remove at that index first
-          if (item.cardIndex !== undefined) {
-            const cardAtIndex = player.discard[item.cardIndex]
-            if (cardAtIndex && cardAtIndex.id === item.card.id && cardAtIndex.ownerId === item.card.ownerId) {
-              player.discard.splice(item.cardIndex, 1)
-              removed = true
-            }
-          }
-          // If not removed by index, or cardIndex not provided, find by ID and ownerId
-          if (!removed) {
-            const actualIndex = player.discard.findIndex(c => c.id === item.card.id && c.ownerId === item.card.ownerId)
-            if (actualIndex !== -1) {
-              player.discard.splice(actualIndex, 1)
-            } else {
-              // Card not found - already removed, skip this move entirely
-              return currentState
-            }
-          }
-        }
-      } else if (item.source === 'deck' && item.playerId !== undefined && item.cardIndex !== undefined) {
-        const player = newState.players.find(p => p.id === item.playerId)
-        if (player) {
-          // IMPORTANT: Verify the card at the index matches the expected ID AND ownerId
-          // This prevents duplicate removals when multiple players target the same card type
-          const cardAtIndex = player.deck[item.cardIndex]
-          if (cardAtIndex && cardAtIndex.id === item.card.id && cardAtIndex.ownerId === item.card.ownerId) {
-            player.deck.splice(item.cardIndex, 1)
-          } else {
-            // Card at index doesn't match expected ID/ownerId - it was likely already removed by another player
-            // Try to find and remove the card by ID AND ownerId instead
-            const actualIndex = player.deck.findIndex(c => c.id === item.card.id && c.ownerId === item.card.ownerId)
-            if (actualIndex !== -1) {
-              player.deck.splice(actualIndex, 1)
-            } else {
-              // Card not found - already removed, skip this move entirely
-              return currentState
-            }
-          }
-        }
-      } else if (item.source === 'announced' && item.playerId !== undefined) {
-        const player = newState.players.find(p => p.id === item.playerId)
-        if (player) {
-          // IMPORTANT: Verify the card ID matches before removing
-          // This prevents accidental removal if card was already moved by another action
-          if (player.announcedCard && player.announcedCard.id === item.card.id) {
-            player.announcedCard = null
-          } else {
-            // Card doesn't match - it was likely already removed/moved
-            // Skip this move entirely to avoid card loss
-            return currentState
-          }
-        }
-      }
-
-      const isReturningToStorage = ['hand', 'deck', 'discard'].includes(target.target)
-
-      if (isReturningToStorage) {
-        if (cardToMove.statuses) {
-          // Keep Revealed status, remove all others (including ready statuses)
-          cardToMove.statuses = cardToMove.statuses.filter(status => status.type === 'Revealed')
-        }
-        cardToMove.isFaceDown = false
-        delete cardToMove.powerModifier
-        delete cardToMove.bonusPower // Clear passive buffs
-        delete cardToMove.enteredThisTurn
-      } else if (target.target === 'board') {
-        if (!cardToMove.statuses) {
-          cardToMove.statuses = []
-        }
-        if (item.source !== 'board' && cardToMove.isFaceDown === undefined) {
-          cardToMove.isFaceDown = false
-        }
-        if (item.source !== 'board') {
-          cardToMove.enteredThisTurn = true
-          // Note: Ready statuses are initialized below, no need to delete legacy flags
-
-          // Initialize ready statuses for the new card (only for abilities it actually has)
-          // Ready statuses belong to the card owner (even if it's a dummy player)
-          // Token ownership rules:
-          // - Tokens from token_panel: owned by active player (even if it's a dummy)
-          // - Tokens from abilities (spawnToken): already have ownerId set correctly
-          // - Cards from hand/deck/discard: owned by the player whose hand/deck/discard they came from
-          let ownerId = cardToMove.ownerId
-          if (ownerId === undefined) {
-            if (item.source === 'token_panel') {
-              // Token from token panel gets active player as owner
-              ownerId = newState.activePlayerId ?? localPlayerIdRef.current ?? 0
-            } else if (item.playerId !== undefined) {
-              // Card from a player's hand/deck/discard gets that player as owner
-              ownerId = item.playerId
-            } else {
-              // Fallback to local player
-              ownerId = localPlayerIdRef.current ?? 0
-            }
-            cardToMove.ownerId = ownerId
-          }
-          initializeReadyStatuses(cardToMove, ownerId)
-
-          // Lucius, The Immortal: Bonus if entered from discard
-          if (item.source === 'discard' && (cardToMove.baseId === 'luciusTheImmortal' || cardToMove.name.includes('Lucius'))) {
-            if (cardToMove.powerModifier === undefined) {
-              cardToMove.powerModifier = 0
-            }
-            cardToMove.powerModifier += 2
-          }
-        }
-      }
-
-      if (target.target === 'hand' && target.playerId !== undefined) {
-
-        // Don't allow moving actual tokens/counters to hand (they stay on board or return to their source)
-        // But DO allow moving cards that happen to have 'Tokens' as their origin deck
-        // CRITICAL FIX: Only block if it's BOTH from Tokens/counter deck AND has Token type
-        const isToken = (cardToMove.deck === DeckType.Tokens || cardToMove.deck === 'counter') &&
-                        (cardToMove.types?.includes('Token') || cardToMove.types?.includes('Token Unit'))
-
-        if (isToken) {
-          return currentState
-        }
-
-        // Remove ready statuses when card leaves the battlefield
-        removeAllReadyStatuses(cardToMove)
-        const player = newState.players.find(p => p.id === target.playerId)
-
-        if (!player) {
-          return currentState
-        }
-
-        // Determine insert index: use target.cardIndex if provided, otherwise append to end
-        let insertIndex = target.cardIndex !== undefined ? target.cardIndex : player.hand.length
-
-        // Special case: reordering within the same hand
-        // The source card was already removed from hand earlier (line 1854-1858)
-        // We need to adjust insertIndex if we removed from before the insert position
-        if (item.source === 'hand' && item.playerId === target.playerId && item.cardIndex !== undefined) {
-          // If removing from before insert position, the indices shifted
-          if (item.cardIndex < insertIndex) {
-            insertIndex -= 1
-          }
-          // If dragging to same position, no change needed
-          if (item.cardIndex === insertIndex) {
-            return currentState
-          }
-        }
-
-        // Insert card at the calculated position
-        player.hand.splice(insertIndex, 0, cardToMove)
-
-        // NOTE: Removed automatic shuffle when moving from deck to hand
-        // Shuffle should only happen for specific search abilities (Mr. Pearl, Lucius Setup, Quick Response Team, Michael Falk)
-        // Those abilities handle their own shuffle in their ability action chains
-      } else if (target.target === 'board' && target.boardCoords) {
-        if (newState.board[target.boardCoords.row][target.boardCoords.col].card === null) {
-          // CRITICAL: Only set ownerId if it's still undefined
-          // This preserves the correct owner set earlier (e.g., for dummy players)
-          if (cardToMove.ownerId === undefined && localPlayerIdRef.current !== null) {
-            const currentPlayer = newState.players.find(p => p.id === localPlayerIdRef.current)
-            if (currentPlayer) {
-              cardToMove.ownerId = currentPlayer.id
-              cardToMove.ownerName = currentPlayer.name
-            }
-          }
-
-          // --- HISTORY TRACKING: Entering Board ---
-          // Cards placed on board get tracked in history for 'LastPlayed' status.
-          // This includes: manual plays, deploy abilities, and tokens from counter_panel.
-          // Only cards moved within the board (source === 'board') are NOT tracked as new plays.
-          if (item.source !== 'board' && cardToMove.ownerId !== undefined) {
-            const player = newState.players.find(p => p.id === cardToMove.ownerId)
-            if (player) {
-              // FIX: Added initialization check for boardHistory to prevent crash if undefined.
-              if (!player.boardHistory) {
-                player.boardHistory = []
-              }
-              player.boardHistory.push(cardToMove.id)
-            }
-          }
-
-          newState.board[target.boardCoords.row][target.boardCoords.col].card = cardToMove
-        }
-      } else if (target.target === 'discard' && target.playerId !== undefined) {
-        if (cardToMove.deck === DeckType.Tokens || cardToMove.deck === 'counter') {} else {
-          // Remove ready statuses when card leaves the battlefield
-          removeAllReadyStatuses(cardToMove)
-          // Remove Revealed status when card goes to discard
-          if (cardToMove.statuses) {
-            cardToMove.statuses = cardToMove.statuses.filter(s => s.type !== 'Revealed')
-          }
-          const player = newState.players.find(p => p.id === target.playerId)
-          if (player) {
-            if (cardToMove.ownerId === undefined) {
-              cardToMove.ownerId = target.playerId
-              cardToMove.ownerName = player.name
-            }
-            // Check if card already exists in discard to prevent duplicates
-            const alreadyInDiscard = player.discard.some(c => c.id === cardToMove.id)
-            if (!alreadyInDiscard) {
-              player.discard.push(cardToMove)
-            }
-          }
-        }
-      } else if (target.target === 'deck' && target.playerId !== undefined) {
-
-        // Don't allow moving actual tokens/counters to deck
-        // CRITICAL FIX: Only block if it's BOTH from Tokens/counter deck AND has Token type
-        const isToken = (cardToMove.deck === DeckType.Tokens || cardToMove.deck === 'counter') &&
-                        (cardToMove.types?.includes('Token') || cardToMove.types?.includes('Token Unit'))
-
-        if (isToken) {
-          return currentState
-        }
-
-        // Remove ready statuses when card leaves the battlefield
-        removeAllReadyStatuses(cardToMove)
-        // Remove Revealed status when card goes to deck
-        if (cardToMove.statuses) {
-          cardToMove.statuses = cardToMove.statuses.filter(s => s.type !== 'Revealed')
-        }
-        const player = newState.players.find(p => p.id === target.playerId)
-
-        if (!player) {
-          return currentState
-        }
-
-        if (cardToMove.ownerId === undefined) {
-          cardToMove.ownerId = target.playerId
-          cardToMove.ownerName = player.name
-        }
-        if (target.deckPosition === 'top' || !target.deckPosition) {
-          player.deck.unshift(cardToMove)
-        } else {
-          player.deck.push(cardToMove)
-        }
-      } else if (target.target === 'announced' && target.playerId !== undefined) {
-        const player = newState.players.find(p => p.id === target.playerId)
-        if (player) {
-          if (player.announcedCard) {
-            if (player.announcedCard.statuses) {
-              player.announcedCard.statuses = player.announcedCard.statuses.filter(s => s.type === 'Revealed')
-            }
-            delete player.announcedCard.enteredThisTurn
-            delete player.announcedCard.powerModifier
-            delete player.announcedCard.bonusPower
-            player.hand.push(player.announcedCard)
-          }
-          player.announcedCard = cardToMove
-        }
-      }
-
-      // --- HISTORY TRACKING: Leaving Board ---
-      if (item.source === 'board' && target.target !== 'board' && cardToMove.ownerId !== undefined) {
-        const player = newState.players.find(p => p.id === cardToMove.ownerId)
-        if (player) {
-          // FIX: Added initialization check for boardHistory to prevent crash if undefined.
-          if (!player.boardHistory) {
-            player.boardHistory = []
-          }
-          player.boardHistory = player.boardHistory.filter(id => id !== cardToMove.id)
-        }
-      }
-
-      // --- Post-Move: Sync LastPlayed Status ---
-      if ((item.source === 'board' || target.target === 'board') && cardToMove.ownerId !== undefined) {
-        const player = newState.players.find(p => p.id === cardToMove.ownerId)
-        if (player) {
-          syncLastPlayed(newState.board, player)
-        }
-      }
-
-      if (item.source === 'hand' && target.target === 'board') {
-        const movingCard = cardToMove
-        const isRevealed = movingCard.revealedTo === 'all' || movingCard.statuses?.some(s => s.type === 'Revealed')
-        if (isRevealed) {
-          const gridSize = newState.board.length
-          for (let r = 0; r < gridSize; r++) {
-            for (let c = 0; c < gridSize; c++) {
-              const spotter = newState.board[r][c].card
-              if (spotter && spotter.name.toLowerCase().includes('vigilant spotter')) {
-                if (spotter.ownerId !== movingCard.ownerId) {
-                  newState.board = recalculateBoardStatuses(newState)
-                  const updatedSpotter = newState.board[r][c].card!
-                  if (updatedSpotter.statuses?.some(s => s.type === 'Support')) {
-                    const spotterOwner = newState.players.find(p => p.id === spotter.ownerId)
-                    if (spotterOwner) {
-                      // CRITICAL: Use updatePlayerScore to properly sync with server
-                      // Score will be updated when server broadcasts back
-                      setTimeout(() => {
-                        updatePlayerScore(spotterOwner.id, 2)
-                      }, 0)
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
-      if (item.source === 'board' || target.target === 'board') {
-        newState.board = recalculateBoardStatuses(newState)
-      }
-
-      // Apply auto-phase transition: Setup -> Main when playing a unit or command card from hand
-      if (shouldAutoTransitionToMain) {
-        newState.currentPhase = 2 // Main phase
-      }
-
-      return newState
-    })
-  }, [updateState])
-
-  const resurrectDiscardedCard = useCallback((playerId: number, cardIndex: number, boardCoords: {row: number, col: number}, statuses?: {type: string}[]) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      if (currentState.board[boardCoords.row][boardCoords.col].card !== null) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const player = newState.players.find(p => p.id === playerId)
-      if (player && player.discard.length > cardIndex) {
-        const [card] = player.discard.splice(cardIndex, 1)
-        card.enteredThisTurn = true
-
-        // Initialize ready statuses for the resurrected card
-        // This allows abilities to be used when card returns from discard
-        initializeReadyStatuses(card, playerId)
-
-        // Lucius Bonus if resurrected
-        if (card.baseId === 'luciusTheImmortal' || card.name.includes('Lucius')) {
-          if (card.powerModifier === undefined) {
-            card.powerModifier = 0
-          }
-          card.powerModifier += 2
-        }
-
-        if (!card.statuses) {
-          card.statuses = []
-        }
-        card.statuses.push({ type: 'Resurrected', addedByPlayerId: playerId })
-        if (statuses) {
-          statuses.forEach(s => {
-            if (s.type !== 'Resurrected') {
-              card.statuses?.push({ type: s.type, addedByPlayerId: playerId })
-            }
-          })
-        }
-
-        // Add to history
-        // FIX: Ensure boardHistory exists before pushing
-        if (!player.boardHistory) {
-          player.boardHistory = []
-        }
-        player.boardHistory.push(card.id)
-
-        newState.board[boardCoords.row][boardCoords.col].card = card
-
-        syncLastPlayed(newState.board, player)
-
-        newState.board = recalculateBoardStatuses(newState)
-      }
-      return newState
-    })
-  }, [updateState])
-
-  const reorderTopDeck = useCallback((playerId: number, newTopOrder: Card[]) => {
-    updateState(currentState => {
-      const newState: GameState = deepCloneState(currentState)
-      const player = newState.players.find(p => p.id === playerId)
-
-      if (player && newTopOrder.length > 0) {
-        // 1. Identify which cards are being reordered (by ID)
-        const topIds = new Set(newTopOrder.map(c => c.id))
-
-        // 2. Separate deck into [Cards to be moved] and [Rest of deck]
-        // Filter out the cards that are in the new top order from the current deck
-        const remainingDeck = player.deck.filter(c => !topIds.has(c.id))
-
-        // 3. Prepend the new top order
-        // This effectively moves the selected cards to the top in the specified order
-        // and keeps the rest of the deck in its original relative order.
-        player.deck = [...newTopOrder, ...remainingDeck]
-      }
-
-      return newState
-    })
-  }, [updateState])
-
-  /**
-   * reorderCards - Low-level API to reorder cards in a player's deck or discard pile
-   *
-   * This is a low-level API that should only be used from orchestrating components.
-   * Use this when you need to change the order of cards in a deck or discard pile.
-   *
-   * @param playerId - The ID of the player whose cards are being reordered
-   * @param newCards - The new ordered array of cards
-   * @param source - Either 'deck' or 'discard' indicating which pile to reorder
-   */
-  const reorderCards = useCallback((playerId: number, newCards: Card[], source: 'deck' | 'discard') => {
-    updateState(currentState => {
-      const newState: GameState = deepCloneState(currentState)
-      const player = newState.players.find(p => p.id === playerId)
-
-      if (player) {
-        if (source === 'deck') {
-          player.deck = newCards
-        } else if (source === 'discard') {
-          player.discard = newCards
-        }
-      }
-
-      return newState
-    })
-  }, [updateState])
-
-  const triggerHighlight = useCallback((highlightData: Omit<HighlightData, 'timestamp'>) => {
-    const fullHighlightData: HighlightData = { ...highlightData, timestamp: Date.now() }
-
-    // Immediately update local state so the acting player sees the effect without waiting for round-trip
-    setLatestHighlight(fullHighlightData)
-
-    // Broadcast to other players
-    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
-      // WebSocket mode
-      ws.current.send(JSON.stringify({ type: 'TRIGGER_HIGHLIGHT', gameId: gameStateRef.current.gameId, highlightData: fullHighlightData }))
-    } else if (webrtcManagerRef.current) {
-      // WebRTC P2P mode
-      const webrtcMessage = {
-        type: 'HIGHLIGHT_TRIGGERED' as const,
-        senderId: webrtcManagerRef.current.getPeerId(),
-        data: fullHighlightData,
-        timestamp: Date.now()
-      }
-
-      // Host broadcasts to all guests, guest sends to host who will broadcast
-      if (webrtcIsHostRef.current) {
-        // Host: broadcast to all guests (not to self)
-        webrtcManagerRef.current.broadcastToGuests(webrtcMessage)
-      } else {
-        // Guest: send to host, who will broadcast to everyone including us
-        webrtcManagerRef.current.sendMessageToHost(webrtcMessage)
-      }
-    }
-  }, [])
-
-  const triggerFloatingText = useCallback((data: Omit<FloatingTextData, 'timestamp'> | Omit<FloatingTextData, 'timestamp'>[]) => {
-    const items = Array.isArray(data) ? data : [data]
-    const timestamp = Date.now()
-    const batch = items.map((item, i) => ({ ...item, timestamp: timestamp + i }))
-
-    // Immediately update local state so the acting player sees the effect without waiting for round-trip
-    setLatestFloatingTexts(batch)
-
-    // Broadcast to other players
-    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
-      // WebSocket mode
-      ws.current.send(JSON.stringify({
-        type: 'TRIGGER_FLOATING_TEXT_BATCH',
-        gameId: gameStateRef.current.gameId,
-        batch,
-      }))
-    } else if (webrtcManagerRef.current) {
-      // WebRTC P2P mode
-      const webrtcMessage = {
-        type: 'FLOATING_TEXT_BATCH_TRIGGERED' as const,
-        senderId: webrtcManagerRef.current.getPeerId(),
-        data: { batch },
-        timestamp: Date.now()
-      }
-
-      // Host broadcasts to all guests, guest sends to host who will broadcast
-      if (webrtcIsHostRef.current) {
-        // Host: broadcast to all guests (not to self)
-        webrtcManagerRef.current.broadcastToGuests(webrtcMessage)
-      } else {
-        // Guest: send to host, who will broadcast to everyone including us
-        webrtcManagerRef.current.sendMessageToHost(webrtcMessage)
-      }
-    }
-  }, [])
-
-  const triggerNoTarget = useCallback((coords: { row: number, col: number }) => {
-    const timestamp = Date.now()
-    // Immediately update local state so the acting player sees the effect without waiting for round-trip
-    setLatestNoTarget({ coords, timestamp })
-
-    // Broadcast to other players
-    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
-      // WebSocket mode
-      ws.current.send(JSON.stringify({
-        type: 'TRIGGER_NO_TARGET',
-        gameId: gameStateRef.current.gameId,
-        coords,
-        timestamp,
-      }))
-    } else if (webrtcManagerRef.current) {
-      // WebRTC P2P mode
-      const webrtcMessage = {
-        type: 'NO_TARGET_TRIGGERED' as const,
-        senderId: webrtcManagerRef.current.getPeerId(),
-        data: { coords, timestamp },
-        timestamp: Date.now()
-      }
-
-      // Host broadcasts to all guests, guest sends to host who will broadcast
-      if (webrtcIsHostRef.current) {
-        // Host: broadcast to all guests (not to self)
-        webrtcManagerRef.current.broadcastToGuests(webrtcMessage)
-      } else {
-        // Guest: send to host, who will broadcast to everyone including us
-        webrtcManagerRef.current.sendMessageToHost(webrtcMessage)
-      }
-    }
-  }, [])
-
-  const triggerDeckSelection = useCallback((playerId: number, selectedByPlayerId: number) => {
-    const deckSelectionData = {
-      playerId,
-      selectedByPlayerId,
-      timestamp: Date.now(),
-    }
-
-    // Immediately update local state so the acting player sees the effect without waiting for round-trip
-    setLatestDeckSelections(prev => [...prev, deckSelectionData])
-
-    // Broadcast to other players
-    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
-      // WebSocket mode
-      const message = {
-        type: 'TRIGGER_DECK_SELECTION',
-        gameId: gameStateRef.current.gameId,
-        deckSelectionData,
-      }
-      ws.current.send(JSON.stringify(message))
-    } else if (webrtcManagerRef.current) {
-      // WebRTC P2P mode
-      const webrtcMessage = {
-        type: 'DECK_SELECTION_TRIGGERED' as const,
-        senderId: webrtcManagerRef.current.getPeerId(),
-        data: deckSelectionData,
-        timestamp: Date.now()
-      }
-
-      // Host broadcasts to all guests, guest sends to host who will broadcast
-      if (webrtcIsHostRef.current) {
-        // Host: broadcast to all guests (not to self)
-        webrtcManagerRef.current.broadcastToGuests(webrtcMessage)
-      } else {
-        // Guest: send to host, who will broadcast to everyone including us
-        webrtcManagerRef.current.sendMessageToHost(webrtcMessage)
-      }
-    }
-
-    // Auto-remove after 1 second
-    setTimeout(() => {
-      setLatestDeckSelections(prev => prev.filter(ds => ds.timestamp !== deckSelectionData.timestamp))
-    }, 1000)
-  }, [])
-
-  const triggerHandCardSelection = useCallback((playerId: number, cardIndex: number, selectedByPlayerId: number) => {
-    const handCardSelectionData = {
-      playerId,
-      cardIndex,
-      selectedByPlayerId,
-      timestamp: Date.now(),
-    }
-
-    // Immediately update local state so the acting player sees the effect without waiting for round-trip
-    setLatestHandCardSelections(prev => [...prev, handCardSelectionData])
-
-    // Broadcast to other players
-    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
-      // WebSocket mode
-      const message = {
-        type: 'TRIGGER_HAND_CARD_SELECTION',
-        gameId: gameStateRef.current.gameId,
-        handCardSelectionData,
-      }
-      ws.current.send(JSON.stringify(message))
-    } else if (webrtcManagerRef.current) {
-      // WebRTC P2P mode
-      const webrtcMessage = {
-        type: 'HAND_CARD_SELECTION_TRIGGERED' as const,
-        senderId: webrtcManagerRef.current.getPeerId(),
-        data: handCardSelectionData,
-        timestamp: Date.now()
-      }
-
-      // Host broadcasts to all guests, guest sends to host who will broadcast
-      if (webrtcIsHostRef.current) {
-        // Host: broadcast to all guests (not to self)
-        webrtcManagerRef.current.broadcastToGuests(webrtcMessage)
-      } else {
-        // Guest: send to host, who will broadcast to everyone including us
-        webrtcManagerRef.current.sendMessageToHost(webrtcMessage)
-      }
-    }
-
-    // Auto-remove after 1 second
-    setTimeout(() => {
-      setLatestHandCardSelections(prev => prev.filter(cs => cs.timestamp !== handCardSelectionData.timestamp))
-    }, 1000)
-  }, [])
-
-  const syncValidTargets = useCallback((validTargetsData: {
-    validHandTargets: { playerId: number, cardIndex: number }[]
-    isDeckSelectable: boolean
-  }) => {
-    // Broadcast valid targets to other players
-    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
-      // WebSocket mode
-      ws.current.send(JSON.stringify({
-        type: 'SYNC_VALID_TARGETS',
-        gameId: gameStateRef.current.gameId,
-        playerId: localPlayerIdRef.current,
-        ...validTargetsData,
-      }))
-    } else if (webrtcManagerRef.current) {
-      // WebRTC P2P mode
-      const webrtcMessage = {
-        type: 'SYNC_VALID_TARGETS' as const,
-        senderId: webrtcManagerRef.current.getPeerId(),
-        data: {
-          playerId: localPlayerIdRef.current,
-          ...validTargetsData,
-        },
-        timestamp: Date.now()
-      }
-
-      // Host broadcasts to all guests, guest sends to host who will broadcast
-      if (webrtcIsHostRef.current) {
-        // Host: broadcast to all guests (not to self)
-        webrtcManagerRef.current.broadcastToGuests(webrtcMessage)
-      } else {
-        // Guest: send to host, who will broadcast to everyone including us
-        webrtcManagerRef.current.sendMessageToHost(webrtcMessage)
-      }
-    }
-  }, [])
-
-  /**
-   * Trigger target selection effect (white ripple animation)
-   * Broadcasts to all players in P2P mode
-   */
-  const triggerTargetSelection = useCallback((
-    location: 'board' | 'hand' | 'deck',
-    boardCoords?: { row: number; col: number },
-    handTarget?: { playerId: number; cardIndex: number }
-  ) => {
-    if (localPlayerIdRef.current === null) {
-      return
-    }
-
-    const effect = {
-      timestamp: Date.now(),
-      location,
-      boardCoords,
-      handTarget,
-      selectedByPlayerId: localPlayerIdRef.current,
-    }
-
-    // Immediately update local state
-    setTargetSelectionEffects(prev => [...prev, effect])
-
-    // Broadcast to other players
-    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
-      // WebSocket mode
-      ws.current.send(JSON.stringify({
-        type: 'TRIGGER_TARGET_SELECTION',
-        gameId: gameStateRef.current.gameId,
-        effect,
-      }))
-    } else if (webrtcManagerRef.current) {
-      // WebRTC P2P mode
-      if (webrtcIsHostRef.current) {
-        // Host: broadcast TRIGGERED message directly to all guests
-        const webrtcMessage = {
-          type: 'TARGET_SELECTION_TRIGGERED' as const,
-          senderId: webrtcManagerRef.current.getPeerId(),
-          data: effect,
-          timestamp: Date.now()
-        }
-        webrtcManagerRef.current.broadcastToGuests(webrtcMessage)
-      } else {
-        // Guest: send TRIGGER message to host, who will apply locally and broadcast to all guests
-        const webrtcMessage = {
-          type: 'SET_TARGETING_MODE' as const,
-          senderId: webrtcManagerRef.current.getPeerId(),
-          data: effect,
-          timestamp: Date.now()
-        }
-        webrtcManagerRef.current.sendMessageToHost(webrtcMessage)
-      }
-    }
-
-    // Auto-remove after 1 second (animation duration)
-    setTimeout(() => {
-      setTargetSelectionEffects(prev => prev.filter(e => e.timestamp !== effect.timestamp))
-    }, 1000)
-  }, [])
-
-  /**
-   * Universal targeting mode activation
-   * Sets the targeting mode for all clients, synchronized via server
-   *
-   * @param action - The AbilityAction defining targeting constraints
-   * @param playerId - The player who will select the target
-   * @param sourceCoords - Optional source card coordinates
-   * @param preCalculatedTargets - Optional pre-calculated board targets (for line modes, etc.)
-   * @param commandContext - Optional command context for multi-step actions
-   */
-  const setTargetingMode = useCallback((
-    action: AbilityAction,
-    playerId: number,
-    sourceCoords?: { row: number; col: number },
-    preCalculatedTargets?: {row: number, col: number}[],
-    commandContext?: CommandContext
-  ) => {
-    const currentGameState = gameStateRef.current
-
-    // Use pre-calculated targets if provided, otherwise calculate them
-    let boardTargets: {row: number, col: number}[] = []
-    if (preCalculatedTargets) {
-      boardTargets = preCalculatedTargets
-    } else {
-      boardTargets = calculateValidTargets(action, currentGameState, playerId, commandContext)
-    }
-
-    // Check for hand targets (if applicable)
-    const handTargets: { playerId: number, cardIndex: number }[] = []
-    const isDeckSelectable = action.mode === 'SELECT_DECK'
-
-    // Calculate hand targets if action has a filter for hand cards
-    if (action.payload?.filter && action.mode === 'SELECT_TARGET') {
-      // Find the player who owns the source card
-      const sourceOwnerId = action.sourceCard?.ownerId || action.originalOwnerId || playerId
-      const player = currentGameState.players.find(p => p.id === sourceOwnerId)
-
-      if (player && player.hand) {
-        // Apply the filter to each card in hand to find valid targets
-        player.hand.forEach((card, index) => {
-          try {
-            if (action.payload.filter(card)) {
-              handTargets.push({ playerId: player.id, cardIndex: index })
-            }
-          } catch (e) {
-            // Filter failed, skip this card
-          }
-        })
-      }
-    }
-
-    // Build targeting mode data
-    const targetingModeData: TargetingModeData = {
-      playerId,
-      action,
-      sourceCoords,
-      timestamp: Date.now(),
-      boardTargets,
-      handTargets: handTargets.length > 0 ? handTargets : undefined,
-      isDeckSelectable: isDeckSelectable || undefined,
-      originalOwnerId: action.originalOwnerId,
-    }
-
-    // Update local state immediately
-    setGameState(prev => ({
-      ...prev,
-      targetingMode: targetingModeData,
-    }))
-    gameStateRef.current.targetingMode = targetingModeData
-
-    // Broadcast to all clients via WebSocket server
-    if (ws.current?.readyState === WebSocket.OPEN && currentGameState.gameId) {
-      ws.current.send(JSON.stringify({
-        type: 'SET_TARGETING_MODE',
-        gameId: currentGameState.gameId,
-        targetingMode: targetingModeData,
-      }))
-    }
-
-    // Broadcast via WebRTC (P2P mode)
-    if (webrtcManagerRef.current) {
-      if (webrtcIsHostRef.current) {
-        // Host broadcasts directly to all guests
-        webrtcManagerRef.current.broadcastToGuests({
-          type: 'SET_TARGETING_MODE',
-          senderId: webrtcManagerRef.current.getPeerId?.() ?? undefined,
-          data: { targetingMode: targetingModeData },
-          timestamp: Date.now()
-        })
-      } else {
-        // Guest sends to host for rebroadcasting
-        webrtcManagerRef.current.sendMessageToHost({
-          type: 'SET_TARGETING_MODE',
-          senderId: webrtcManagerRef.current.getPeerId?.() ?? undefined,
-          data: { targetingMode: targetingModeData },
-          timestamp: Date.now()
-        })
-      }
-    }
-
-    logger.info(`[TargetingMode] Player ${playerId} activated targeting mode`, {
-      mode: action.mode,
-      boardTargetsCount: boardTargets.length,
-    })
-  }, [])
-
-  /**
-   * Clear the active targeting mode
-   * Clears the targeting mode for all clients
-   */
-  const clearTargetingMode = useCallback(() => {
-    const currentGameState = gameStateRef.current
-
-    // Update local state
-    setGameState(prev => ({
-      ...prev,
-      targetingMode: null,
-    }))
-    gameStateRef.current.targetingMode = null
-
-    // Broadcast to all clients via WebSocket server
-    if (ws.current?.readyState === WebSocket.OPEN && currentGameState.gameId) {
-      ws.current.send(JSON.stringify({
-        type: 'CLEAR_TARGETING_MODE',
-        gameId: currentGameState.gameId,
-      }))
-    }
-
-    // Broadcast via WebRTC (P2P mode)
-    if (webrtcManagerRef.current) {
-      if (webrtcIsHostRef.current) {
-        // Host broadcasts directly to all guests
-        webrtcManagerRef.current.broadcastToGuests({
-          type: 'CLEAR_TARGETING_MODE',
-          senderId: webrtcManagerRef.current.getPeerId?.() ?? undefined,
-          data: { timestamp: Date.now() },
-          timestamp: Date.now()
-        })
-      } else {
-        // Guest sends to host for rebroadcasting
-        webrtcManagerRef.current.sendMessageToHost({
-          type: 'CLEAR_TARGETING_MODE',
-          senderId: webrtcManagerRef.current.getPeerId?.() ?? undefined,
-          data: { timestamp: Date.now() },
-          timestamp: Date.now()
-        })
-      }
-    }
-
-    logger.debug('[TargetingMode] Cleared targeting mode')
-  }, [])
-
-  const markAbilityUsed = useCallback((boardCoords: { row: number, col: number }, _isDeployAbility?: boolean, _setDeployAttempted?: boolean, readyStatusToRemove?: string) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const card = newState.board[boardCoords.row][boardCoords.col].card
-      if (card) {
-        const oldStatusesTypes = card.statuses ? card.statuses.map(s => s.type) : []
-        // Remove the ready status if specified (new ready status system)
-        if (readyStatusToRemove && card.statuses) {
-          card.statuses = card.statuses.filter(s => s.type !== readyStatusToRemove)
-          const newStatusesTypes = card.statuses.map(s => s.type)
-          console.log(`[markAbilityUsed] Removed status '${readyStatusToRemove}' from ${card.name} at [${boardCoords.row},${boardCoords.col}]: [${oldStatusesTypes.join(', ')}] -> [${newStatusesTypes.join(', ')}]`)
-        } else {
-          console.log(`[markAbilityUsed] Called for ${card.name} at [${boardCoords.row},${boardCoords.col}] but no readyStatusToRemove specified. Current statuses: [${oldStatusesTypes.join(', ')}]`)
-        }
-      }
-      return newState
-    })
-  }, [updateState])
-
-  const resetDeployStatus = useCallback((boardCoords: { row: number, col: number }) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const card = newState.board[boardCoords.row][boardCoords.col].card
-      if (card) {
-        // New system: Add readyDeploy status back (for Command cards that restore deploy ability)
-        if (!card.statuses) {
-          card.statuses = []
-        }
-        const abilityText = card.ability || ''
-        // Only add if the card actually has a deploy: ability (case-insensitive)
-        if (abilityText.toLowerCase().includes('deploy:')) {
-          if (!card.statuses.some(s => s.type === 'readyDeploy')) {
-            // Require valid ownerId (player IDs start at 1, so 0 is invalid)
-            const ownerId = card.ownerId
-            if (ownerId === undefined || ownerId === null || ownerId === 0) {
-                  return currentState
-            }
-            card.statuses.push({ type: 'readyDeploy', addedByPlayerId: ownerId })
-          }
-        }
-      }
-      return newState
-    })
-  }, [updateState])
-
-  const removeStatusByType = useCallback((boardCoords: { row: number, col: number }, type: string) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const card = newState.board[boardCoords.row][boardCoords.col].card
-      if (card?.statuses) {
-        card.statuses = card.statuses.filter(s => s.type !== type)
-      }
-      newState.board = recalculateBoardStatuses(newState)
-      return newState
-    })
-  }, [updateState])
-
-  const applyGlobalEffect = useCallback((
-    _sourceCoords: { row: number, col: number },
-    targetCoords: { row: number, col: number }[],
-    tokenType: string,
-    addedByPlayerId: number,
-    _isDeployAbility: boolean,
-  ) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      targetCoords.forEach(({ row, col }) => {
-        const card = newState.board[row][col].card
-        if (card) {
-          // Lucius Immunity
-          if (tokenType === 'Stun') {
-            if (card.baseId === 'luciusTheImmortal') {
-              return
-            }
-            if (card.name.includes('Lucius') && card.types?.includes('Hero')) {
-              return
-            }
-          }
-
-          if (!card.statuses) {
-            card.statuses = []
-          }
-          if (['Support', 'Threat', 'Revealed'].includes(tokenType)) {
-            const exists = card.statuses.some(s => s.type === tokenType && s.addedByPlayerId === addedByPlayerId)
-            if (!exists) {
-              card.statuses.push({ type: tokenType, addedByPlayerId })
-            }
-          } else {
-            card.statuses.push({ type: tokenType, addedByPlayerId })
-          }
-        }
-      })
-      // Note: Ready status is removed by markAbilityUsed before calling applyGlobalEffect
-      return newState
-    })
-  }, [updateState])
-
-  // ... (swapCards, transferStatus, transferAllCounters, recoverDiscardedCard, spawnToken, scoreLine, scoreDiagonal kept as is) ...
-  const swapCards = useCallback((coords1: {row: number, col: number}, coords2: {row: number, col: number}) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const card1 = newState.board[coords1.row][coords1.col].card
-      const card2 = newState.board[coords2.row][coords2.col].card
-
-      // Perform swap
-      newState.board[coords1.row][coords1.col].card = card2
-      newState.board[coords2.row][coords2.col].card = card1
-
-      newState.board = recalculateBoardStatuses(newState)
-      return newState
-    })
-  }, [updateState])
-
-  const transferStatus = useCallback((fromCoords: {row: number, col: number}, toCoords: {row: number, col: number}, statusType: string) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const fromCard = newState.board[fromCoords.row][fromCoords.col].card
-      const toCard = newState.board[toCoords.row][toCoords.col].card
-      if (fromCard && toCard && fromCard.statuses) {
-        const statusIndex = fromCard.statuses.findIndex(s => s.type === statusType)
-        if (statusIndex > -1) {
-          const [status] = fromCard.statuses.splice(statusIndex, 1)
-          if (!toCard.statuses) {
-            toCard.statuses = []
-          }
-          toCard.statuses.push(status)
-        }
-      }
-      newState.board = recalculateBoardStatuses(newState)
-      return newState
-    })
-  }, [updateState])
-
-  const transferAllCounters = useCallback((fromCoords: {row: number, col: number}, toCoords: {row: number, col: number}) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const fromCard = newState.board[fromCoords.row][fromCoords.col].card
-      const toCard = newState.board[toCoords.row][toCoords.col].card
-      const excludedTypes = ['Support', 'Threat', 'LastPlayed']
-      if (fromCard && toCard && fromCard.statuses) {
-        const statusesToMove = fromCard.statuses.filter(s => !excludedTypes.includes(s.type))
-        const statusesToKeep = fromCard.statuses.filter(s => excludedTypes.includes(s.type))
-        if (statusesToMove.length > 0) {
-          if (!toCard.statuses) {
-            toCard.statuses = []
-          }
-          toCard.statuses.push(...statusesToMove)
-          fromCard.statuses = statusesToKeep
-        }
-      }
-      newState.board = recalculateBoardStatuses(newState)
-      return newState
-    })
-  }, [updateState])
-
-  const recoverDiscardedCard = useCallback((playerId: number, cardIndex: number) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const player = newState.players.find(p => p.id === playerId)
-      if (player && player.discard.length > cardIndex) {
-        const [card] = player.discard.splice(cardIndex, 1)
-        player.hand.push(card)
-      }
-      return newState
-    })
-  }, [updateState])
-
-  const spawnToken = useCallback((coords: {row: number, col: number}, tokenName: string, ownerId: number) => {
-    updateState(currentState => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      if (!rawJsonData) {
-        return currentState
-      }
-      const tokenDatabase = rawJsonData.tokenDatabase
-      const tokenDefKey = Object.keys(tokenDatabase).find(key => tokenDatabase[key as keyof typeof tokenDatabase].name === tokenName)
-      if (!tokenDefKey) {
-        return currentState
-      }
-      const tokenDef = tokenDatabase[tokenDefKey as keyof typeof tokenDatabase]
-      const owner = newState.players.find(p => p.id === ownerId)
-      if (tokenDef && newState.board[coords.row][coords.col].card === null) {
-        const tokenCard: Card = {
-          id: `TKN_${tokenName.toUpperCase().replace(/\s/g, '_')}_${Date.now()}`,
-          deck: DeckType.Tokens,
-          name: tokenName,
-          baseId: tokenDef.baseId || tokenDefKey,
-          imageUrl: tokenDef.imageUrl,
-          fallbackImage: tokenDef.fallbackImage,
-          power: tokenDef.power,
-          ability: tokenDef.ability,
-          flavorText: tokenDef.flavorText,
-          color: tokenDef.color,
-          types: tokenDef.types || ['Unit'],
-          faction: 'Tokens',
-          ownerId: ownerId,
-          ownerName: owner?.name,
-          enteredThisTurn: true,
-          statuses: [],
-        }
-        // Initialize ready statuses based on token's actual abilities
-        // Ready statuses belong to the token owner (even if it's a dummy player)
-        // Control is handled by canActivateAbility checking dummy ownership
-        initializeReadyStatuses(tokenCard, ownerId)
-        newState.board[coords.row][coords.col].card = tokenCard
-      }
-      newState.board = recalculateBoardStatuses(newState)
-      return newState
-    })
-  }, [updateState])
-
-  const scoreLine = useCallback((row1: number, col1: number, row2: number, col2: number, playerId: number) => {
-    const currentState = gameStateRef.current
-    if (!currentState.isGameStarted) {
-      return
-    }
-    // Block scoring after round has ended
-    if (currentState.isRoundEndModalOpen) {
-      return
-    }
-
-    const hasActiveLiberator = currentState.board.some(row =>
-      row.some(cell =>
-        cell.card?.ownerId === playerId &&
-              cell.card.name.toLowerCase().includes('data liberator') &&
-              cell.card.statuses?.some(s => s.type === 'Support'),
-      ),
-    )
-
-    const gridSize = currentState.board.length
-    let rStart = row1, rEnd = row1, cStart = col1, cEnd = col1
-    if (row1 === row2) {
-      rStart = row1; rEnd = row1
-      cStart = 0; cEnd = gridSize - 1
-    } else if (col1 === col2) {
-      cStart = col1; cEnd = col1
-      rStart = 0; rEnd = gridSize - 1
-    } else {
-      return
-    }
-
-    let totalScore = 0
-    const scoreEvents: Omit<FloatingTextData, 'timestamp'>[] = []
-
-    for (let r = rStart; r <= rEnd; r++) {
-      for (let c = cStart; c <= cEnd; c++) {
-        const cell = currentState.board[r][c]
-        const card = cell.card
-
-        if (card && !card.statuses?.some(s => s.type === 'Stun')) {
-          const isOwner = card.ownerId === playerId
-          const hasExploit = card.statuses?.some(s => s.type === 'Exploit' && s.addedByPlayerId === playerId)
-
-          if (isOwner || (hasActiveLiberator && hasExploit && card.ownerId !== playerId)) {
-            const points = Math.max(0, card.power + (card.powerModifier || 0) + (card.bonusPower || 0))
-            if (points > 0) {
-              totalScore += points
-              scoreEvents.push({
-                row: r,
-                col: c,
-                text: `+${points}`,
-                playerId: playerId,
-              })
-            }
-          }
-        }
-      }
-    }
-
-    if (scoreEvents.length > 0) {
-      triggerFloatingText(scoreEvents)
-    }
-
-    // Update score
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
-
-    // Use updateState in WebRTC mode to broadcast delta, use updatePlayerScore in WebSocket mode
-    if (isWebRTCMode) {
-      updateState(prevState => ({
-        ...prevState,
-        players: prevState.players.map(p =>
-          p.id === playerId
-            ? { ...p, score: Math.max(0, (p.score || 0) + totalScore) }
-            : p
-        ),
-      }))
-    } else {
-      updatePlayerScore(playerId, totalScore)
-    }
-
-    // For WebSocket mode, also send to server
-    if (!isWebRTCMode) {
-      updatePlayerScore(playerId, totalScore)
-    }
-
-    // Case 3: Auto-pass after scoring: if in Scoring phase (4) and points were scored,
-    // automatically pass turn to next player after a short delay
-    if (totalScore > 0 && currentState.currentPhase === 4 && currentState.activePlayerId === playerId) {
-      setTimeout(() => {
-        if (isWebRTCMode) {
-          // WebRTC mode: Pass turn locally
-          updateState(prevState => passTurnToNextPlayer(prevState))
-        } else if (ws.current?.readyState === WebSocket.OPEN) {
-          // WebSocket mode: Send NEXT_PHASE to server
-          ws.current.send(JSON.stringify({
-            type: 'NEXT_PHASE',
-            gameId: currentState.gameId
-          }))
-        }
-      }, 100) // 100ms delay to show scoring animation
-    }
-  }, [triggerFloatingText, updatePlayerScore, updateState])
-
-  const scoreDiagonal = useCallback((r1: number, c1: number, r2: number, c2: number, playerId: number, bonusType?: 'point_per_support' | 'draw_per_support') => {
-    const currentState = gameStateRef.current
-    if (!currentState.isGameStarted) {
-      return
-    }
-    // Block scoring after round has ended
-    if (currentState.isRoundEndModalOpen) {
-      return
-    }
-
-    const dRow = r2 > r1 ? 1 : -1
-    const dCol = c2 > c1 ? 1 : -1
-    const steps = Math.abs(r1 - r2)
-
-    let totalScore = 0
-    let totalBonus = 0
-    const scoreEvents: Omit<FloatingTextData, 'timestamp'>[] = []
-
-    for (let i = 0; i <= steps; i++) {
-      const r = r1 + (i * dRow)
-      const c = c1 + (i * dCol)
-
-      if (r < 0 || r >= currentState.board.length || c < 0 || c >= currentState.board.length) {
-        continue
-      }
-
-      const cell = currentState.board[r][c]
-      const card = cell.card
-
-      if (card && !card.statuses?.some(s => s.type === 'Stun')) {
-        const isOwner = card.ownerId === playerId
-
-        if (isOwner) {
-          const points = Math.max(0, card.power + (card.powerModifier || 0) + (card.bonusPower || 0))
-          if (points > 0) {
-            totalScore += points
-            scoreEvents.push({
-              row: r,
-              col: c,
-              text: `+${points}`,
-              playerId: playerId,
-            })
-          }
-
-          if (bonusType && card.statuses?.some(s => s.type === 'Support' && s.addedByPlayerId === playerId)) {
-            totalBonus += 1
-          }
-        }
-      }
-    }
-
-    if (bonusType === 'point_per_support' && totalBonus > 0) {
-      totalScore += totalBonus
-    }
-
-    if (scoreEvents.length > 0) {
-      triggerFloatingText(scoreEvents)
-    }
-
-    // Update score
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
-
-    // Use updateState in WebRTC mode to broadcast delta, use updatePlayerScore in WebSocket mode
-    if (isWebRTCMode) {
-      updateState(prevState => ({
-        ...prevState,
-        players: prevState.players.map(p =>
-          p.id === playerId
-            ? { ...p, score: Math.max(0, (p.score || 0) + totalScore) }
-            : p
-        ),
-      }))
-    } else {
-      updatePlayerScore(playerId, totalScore)
-    }
-
-    // For WebSocket mode, also send to server
-    if (!isWebRTCMode) {
-      updatePlayerScore(playerId, totalScore)
-    }
-
-    // Handle draw_per_support bonus - needs local state update for hand/deck
-    if (bonusType === 'draw_per_support' && totalBonus > 0) {
-      updateState(prevState => {
-        const newState: GameState = deepCloneState(prevState)
-        const player = newState.players.find(p => p.id === playerId)
-        if (player && player.deck.length > 0) {
-          for (let i = 0; i < totalBonus; i++) {
-            if (player.deck.length > 0) {
-              player.hand.push(player.deck.shift()!)
-            }
-          }
-        }
-        return newState
-      })
-    }
-
-    // Case 3: Auto-pass after scoring: if in Scoring phase (4) and points were scored,
-    // automatically pass turn to next player after a short delay
-    if (totalScore > 0 && currentState.currentPhase === 4 && currentState.activePlayerId === playerId) {
-      setTimeout(() => {
-        if (isWebRTCMode) {
-          // WebRTC mode: Pass turn locally
-          updateState(prevState => passTurnToNextPlayer(prevState))
-        } else if (ws.current?.readyState === WebSocket.OPEN) {
-          // WebSocket mode: Send NEXT_PHASE to server
-          ws.current.send(JSON.stringify({
-            type: 'NEXT_PHASE',
-            gameId: currentState.gameId
-          }))
-        }
-      }, 500) // 500ms delay to show scoring animation
-    }
-  }, [triggerFloatingText, updatePlayerScore, updateState])
+  // Visual effects functions from useVisualEffects hook
+  const {
+    triggerHighlight,
+    triggerFloatingText,
+    triggerNoTarget,
+    triggerDeckSelection,
+    triggerHandCardSelection,
+    syncValidTargets,
+    triggerTargetSelection,
+  } = visualEffects
+
+  // Scoring hook - handles scoring functions
+  const scoring = useScoring({
+    ws,
+    gameStateRef,
+    updateState,
+    updatePlayerScore,
+    triggerFloatingText,
+  })
+
+  // Destructure scoring functions for direct access
+  const {
+    scoreLine,
+    scoreDiagonal,
+  } = scoring
+
+  // Board manipulation hook - handles board/card manipulation functions
+  const boardManipulation = useBoardManipulation({
+    updateState,
+    rawJsonData,
+  })
+
+  // Card movement hook - handles item movement between zones
+  const cardMovement = useCardMovement({
+    updateState,
+    localPlayerIdRef,
+    updatePlayerScore,
+  })
+
+  // Destructure card movement functions for direct access
+  const {
+    moveItem,
+  } = cardMovement
+
+  // Targeting mode hook - handles targeting mode activation and clearing
+  const targetingMode = useTargetingMode({
+    ws,
+    webrtcManager: webrtcManagerRef,
+    gameStateRef,
+    webrtcIsHostRef,
+    setGameState,
+  })
+
+  // Game lifecycle hook - handles game creation/joining/exiting
+  const gameLifecycle = useGameLifecycle({
+    ws,
+    gameStateRef,
+    localPlayerIdRef,
+    isRestoringSessionRef,
+    isManualExitRef,
+    webrtcIsHostRef,
+    receivedServerStateRef,
+    joiningGameIdRef,
+    setGameState,
+    setLocalPlayerId,
+    connectWebSocket,
+    updateState,
+  })
+
+  // Destructure targeting mode functions for direct access
+  const {
+    setTargetingMode,
+    clearTargetingMode,
+  } = targetingMode
+
+  // Destructure game lifecycle functions for direct access
+  const {
+    createGame,
+    joinGame,
+    exitGame,
+    requestGamesList,
+    forceReconnect,
+  } = gameLifecycle
 
   return {
     gameState,
@@ -6793,12 +3815,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     latestNoTarget,
     latestDeckSelections,
     latestHandCardSelections,
-    createGame,
-    joinGame,
-    joinGameViaModal,
     joinAsInvite,
-    requestGamesList,
-    exitGame,
     startReadyCheck,
     cancelReadyCheck,
     playerReady,
@@ -6816,7 +3833,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     drawCardsBatch,
     shufflePlayerDeck,
     moveItem,
-    handleDrop: moveItem,
+    handleDrop: moveItem,  // Alias for backward compatibility
     addBoardCardStatus,
     removeBoardCardStatus,
     removeBoardCardStatusByOwner,
@@ -6836,7 +3853,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     removeRevealedStatus,
     toggleActivePlayer,
     toggleAutoDraw,
-    forceReconnect,
     // Visual effects triggers
     triggerHighlight,
     triggerFloatingText,
@@ -6853,24 +3869,31 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     nextPhase,
     prevPhase,
     setPhase,
-    markAbilityUsed,
-    applyGlobalEffect,
-    swapCards,
-    transferStatus,
-    transferAllCounters,
+    markAbilityUsed: boardManipulation.markAbilityUsed,
+    applyGlobalEffect: boardManipulation.applyGlobalEffect,
+    swapCards: boardManipulation.swapCards,
+    transferStatus: boardManipulation.transferStatus,
+    transferAllCounters: boardManipulation.transferAllCounters,
+    spawnToken: boardManipulation.spawnToken,
+    resetDeployStatus: boardManipulation.resetDeployStatus,
+    removeStatusByType: boardManipulation.removeStatusByType,
     recoverDiscardedCard,
     resurrectDiscardedCard,
-    spawnToken,
     scoreLine,
     closeRoundEndModal,
     closeRoundEndModalOnly,
     resetGame,
-    resetDeployStatus,
     scoreDiagonal,
-    removeStatusByType,
     reorderTopDeck,
     reorderCards,
     updateState,
+    // Game lifecycle functions
+    createGame,
+    joinGame,
+    joinGameViaModal: joinGame, // Alias for backwards compatibility
+    exitGame,
+    requestGamesList,
+    forceReconnect,
     // WebRTC P2P functions
     webrtcHostId,
     webrtcIsHost,
@@ -6882,3 +3905,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     reconnectProgress,
   }
 }
+
+// Re-export types for convenience
+export type { ConnectionStatus } from './core/types'

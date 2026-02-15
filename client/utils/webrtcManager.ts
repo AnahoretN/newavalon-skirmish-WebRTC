@@ -8,6 +8,11 @@
  * Data flow:
  * Guest --> Host --> Broadcast to all guests
  *
+ * OPTIMIZATIONS:
+ * - MessagePack binary serialization (smaller than JSON)
+ * - Compressed delta format with short keys
+ * - Card serialization by reference (id + stats only)
+ *
  * @note For new host-specific functionality, consider using the HostManager module
  *       located in '../host' which provides better separation of concerns.
  */
@@ -15,14 +20,28 @@
 import { Peer, DataConnection } from 'peerjs'
 import type { GameState, StateDelta } from '../types'
 import { logger } from './logger'
+import {
+  serializeDelta,
+  deserializeDelta,
+  serializeGameState,
+  deserializeFromBinary,
+  serializeToBinary,
+  createMinimalGameState,
+  logSerializationStats
+} from './webrtcSerialization'
+
+// Enable/disable optimized serialization (can be toggled for debugging)
+const USE_OPTIMIZED_SERIALIZATION = true
 
 // Message types for WebRTC communication
 export type WebrtcMessageType =
   | 'JOIN_REQUEST'         // Guest requests to join
   | 'JOIN_ACCEPT'          // Host accepts guest, sends current state
   | 'JOIN_ACCEPT_MINIMAL'  // Host accepts guest with minimal info (to avoid size limit)
+  | 'JOIN_ACCEPT_BINARY'   // Host accepts guest with binary optimized state
   | 'STATE_UPDATE'         // Host broadcasts full state update
-  | 'STATE_DELTA'          // Compact state change broadcast (NEW)
+  | 'STATE_DELTA'          // Compact state change broadcast (JSON)
+  | 'STATE_DELTA_BINARY'   // Compact state change broadcast (MessagePack - OPTIMIZED)
   | 'ACTION'               // Guest sends action to host
   | 'PLAYER_LEAVE'         // Player is leaving
   | 'PLAYER_RECONNECT'     // Guest reconnecting after page reload
@@ -429,6 +448,7 @@ export class WebrtcManager {
 
   /**
    * Host accepts guest and sends current game state
+   * OPTIMIZED: Uses binary serialization for smaller message size
    */
   acceptGuest(peerId: string, gameState: GameState, playerId: number): void {
     const conn = this.connections.get(peerId)
@@ -440,16 +460,32 @@ export class WebrtcManager {
       logger.error(`[acceptGuest] Connection for guest ${peerId} is not open`)
       return
     }
-    const message: WebrtcMessage = {
-      type: 'JOIN_ACCEPT',
-      senderId: this.peer?.id,
-      playerId: playerId,
-      data: { gameState },
-      timestamp: Date.now()
-    }
+
     try {
-      conn.send(message)
-      logger.info(`Accepted guest ${peerId} as player ${playerId}`)
+      if (USE_OPTIMIZED_SERIALIZATION) {
+        // Use optimized binary serialization
+        const binaryData = serializeGameState(gameState)
+        const message: WebrtcMessage = {
+          type: 'JOIN_ACCEPT_BINARY',
+          senderId: this.peer?.id,
+          playerId: playerId,
+          data: binaryData,
+          timestamp: Date.now()
+        }
+        conn.send(message)
+        logger.info(`Accepted guest ${peerId} as player ${playerId} (BINARY, ${binaryData.byteLength} bytes)`)
+      } else {
+        // Fallback to JSON
+        const message: WebrtcMessage = {
+          type: 'JOIN_ACCEPT',
+          senderId: this.peer?.id,
+          playerId: playerId,
+          data: { gameState },
+          timestamp: Date.now()
+        }
+        conn.send(message)
+        logger.info(`Accepted guest ${peerId} as player ${playerId}`)
+      }
     } catch (err) {
       logger.error(`[acceptGuest] Failed to send JOIN_ACCEPT to ${peerId}:`, err)
     }
@@ -499,17 +535,39 @@ export class WebrtcManager {
   /**
    * Broadcast state delta to all guests (host only)
    * Sends only the changes that happened, not full state
+   * OPTIMIZED: Uses MessagePack binary serialization
    */
   broadcastStateDelta(delta: StateDelta, excludePeerId?: string): void {
-    const message: WebrtcMessage = {
-      type: 'STATE_DELTA',
-      senderId: this.peer?.id,
-      data: { delta },
-      timestamp: Date.now()
+    if (USE_OPTIMIZED_SERIALIZATION) {
+      // Log size comparison for debugging (can be removed in production)
+      if (process.env.NODE_ENV === 'development') {
+        logSerializationStats(delta)
+      }
+
+      // Serialize to optimized binary format
+      const binaryData = serializeDelta(delta)
+
+      const message: WebrtcMessage = {
+        type: 'STATE_DELTA_BINARY',
+        senderId: this.peer?.id,
+        data: binaryData,
+        timestamp: Date.now()
+      }
+      logger.info(`[broadcastStateDelta] Sending BINARY STATE_DELTA: ${binaryData.byteLength} bytes, playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, boardCells=${delta.boardCells?.length || 0}`)
+      this.broadcastToGuests(message, excludePeerId)
+      logger.info(`[broadcastStateDelta] Sent STATE_DELTA from player ${delta.sourcePlayerId} to ${this.connections.size} guests`)
+    } else {
+      // Fallback to JSON format
+      const message: WebrtcMessage = {
+        type: 'STATE_DELTA',
+        senderId: this.peer?.id,
+        data: { delta },
+        timestamp: Date.now()
+      }
+      logger.info(`[broadcastStateDelta] Preparing to send STATE_DELTA: playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, boardCells=${delta.boardCells?.length || 0}, phaseDelta=${!!delta.phaseDelta}`)
+      this.broadcastToGuests(message, excludePeerId)
+      logger.info(`[broadcastStateDelta] Sent STATE_DELTA from player ${delta.sourcePlayerId} to ${this.connections.size} guests`)
     }
-    logger.info(`[broadcastStateDelta] Preparing to send STATE_DELTA: playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, boardCells=${delta.boardCells?.length || 0}, phaseDelta=${!!delta.phaseDelta}`)
-    this.broadcastToGuests(message, excludePeerId)
-    logger.info(`[broadcastStateDelta] Sent STATE_DELTA from player ${delta.sourcePlayerId} to ${this.connections.size} guests`)
   }
 
   /**
@@ -528,15 +586,27 @@ export class WebrtcManager {
   /**
    * Send state delta to host (for efficient syncing)
    * Guest uses this to send their state changes to host
+   * OPTIMIZED: Uses MessagePack binary serialization
    */
   sendStateDelta(delta: StateDelta): boolean {
-    const message: WebrtcMessage = {
-      type: 'STATE_DELTA',
-      senderId: this.peer?.id,
-      data: { delta },
-      timestamp: Date.now()
+    if (USE_OPTIMIZED_SERIALIZATION) {
+      const binaryData = serializeDelta(delta)
+      const message: WebrtcMessage = {
+        type: 'STATE_DELTA_BINARY',
+        senderId: this.peer?.id,
+        data: binaryData,
+        timestamp: Date.now()
+      }
+      return this.sendMessageToHost(message)
+    } else {
+      const message: WebrtcMessage = {
+        type: 'STATE_DELTA',
+        senderId: this.peer?.id,
+        data: { delta },
+        timestamp: Date.now()
+      }
+      return this.sendMessageToHost(message)
     }
-    return this.sendMessageToHost(message)
   }
 
   /**

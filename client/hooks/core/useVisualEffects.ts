@@ -15,18 +15,19 @@
  * - clearTargetingMode - очистка режима прицеливания
  */
 
-import { useCallback, useRef } from 'react'
-import type { HighlightData, FloatingTextData, TargetingModeData, AbilityAction, CommandContext } from '../../types'
+import { useCallback } from 'react'
+import { calculateValidTargets } from '@shared/utils/targeting'
+import type { HighlightData, FloatingTextData, TargetingModeData, AbilityAction, CommandContext, GameState } from '../../types'
 
 interface UseVisualEffectsProps {
   // WebSocket connection
-  ws: React.RefObject<WebSocket | null>
+  ws: React.MutableRefObject<WebSocket | null>
   // WebRTC manager
-  webrtcManager: React.RefObject<ReturnType<typeof import('../../utils/webrtcManager').getWebrtcManager> | null>
+  webrtcManager: React.MutableRefObject<ReturnType<typeof import('../../utils/webrtcManager').getWebrtcManager> | null>
   // Refs
-  gameStateRef: React.RefObject<{ gameId: string | null }>
-  localPlayerIdRef: React.RefObject<number | null>
-  webrtcIsHostRef: React.RefObject<boolean>
+  gameStateRef: React.MutableRefObject<GameState>
+  localPlayerIdRef: React.MutableRefObject<number | null>
+  webrtcIsHostRef: React.MutableRefObject<boolean>
   // State setters
   setLatestHighlight: React.Dispatch<React.SetStateAction<HighlightData | null>>
   setLatestFloatingTexts: React.Dispatch<React.SetStateAction<FloatingTextData[] | null>>
@@ -340,8 +341,6 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     preCalculatedTargets?: { row: number, col: number }[],
     commandContext?: CommandContext
   ) => {
-    const { calculateValidTargets } = require('../../utils/targeting')
-
     const currentGameState = gameStateRef.current
     if (!currentGameState || !currentGameState.board) {
       console.warn('[setTargetingMode] No game state or board available')
@@ -354,7 +353,7 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     if (preCalculatedTargets) {
       boardTargets = preCalculatedTargets
     } else if (sourceCoords) {
-      boardTargets = calculateValidTargets(action, action.cardId, sourceCoords, currentGameState, playerId)
+      boardTargets = calculateValidTargets(action, currentGameState, playerId, commandContext)
     }
 
     const targetingModeData: TargetingModeData = {
