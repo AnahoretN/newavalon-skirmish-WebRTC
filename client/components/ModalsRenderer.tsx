@@ -3,6 +3,9 @@
  *
  * Handles lazy loading and rendering of all modals
  * Uses the useModals store to determine which modal to show
+ *
+ * For modals that need callbacks (onJoin, onSave, etc.),
+ * the callbacks are passed through modalData
  */
 
 import { lazy, Suspense } from 'react'
@@ -68,41 +71,44 @@ export const ModalsRenderer = () => {
   const modalData = getData()
   const modalSize = getSize()
 
+  // Extract callbacks from modalData
+  const { onJoin, onSave, onConfirm, onReady, onCancel, onAccept, onDecline, onContinueGame, onStartNextRound, onExit, ...restData } = modalData
+
   return (
     <Suspense fallback={<ModalLoader />}>
       {openModal === 'deckView' && (
         <ModalWrapper title="Deck View" onClose={close} size={modalSize}>
-          <DeckViewModal {...modalData} isOpen={true} onClose={close} />
+          <DeckViewModal {...restData} isOpen={true} onClose={close} />
         </ModalWrapper>
       )}
 
       {openModal === 'cardDetail' && (
         <ModalWrapper title="Card Details" onClose={close} size={modalSize}>
-          <CardDetailModal {...modalData} isOpen={true} onClose={close} />
+          <CardDetailModal {...restData} isOpen={true} onClose={close} />
         </ModalWrapper>
       )}
 
       {openModal === 'tokens' && (
         <ModalWrapper title="Tokens" onClose={close} size={modalSize}>
-          <TokensModal {...modalData} isOpen={true} onClose={close} />
+          <TokensModal {...restData} isOpen={true} onClose={close} />
         </ModalWrapper>
       )}
 
       {openModal === 'counters' && (
         <ModalWrapper title="Counters" onClose={close} size={modalSize}>
-          <CountersModal {...modalData} isOpen={true} onClose={close} />
+          <CountersModal {...restData} isOpen={true} onClose={close} />
         </ModalWrapper>
       )}
 
       {openModal === 'teamAssignment' && (
         <ModalWrapper title="Assign Teams" onClose={close} size={modalSize}>
-          <TeamAssignmentModal {...modalData} isOpen={true} onClose={close} onCancel={close} />
+          <TeamAssignmentModal {...restData} isOpen={true} onClose={close} onCancel={onCancel || close} onConfirm={onConfirm || close} />
         </ModalWrapper>
       )}
 
       {openModal === 'readyCheck' && (
         <ModalWrapper title="Ready Check" onClose={close} size={modalSize}>
-          <ReadyCheckModal {...modalData} isOpen={true} onClose={close} onReady={() => {}} onCancel={close} />
+          <ReadyCheckModal {...restData} isOpen={true} onClose={close} onReady={onReady || close} onCancel={onCancel || close} />
         </ModalWrapper>
       )}
 
@@ -114,37 +120,37 @@ export const ModalsRenderer = () => {
 
       {openModal === 'settings' && (
         <ModalWrapper title="Settings" onClose={close} size={modalSize}>
-          <SettingsModal isOpen={true} onClose={close} onSave={() => {}} />
+          <SettingsModal {...restData} isOpen={true} onClose={close} onSave={onSave || close} />
         </ModalWrapper>
       )}
 
       {openModal === 'command' && (
         <ModalWrapper title="Command" onClose={close} size={modalSize}>
-          <CommandModal {...modalData} isOpen={true} onClose={close} onConfirm={() => {}} onCancel={close} />
+          <CommandModal {...restData} isOpen={true} onClose={close} onConfirm={onConfirm || close} onCancel={onCancel || close} />
         </ModalWrapper>
       )}
 
       {openModal === 'counterSelection' && (
         <ModalWrapper title="Select Counter" onClose={close} size={modalSize}>
-          <CounterSelectionModal {...modalData} isOpen={true} onClose={close} onConfirm={() => {}} onCancel={close} />
+          <CounterSelectionModal {...restData} isOpen={true} onClose={close} onConfirm={onConfirm || close} onCancel={onCancel || close} />
         </ModalWrapper>
       )}
 
       {openModal === 'revealRequest' && (
         <ModalWrapper title="Reveal Request" onClose={close} size={modalSize}>
-          <RevealRequestModal {...modalData} isOpen={true} onAccept={() => {}} onDecline={close} />
+          <RevealRequestModal {...restData} isOpen={true} onAccept={onAccept || close} onDecline={onDecline || close} />
         </ModalWrapper>
       )}
 
       {openModal === 'roundEnd' && (
         <ModalWrapper title="Round Complete" onClose={close} size={modalSize}>
-          <RoundEndModal {...modalData} isOpen={true} onClose={close} onConfirm={close} onExit={close} />
+          <RoundEndModal {...restData} isOpen={true} onClose={close} onContinueGame={onContinueGame || close} onStartNextRound={onStartNextRound || close} onExit={onExit || close} />
         </ModalWrapper>
       )}
 
       {openModal === 'joinGame' && (
         <ModalWrapper title="Join Game" onClose={close} size={modalSize}>
-          <JoinGameModal {...modalData} isOpen={true} onClose={close} onJoin={() => {}} />
+          <JoinGameModal {...restData} isOpen={true} onClose={close} onJoin={onJoin || close} />
         </ModalWrapper>
       )}
 

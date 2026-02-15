@@ -1,30 +1,19 @@
-import React, { memo, useState } from 'react'
-import { JoinGameModal } from './JoinGameModal'
-import { DeckBuilderModal } from './DeckBuilderModal'
-import { SettingsModal } from './SettingsModal'
-import { RulesModal } from './RulesModal'
+import React, { memo, useState, useEffect } from 'react'
 import { CardDetailModal } from './CardDetailModal'
 import type { GameState, Card, Player } from '@/types'
 import { STATUS_DESCRIPTIONS } from '@/constants'
 import { APP_VERSION } from 'virtual:version'
 import type { ConnectionStatus } from '@/hooks/useGameState'
+import { useJoinGameModal, useDeckBuilderModal, useSettingsModal, useRulesModal } from '@/hooks/useModals'
 
 interface MainMenuProps {
     handleCreateGame: () => void;
-    setSettingsModalOpen: (open: boolean) => void;
     handleOpenJoinModal: () => void;
-    setDeckBuilderOpen: (open: boolean) => void;
-    setRulesModalOpen: (open: boolean) => void;
-    isJoinModalOpen: boolean;
-    setJoinModalOpen: (open: boolean) => void;
     handleJoinGame: (gameId: string) => void;
     gamesList: { gameId: string; playerCount: number }[];
     requestGamesList: () => void;
-    isDeckBuilderOpen: boolean;
     setViewingCard: React.Dispatch<React.SetStateAction<{ card: Card; player?: Player } | null>>;
-    isSettingsModalOpen: boolean;
     handleSaveSettings: (url: string) => void;
-    isRulesModalOpen: boolean;
     viewingCard: { card: Card; player?: Player } | null;
     gameState: GameState;
     imageRefreshVersion: number;
@@ -41,20 +30,12 @@ interface MainMenuProps {
 
 export const MainMenu: React.FC<MainMenuProps> = memo(({
   handleCreateGame,
-  setSettingsModalOpen,
   handleOpenJoinModal,
-  setDeckBuilderOpen,
-  setRulesModalOpen,
-  isJoinModalOpen,
-  setJoinModalOpen,
   handleJoinGame,
   gamesList,
   requestGamesList,
-  isDeckBuilderOpen,
   setViewingCard,
-  isSettingsModalOpen,
   handleSaveSettings,
-  isRulesModalOpen,
   viewingCard,
   gameState,
   imageRefreshVersion,
@@ -68,8 +49,49 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
 }) => {
   const [isInitializingHost, setIsInitializingHost] = useState(false)
 
+  // New modal system hooks
+  const joinGameModal = useJoinGameModal()
+  const deckBuilderModal = useDeckBuilderModal()
+  const settingsModal = useSettingsModal()
+  const rulesModal = useRulesModal()
+
   // Check actual WebRTC mode from localStorage (source of truth)
   const actualWebrtcEnabled = localStorage.getItem('webrtc_enabled') === 'true'
+
+  // Sync old props-based calls to new modal system
+  useEffect(() => {
+    if (joinGameModal.isOpen) {
+      // Request games list when modal opens
+      requestGamesList()
+    }
+  }, [joinGameModal.isOpen, requestGamesList])
+
+  const openJoinModal = () => {
+    handleOpenJoinModal()
+    joinGameModal.open({
+      isOpen: true,
+      games: gamesList,
+      onJoin: handleJoinGame,
+      onRefreshGames: requestGamesList
+    })
+  }
+
+  const openDeckBuilder = () => {
+    deckBuilderModal.open({
+      setViewingCard
+    })
+  }
+
+  const openSettings = () => {
+    settingsModal.open({
+      connectionStatus,
+      onReconnect: forceReconnect,
+      onSave: handleSaveSettings,
+      gameId,
+      isGameStarted,
+      isPrivate
+    })
+  }
 
   const handleHostGame = async () => {
     if (!initializeWebrtcHost) {return}
@@ -132,7 +154,7 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
 
           {/* Join Game Button - only for server mode */}
           <button
-            onClick={handleOpenJoinModal}
+            onClick={openJoinModal}
             disabled={actualWebrtcEnabled || connectionStatus !== 'Connected'}
             className={`w-full font-bold py-3 px-6 rounded-lg shadow-lg transition-all transform flex items-center justify-center gap-2 ${
               !actualWebrtcEnabled && connectionStatus === 'Connected'
@@ -164,7 +186,7 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
           </button>
 
           <button
-            onClick={() => setDeckBuilderOpen(true)}
+            onClick={openDeckBuilder}
             className="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-all transform hover:scale-105 flex items-center justify-center gap-2"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
@@ -172,7 +194,7 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
           </button>
 
           <button
-            onClick={() => setRulesModalOpen(true)}
+            onClick={() => rulesModal.open()}
             className="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-all transform hover:scale-105 flex items-center justify-center gap-2"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
@@ -180,7 +202,7 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
           </button>
 
           <button
-            onClick={() => setSettingsModalOpen(true)}
+            onClick={openSettings}
             className="w-full bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold py-2 px-6 rounded-lg shadow transition-all flex items-center justify-center gap-2 border border-gray-600"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
@@ -254,36 +276,7 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
                 v{APP_VERSION}
       </div>
 
-      <JoinGameModal
-        isOpen={isJoinModalOpen}
-        onClose={() => setJoinModalOpen(false)}
-        onJoin={handleJoinGame}
-        games={gamesList}
-        onRefreshGames={requestGamesList}
-      />
-
-      <DeckBuilderModal
-        isOpen={isDeckBuilderOpen}
-        onClose={() => setDeckBuilderOpen(false)}
-        setViewingCard={setViewingCard}
-      />
-
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setSettingsModalOpen(false)}
-        onSave={handleSaveSettings}
-        connectionStatus={connectionStatus}
-        onReconnect={forceReconnect}
-        gameId={gameId}
-        isGameStarted={isGameStarted}
-        isPrivate={isPrivate}
-      />
-
-      <RulesModal
-        isOpen={isRulesModalOpen}
-        onClose={() => setRulesModalOpen(false)}
-      />
-
+      {/* CardDetailModal is kept here as it's used across the app, not just in MainMenu */}
       {viewingCard && (
         <CardDetailModal
           card={viewingCard.card}

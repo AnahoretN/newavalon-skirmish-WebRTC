@@ -136,6 +136,104 @@ export const useJoinGameModal = () => {
   }
 }
 
+export const useDeckBuilderModal = () => {
+  const { open, close, isOpen } = useModals()
+
+  return {
+    isOpen: isOpen('deckBuilder'),
+    open: () => open('deckBuilder', {}, 'full'),
+    close,
+  }
+}
+
+export const useTokensModal = () => {
+  const { open, close, isOpen, getData } = useModals()
+
+  return {
+    isOpen: isOpen('tokens'),
+    open: (data?: TokensModalData) => open('tokens', data, 'lg'),
+    close,
+    getData: () => getData<TokensModalData>(),
+  }
+}
+
+export const useCountersModal = () => {
+  const { open, close, isOpen, getData } = useModals()
+
+  return {
+    isOpen: isOpen('counters'),
+    open: (data?: CountersModalData) => open('counters', data, 'lg'),
+    close,
+    getData: () => getData<CountersModalData>(),
+  }
+}
+
+export const useTeamAssignmentModal = () => {
+  const { open, close, isOpen, getData } = useModals()
+
+  return {
+    isOpen: isOpen('teamAssignment'),
+    open: (data?: TeamAssignmentModalData) => open('teamAssignment', data, 'lg'),
+    close,
+    getData: () => getData<TeamAssignmentModalData>(),
+  }
+}
+
+export const useReadyCheckModal = () => {
+  const { open, close, isOpen, getData } = useModals()
+
+  return {
+    isOpen: isOpen('readyCheck'),
+    open: (data?: ReadyCheckModalData) => open('readyCheck', data, 'md'),
+    close,
+    getData: () => getData<ReadyCheckModalData>(),
+  }
+}
+
+export const useCommandModal = () => {
+  const { open, close, isOpen, getData } = useModals()
+
+  return {
+    isOpen: isOpen('command'),
+    open: (data?: CommandModalData) => open('command', data, 'md'),
+    close,
+    getData: () => getData<CommandModalData>(),
+  }
+}
+
+export const useCounterSelectionModal = () => {
+  const { open, close, isOpen, getData } = useModals()
+
+  return {
+    isOpen: isOpen('counterSelection'),
+    open: (data?: CounterSelectionModalData) => open('counterSelection', data, 'sm'),
+    close,
+    getData: () => getData<CounterSelectionModalData>(),
+  }
+}
+
+export const useRevealRequestModal = () => {
+  const { open, close, isOpen, getData } = useModals()
+
+  return {
+    isOpen: isOpen('revealRequest'),
+    open: (data?: RevealRequestModalData) => open('revealRequest', data, 'md'),
+    close,
+    getData: () => getData<RevealRequestModalData>(),
+  }
+}
+
+export const useRoundEndModal = () => {
+  const { open, close, isOpen, getData } = useModals()
+
+  return {
+    isOpen: isOpen('roundEnd'),
+    open: (data?: RoundEndModalData) => open('roundEnd', data, 'lg'),
+    close,
+    getData: () => getData<RoundEndModalData>(),
+  }
+}
+
 // Type definitions for modal data
 export interface DeckViewModalData {
   player?: any
@@ -163,6 +261,51 @@ export interface CardDetailModalData {
 export interface JoinGameModalData {
   isOpen: boolean
   games: any[]
+}
+
+export interface TokensModalData {
+  setDraggedItem?: (item: any) => void
+  openContextMenu?: (e: React.MouseEvent, type: string, data: any) => void
+  canInteract?: boolean
+  anchorEl?: { top: number; left: number } | null
+  imageRefreshVersion?: number
+}
+
+export interface CountersModalData {
+  canInteract?: boolean
+  anchorEl?: { top: number; left: number } | null
+  imageRefreshVersion?: number
+  onCounterMouseDown?: (counter: any) => void
+  cursorStack?: { type: string; count: number } | null
+}
+
+export interface TeamAssignmentModalData {
+  players: any[]
+  gameMode: any
+}
+
+export interface ReadyCheckModalData {
+  players: any[]
+  localPlayer: any
+}
+
+export interface CommandModalData {
+  card: any
+  playerColorMap: Map<number, any>
+}
+
+export interface CounterSelectionModalData {
+  data: any
+}
+
+export interface RevealRequestModalData {
+  fromPlayer: any
+  cardCount: number
+}
+
+export interface RoundEndModalData {
+  gameState: any
+  localPlayerId: number | null
 }
 
 // Re-export commonly used types

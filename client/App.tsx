@@ -1959,20 +1959,12 @@ const App = memo(function App() {
     return (
       <MainMenu
         handleCreateGame={handleCreateGame}
-        setSettingsModalOpen={(open) => setModalsState(prev => ({ ...prev, isSettingsModalOpen: open }))}
         handleOpenJoinModal={handleOpenJoinModal}
-        setDeckBuilderOpen={(open) => setModalsState(prev => ({ ...prev, isDeckBuilderOpen: open }))}
-        setRulesModalOpen={(open) => setModalsState(prev => ({ ...prev, isRulesModalOpen: open }))}
-        isJoinModalOpen={modalsState.isJoinModalOpen}
-        setJoinModalOpen={(open) => setModalsState(prev => ({ ...prev, isJoinModalOpen: open }))}
         handleJoinGame={handleJoinGame}
         gamesList={gamesList}
         requestGamesList={requestGamesList}
-        isDeckBuilderOpen={modalsState.isDeckBuilderOpen}
         setViewingCard={setViewingCard}
-        isSettingsModalOpen={modalsState.isSettingsModalOpen}
         handleSaveSettings={handleSaveSettings}
-        isRulesModalOpen={modalsState.isRulesModalOpen}
         viewingCard={viewingCard}
         gameState={gameState}
         imageRefreshVersion={imageRefreshVersion}
