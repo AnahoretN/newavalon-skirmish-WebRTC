@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.2.11] - 2026-02-15
+
+### Added
+- **WebRTC P2P Optimization**: Implemented binary serialization for reduced bandwidth
+  - MessagePack binary encoding (~72% size reduction vs JSON)
+  - Differential compression for state deltas
+  - Card serialization by reference (id + stats only, tokens tracked separately)
+  - Optimized delta format with short property keys
+  - Compact reconnect snapshot for faster guest reconnection
+
+### Changed
+- **Code Splitting**: Refactored useGameState.ts into focused modules
+  - `useGameLifecycle.ts` - game creation, joining, exiting
+  - `gameCreators.ts` - game ID generation, deck creation, initial state
+  - `gameStateStorage.ts` - save/load/clear game state
+  - `useVisualEffects.ts` - highlight and floating text effects
+  - `useWebRTC.ts` - WebRTC P2P connection management
+  - `useTargetingMode.ts` - universal targeting system
+  - `useBoardManipulation.ts` - board operations
+  - `useCardMovement.ts` - card drag-and-drop
+  - `useCardOperations.ts` - card abilities and status
+  - `useCardStatus.ts` - card status management
+  - `useDeckManagement.ts` - deck operations
+  - `useGameSettings.ts` - game configuration
+  - `usePhaseManagement.ts` - phase transitions
+  - `usePlayerActions.ts` - player-specific actions
+  - `useReadyCheck.ts` - ready check system
+  - `useScoring.ts` - score calculations
+  - `websocketHelpers.ts` - WebSocket utilities
+  - `types.ts` - shared type definitions
+
+### Fixed
+- **DeckType Runtime Error**: Fixed import type vs regular import causing runtime error
+- **WebRTC Reconnection Loop**: Fixed infinite reconnect cycle on HMR (Hot Module Replacement)
+  - Added sessionStorage flag to prevent duplicate auto-restore attempts
+  - Auto-restore now works correctly on page reload but skips on HMR
+- **Unused Imports**: Removed unused imports from useGameState.ts
+
+
 ## [0.2.10] - 2026-02-15
 
 ### Added
