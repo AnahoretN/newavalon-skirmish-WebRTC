@@ -49,6 +49,29 @@ export default defineConfig(({ mode }) => {
       outDir: '../docs',
       cssMinify: true,
       emptyOutDir: true,
+      rollupOptions: {
+        output: {
+          manualChunks: (id) => {
+            // Vendor chunk - React и основные зависимости
+            if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
+              return 'vendor-react'
+            }
+            // WebRTC зависимости (PeerJS тяжелый)
+            if (id.includes('node_modules/peerjs')) {
+              return 'vendor-webrtc'
+            }
+            // Другие vendor библиотеки
+            if (id.includes('node_modules')) {
+              return 'vendor'
+            }
+            // Hooks и shared utilities
+            if (id.includes('/hooks/') || id.includes('/shared/')) {
+              return 'game-logic'
+            }
+          }
+        }
+      },
+      chunkSizeWarningLimit: 500
     },
     resolve: {
       alias: {
