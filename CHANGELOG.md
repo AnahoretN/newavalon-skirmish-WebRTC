@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Card serialization by reference (id + stats only, tokens tracked separately)
   - Optimized delta format with short property keys
   - Compact reconnect snapshot for faster guest reconnection
+- **Modal System**: Unified modal management with lazy loading
+  - Zustand-based state manager (`useModals` hook)
+  - Centralized `ModalsRenderer` component with React.lazy
+  - All 14 modals now lazy-loaded for code splitting
+  - Improved `BaseModal` with smooth animations
+  - Custom scrollbar styles for modal content
 
 ### Changed
 - **Code Splitting**: Refactored useGameState.ts into focused modules
