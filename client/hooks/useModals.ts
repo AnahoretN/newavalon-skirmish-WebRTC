@@ -110,7 +110,7 @@ export const useRulesModal = () => {
 
   return {
     isOpen: isOpen('rules'),
-    open: () => open('rules', {}, 'full'),
+    open: (data?: Record<string, any>) => open('rules', data, 'full'),
     close,
   }
 }
@@ -120,7 +120,7 @@ export const useSettingsModal = () => {
 
   return {
     isOpen: isOpen('settings'),
-    open: () => open('settings', {}, 'md'),
+    open: (data?: Record<string, any>) => open('settings', data, 'md'),
     close,
   }
 }
@@ -141,7 +141,7 @@ export const useDeckBuilderModal = () => {
 
   return {
     isOpen: isOpen('deckBuilder'),
-    open: () => open('deckBuilder', {}, 'full'),
+    open: (data?: Record<string, any>) => open('deckBuilder', data, 'full'),
     close,
   }
 }

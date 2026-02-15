@@ -120,7 +120,17 @@ export const ModalsRenderer = () => {
 
       {openModal === 'settings' && (
         <ModalWrapper title="Settings" onClose={close} size={modalSize}>
-          <SettingsModal {...restData} isOpen={true} onClose={close} onSave={onSave || close} />
+          <SettingsModal
+            {...restData}
+            isOpen={true}
+            onClose={close}
+            onSave={onSave || close}
+            connectionStatus={restData.connectionStatus}
+            onReconnect={restData.onReconnect}
+            gameId={restData.gameId}
+            isGameStarted={restData.isGameStarted}
+            isPrivate={restData.isPrivate}
+          />
         </ModalWrapper>
       )}
 
@@ -150,13 +160,19 @@ export const ModalsRenderer = () => {
 
       {openModal === 'joinGame' && (
         <ModalWrapper title="Join Game" onClose={close} size={modalSize}>
-          <JoinGameModal {...restData} isOpen={true} onClose={close} onJoin={onJoin || close} />
+          <JoinGameModal
+            {...restData}
+            isOpen={true}
+            onClose={close}
+            onJoin={onJoin || close}
+            onRefreshGames={restData.onRefreshGames || (() => {})}
+          />
         </ModalWrapper>
       )}
 
       {openModal === 'deckBuilder' && (
         <ModalWrapper title="Deck Builder" onClose={close} size={modalSize}>
-          <DeckBuilderModal isOpen={true} onClose={close} />
+          <DeckBuilderModal isOpen={true} onClose={close} setViewingCard={restData.setViewingCard} />
         </ModalWrapper>
       )}
     </Suspense>
