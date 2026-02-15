@@ -1107,3 +1107,95 @@ export function isDeltaEmpty(delta: StateDelta): boolean {
          !delta.targetingModeDelta &&
          !delta.abilityModeDelta
 }
+
+/**
+ * Create a compact reconnection state snapshot
+ * This is sent to reconnecting guests to restore their game state
+ * WITHOUT sending full card arrays (which are too large for WebRTC JSON channel)
+ *
+ * Guests will rebuild their state using:
+ * - Player metadata (names, colors, ready status, etc.)
+ * - Deck/hand/discard sizes only (not full cards)
+ * - Board state (full board with cards - needed for game continuity)
+ * - Phase/round info
+ */
+export function createReconnectSnapshot(gameState: GameState, localPlayerId?: number | null): {
+  type: 'RECONNECT_SNAPSHOT'
+  data: {
+    gameId: string
+    gameMode: string
+    isPrivate: boolean
+    isGameStarted: boolean
+    isReadyCheckActive: boolean
+    activeGridSize: number
+    currentPhase: number
+    isScoringStep: boolean
+    activePlayerId: number | null
+    startingPlayerId: number | null
+    currentRound: number
+    turnNumber: number
+    roundWinners: Record<number, number[]>
+    gameWinner: number | null
+    isRoundEndModalOpen: boolean
+    dummyPlayerCount: number
+    players: Array<{
+      id: number
+      name: string
+      color: string
+      isDummy: boolean
+      isReady: boolean
+      isDisconnected: boolean
+      score: number
+      selectedDeck: DeckType
+      autoDrawEnabled: boolean
+      teamId?: number
+      // Sizes only (not full arrays) - except for board which we need full
+      handSize: number
+      deckSize: number
+      discardSize: number
+      announcedCard: any
+      boardHistory: any[]
+    }>
+    board: any[][] // Full board state - needed for game continuity
+  }
+} {
+  return {
+    type: 'RECONNECT_SNAPSHOT',
+    data: {
+      gameId: gameState.gameId,
+      gameMode: gameState.gameMode,
+      isPrivate: gameState.isPrivate,
+      isGameStarted: gameState.isGameStarted,
+      isReadyCheckActive: gameState.isReadyCheckActive,
+      activeGridSize: gameState.activeGridSize,
+      currentPhase: gameState.currentPhase,
+      isScoringStep: gameState.isScoringStep,
+      activePlayerId: gameState.activePlayerId,
+      startingPlayerId: gameState.startingPlayerId,
+      currentRound: gameState.currentRound,
+      turnNumber: gameState.turnNumber,
+      roundWinners: gameState.roundWinners,
+      gameWinner: gameState.gameWinner,
+      isRoundEndModalOpen: gameState.isRoundEndModalOpen,
+      dummyPlayerCount: gameState.dummyPlayerCount,
+      players: gameState.players.map(p => ({
+        id: p.id,
+        name: p.name,
+        color: p.color,
+        isDummy: p.isDummy,
+        isReady: p.isReady,
+        isDisconnected: p.isDisconnected,
+        score: p.score,
+        selectedDeck: p.selectedDeck,
+        autoDrawEnabled: p.autoDrawEnabled,
+        teamId: p.teamId,
+        handSize: p.hand.length,
+        deckSize: p.deck.length,
+        discardSize: p.discard.length,
+        announcedCard: p.announcedCard,
+        boardHistory: p.boardHistory
+      })),
+      board: gameState.board
+    }
+  }
+}

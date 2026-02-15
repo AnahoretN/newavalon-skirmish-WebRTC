@@ -15,7 +15,8 @@ import { toggleActivePlayer as toggleActivePlayerPhase, passTurnToNextPlayer, pl
 import {
   applyStateDelta,
   createDeltaFromStates,
-  isDeltaEmpty
+  isDeltaEmpty,
+  createReconnectSnapshot
 } from '../utils/stateDelta'
 import { saveGuestData, saveHostData, saveWebrtcState, loadGuestData, loadHostData, loadWebrtcState, getRestorableSessionType, clearWebrtcData, broadcastHostPeerId, getHostPeerIdForGame, clearHostPeerIdBroadcast } from '../host/WebrtcStatePersistence'
 
@@ -838,6 +839,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       case 'connected_to_host':
         // Guest: Successfully connected to host
+        // Update webrtcHostId from event data (important for reconnection tracking)
+        if (event.data?.hostPeerId && webrtcHostId !== event.data.hostPeerId) {
+          setWebrtcHostId(event.data.hostPeerId)
+          logger.info(`Updated webrtcHostId to: ${event.data.hostPeerId}`)
+        }
         setConnectionStatus('Connected')
         setIsReconnecting(false)
         setReconnectProgress(null)
@@ -1035,6 +1041,13 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       // No need for separate STATE_UPDATE - JOIN_ACCEPT_MINIMAL already has all necessary info
       // The guest will create their own deck when they receive the message
+
+      // Broadcast the new player addition to all existing guests (so they see the new player in their UI)
+      const delta = createDeltaFromStates(prevState, newState, newPlayerId)
+      if (!isDeltaEmpty(delta)) {
+        webrtcManagerRef.current!.broadcastStateDelta(delta, guestPeerId)  // Exclude the new guest (they get JOIN_ACCEPT_MINIMAL)
+        logger.info(`[handleWebrtcGuestJoin] Broadcasted new player ${newPlayerId} to existing guests`)
+      }
 
       // Broadcast deck selection of new player to all existing guests
       webrtcManagerRef.current!.broadcastToGuests({
@@ -1593,6 +1606,139 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
 
+      case 'RECONNECT_SNAPSHOT':
+        // Host sent compact reconnect snapshot (for guests reconnecting after page reload)
+        // This is much smaller than full STATE_UPDATE and avoids "Message too big for JSON channel" error
+        logger.info('[RECONNECT_SNAPSHOT] Received compact reconnect snapshot from host')
+        receivedServerStateRef.current = true
+        if (message.data) {
+          const snapshot = message.data
+          setGameState(prev => {
+            // Build players from snapshot data
+            const localPlayerId = localPlayerIdRef.current
+
+            const rebuiltPlayers = snapshot.players.map((sp: any) => {
+              // Find existing local player state to preserve their actual cards
+              const existingLocal = prev.players.find(p => p.id === sp.id)
+
+              if (sp.id === localPlayerId && existingLocal) {
+                // This is the local player - preserve their hand/deck if they have real cards
+                const hasRealCards = existingLocal.hand.some((c: any) => !c.isPlaceholder)
+
+                if (hasRealCards) {
+                  // Keep local player's actual cards, sync sizes if needed
+                  let syncedHand = [...existingLocal.hand]
+                  let syncedDeck = [...existingLocal.deck]
+
+                  // Adjust hand size
+                  if (sp.handSize > syncedHand.length) {
+                    const needed = sp.handSize - syncedHand.length
+                    for (let i = 0; i < needed && syncedDeck.length > 0; i++) {
+                      syncedHand.push(syncedDeck.shift()!)
+                    }
+                  } else if (sp.handSize < syncedHand.length) {
+                    syncedHand = syncedHand.slice(0, sp.handSize)
+                  }
+
+                  return {
+                    ...sp,
+                    hand: syncedHand,
+                    deck: syncedDeck,
+                    discard: existingLocal.discard
+                  }
+                }
+              }
+
+              // For other players or if local has no real cards, create placeholders
+              const placeholderHand: any[] = []
+              for (let i = 0; i < sp.handSize; i++) {
+                placeholderHand.push({
+                  id: `placeholder_${sp.id}_hand_${i}`,
+                  name: '?',
+                  isPlaceholder: true,
+                  ownerId: sp.id,
+                  deck: sp.selectedDeck || 'Random',
+                  color: sp.color
+                })
+              }
+
+              const placeholderDeck: any[] = []
+              for (let i = 0; i < sp.deckSize; i++) {
+                placeholderDeck.push({
+                  id: `placeholder_${sp.id}_deck_${i}`,
+                  name: '?',
+                  isPlaceholder: true,
+                  ownerId: sp.id,
+                  deck: sp.selectedDeck || 'Random',
+                  color: sp.color
+                })
+              }
+
+              const placeholderDiscard: any[] = []
+              for (let i = 0; i < sp.discardSize; i++) {
+                placeholderDiscard.push({
+                  id: `placeholder_${sp.id}_discard_${i}`,
+                  name: '?',
+                  isPlaceholder: true,
+                  ownerId: sp.id,
+                  deck: sp.selectedDeck || 'Random',
+                  color: sp.color
+                })
+              }
+
+              return {
+                ...sp,
+                hand: placeholderHand,
+                deck: placeholderDeck,
+                discard: placeholderDiscard
+              }
+            })
+
+            const resultState = {
+              gameId: snapshot.gameId,
+              gameMode: snapshot.gameMode,
+              isPrivate: snapshot.isPrivate,
+              isGameStarted: snapshot.isGameStarted,
+              isReadyCheckActive: snapshot.isReadyCheckActive,
+              activeGridSize: snapshot.activeGridSize,
+              currentPhase: snapshot.currentPhase,
+              isScoringStep: snapshot.isScoringStep,
+              activePlayerId: snapshot.activePlayerId,
+              startingPlayerId: snapshot.startingPlayerId,
+              currentRound: snapshot.currentRound,
+              turnNumber: snapshot.turnNumber,
+              roundWinners: snapshot.roundWinners || {},
+              gameWinner: snapshot.gameWinner,
+              isRoundEndModalOpen: snapshot.isRoundEndModalOpen,
+              dummyPlayerCount: snapshot.dummyPlayerCount,
+              players: rebuiltPlayers,
+              board: snapshot.board,
+              highlights: prev.highlights,
+              floatingTexts: prev.floatingTexts,
+              targetingMode: prev.targetingMode,
+              abilityMode: prev.abilityMode
+            }
+
+            // Persist state for guest auto-restore
+            if (!webrtcIsHostRef.current && localPlayerId !== null) {
+              try {
+                saveWebrtcState({
+                  gameState: resultState,
+                  localPlayerId,
+                  isHost: false
+                })
+                logger.debug('[RECONNECT_SNAPSHOT] Saved state for guest auto-restore')
+              } catch (e) {
+                logger.warn('[RECONNECT_SNAPSHOT] Failed to save state:', e)
+              }
+            }
+
+            logger.info(`[RECONNECT_SNAPSHOT] Restored game state: phase=${resultState.currentPhase}, players=${resultState.players.length}`)
+            return resultState
+          })
+        }
+        break
+
       case 'STATE_DELTA':
         // Host: received delta from guest, rebroadcast to all other guests
         // Guest: received delta broadcast from host
@@ -1896,17 +2042,19 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         // Guest is reconnecting after page reload (host only)
         logger.info(`[PLAYER_RECONNECT] Guest ${message.playerId} reconnecting from ${message.senderId}`)
         if (webrtcIsHostRef.current && message.playerId !== undefined && message.senderId) {
-          // Send current game state to the reconnecting guest
+          // Send compact reconnect snapshot to avoid "Message too big for JSON channel" error
           const currentState = gameStateRef.current
           logger.info(`[PLAYER_RECONNECT] Current state: hasGameId=${!!currentState?.gameId}, gameId=${currentState?.gameId}, hasPlayers=${currentState?.players?.length || 0}`)
           if (currentState && currentState.gameId) {
-            logger.info(`[PLAYER_RECONNECT] Sending current state to reconnecting player ${message.playerId}`)
+            logger.info(`[PLAYER_RECONNECT] Sending compact reconnect snapshot to player ${message.playerId}`)
+            const reconnectSnapshot = createReconnectSnapshot(currentState, message.playerId)
             webrtcManagerRef.current?.sendToGuest(message.senderId, {
-              type: 'STATE_UPDATE',
+              type: 'RECONNECT_SNAPSHOT',
               senderId: webrtcManagerRef.current.getPeerId(),
-              data: { gameState: currentState },
+              data: reconnectSnapshot.data,
               timestamp: Date.now()
             })
+            logger.info(`[PLAYER_RECONNECT] Sent compact snapshot to player ${message.playerId}`)
           } else {
             logger.warn('[PLAYER_RECONNECT] No valid game state to send')
           }
@@ -1945,6 +2093,15 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             )
             const newState = { ...prev, players: updatedPlayers }
             logger.info(`Player ${message.playerId} is ready via WebRTC`)
+
+            // Broadcast the ready status to all guests (so they see the updated status)
+            if (webrtcManagerRef.current) {
+              const delta = createDeltaFromStates(prev, newState, message.playerId)
+              if (!isDeltaEmpty(delta)) {
+                webrtcManagerRef.current.broadcastStateDelta(delta)
+                logger.info(`[PLAYER_READY] Broadcasted ready status for player ${message.playerId}`)
+              }
+            }
 
             // Check if all real players are ready
             const realPlayers = newState.players.filter(p => !p.isDummy && !p.isDisconnected)
@@ -2022,6 +2179,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
             return newState
           })
+        }
+        // Guest: receive the ready status broadcast from host
+        else if (!webrtcIsHostRef.current) {
+          // Guest receives the delta via STATE_DELTA, no special handling needed here
+          logger.info('[PLAYER_READY] Guest received ready status (via STATE_DELTA)')
         }
         break
 
@@ -2884,6 +3046,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
     try {
       setWebrtcIsHost(false)
+      setWebrtcHostId(hostId)  // Store host ID immediately for reconnection tracking
       setConnectionStatus('Connecting')
       await webrtcManagerRef.current.initializeAsGuest(hostId)
       return true

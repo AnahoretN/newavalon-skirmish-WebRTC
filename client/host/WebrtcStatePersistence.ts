@@ -276,8 +276,22 @@ export function hasRestorableWebRTCData(): {
 
 /**
  * Get the type of restorable session
+ *
+ * IMPORTANT: If user has an invite link (invite_host_id in sessionStorage),
+ * they should NOT restore as host - they're trying to join as a guest!
+ * This prevents conflict when opening invite link in same browser as host.
  */
 export function getRestorableSessionType(): 'host' | 'guest' | 'none' {
+  // Check if user is trying to join via invite link
+  // If so, don't restore as host (even if host data exists in localStorage)
+  const inviteHostId = sessionStorage.getItem('invite_host_id')
+  const autoJoinFlag = sessionStorage.getItem('invite_auto_join')
+  if (inviteHostId && autoJoinFlag) {
+    // User has an active invite - they should join as guest, not restore as host
+    // Return 'none' so the invite flow takes precedence
+    return 'none'
+  }
+
   const hostData = loadHostData()
   if (hostData && isDataValid(hostData.timestamp)) {
     return 'host'
