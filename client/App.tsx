@@ -16,6 +16,7 @@ import { RoundEndModal } from './components/RoundEndModal'
 import { CounterSelectionModal } from './components/CounterSelectionModal'
 import { TopDeckView } from './components/TopDeckView'
 import { ReconnectingModal } from './components/ReconnectingModal'
+import { ModalsRenderer } from './components/ModalsRenderer'
 import { useGameState } from './hooks/useGameState'
 import { useAppAbilities } from './hooks/useAppAbilities'
 import { useAppCommand } from './hooks/useAppCommand'
@@ -2035,6 +2036,9 @@ const App = memo(function App() {
       <ReconnectingModal
         isOpen={isReconnecting}
       />
+
+      {/* New unified modal renderer - gradually replacing individual modals */}
+      <ModalsRenderer />
 
       {gameState.isRoundEndModalOpen && (
         <RoundEndModal

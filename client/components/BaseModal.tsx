@@ -1,9 +1,9 @@
 /**
  * @file Base modal component for all modals in the application
- * Provides consistent structure, styling, and behavior
+ * Provides consistent structure, styling, animations, and behavior
  */
 
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 export interface BaseModalProps {
@@ -23,11 +23,11 @@ const sizeClasses = {
   md: 'max-w-lg',
   lg: 'max-w-2xl',
   xl: 'max-w-4xl',
-  full: 'max-w-full max-h-full',
+  full: 'max-w-full max-h-full m-4',
 }
 
 /**
- * Base modal component with consistent styling and behavior
+ * Base modal component with consistent styling, animations, and behavior
  * All modals should use this as their foundation
  */
 export const BaseModal: React.FC<BaseModalProps> = ({
@@ -43,6 +43,21 @@ export const BaseModal: React.FC<BaseModalProps> = ({
 }) => {
   const { t } = useLanguage()
   const modalRef = useRef<HTMLDivElement>(null)
+  const [isVisible, setIsVisible] = useState(false)
+  const [isContentVisible, setIsContentVisible] = useState(false)
+
+  // Handle animation timing
+  useEffect(() => {
+    if (isOpen) {
+      setIsVisible(true)
+      // Small delay for content to animate in after backdrop
+      setTimeout(() => setIsContentVisible(true), 50)
+    } else {
+      setIsContentVisible(false)
+      // Wait for content animation to finish before hiding backdrop
+      setTimeout(() => setIsVisible(false), 200)
+    }
+  }, [isOpen])
 
   // Handle escape key press
   useEffect(() => {
@@ -72,7 +87,18 @@ export const BaseModal: React.FC<BaseModalProps> = ({
     }
   }, [isOpen])
 
-  if (!isOpen) {
+  // Focus trap - keep focus within modal
+  useEffect(() => {
+    if (isOpen && modalRef.current) {
+      const focusableElements = modalRef.current.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+      const firstElement = focusableElements[0] as HTMLElement
+      firstElement?.focus()
+    }
+  }, [isOpen])
+
+  if (!isVisible) {
     return null
   }
 
@@ -88,8 +114,22 @@ export const BaseModal: React.FC<BaseModalProps> = ({
       className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${className}`}
       onClick={handleBackdropClick}
     >
+      {/* Animated backdrop */}
       <div
-        className={`bg-gray-800 rounded-lg shadow-2xl w-full ${sizeClasses[size]} border border-white/10`}
+        className={`absolute inset-0 bg-black/60 transition-opacity duration-200 ${
+          isContentVisible ? 'opacity-100' : 'opacity-0'
+        }`}
+      />
+
+      {/* Animated modal */}
+      <div
+        className={`bg-gray-800 rounded-lg shadow-2xl w-full ${
+          sizeClasses[size]
+        } border border-white/10 relative transition-all duration-200 ${
+          isContentVisible
+            ? 'opacity-100 scale-100 translate-y-0'
+            : 'opacity-95 scale-95 translate-y-4'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -99,7 +139,7 @@ export const BaseModal: React.FC<BaseModalProps> = ({
             {showCloseButton && (
               <button
                 onClick={onClose}
-                className="text-gray-400 hover:text-white transition-colors p-1 rounded"
+                className="text-gray-400 hover:text-white transition-colors p-1 rounded hover:bg-gray-700"
                 aria-label={t('close') || 'Close'}
               >
                 <svg
@@ -122,7 +162,7 @@ export const BaseModal: React.FC<BaseModalProps> = ({
         )}
 
         {/* Content */}
-        <div className="p-4">
+        <div className="p-4 max-h-[calc(100vh-12rem)] overflow-y-auto custom-scrollbar">
           {children}
         </div>
       </div>
