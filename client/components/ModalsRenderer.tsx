@@ -74,6 +74,11 @@ export const ModalsRenderer = () => {
   // Extract callbacks from modalData
   const { onJoin, onSave, onConfirm, onReady, onCancel, onAccept, onDecline, onContinueGame, onStartNextRound, onExit, ...restData } = modalData
 
+  // Debug logging
+  if (process.env.NODE_ENV === 'development' && (openModal === 'settings' || openModal === 'deckBuilder' || openModal === 'rules' || openModal === 'joinGame')) {
+    console.log('[ModalsRenderer] Rendering modal:', openModal, 'restData:', restData)
+  }
+
   return (
     <Suspense fallback={<ModalLoader />}>
       {openModal === 'deckView' && (
@@ -113,25 +118,21 @@ export const ModalsRenderer = () => {
       )}
 
       {openModal === 'rules' && (
-        <ModalWrapper title="Rules" onClose={close} size={modalSize}>
-          <RulesModal isOpen={true} onClose={close} />
-        </ModalWrapper>
+        <RulesModal isOpen={true} onClose={close} />
       )}
 
       {openModal === 'settings' && (
-        <ModalWrapper title="Settings" onClose={close} size={modalSize}>
-          <SettingsModal
-            {...restData}
-            isOpen={true}
-            onClose={close}
-            onSave={onSave || close}
-            connectionStatus={restData.connectionStatus}
-            onReconnect={restData.onReconnect}
-            gameId={restData.gameId}
-            isGameStarted={restData.isGameStarted}
-            isPrivate={restData.isPrivate}
-          />
-        </ModalWrapper>
+        <SettingsModal
+          {...restData}
+          isOpen={true}
+          onClose={close}
+          onSave={onSave || close}
+          connectionStatus={restData.connectionStatus}
+          onReconnect={restData.onReconnect}
+          gameId={restData.gameId}
+          isGameStarted={restData.isGameStarted}
+          isPrivate={restData.isPrivate}
+        />
       )}
 
       {openModal === 'command' && (
@@ -159,21 +160,17 @@ export const ModalsRenderer = () => {
       )}
 
       {openModal === 'joinGame' && (
-        <ModalWrapper title="Join Game" onClose={close} size={modalSize}>
-          <JoinGameModal
-            {...restData}
-            isOpen={true}
-            onClose={close}
-            onJoin={onJoin || close}
-            onRefreshGames={restData.onRefreshGames || (() => {})}
-          />
-        </ModalWrapper>
+        <JoinGameModal
+          {...restData}
+          isOpen={true}
+          onClose={close}
+          onJoin={onJoin || close}
+          onRefreshGames={restData.onRefreshGames || (() => {})}
+        />
       )}
 
       {openModal === 'deckBuilder' && (
-        <ModalWrapper title="Deck Builder" onClose={close} size={modalSize}>
-          <DeckBuilderModal isOpen={true} onClose={close} setViewingCard={restData.setViewingCard} />
-        </ModalWrapper>
+        <DeckBuilderModal isOpen={true} onClose={close} setViewingCard={restData.setViewingCard} />
       )}
     </Suspense>
   )
