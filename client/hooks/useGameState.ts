@@ -4,7 +4,7 @@ import { DeckType, GameMode as GameModeEnum } from '../types'
 import type { GameState, Player, Board, GridSize, DragItem, HighlightData, FloatingTextData, DeckSelectionData, HandCardSelectionData, StateDelta, Card } from '../types'
 import { PLAYER_COLOR_NAMES } from '../constants'
 import { rawJsonData, getCardDefinition, getCardDefinitionByName, commandCardIds } from '../content'
-import { createInitialBoard } from '@shared/utils/boardUtils'
+import { createInitialBoard, recalculateBoardStatuses } from '@shared/utils/boardUtils'
 import { logger } from '../utils/logger'
 import { deepCloneState, TIMING } from '../utils/common'
 import { getWebrtcManager, type WebrtcEvent } from '../utils/webrtcManager'
@@ -1252,9 +1252,13 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                   return p
                 })
 
+                // Also update board from guest's state (they may have placed cards)
+                const mergedBoard = guestState.board ? guestState.board : currentState.board
+
                 const newState = {
                   ...currentState,
                   players: mergedPlayers,
+                  board: mergedBoard
                 }
 
                 // Broadcast the updated state to all guests (excluding the sender)
@@ -1517,9 +1521,48 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               }
             })
 
+            // Reconstruct board cards from baseId (host sends optimized board data)
+            const reconstructedBoard = remoteState.board ? remoteState.board.map((row: any[]) =>
+              row.map((cell: any) => {
+                if (!cell || !cell.card) return cell
+
+                // Reconstruct card from baseId
+                const cardDef = getCardDefinition(cell.card.baseId || cell.card.id)
+                if (cardDef) {
+                  return {
+                    ...cell,
+                    card: {
+                      ...cardDef,
+                      id: cell.card.id,
+                      baseId: cell.card.baseId || cell.card.id,
+                      ownerId: cell.card.ownerId,
+                      ownerName: cell.card.ownerName,
+                      power: cell.card.power,
+                      powerModifier: cell.card.powerModifier,
+                      isFaceDown: cell.card.isFaceDown || false,
+                      statuses: cell.card.statuses || [],
+                      enteredThisTurn: cell.card.enteredThisTurn,
+                      deck: cell.card.deck
+                    }
+                  }
+                }
+                // Fallback: return card as-is if no definition found
+                return cell
+              })
+            ) : currentState.board
+
+            // Recalculate board statuses (Support, Threat, hero passives like Mr. Pearl bonus)
+            // This ensures passive abilities from all players' cards are properly applied
+            const recalculatedBoard = recalculateBoardStatuses({
+              ...remoteState,
+              players: mergedPlayers,
+              board: reconstructedBoard
+            })
+
             return {
               ...remoteState,
               players: mergedPlayers,
+              board: recalculatedBoard
             }
           })
         }
@@ -2275,10 +2318,26 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               players: prev.players.map(p => p.id === actionData.playerId ? { ...p, name: actionData.name } : p),
             }))
           } else if (actionType === 'CHANGE_PLAYER_COLOR' && actionData?.playerId !== undefined && actionData?.color !== undefined) {
-            setGameState(prev => ({
-              ...prev,
-              players: prev.players.map(p => p.id === actionData.playerId ? { ...p, color: actionData.color } : p),
-            }))
+            // Guest changed color - update and broadcast to all guests
+            const playerId = actionData.playerId
+            const color = actionData.color
+            logger.info(`[ACTION] Guest changed color for player ${playerId}`)
+            setGameState(prev => {
+              const newState = {
+                ...prev,
+                players: prev.players.map(p => p.id === playerId ? { ...p, color } : p),
+              }
+              // Broadcast color change to all guests (exclude sender who already has the change)
+              if (webrtcManagerRef.current) {
+                webrtcManagerRef.current.broadcastToGuests({
+                  type: 'CHANGE_PLAYER_COLOR',
+                  senderId: webrtcManagerRef.current.getPeerId(),
+                  data: { playerId, color },
+                  timestamp: Date.now()
+                })
+              }
+              return newState
+            })
           } else if (actionType === 'UPDATE_PLAYER_SCORE' && actionData?.playerId !== undefined && actionData?.delta !== undefined) {
             setGameState(prev => ({
               ...prev,
@@ -2846,21 +2905,22 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           break
         }
 
-        const targetPlayerId = message.data.playerId
-        const deckType = message.data.deckType
-        const receivedDeck = message.data.deck as any[] | undefined
+        {
+          const targetPlayerId = message.data.playerId
+          const deckType = message.data.deckType
+          const receivedDeck = message.data.deck as any[] | undefined
 
-        // Skip if this is about the local player - they already have their correct deck
-        if (targetPlayerId === localPlayerIdRef.current) {
-          logger.info(`[CHANGE_PLAYER_DECK] Skipping update for local player ${targetPlayerId}`)
-          break
-        }
+          // Skip if this is about the local player - they already have their correct deck
+          if (targetPlayerId === localPlayerIdRef.current) {
+            logger.info(`[CHANGE_PLAYER_DECK] Skipping update for local player ${targetPlayerId}`)
+            break
+          }
 
-        setGameState(prev => {
-          const player = prev.players.find(p => p.id === targetPlayerId)
-          if (!player) {return prev}
+          setGameState(prev => {
+            const player = prev.players.find(p => p.id === targetPlayerId)
+            if (!player) {return prev}
 
-          let deckData: Card[]
+            let deckData: Card[]
 
           if (receivedDeck && receivedDeck.length > 0) {
             // Reconstruct from baseId using local card database
@@ -2928,12 +2988,14 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             ),
           }
         })
+        }
         break
 
       case 'GAME_RESET':
         // Handle game reset message (from host in WebRTC mode)
         logger.info('[GameReset] Received GAME_RESET message via WebRTC')
-        setGameState(prev => {
+        {
+          setGameState(prev => {
           // Create fresh board with correct grid size
           const gridSize: number = (message.data.activeGridSize as unknown as number) || 8
           const newBoard: Board = []
@@ -2994,6 +3056,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           logger.info('[GameReset] Game reset complete in WebRTC mode')
           return resetState
         })
+        }
         break
 
       // Ability mode synchronization messages
@@ -3032,6 +3095,31 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           abilityMode: null,
         }))
         logger.info('[Ability] Ability cancelled')
+        break
+
+      case 'CHANGE_PLAYER_COLOR':
+        // Player color change broadcast (host -> guests, or guest -> host -> guests)
+        logger.info('[CHANGE_PLAYER_COLOR] Received color change broadcast', message.data)
+        if (!message.data || message.data.playerId === undefined) {
+          break
+        }
+
+        {
+          const colorPlayerId = message.data.playerId
+          const newColor = message.data.color
+
+          // Skip if this is about the local player - they already have their correct color
+          if (colorPlayerId === localPlayerIdRef.current) {
+            logger.info(`[CHANGE_PLAYER_COLOR] Skipping update for local player ${colorPlayerId}`)
+            break
+          }
+
+          setGameState(prev => ({
+            ...prev,
+            players: prev.players.map(p => p.id === colorPlayerId ? { ...p, color: newColor } : p),
+          }))
+          logger.info(`[CHANGE_PLAYER_COLOR] Updated color for player ${colorPlayerId}`)
+        }
         break
 
       // Visual effects messages (for P2P mode)
@@ -3749,6 +3837,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   // Player actions hook - handles simple player operations
   const playerActions = usePlayerActions({
     updateState,
+    sendWebrtcAction,
+    webrtcIsHostRef,
+    webrtcManagerRef,
   })
 
   // Card operations hook - handles card drawing, shuffling, flipping
