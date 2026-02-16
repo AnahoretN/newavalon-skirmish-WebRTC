@@ -15,7 +15,6 @@ import type {
 } from './types'
 import { logger } from '../utils/logger'
 import { serializeDeltaBase64, serializeGameState } from '../utils/webrtcSerialization'
-import { buildCardRegistry, serializeCardRegistry } from '../utils/gameCodec'
 import { encodeAbilityEffect } from '../utils/abilityMessages'
 import { AbilityEffectType } from '../types/codec'
 
@@ -446,40 +445,7 @@ export class HostConnectionManager {
     }
   }
 
-  // ==================== New Codec System ====================
-
-  /**
-   * Send card registry to a specific guest (once per connection)
-   */
-  sendCardRegistry(peerId: string): boolean {
-    const conn = this.connections.get(peerId)
-    if (!conn || !conn.open) {
-      logger.error(`[sendCardRegistry] No valid connection for ${peerId}`)
-      return false
-    }
-
-    try {
-      const registry = buildCardRegistry()
-      const registryData = serializeCardRegistry(registry)
-
-      // Convert to base64 for PeerJS JSON serialization
-      const base64Data = btoa(String.fromCharCode(...registryData))
-
-      const message: WebrtcMessage = {
-        type: 'CARD_REGISTRY',
-        senderId: this.peer?.id,
-        data: base64Data,
-        timestamp: Date.now()
-      }
-
-      conn.send(message)
-      logger.info(`[sendCardRegistry] Sent card registry to ${peerId}: ${registryData.length} bytes`)
-      return true
-    } catch (err) {
-      logger.error(`[sendCardRegistry] Failed to send registry to ${peerId}:`, err)
-      return false
-    }
-  }
+  // ==================== Codec Methods ====================
 
   /**
    * Broadcast card state to all guests (new codec)

@@ -64,6 +64,10 @@ export default defineConfig(({ mode }) => {
             if (id.includes('node_modules')) {
               return 'vendor'
             }
+            // WebRTC utilities (compact codec, card registry) - both locations
+            if (id.includes('/utils/webrtc') || id.includes('compactCodec') || id.includes('cardRegistry')) {
+              return 'game-logic'
+            }
             // Hooks и shared utilities
             if (id.includes('/hooks/') || id.includes('/shared/')) {
               return 'game-logic'

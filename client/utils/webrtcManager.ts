@@ -28,7 +28,6 @@ import {
 } from './webrtcSerialization'
 import { encodeAbilityEffect, type AbilityEffectType } from './abilityMessages'
 import { encodeSessionEvent } from './sessionMessages'
-import { buildCardRegistry, serializeCardRegistry } from './gameCodec'
 
 // Enable/disable optimized serialization (can be toggled for debugging)
 const USE_OPTIMIZED_SERIALIZATION = true
@@ -40,7 +39,8 @@ export type WebrtcMessageType =
   | 'JOIN_ACCEPT_MINIMAL'  // Host accepts guest with minimal info (to avoid size limit)
   | 'JOIN_ACCEPT_BINARY'   // Host accepts guest with binary optimized state
   | 'STATE_UPDATE'         // Host broadcasts full state update
-  | 'STATE_UPDATE_COMPACT' // Compact state with card IDs only (reduces size)
+  | 'STATE_UPDATE_COMPACT' // Compact state with card IDs only (reduces size) - LEGACY
+  | 'STATE_UPDATE_COMPACT_JSON' // Compact state with registry indices - NEW
   | 'STATE_DELTA'          // Compact state change broadcast (JSON)
   | 'STATE_DELTA_BINARY'   // Compact state change broadcast (MessagePack - OPTIMIZED)
   | 'ACTION'               // Guest sends action to host
@@ -105,7 +105,8 @@ export type WebrtcMessageType =
   | 'CLEAR_ALL_EFFECTS'    // Clear all effects
   | 'VALID_TARGETS_SYNC'   // Sync valid targets
   // New codec system messages (binary format)
-  | 'CARD_REGISTRY'        // Card definitions registry (sent once per connection)
+  | 'CARD_REGISTRY'        // Card definitions registry (sent once per connection) - BINARY
+  | 'CARD_REGISTRY_JSON'   // Card definitions registry (sent once per connection) - JSON COMPACT
   | 'CARD_STATE'           // Game state update (cards, board, players)
   | 'ABILITY_EFFECT'       // Visual/ability effects
   | 'SESSION_EVENT'        // Session events (connect, disconnect, phase change, etc.)
@@ -557,9 +558,16 @@ export class WebrtcManager {
 
   /**
    * Broadcast game state to all guests (host only)
-   * OPTIMIZED: Sends personalized data to each player and removes heavy fields
+   * Uses legacy format with baseId strings (all players have same card database)
    */
   broadcastGameState(gameState: GameState, excludePeerId?: string): void {
+    this.broadcastGameStateLegacy(gameState, excludePeerId)
+  }
+
+  /**
+   * Broadcast game state using legacy format with baseId strings
+   */
+  private broadcastGameStateLegacy(gameState: GameState, excludePeerId?: string): void {
     let successCount = 0
 
     this.connections.forEach((conn, peerId) => {
@@ -574,11 +582,11 @@ export class WebrtcManager {
       const personalizedState = WebrtcManager.createPersonalizedGameState(gameState, recipientPlayerId)
 
       const message: WebrtcMessage = {
-        type: 'STATE_UPDATE_COMPACT', // Use compact message type with card IDs
+        type: 'STATE_UPDATE_COMPACT', // Legacy message type
         senderId: this.peer?.id,
         data: {
           gameState: personalizedState,
-          recipientPlayerId, // IMPORTANT: Tell guest which player this state is for
+          recipientPlayerId,
         },
         timestamp: Date.now()
       }
@@ -587,11 +595,11 @@ export class WebrtcManager {
         conn.send(message)
         successCount++
       } catch (err) {
-        logger.error(`[broadcastGameState] Failed to send to guest ${peerId} (player ${recipientPlayerId}):`, err)
+        logger.error(`[broadcastGameStateLegacy] Failed to send to guest ${peerId} (player ${recipientPlayerId}):`, err)
       }
     })
 
-    logger.debug(`[broadcastGameState] Sent to ${successCount}/${this.connections.size} guests`)
+    logger.debug(`[broadcastGameStateLegacy] Sent to ${successCount}/${this.connections.size} guests`)
   }
 
   /**
@@ -614,17 +622,7 @@ export class WebrtcManager {
           const discardSize = p.discard.length ?? 0
           const handSize = p.hand.length ?? 0
 
-          // Debug: log the first few card IDs and baseIds
-          const firstHandCard = p.hand[0] as any
-          const firstDeckCard = p.deck[0] as any
-          logger.info(`[createPersonalizedGameState] Player ${p.id} (own): sending ${handSize} hand cards, ${deckSize} deck cards, ${discardSize} discard cards`)
-          if (firstHandCard) {
-            logger.info(`[createPersonalizedGameState] First hand card: id=${firstHandCard.id}, baseId=${firstHandCard.baseId}, name=${firstHandCard.name}`)
-          }
-          if (firstDeckCard) {
-            logger.info(`[createPersonalizedGameState] First deck card: id=${firstDeckCard.id}, baseId=${firstDeckCard.baseId}, name=${firstDeckCard.name}`)
-          }
-
+          logger.debug(`[createPersonalizedGameState] Player ${p.id} (own): ${handSize} hand, ${deckSize} deck, ${discardSize} discard`)
           return {
             ...p,
             // Send compact card data with baseId - client can reconstruct using getCardDefinition(baseId)
@@ -668,14 +666,11 @@ export class WebrtcManager {
           // - Revealed cards (isFaceDown=false) are sent as compact data for viewing
           // - Face-down cards are sent as card backs
           const deckSize = p.deckSize ?? p.deck.length ?? 0
-          logger.debug(`[createPersonalizedGameState] Player ${p.id} (other): deckSize=${deckSize}, deck.length=${p.deck.length}`)
-
-          // Count revealed vs face-down cards for logging
+          // Count revealed cards for debug logging
           const revealedCount = p.hand.filter((c: any) => !c.isFaceDown).length
           if (revealedCount > 0) {
-            logger.info(`[createPersonalizedGameState] Player ${p.id} (other): sending ${revealedCount} revealed cards, ${p.hand.length - revealedCount} face-down`)
+            logger.debug(`[createPersonalizedGameState] Player ${p.id} (other): ${revealedCount} revealed, ${p.hand.length - revealedCount} face-down`)
           }
-
           return {
             ...p,
             hand: p.hand.map((card: any) => {
@@ -870,39 +865,6 @@ export class WebrtcManager {
   }
 
   // ==================== New Codec System ====================
-
-  /**
-   * Send card registry to a specific guest (once per connection)
-   */
-  sendCardRegistry(peerId: string): boolean {
-    const conn = this.connections.get(peerId)
-    if (!conn || !conn.open) {
-      logger.error(`[sendCardRegistry] No valid connection for ${peerId}`)
-      return false
-    }
-
-    try {
-      const registry = buildCardRegistry()
-      const registryData = serializeCardRegistry(registry)
-
-      // Convert to base64 for PeerJS JSON serialization
-      const base64Data = btoa(String.fromCharCode(...registryData))
-
-      const message: WebrtcMessage = {
-        type: 'CARD_REGISTRY',
-        senderId: this.peer?.id,
-        data: base64Data,
-        timestamp: Date.now()
-      }
-
-      conn.send(message)
-      logger.info(`[sendCardRegistry] Sent card registry to ${peerId}: ${registryData.length} bytes`)
-      return true
-    } catch (err) {
-      logger.error(`[sendCardRegistry] Failed to send registry to ${peerId}:`, err)
-      return false
-    }
-  }
 
   /**
    * Broadcast card state to all guests (new codec)

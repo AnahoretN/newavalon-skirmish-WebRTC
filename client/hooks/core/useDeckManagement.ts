@@ -79,7 +79,7 @@ export function useDeckManagement(props: UseDeckManagementProps) {
       }
     })
 
-    // In WebRTC mode, send compact deck data for synchronization
+    // In WebRTC mode, send deck data for synchronization
     logger.info(`[changePlayerDeck] Checking WebRTC mode: isWebRTCMode=${isWebRTCMode}, isHost=${webrtcIsHostRef.current}, hasSendAction=${!!sendWebrtcAction}, hasManager=${!!webrtcManagerRef?.current}`)
 
     if (!isWebRTCMode) {
@@ -87,7 +87,7 @@ export function useDeckManagement(props: UseDeckManagementProps) {
       return
     }
 
-    // Create compact card data (only id, baseId, power, etc.) to reduce message size
+    // Create deck data with baseId for reconstruction by clients
     const compactDeckData = newDeck.map(card => ({
       id: card.id,
       baseId: card.baseId,

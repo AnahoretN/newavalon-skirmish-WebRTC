@@ -1335,10 +1335,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
                 if (hasCompactCardData) {
                   // Host sent compact card data with baseId
-                  logger.info(`[STATE_UPDATE_COMPACT] Received ${remotePlayer.handCards?.length || 0} handCards, ${remotePlayer.deckCards?.length || 0} deckCards, ${remotePlayer.discardCards?.length || 0} discardCards`)
-                  if (remotePlayer.handCards?.[0]) {
-                    logger.info(`[STATE_UPDATE_COMPACT] First handCard from host: id=${remotePlayer.handCards[0].id}, baseId=${remotePlayer.handCards[0].baseId}`)
-                  }
                   const reconstructedHand = (remotePlayer.handCards || []).map(reconstructCard)
                   const reconstructedDeck = (remotePlayer.deckCards || []).map(reconstructCard)
                   const reconstructedDiscard = (remotePlayer.discardCards || []).map(reconstructCard)
@@ -1360,11 +1356,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                     }
                   })
 
-                  if (reconstructedHand[0]) {
-                    logger.info(`[STATE_UPDATE_COMPACT] First reconstructed hand card: id=${reconstructedHand[0].id}, name=${reconstructedHand[0].name}, baseId=${reconstructedHand[0].baseId}`)
-                  }
-
-                  logger.info(`[STATE_UPDATE_COMPACT] Reconstructed from compact data: ${reconstructedHand.length} hand, ${reconstructedDeck.length} deck, ${reconstructedDiscard.length} discard`)
+                  logger.debug(`[STATE_UPDATE_COMPACT] Reconstructed ${reconstructedHand.length} hand, ${reconstructedDeck.length} deck, ${reconstructedDiscard.length} discard`)
 
                   return {
                     ...remotePlayer,
@@ -1393,7 +1385,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                     return card || { id, name: '?', isPlaceholder: false }
                   })
 
-                  logger.info(`[STATE_UPDATE_COMPACT] Reconstructed from IDs: ${reconstructedHand.length} hand, ${reconstructedDeck.length} deck, ${reconstructedDiscard.length} discard`)
+                  logger.debug(`[STATE_UPDATE_COMPACT] Reconstructed from IDs: ${reconstructedHand.length} hand, ${reconstructedDeck.length} deck, ${reconstructedDiscard.length} discard`)
 
                   return {
                     ...remotePlayer,
@@ -1433,7 +1425,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                     return { id: compactCard.id, name: 'Unknown', power: 0 }
                   }
                   finalDeck = remotePlayer.deckCards.map(reconstructCard)
-                  logger.info(`[STATE_UPDATE_COMPACT] Reconstructed deck for player ${remotePlayer.id} from host data: ${finalDeck.length} cards`)
+                  logger.debug(`[STATE_UPDATE_COMPACT] Reconstructed deck for player ${remotePlayer.id}: ${finalDeck.length} cards`)
                 } else {
                   // Host is NOT sending deck data for this player
                   // Check if we have existing non-placeholder deck data from CHANGE_PLAYER_DECK
@@ -1444,7 +1436,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                     // Preserve real deck data from previous CHANGE_PLAYER_DECK message
                     // But adjust size to match remoteDeckSize (in case cards were drawn)
                     finalDeck = localPlayer.deck.slice(0, remoteDeckSize)
-                    logger.info(`[STATE_UPDATE_COMPACT] Preserved real deck data for player ${remotePlayer.id}: ${finalDeck.length} cards (remoteDeckSize=${remoteDeckSize})`)
+                    logger.debug(`[STATE_UPDATE_COMPACT] Preserved deck for player ${remotePlayer.id}: ${finalDeck.length} cards`)
                   } else {
                     // Create placeholders - we don't have real data for this player's deck
                     finalDeck = []
@@ -1458,7 +1450,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                         color: remotePlayer.color
                       })
                     }
-                    logger.info(`[STATE_UPDATE_COMPACT] Created ${finalDeck.length} placeholders for player ${remotePlayer.id} (deckSize=${remoteDeckSize})`)
                   }
                 }
 
@@ -2036,28 +2027,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
       }
-
-      // New codec system messages
-      case 'CARD_REGISTRY':
-        // Card definitions registry (received once per connection)
-        logger.info(`[handleWebrtcMessage] Received CARD_REGISTRY`)
-        if (typeof message.data === 'string') {
-          try {
-            // Decode base64 to Uint8Array
-            const binaryString = atob(message.data)
-            const bytes = new Uint8Array(binaryString.length)
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i)
-            }
-            // Store registry for future decoding
-            const { deserializeCardRegistry } = require('../utils/gameCodec')
-            const registry = deserializeCardRegistry(bytes)
-            logger.info(`[handleWebrtcMessage] Loaded card registry: ${registry.cardDefinitions.length} cards`)
-          } catch (e) {
-            logger.error('[handleWebrtcMessage] Failed to deserialize card registry:', e)
-          }
-        }
-        break
 
       case 'CARD_STATE':
         // New binary card state update
@@ -2894,8 +2863,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           let deckData: Card[]
 
           if (receivedDeck && receivedDeck.length > 0) {
-            // Host sent compact deck data - reconstruct full cards from baseId
-            logger.info(`[CHANGE_PLAYER_DECK] Reconstructing ${receivedDeck.length} cards for player ${targetPlayerId}`)
+            // Reconstruct from baseId using local card database
             deckData = receivedDeck.map((compactCard: any) => {
               if (compactCard.baseId) {
                 const cardDef = getCardDefinition(compactCard.baseId)
@@ -2912,6 +2880,21 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                     isFaceDown: compactCard.isFaceDown || false,
                     statuses: compactCard.statuses || []
                   }
+                }
+                // Fallback for cards with baseId but no definition found
+                return {
+                  id: compactCard.id,
+                  baseId: compactCard.baseId,
+                  name: 'Unknown',
+                  deck: deckType,
+                  ownerId: targetPlayerId,
+                  ownerName: player.name,
+                  power: compactCard.power || 0,
+                  powerModifier: 0,
+                  isFaceDown: false,
+                  statuses: [],
+                  imageUrl: '',
+                  ability: ''
                 }
               }
               // Fallback for cards without baseId

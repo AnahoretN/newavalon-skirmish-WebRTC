@@ -11,7 +11,8 @@ export type WebrtcMessageType =
   | 'JOIN_ACCEPT'          // Host accepts guest, sends current state
   | 'JOIN_ACCEPT_MINIMAL'  // Host accepts guest with minimal info (to avoid size limit)
   | 'STATE_UPDATE'         // Host broadcasts full state update
-  | 'STATE_UPDATE_COMPACT' // Compact state with card IDs only (reduces size)
+  | 'STATE_UPDATE_COMPACT' // Compact state with card IDs only (reduces size) - LEGACY
+  | 'STATE_UPDATE_COMPACT_JSON' // Compact state with registry indices - NEW
   | 'STATE_DELTA'          // Compact state change broadcast (JSON)
   | 'STATE_DELTA_BINARY'   // Compact state change broadcast (MessagePack - OPTIMIZED)
   | 'ACTION'               // Guest sends action to host
@@ -79,7 +80,8 @@ export type WebrtcMessageType =
   | 'VALID_TARGETS_SYNC'   // Sync valid targets
   | 'GAME_LOGS'            // Game logs for debugging
   // New codec system messages (binary format)
-  | 'CARD_REGISTRY'        // Card definitions registry (sent once per connection)
+  | 'CARD_REGISTRY'        // Card definitions registry (sent once per connection) - BINARY
+  | 'CARD_REGISTRY_JSON'   // Card definitions registry (sent once per connection) - JSON COMPACT
   | 'CARD_STATE'           // Game state update (cards, board, players)
   | 'ABILITY_EFFECT'       // Visual/ability effects
   | 'SESSION_EVENT'        // Session events (connect, disconnect, phase change, etc.)
