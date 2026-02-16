@@ -1253,12 +1253,37 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                 })
 
                 // Also update board from guest's state (they may have placed cards)
-                const mergedBoard = guestState.board ? guestState.board : currentState.board
+                // Need to reconstruct board cards with correct ownerId for host's perspective
+                const reconstructedBoard = guestState.board ? guestState.board.map((row: any[]) =>
+                  row.map((cell: any) => {
+                    if (!cell || !cell.card) { return cell }
+                    // Reconstruct card from baseId and update ownerId
+                    const cardDef = getCardDefinition(cell.card.baseId || cell.card.id)
+                    if (cardDef) {
+                      return {
+                        ...cell,
+                        card: {
+                          ...cardDef,
+                          id: cell.card.id,
+                          baseId: cell.card.baseId || cell.card.id,
+                          ownerId: guestPlayerId, // Update ownerId to match host's player ID
+                          power: cell.card.power,
+                          powerModifier: cell.card.powerModifier,
+                          isFaceDown: cell.card.isFaceDown || false,
+                          statuses: cell.card.statuses || [],
+                          enteredThisTurn: cell.card.enteredThisTurn,
+                          deck: cell.card.deck
+                        }
+                      }
+                    }
+                    return cell
+                  })
+                ) : currentState.board
 
                 const newState = {
                   ...currentState,
                   players: mergedPlayers,
-                  board: mergedBoard
+                  board: reconstructedBoard
                 }
 
                 // Broadcast the updated state to all guests (excluding the sender)
@@ -1588,16 +1613,17 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                   // This is the guest - update their data from their state
                   const guestPlayer = guestState.players.find((gp: any) => gp.id === guestPlayerId)
                   if (guestPlayer) {
-                    // Guest sends full hand/deck/discard - use them directly
-                    const guestHand = guestPlayer.hand || []
-                    const guestDeck = guestPlayer.deck || []
-                    const guestDiscard = guestPlayer.discard || []
+                    // Guest sends full hand/deck/discard - need to update ownerId on cards
+                    const updateCardOwner = (card: any) => ({ ...card, ownerId: guestPlayerId })
+                    const guestHand = (guestPlayer.hand || []).map(updateCardOwner)
+                    const guestDeck = (guestPlayer.deck || []).map(updateCardOwner)
+                    const guestDiscard = (guestPlayer.discard || []).map(updateCardOwner)
 
                     logger.info(`[STATE_UPDATE] Merging guest ${guestPlayerId} state: hand=${guestHand.length}, deck=${guestDeck.length}, discard=${guestDiscard.length}`)
 
                     const mergedPlayer = {
                       ...p,
-                      // Use guest's actual card data
+                      // Use guest's actual card data with corrected ownerId
                       hand: guestHand,
                       deck: guestDeck,
                       discard: guestDiscard,
@@ -1616,12 +1642,22 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               })
 
               // Also update board from guest's state (they may have placed cards)
-              const mergedBoard = guestState.board ? guestState.board : currentState.board
+              // Need to reconstruct board cards with correct ownerId for host's perspective
+              const reconstructedBoard = guestState.board ? guestState.board.map((row: any[]) =>
+                row.map((cell: any) => {
+                  if (!cell || !cell.card) { return cell }
+                  // Update ownerId on board cards to match host's player ID
+                  return {
+                    ...cell,
+                    card: { ...cell.card, ownerId: guestPlayerId }
+                  }
+                })
+              ) : currentState.board
 
               const newState = {
                 ...currentState,
                 players: mergedPlayers,
-                board: mergedBoard
+                board: reconstructedBoard
               }
 
               // Broadcast the updated state to all guests (excluding the sender)
