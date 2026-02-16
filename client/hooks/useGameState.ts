@@ -2620,7 +2620,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             const realPlayers = newState.players.filter(p => !p.isDummy && !p.isDisconnected)
             const allReady = realPlayers.length > 0 && realPlayers.every(p => p.isReady)
 
-            if (allReady && newState.isReadyCheckActive && !newState.isGameStarted) {
+            if (allReady && !newState.isGameStarted) {
               logger.info('[PLAYER_READY] All players ready! Starting game...')
               // All players ready - start the game!
               const allPlayers = newState.players.filter(p => !p.isDisconnected)

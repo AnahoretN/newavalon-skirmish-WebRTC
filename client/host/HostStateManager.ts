@@ -251,7 +251,7 @@ export class HostStateManager {
       const realPlayers = this.currentState.players.filter(p => !p.isDummy && !p.isDisconnected)
       const allReady = realPlayers.length > 0 && realPlayers.every(p => p.isReady)
 
-      if (allReady && this.currentState.isReadyCheckActive && !this.currentState.isGameStarted) {
+      if (allReady && !this.currentState.isGameStarted) {
         this.startGame()
       }
     }

@@ -364,7 +364,7 @@ export class HostMessageHandler {
     const realPlayers = updatedPlayers.filter(p => !p.isDummy && !p.isDisconnected)
     const allReady = realPlayers.length > 0 && realPlayers.every(p => p.isReady)
 
-    if (allReady && this.gameState.isReadyCheckActive && !this.gameState.isGameStarted) {
+    if (allReady && !this.gameState.isGameStarted) {
       this.startGame()
     }
 
