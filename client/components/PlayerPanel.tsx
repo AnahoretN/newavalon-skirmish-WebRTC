@@ -393,7 +393,15 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
 }) => {
   const { t, resources } = useLanguage()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const prevDeckLengthRef = useRef<number>(player.deck.length)
+
+  // Helper: Get effective deck size
+  // Always use deck.length - the actual array length is the source of truth
+  // deckSize field is deprecated and only used for network optimization
+  const getDeckSize = (): number => {
+    return player.deck.length ?? 0
+  }
+
+  const prevDeckLengthRef = useRef<number>(getDeckSize())
 
   // State for deck change indicator (+/- number)
   const [deckChangeDelta, setDeckChangeDelta] = useState<number | null>(null)
@@ -418,7 +426,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   // Track deck count changes and show delta indicator
   useEffect(() => {
     const prevLength = prevDeckLengthRef.current
-    const currentLength = player.deck.length
+    const currentLength = getDeckSize()
 
     if (prevLength !== currentLength) {
       const delta = currentLength - prevLength
@@ -446,7 +454,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
         deckChangeDeltas.set(player.id, { delta, timerId })
       }
     }
-  }, [player.deck.length, player.id])
+  }, [player.deck.length, player.id, getDeckSize])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -594,7 +602,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     >
                       <span className="text-[10px] sm:text-xs font-bold mb-0.5 uppercase tracking-tight relative z-20">{t('deck')}</span>
                       <div className="relative z-20">
-                        <span className="text-base sm:text-lg font-bold">{player.deck.length}</span>
+                        <span className="text-base sm:text-lg font-bold">{getDeckSize()}</span>
                         {deckChangeDelta !== null && (
                           <span key={deckChangeKey} className={`absolute left-full top-0 ml-1 text-base sm:text-lg font-bold animate-fade-out ${deckChangeDelta > 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {deckChangeDelta > 0 ? `+${deckChangeDelta}` : deckChangeDelta}
@@ -911,7 +919,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       )}
                       <RemotePile
                         label={t('deck')}
-                        count={player.deck.length}
+                        count={getDeckSize()}
                         onClick={handleDeckInteraction}
                         className="bg-card-back"
                         style={deckHighlightStyle}
@@ -1133,6 +1141,9 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
      prevProps.draggedItem?.source === nextProps.draggedItem?.source &&
      prevProps.draggedItem?.playerId === nextProps.draggedItem?.playerId)
   )
+  // Helper to get deck size for comparison (use deckSize if available)
+  const getDeckSizeForCompare = (p: Player): number => p.deck.length ?? 0
+
   return (
     prevProps.player.id === nextProps.player.id &&
     prevProps.player.score === nextProps.player.score &&
@@ -1140,7 +1151,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
     prevProps.player.name === nextProps.player.name &&
     prevProps.player.selectedDeck === nextProps.player.selectedDeck &&
     prevProps.player.hand.length === nextProps.player.hand.length &&
-    prevProps.player.deck.length === nextProps.player.deck.length &&
+    getDeckSizeForCompare(prevProps.player) === getDeckSizeForCompare(nextProps.player) &&
     prevProps.player.discard.length === nextProps.player.discard.length &&
     prevProps.player.announcedCard?.id === nextProps.player.announcedCard?.id &&
     prevProps.isGameStarted === nextProps.isGameStarted &&

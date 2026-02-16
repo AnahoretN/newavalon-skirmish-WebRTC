@@ -103,13 +103,56 @@ export function useWebRTC(props: UseWebRTCProps) {
    * Send action to host via WebRTC (guest only)
    */
   const sendWebrtcAction = useCallback((actionType: string, actionData: any) => {
-    if (!webrtcManagerRef.current || webrtcIsHostRef.current) {return false}
+    if (!webrtcManagerRef.current) {
+      logger.warn(`[sendWebrtcAction] No webrtcManagerRef.current`)
+      return false
+    }
+    if (webrtcIsHostRef.current) {
+      logger.warn(`[sendWebrtcAction] Host mode, cannot send action to self`)
+      return false
+    }
     return webrtcManagerRef.current.sendAction(actionType, actionData)
+  }, [webrtcManagerRef, webrtcIsHostRef])
+
+  /**
+   * Request to view another player's deck (guest only)
+   * Sends REQUEST_DECK_VIEW message to host, host responds with DECK_VIEW_DATA
+   */
+  const requestDeckView = useCallback((targetPlayerId: number) => {
+    if (!webrtcManagerRef.current || webrtcIsHostRef.current) {
+      logger.warn('[requestDeckView] Only guests can request deck view from host')
+      return false
+    }
+
+    const message: any = { // Using any to avoid circular type dependency
+      type: 'REQUEST_DECK_VIEW',
+      senderId: webrtcManagerRef.current.getPeerId(),
+      playerId: webrtcIsHostRef.current ? undefined : (webrtcManagerRef.current as any).getLocalPlayerId?.(),
+      data: { targetPlayerId },
+      timestamp: Date.now()
+    }
+
+    return webrtcManagerRef.current.sendMessageToHost(message)
+  }, [webrtcManagerRef, webrtcIsHostRef])
+
+  /**
+   * Send full deck data to host (guest only)
+   * Used when player opens deck view - sends full deck so host can provide it to others
+   */
+  const sendFullDeckToHost = useCallback((playerId: number, deck: any[], deckSize: number) => {
+    if (!webrtcManagerRef.current || webrtcIsHostRef.current) {
+      logger.warn('[sendFullDeckToHost] Only guests can send deck data to host')
+      return false
+    }
+
+    return webrtcManagerRef.current.sendFullDeckToHost(playerId, deck, deckSize)
   }, [webrtcManagerRef, webrtcIsHostRef])
 
   return {
     initializeWebrtcHost,
     connectAsGuest,
     sendWebrtcAction,
+    requestDeckView,
+    sendFullDeckToHost,
   }
 }

@@ -17,6 +17,7 @@ import { CounterSelectionModal } from './components/CounterSelectionModal'
 import { TopDeckView } from './components/TopDeckView'
 import { ReconnectingModal } from './components/ReconnectingModal'
 import { ModalsRenderer, ModalsProvider } from './components/ModalsRenderer'
+import { logger } from './utils/logger'
 import { useGameState } from './hooks/useGameState'
 import { useAppAbilities } from './hooks/useAppAbilities'
 import { useAppCommand } from './hooks/useAppCommand'
@@ -147,6 +148,7 @@ const AppInner = function AppInner() {
     webrtcHostId,
     initializeWebrtcHost,
     connectAsGuest,
+    requestDeckView,
     // Reconnection props
     isReconnecting,
     reconnectProgress,
@@ -1546,8 +1548,18 @@ const AppInner = function AppInner() {
 
 
   const handleViewDeck = useCallback((player: Player) => {
+    // Check if WebRTC is enabled and we're viewing another player's deck
+    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isOtherPlayerDeck = player.id !== localPlayerId
+
+    if (isWebRTCMode && isOtherPlayerDeck && player.deck.length === 0) {
+      // Request full deck data from host
+      logger.info(`[handleViewDeck] Requesting deck data for player ${player.id}`)
+      requestDeckView(player.id)
+    }
+
     setViewingDiscard({ player, isDeckView: true })
-  }, [])
+  }, [localPlayerId, requestDeckView])
   const handleViewDiscard = useCallback((player: Player) => {
     setViewingDiscard({ player, isDeckView: false })
   }, [])

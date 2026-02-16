@@ -11,7 +11,9 @@ export type WebrtcMessageType =
   | 'JOIN_ACCEPT'          // Host accepts guest, sends current state
   | 'JOIN_ACCEPT_MINIMAL'  // Host accepts guest with minimal info (to avoid size limit)
   | 'STATE_UPDATE'         // Host broadcasts full state update
-  | 'STATE_DELTA'          // Compact state change broadcast
+  | 'STATE_UPDATE_COMPACT' // Compact state with card IDs only (reduces size)
+  | 'STATE_DELTA'          // Compact state change broadcast (JSON)
+  | 'STATE_DELTA_BINARY'   // Compact state change broadcast (MessagePack - OPTIMIZED)
   | 'ACTION'               // Guest sends action to host
   | 'PLAYER_LEAVE'         // Player is leaving
   | 'PLAYER_RECONNECT'     // Guest reconnecting after page reload
@@ -31,6 +33,7 @@ export type WebrtcMessageType =
   | 'CHANGE_PLAYER_COLOR'  // Player settings update
   | 'UPDATE_PLAYER_SCORE'  // Player settings update
   | 'CHANGE_PLAYER_DECK'   // Player settings update
+  | 'CUSTOM_DECK_DATA'     // Guest sends custom deck cards to host
   | 'SYNC_DECK_SELECTIONS'  // Sync deck selections between all players
   | 'TOGGLE_ACTIVE_PLAYER' // Toggle active player
   | 'TOGGLE_AUTO_DRAW'     // Toggle auto draw
@@ -66,12 +69,20 @@ export type WebrtcMessageType =
   | 'FLOATING_TEXT_BATCH_TRIGGERED' // Batch floating text was triggered
   | 'NO_TARGET_TRIGGERED'  // No target overlay was triggered
   | 'DECK_SELECTION_TRIGGERED' // Deck selection was triggered
+  | 'REQUEST_DECK_VIEW'      // Request to view another player's deck (guest -> host)
+  | 'DECK_VIEW_DATA'         // Response with full deck data (host -> guest)
+  | 'DECK_DATA_UPDATE'        // Guest sends their full deck data to host (for deck view)
   | 'HAND_CARD_SELECTION_TRIGGERED' // Hand card selection was triggered
   | 'TARGET_SELECTION_TRIGGERED' // Target selection was triggered
   | 'HIGHLIGHTS_SYNC'      // Sync highlights
   | 'CLEAR_ALL_EFFECTS'    // Clear all effects
   | 'VALID_TARGETS_SYNC'   // Sync valid targets
   | 'GAME_LOGS'            // Game logs for debugging
+  // New codec system messages (binary format)
+  | 'CARD_REGISTRY'        // Card definitions registry (sent once per connection)
+  | 'CARD_STATE'           // Game state update (cards, board, players)
+  | 'ABILITY_EFFECT'       // Visual/ability effects
+  | 'SESSION_EVENT'        // Session events (connect, disconnect, phase change, etc.)
 
 export interface WebrtcMessage {
   type: WebrtcMessageType

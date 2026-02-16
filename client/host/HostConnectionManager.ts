@@ -14,6 +14,10 @@ import type {
   HostConfig
 } from './types'
 import { logger } from '../utils/logger'
+import { serializeDeltaBase64, serializeGameState } from '../utils/webrtcSerialization'
+import { buildCardRegistry, serializeCardRegistry } from '../utils/gameCodec'
+import { encodeAbilityEffect } from '../utils/abilityMessages'
+import { AbilityEffectType } from '../types/codec'
 
 export class HostConnectionManager {
   private peer: Peer | null = null
@@ -261,31 +265,458 @@ export class HostConnectionManager {
   }
 
   /**
-   * Broadcast state delta to all guests
+   * Broadcast state delta to all guests (optimized binary format as base64)
    */
   broadcastStateDelta(delta: StateDelta, excludePeerId?: string): void {
+    // Serialize delta to base64 string (PeerJS will serialize as JSON)
+    const base64Data = serializeDeltaBase64(delta)
+
     const message: WebrtcMessage = {
-      type: 'STATE_DELTA',
+      type: 'STATE_DELTA_BINARY',
       senderId: this.peer?.id,
-      data: { delta },
+      data: base64Data,
       timestamp: Date.now()
     }
-    logger.info(`[broadcastStateDelta] Preparing to send STATE_DELTA: playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, boardCells=${delta.boardCells?.length || 0}, phaseDelta=${!!delta.phaseDelta}`)
+    logger.info(`[broadcastStateDelta] Sending BINARY STATE_DELTA (base64): ${base64Data.length} chars, playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, boardCells=${delta.boardCells?.length || 0}`)
     this.broadcast(message, excludePeerId)
     logger.info(`[broadcastStateDelta] Sent STATE_DELTA from player ${delta.sourcePlayerId} to ${this.connections.size} guests`)
   }
 
   /**
    * Broadcast game state to all guests
+   * OPTIMIZED: Sends personalized data to each player and removes heavy fields
    */
   broadcastGameState(gameState: GameState, excludePeerId?: string): void {
-    const message: WebrtcMessage = {
-      type: 'STATE_UPDATE',
-      senderId: this.peer?.id,
-      data: { gameState },
-      timestamp: Date.now()
+    let successCount = 0
+
+    this.connections.forEach((conn, peerId) => {
+      if (!conn.open || peerId === excludePeerId) {
+        return
+      }
+
+      // Get the player ID for this guest
+      const guest = this.guests.get(peerId)
+      const recipientPlayerId = guest?.playerId ?? null
+
+      // Create personalized optimized state for this player
+      const personalizedState = this.createPersonalizedGameState(gameState, recipientPlayerId)
+
+      const message: WebrtcMessage = {
+        type: 'STATE_UPDATE_COMPACT', // Use compact message type with card IDs
+        senderId: this.peer?.id,
+        data: { gameState: personalizedState },
+        timestamp: Date.now()
+      }
+
+      try {
+        conn.send(message)
+        successCount++
+      } catch (err) {
+        logger.error(`[broadcastGameState] Failed to send to guest ${peerId} (player ${recipientPlayerId}):`, err)
+      }
+    })
+
+    logger.debug(`[broadcastGameState] Sent to ${successCount}/${this.connections.size} guests`)
+  }
+
+  /**
+   * Create personalized game state for a specific player
+   * - Player sees their own full hand (as card IDs only for size)
+   * - Other players' hands are sent as card backs only
+   * - Board cards are visible to all (with proper face up/down status)
+   * - Decks/discard are sent as card IDs for own player (size optimization)
+   */
+  private createPersonalizedGameState(gameState: GameState, recipientPlayerId: number | null): GameState {
+    const result = {
+      ...gameState,
+      players: gameState.players.map(p => {
+        const isOwnHand = recipientPlayerId !== null && p.id === recipientPlayerId
+
+        if (isOwnHand) {
+          // Send COMPACT CARD DATA (id + baseId) for own player's hand, deck, discard
+          // This allows the guest to reconstruct full cards from their local contentDatabase
+          const deckSize = p.deck.length ?? 0
+          const discardSize = p.discard.length ?? 0
+          const handSize = p.hand.length ?? 0
+          logger.debug(`[createPersonalizedGameState] Player ${p.id} (own): sending ${handSize} hand cards, ${deckSize} deck cards, ${discardSize} discard cards`)
+          return {
+            ...p,
+            // Send compact card data with baseId - client can reconstruct using getCardDefinition(baseId)
+            handCards: p.hand.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            })),
+            deckCards: p.deck.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            })),
+            discardCards: p.discard.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            })),
+            // Don't send full arrays to avoid size limit
+            hand: [],
+            deck: [],
+            discard: [],
+            // Include minimal announced card info
+            announcedCard: p.announcedCard ? this.optimizeCard(p.announcedCard) : null,
+            // Always use actual array lengths for own player
+            deckSize: deckSize,
+            discardSize: discardSize,
+            handSize: handSize
+          }
+        } else {
+          // Send only card backs for other players' hands
+          const deckSize = p.deckSize ?? p.deck.length ?? 0
+          logger.debug(`[createPersonalizedGameState] Player ${p.id} (other): deckSize=${deckSize}, p.deckSize=${p.deckSize}, deck.length=${p.deck.length}`)
+          return {
+            ...p,
+            hand: p.hand.map((card: any) => this.createCardBack(card)),
+            deck: [],
+            discard: [],
+            announcedCard: p.announcedCard ? this.createCardBack(p.announcedCard) : null,
+            // Keep size information for UI display (use stored size if available, fallback to array length)
+            deckSize: deckSize,
+            handSize: p.handSize ?? p.hand.length ?? 0,
+            discardSize: p.discardSize ?? p.discard.length ?? 0
+          }
+        }
+      }),
+      // Optimize board cards - remove heavy fields but keep all gameplay data
+      board: gameState.board.map(row =>
+        row.map(cell => ({
+          ...cell,
+          card: cell.card ? this.optimizeCard(cell.card) : null
+        }))
+      ) as any
     }
-    this.broadcast(message, excludePeerId)
+    return result
+  }
+
+  /**
+   * Optimize a single card by removing heavy fields
+   * Keeps all gameplay-relevant data
+   */
+  private optimizeCard(card: any): any {
+    return {
+      id: card.id,
+      baseId: card.baseId,
+      name: card.name,
+      power: card.power,
+      powerModifier: card.powerModifier,
+      ability: card.ability,
+      ownerId: card.ownerId,
+      color: card.color,
+      deck: card.deck,
+      isFaceDown: card.isFaceDown,
+      types: card.types,
+      faction: card.faction,
+      statuses: card.statuses || [],
+      // Preserve reveal-related status
+      hasRevealToken: card.hasRevealToken || false,
+      // Include imageUrl for board cards so they display with images
+      imageUrl: card.imageUrl
+    }
+  }
+
+  /**
+   * Create a card-back representation for other players' hands
+   * Only includes visibility-related info, not card content
+   */
+  private createCardBack(card: any): any {
+    return {
+      id: card.id,
+      baseId: card.baseId,
+      name: card.name, // Name needed for display
+      isFaceDown: card.isFaceDown,
+      hasRevealToken: card.hasRevealToken || false,
+      statuses: card.statuses || []
+    }
+  }
+
+  // ==================== New Codec System ====================
+
+  /**
+   * Send card registry to a specific guest (once per connection)
+   */
+  sendCardRegistry(peerId: string): boolean {
+    const conn = this.connections.get(peerId)
+    if (!conn || !conn.open) {
+      logger.error(`[sendCardRegistry] No valid connection for ${peerId}`)
+      return false
+    }
+
+    try {
+      const registry = buildCardRegistry()
+      const registryData = serializeCardRegistry(registry)
+
+      // Convert to base64 for PeerJS JSON serialization
+      const base64Data = btoa(String.fromCharCode(...registryData))
+
+      const message: WebrtcMessage = {
+        type: 'CARD_REGISTRY',
+        senderId: this.peer?.id,
+        data: base64Data,
+        timestamp: Date.now()
+      }
+
+      conn.send(message)
+      logger.info(`[sendCardRegistry] Sent card registry to ${peerId}: ${registryData.length} bytes`)
+      return true
+    } catch (err) {
+      logger.error(`[sendCardRegistry] Failed to send registry to ${peerId}:`, err)
+      return false
+    }
+  }
+
+  /**
+   * Broadcast card state to all guests (new codec)
+   */
+  broadcastCardState(gameState: GameState, localPlayerId: number | null, excludePeerId?: string): number {
+    try {
+      const stateData = serializeGameState(gameState, localPlayerId)
+
+      // Convert to base64 for PeerJS JSON serialization
+      const base64Data = btoa(String.fromCharCode(...stateData))
+
+      const message: WebrtcMessage = {
+        type: 'CARD_STATE',
+        senderId: this.peer?.id,
+        data: base64Data,
+        timestamp: Date.now()
+      }
+
+      const successCount = this.broadcast(message, excludePeerId)
+      logger.info(`[broadcastCardState] Sent ${stateData.length} bytes to ${successCount} guests`)
+      return successCount
+    } catch (err) {
+      logger.error('[broadcastCardState] Failed to encode/broadcast state:', err)
+      return 0
+    }
+  }
+
+  /**
+   * Broadcast ability effect to all guests
+   */
+  broadcastAbilityEffect(
+    effectType: AbilityEffectType,
+    data: {
+      sourcePos?: { row: number; col: number }
+      targetPositions?: Array<{ row: number; col: number }>
+      text?: string
+      value?: number
+      playerId?: number
+    },
+    excludePeerId?: string
+  ): number {
+    try {
+      const effectData = encodeAbilityEffect(effectType, data)
+
+      // Convert to base64 for PeerJS JSON serialization
+      const base64Data = btoa(String.fromCharCode(...effectData))
+
+      const message: WebrtcMessage = {
+        type: 'ABILITY_EFFECT',
+        senderId: this.peer?.id,
+        data: base64Data,
+        timestamp: Date.now()
+      }
+
+      const successCount = this.broadcast(message, excludePeerId)
+      logger.debug(`[broadcastAbilityEffect] Sent effect ${effectType} to ${successCount} guests`)
+      return successCount
+    } catch (err) {
+      logger.error('[broadcastAbilityEffect] Failed to encode/broadcast effect:', err)
+      return 0
+    }
+  }
+
+  /**
+   * Highlight cell convenience method
+   */
+  broadcastHighlight(row: number, col: number, playerId: number, excludePeerId?: string): number {
+    return this.broadcastAbilityEffect(
+      AbilityEffectType.HIGHLIGHT_CELL,
+      { sourcePos: { row, col }, playerId },
+      excludePeerId
+    )
+  }
+
+  /**
+   * Floating text convenience method
+   */
+  broadcastFloatingText(row: number, col: number, text: string, excludePeerId?: string): number {
+    return this.broadcastAbilityEffect(
+      AbilityEffectType.FLOATING_TEXT,
+      { sourcePos: { row, col }, text },
+      excludePeerId
+    )
+  }
+
+  /**
+   * Targeting mode convenience method
+   */
+  broadcastTargetingMode(
+    sourcePos: { row: number; col: number },
+    targetPositions: Array<{ row: number; col: number }>,
+    excludePeerId?: string
+  ): number {
+    return this.broadcastAbilityEffect(
+      AbilityEffectType.TARGETING_MODE,
+      { sourcePos, targetPositions },
+      excludePeerId
+    )
+  }
+
+  /**
+   * Clear targeting convenience method
+   */
+  broadcastClearTargeting(excludePeerId?: string): number {
+    return this.broadcastAbilityEffect(
+      AbilityEffectType.CLEAR_TARGETING,
+      {},
+      excludePeerId
+    )
+  }
+
+  /**
+   * Broadcast session event to all guests
+   */
+  broadcastSessionEvent(
+    eventType: number,
+    data: {
+      playerId?: number
+      playerName?: string
+      startingPlayerId?: number
+      roundNumber?: number
+      winners?: number[]
+      newPhase?: number
+      newActivePlayerId?: number
+      gameWinner?: number | null
+    },
+    excludePeerId?: string
+  ): number {
+    try {
+      const { encodeSessionEvent } = require('../utils/sessionMessages')
+      const eventData = encodeSessionEvent(eventType, data)
+
+      // Convert to base64 for PeerJS JSON serialization
+      const base64Data = btoa(String.fromCharCode(...eventData))
+
+      const message: WebrtcMessage = {
+        type: 'SESSION_EVENT',
+        senderId: this.peer?.id,
+        data: base64Data,
+        timestamp: Date.now()
+      }
+
+      const successCount = this.broadcast(message, excludePeerId)
+      logger.debug(`[broadcastSessionEvent] Sent event ${eventType} to ${successCount} guests`)
+      return successCount
+    } catch (err) {
+      logger.error('[broadcastSessionEvent] Failed to encode/broadcast event:', err)
+      return 0
+    }
+  }
+
+  /**
+   * Player connected convenience method
+   */
+  broadcastPlayerConnected(playerId: number, playerName: string, excludePeerId?: string): number {
+    return this.broadcastSessionEvent(
+      0x01, // PLAYER_CONNECTED
+      { playerId, playerName },
+      excludePeerId
+    )
+  }
+
+  /**
+   * Player disconnected convenience method
+   */
+  broadcastPlayerDisconnected(playerId: number, excludePeerId?: string): number {
+    return this.broadcastSessionEvent(
+      0x02, // PLAYER_DISCONNECTED
+      { playerId },
+      excludePeerId
+    )
+  }
+
+  /**
+   * Game start convenience method
+   */
+  broadcastGameStart(startingPlayerId: number, excludePeerId?: string): number {
+    return this.broadcastSessionEvent(
+      0x03, // GAME_START
+      { startingPlayerId },
+      excludePeerId
+    )
+  }
+
+  /**
+   * Round start convenience method
+   */
+  broadcastRoundStart(roundNumber: number, excludePeerId?: string): number {
+    return this.broadcastSessionEvent(
+      0x04, // ROUND_START
+      { roundNumber },
+      excludePeerId
+    )
+  }
+
+  /**
+   * Round end convenience method
+   */
+  broadcastRoundEnd(roundNumber: number, winners: number[], excludePeerId?: string): number {
+    return this.broadcastSessionEvent(
+      0x05, // ROUND_END
+      { roundNumber, winners },
+      excludePeerId
+    )
+  }
+
+  /**
+   * Phase change convenience method
+   */
+  broadcastPhaseChange(newPhase: number, newActivePlayerId?: number, excludePeerId?: string): number {
+    return this.broadcastSessionEvent(
+      0x06, // PHASE_CHANGE
+      { newPhase, newActivePlayerId },
+      excludePeerId
+    )
+  }
+
+  /**
+   * Turn change convenience method
+   */
+  broadcastTurnChange(newActivePlayerId: number, excludePeerId?: string): number {
+    return this.broadcastSessionEvent(
+      0x07, // TURN_CHANGE
+      { newActivePlayerId },
+      excludePeerId
+    )
+  }
+
+  /**
+   * Game end convenience method
+   */
+  broadcastGameEnd(winner: number | null, excludePeerId?: string): number {
+    return this.broadcastSessionEvent(
+      0x08, // GAME_END
+      { gameWinner: winner },
+      excludePeerId
+    )
   }
 
   /**

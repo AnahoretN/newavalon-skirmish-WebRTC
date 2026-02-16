@@ -11,10 +11,6 @@
 
 import { useCallback } from 'react'
 import { logger } from '../../utils/logger'
-import {
-  createDeltaFromStates,
-  isDeltaEmpty
-} from '../../utils/stateDelta'
 import type { GameState } from '../../types'
 
 interface UseReadyCheckProps {
@@ -148,7 +144,9 @@ export function useReadyCheck(props: UseReadyCheckProps) {
             finalState.currentPhase = 1
           }
 
-          const initialDrawDelta = createDeltaFromStates(newState, finalState, localPlayerIdRef.current || 0)
+          // Broadcast the final complete state (not delta)
+          logger.info('[playerReady] Broadcasting final state after game start')
+          webrtcManager.current!.broadcastGameState(finalState)
 
           webrtcManager.current!.broadcastToGuests({
             type: 'GAME_START',
@@ -161,12 +159,6 @@ export function useReadyCheck(props: UseReadyCheckProps) {
             },
             timestamp: Date.now()
           })
-
-          setTimeout(() => {
-            if (!isDeltaEmpty(initialDrawDelta)) {
-              webrtcManager.current!.broadcastStateDelta(initialDrawDelta)
-            }
-          }, 50)
 
           return finalState
         }

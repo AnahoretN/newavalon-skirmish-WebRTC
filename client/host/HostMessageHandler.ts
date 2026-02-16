@@ -8,7 +8,7 @@ import type { StateDelta } from '../types'
 import type { WebrtcMessage } from '../utils/webrtcManager'
 import type { HostConnectionManager } from './HostConnectionManager'
 import { logger } from '../utils/logger'
-import { createDeltaFromStates, isDeltaEmpty } from '../utils/stateDelta'
+import { createDeltaFromStates, isDeltaEmpty, applyStateDelta } from '../utils/stateDelta'
 import { PLAYER_COLOR_NAMES } from '../constants'
 
 export interface HostMessageHandlerConfig {
@@ -69,7 +69,7 @@ export class HostMessageHandler {
 
     switch (message.type) {
       case 'JOIN_REQUEST':
-        this.handleJoinRequest(fromPeerId)
+        this.handleJoinRequest(fromPeerId, message.data)
         break
 
       case 'ACTION':
@@ -100,6 +100,10 @@ export class HostMessageHandler {
         this.handleStateDelta(message, fromPeerId)
         break
 
+      case 'STATE_DELTA_BINARY':
+        this.handleStateDeltaBinary(message, fromPeerId)
+        break
+
       default:
         logger.warn(`[HostMessageHandler] Unhandled message type: ${message.type}`)
         break
@@ -109,13 +113,15 @@ export class HostMessageHandler {
   /**
    * Handle guest join request
    */
-  private handleJoinRequest(guestPeerId: string): void {
+  private handleJoinRequest(guestPeerId: string, joinData?: any): void {
     if (!this.gameState) {
       logger.error('[HostMessageHandler] No game state, cannot accept guest')
       return
     }
 
-    logger.info(`[HostMessageHandler] Processing JOIN_REQUEST from ${guestPeerId}`)
+    // Get guest's preferred deck from join request
+    const preferredDeck = joinData?.preferredDeck || 'Random'
+    logger.info(`[HostMessageHandler] Processing JOIN_REQUEST from ${guestPeerId}, preferredDeck: ${preferredDeck}`)
 
     // Find next available player ID
     const existingPlayerIds = this.gameState.players.map(p => p.id)
@@ -124,7 +130,7 @@ export class HostMessageHandler {
       newPlayerId++
     }
 
-    // Create new player
+    // Create new player with their preferred deck
     const newPlayer: Player = {
       id: newPlayerId,
       name: `Player ${newPlayerId}`,
@@ -136,7 +142,7 @@ export class HostMessageHandler {
       score: 0,
       isDummy: false,
       isReady: false,
-      selectedDeck: 'Random' as DeckType,
+      selectedDeck: preferredDeck as DeckType,
       boardHistory: [],
       autoDrawEnabled: true,
     }
@@ -268,12 +274,57 @@ export class HostMessageHandler {
 
     const delta: StateDelta = actionData.delta
 
-    // Apply delta to host state
-    // Note: We need to import applyStateDelta or implement it here
-    // For now, we'll just broadcast the delta to all guests
+    // Apply delta to host state - IMPORTANT!
+    // Host must apply the delta to its own gameState before broadcasting
+    const newState = applyStateDelta(this.gameState, delta, guestPlayerId)
 
+    this.gameState = newState
+
+    // Broadcast to all guests (excluding sender if needed)
     logger.info(`[HostMessageHandler] Received STATE_DELTA from player ${guestPlayerId}, broadcasting to all`)
     this.connectionManager.broadcastStateDelta(delta)
+
+    // Notify callback
+    if (this.config.onStateUpdate) {
+      this.config.onStateUpdate(newState)
+    }
+  }
+
+  /**
+   * Handle binary state delta action from guest (optimized format)
+   */
+  private handleStateDeltaBinary(message: WebrtcMessage, fromPeerId: string): void {
+    const guest = this.connectionManager.getGuest(fromPeerId)
+    const guestPlayerId = guest?.playerId
+
+    if (!guestPlayerId) {
+      logger.warn(`[HostMessageHandler] No player ID for STATE_DELTA_BINARY from ${fromPeerId}`)
+      return
+    }
+
+    if (!message.data || !this.gameState) {return}
+
+    // Deserialize delta from binary format
+    try {
+      const { deserializeDelta } = require('../utils/webrtcSerialization')
+      const delta = deserializeDelta(message.data)
+
+      logger.info(`[HostMessageHandler] Received STATE_DELTA_BINARY from player ${guestPlayerId}, boardCells=${delta.boardCells?.length || 0}`)
+
+      // Apply delta using the same logic as STATE_DELTA
+      const newState = applyStateDelta(this.gameState, delta, guestPlayerId)
+      this.gameState = newState
+
+      // Broadcast to all guests (excluding sender)
+      this.connectionManager.broadcastStateDelta(delta)
+
+      // Notify callback
+      if (this.config.onStateUpdate) {
+        this.config.onStateUpdate(newState)
+      }
+    } catch (error) {
+      logger.error(`[HostMessageHandler] Failed to deserialize STATE_DELTA_BINARY:`, error)
+    }
   }
 
   /**
@@ -335,7 +386,8 @@ export class HostMessageHandler {
     const randomIndex = Math.floor(Math.random() * allPlayers.length)
     const startingPlayerId = allPlayers[randomIndex].id
 
-    // Draw initial hands for ALL players (host does this for everyone)
+    // Draw initial hands for HOST and DUMMY players only
+    // Guests will draw their own cards from their local decks when they receive GAME_START
     const finalState = { ...this.gameState }
     finalState.isReadyCheckActive = false
     finalState.isGameStarted = true
@@ -343,9 +395,14 @@ export class HostMessageHandler {
     finalState.activePlayerId = startingPlayerId
     finalState.currentPhase = 0
 
-    // Draw cards for each player
+    // Draw cards for host and dummy players only
+    // Guests manage their own decks locally
     finalState.players = finalState.players.map(player => {
-      if (player.hand.length === 0 && player.deck.length > 0) {
+      // Only draw for host (local player) and dummies
+      // Guests have their own local deck data
+      const isHostOrDummy = player.id === this.localPlayerId || player.isDummy
+
+      if (isHostOrDummy && player.hand.length === 0 && player.deck.length > 0) {
         const cardsToDraw = 6
         const newHand = [...player.hand]
         const newDeck = [...player.deck]
@@ -536,10 +593,26 @@ export class HostMessageHandler {
 
     const delta: StateDelta = message.data.delta
 
-    logger.info(`[HostMessageHandler] Received STATE_DELTA from ${fromPeerId}, broadcasting to all`)
+    // Get the guest's player ID
+    const guest = this.connectionManager.getGuest(fromPeerId)
+    const guestPlayerId = guest?.playerId
 
-    // Broadcast delta to all guests (including sender for consistency)
-    this.connectionManager.broadcastStateDelta(delta)
+    logger.info(`[HostMessageHandler] Received STATE_DELTA from ${fromPeerId}, player ${guestPlayerId}, broadcasting to all`)
+
+    // Apply delta to host state - IMPORTANT!
+    // Host must apply the delta to its own gameState before broadcasting
+    if (guestPlayerId !== undefined) {
+      const newState = applyStateDelta(this.gameState, delta, guestPlayerId)
+      this.gameState = newState
+
+      // Notify callback
+      if (this.config.onStateUpdate) {
+        this.config.onStateUpdate(newState)
+      }
+    }
+
+    // Broadcast delta to all guests (excluding sender to avoid echo)
+    this.connectionManager.broadcastStateDelta(delta, fromPeerId)
   }
 
   /**

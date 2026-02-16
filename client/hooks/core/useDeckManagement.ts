@@ -25,6 +25,8 @@ import type { GameState, Card, CustomDeckFile } from '../../types'
 interface UseDeckManagementProps {
   webrtcIsHostRef: React.MutableRefObject<boolean>
   sendWebrtcAction?: ((actionType: string, actionData: any) => void) | null
+  webrtcManagerRef?: React.MutableRefObject<ReturnType<typeof import('../../utils/webrtcManager').getWebrtcManager> | null>
+  localPlayerIdRef?: React.MutableRefObject<number | null>
   getCardDefinition: (cardId: string) => any
   commandCardIds: Set<string>
   createDeck: (deckType: DeckType, playerId: number, playerName: string) => Card[]
@@ -35,6 +37,8 @@ export function useDeckManagement(props: UseDeckManagementProps) {
   const {
     webrtcIsHostRef,
     sendWebrtcAction,
+    webrtcManagerRef,
+    localPlayerIdRef,
     getCardDefinition,
     commandCardIds,
     createDeck,
@@ -47,6 +51,20 @@ export function useDeckManagement(props: UseDeckManagementProps) {
   const changePlayerDeck = useCallback((playerId: number, deckType: DeckType) => {
     const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
 
+    // Save deck preference for WebRTC guest join
+    // When guest joins a host, this preference will be sent with JOIN_REQUEST
+    if (isWebRTCMode && !webrtcIsHostRef.current) {
+      try {
+        localStorage.setItem('webrtc_preferred_deck', deckType)
+        logger.info(`[changePlayerDeck] Saved deck preference: ${deckType}`)
+      } catch (e) {
+        logger.warn('[changePlayerDeck] Failed to save deck preference:', e)
+      }
+    }
+
+    // Create the new deck first so we can send it to host
+    const newDeck = createDeck(deckType, playerId, 'Player ' + playerId)
+
     updateState(currentState => {
       if (currentState.isGameStarted) {
         return currentState
@@ -55,23 +73,97 @@ export function useDeckManagement(props: UseDeckManagementProps) {
         ...currentState,
         players: currentState.players.map(p =>
           p.id === playerId
-            ? { ...p, deck: createDeck(deckType, playerId, p.name), selectedDeck: deckType, hand: [], discard: [], announcedCard: null, boardHistory: [] }
+            ? { ...p, deck: newDeck, selectedDeck: deckType, hand: [], discard: [], announcedCard: null, boardHistory: [] }
             : p,
         ),
       }
     })
 
-    // In WebRTC mode, also send deck change to host for broadcasting
-    if (isWebRTCMode && !webrtcIsHostRef.current && sendWebrtcAction) {
-      sendWebrtcAction('CHANGE_PLAYER_DECK', { playerId, deckType })
-      logger.info(`[changePlayerDeck] Sent deck change to host: player ${playerId}, deck ${deckType}`)
+    // In WebRTC mode, send compact deck data for synchronization
+    logger.info(`[changePlayerDeck] Checking WebRTC mode: isWebRTCMode=${isWebRTCMode}, isHost=${webrtcIsHostRef.current}, hasSendAction=${!!sendWebrtcAction}, hasManager=${!!webrtcManagerRef?.current}`)
+
+    if (!isWebRTCMode) {
+      logger.info(`[changePlayerDeck] Not WebRTC mode, skipping sync`)
+      return
     }
-  }, [updateState, createDeck, sendWebrtcAction, webrtcIsHostRef])
+
+    // Create compact card data (only id, baseId, power, etc.) to reduce message size
+    const compactDeckData = newDeck.map(card => ({
+      id: card.id,
+      baseId: card.baseId,
+      power: card.power,
+      powerModifier: card.powerModifier || 0,
+      isFaceDown: card.isFaceDown || false,
+      statuses: card.statuses || []
+    }))
+
+    if (webrtcIsHostRef.current) {
+      // Host: broadcast directly to all guests via webrtcManager
+      if (webrtcManagerRef?.current) {
+        webrtcManagerRef.current.broadcastToGuests({
+          type: 'CHANGE_PLAYER_DECK',
+          senderId: webrtcManagerRef.current.getPeerId(),
+          timestamp: Date.now(),
+          data: {
+            playerId,
+            deckType,
+            deck: compactDeckData,
+            deckSize: compactDeckData.length
+          }
+        })
+        logger.info(`[changePlayerDeck] Host broadcasting deck data to all guests: player ${playerId}, deck ${deckType}, ${compactDeckData.length} cards`)
+      } else {
+        logger.warn(`[changePlayerDeck] Host mode but no webrtcManagerRef available`)
+      }
+    } else {
+      // Guest: send deck data to host via sendWebrtcAction
+      if (sendWebrtcAction) {
+        sendWebrtcAction('CHANGE_PLAYER_DECK', {
+          playerId,
+          deckType,
+          deck: compactDeckData,
+          deckSize: compactDeckData.length
+        })
+        logger.info(`[changePlayerDeck] Guest sending deck data to host: player ${playerId}, deck ${deckType}, ${compactDeckData.length} cards`)
+      } else {
+        logger.warn(`[changePlayerDeck] Guest mode but no sendWebrtcAction available`)
+      }
+    }
+  }, [updateState, createDeck, sendWebrtcAction, webrtcIsHostRef, webrtcManagerRef, localPlayerIdRef])
 
   /**
    * Load a custom deck for a player
    */
   const loadCustomDeck = useCallback((playerId: number, deckFile: CustomDeckFile) => {
+    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+
+    let newDeck: Card[] = []
+    const cardInstanceCounter = new Map<string, number>()
+    for (const { cardId, quantity } of deckFile.cards) {
+      const cardDef = getCardDefinition(cardId)
+      if (!cardDef) {
+        continue
+      }
+      const isCommandCard = commandCardIds.has(cardId)
+      const deckType = isCommandCard ? DeckType.Command : DeckType.Custom
+      const prefix = isCommandCard ? 'CMD' : 'CUS'
+      for (let i = 0; i < quantity; i++) {
+        const instanceNum = (cardInstanceCounter.get(cardId) || 0) + 1
+        cardInstanceCounter.set(cardId, instanceNum)
+        newDeck.push({
+          ...cardDef,
+          id: `${prefix}_${cardId.toUpperCase()}_${instanceNum}`,
+          baseId: cardId, // Ensure baseId is set for localization and display
+          deck: deckType,
+          ownerId: playerId,
+          ownerName: 'Player ' + playerId,
+        })
+      }
+    }
+
+    // Shuffle the deck
+    newDeck = shuffleDeck(newDeck)
+
     updateState(currentState => {
       if (currentState.isGameStarted) {
         return currentState
@@ -80,39 +172,60 @@ export function useDeckManagement(props: UseDeckManagementProps) {
       if (!player) {
         return currentState
       }
-      const newDeck: Card[] = []
-      const cardInstanceCounter = new Map<string, number>()
-      for (const { cardId, quantity } of deckFile.cards) {
-        const cardDef = getCardDefinition(cardId)
-        if (!cardDef) {
-          continue
-        }
-        const isCommandCard = commandCardIds.has(cardId)
-        const deckType = isCommandCard ? DeckType.Command : DeckType.Custom
-        const prefix = isCommandCard ? 'CMD' : 'CUS'
-        for (let i = 0; i < quantity; i++) {
-          const instanceNum = (cardInstanceCounter.get(cardId) || 0) + 1
-          cardInstanceCounter.set(cardId, instanceNum)
-          newDeck.push({
-            ...cardDef,
-            id: `${prefix}_${cardId.toUpperCase()}_${instanceNum}`,
-            baseId: cardId, // Ensure baseId is set for localization and display
-            deck: deckType,
-            ownerId: playerId,
-            ownerName: player.name,
-          })
-        }
-      }
       return {
         ...currentState,
         players: currentState.players.map(p =>
           p.id === playerId
-            ? { ...p, deck: shuffleDeck(newDeck), selectedDeck: DeckType.Custom, hand: [], discard: [], announcedCard: null, boardHistory: [] }
+            ? { ...p, deck: newDeck, selectedDeck: DeckType.Custom, hand: [], discard: [], announcedCard: null, boardHistory: [] }
             : p,
         ),
       }
     })
-  }, [updateState, getCardDefinition, commandCardIds])
+
+    // In WebRTC mode, send compact deck data for synchronization
+    if (!isWebRTCMode) {
+      return
+    }
+
+    // Create compact card data
+    const compactDeckData = newDeck.map(card => ({
+      id: card.id,
+      baseId: card.baseId,
+      power: card.power,
+      powerModifier: card.powerModifier || 0,
+      isFaceDown: card.isFaceDown || false,
+      statuses: card.statuses || []
+    }))
+
+    if (webrtcIsHostRef.current) {
+      // Host: broadcast directly to all guests
+      if (webrtcManagerRef?.current) {
+        webrtcManagerRef.current.broadcastToGuests({
+          type: 'CHANGE_PLAYER_DECK',
+          senderId: webrtcManagerRef.current.getPeerId(),
+          timestamp: Date.now(),
+          data: {
+            playerId,
+            deckType: DeckType.Custom,
+            deck: compactDeckData,
+            deckSize: compactDeckData.length
+          }
+        })
+        logger.info(`[loadCustomDeck] Host broadcasting custom deck data: player ${playerId}, ${compactDeckData.length} cards`)
+      }
+    } else {
+      // Guest: send to host
+      if (sendWebrtcAction) {
+        sendWebrtcAction('CHANGE_PLAYER_DECK', {
+          playerId,
+          deckType: DeckType.Custom,
+          deck: compactDeckData,
+          deckSize: compactDeckData.length
+        })
+        logger.info(`[loadCustomDeck] Guest sending custom deck data to host: player ${playerId}, ${compactDeckData.length} cards`)
+      }
+    }
+  }, [updateState, getCardDefinition, commandCardIds, sendWebrtcAction, webrtcIsHostRef, webrtcManagerRef, localPlayerIdRef])
 
   /**
    * Resurrect a discarded card onto the board

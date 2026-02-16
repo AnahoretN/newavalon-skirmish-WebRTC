@@ -295,7 +295,7 @@ export class HostManager {
 
     switch (message.type) {
       case 'JOIN_REQUEST':
-        this.handleJoinRequest(fromPeerId)
+        this.handleJoinRequest(fromPeerId, message.data)
         break
 
       case 'RECONNECT_REQUEST':
@@ -562,12 +562,16 @@ export class HostManager {
   /**
    * Handle guest join request
    */
-  private handleJoinRequest(guestPeerId: string): void {
+  private handleJoinRequest(guestPeerId: string, joinData?: any): void {
     const currentState = this.stateManager.getState()
     if (!currentState) {
       logger.error('[HostManager] No game state, cannot accept guest')
       return
     }
+
+    // Get guest's preferred deck from join request
+    const preferredDeck = joinData?.preferredDeck || DeckType.Random
+    logger.info(`[HostManager] JOIN_REQUEST from ${guestPeerId}, preferredDeck: ${preferredDeck}`)
 
     // Find next available player ID
     const existingPlayerIds = currentState.players.map(p => p.id)
@@ -576,7 +580,7 @@ export class HostManager {
       newPlayerId++
     }
 
-    // Create new player
+    // Create new player with their preferred deck
     const newPlayer = {
       id: newPlayerId,
       name: `Player ${newPlayerId}`,
@@ -588,7 +592,7 @@ export class HostManager {
       score: 0,
       isDummy: false,
       isReady: false,
-      selectedDeck: DeckType.Neutral,
+      selectedDeck: preferredDeck,
       boardHistory: [],
       autoDrawEnabled: true,
     }

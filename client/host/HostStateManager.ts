@@ -120,8 +120,9 @@ export class HostStateManager {
     const newState: GameState = {
       ...guestState,
       players: mergedPlayers,
-      // Preserve host's authoritative values
-      board: oldState.board,
+      // Use guest's board - it contains the latest changes from the active player
+      // The guest state should have the correct board state after their action
+      board: guestState.board,
       currentPhase: guestState.currentPhase ?? oldState.currentPhase,
       activePlayerId: guestState.activePlayerId ?? oldState.activePlayerId,
     }
@@ -282,10 +283,15 @@ export class HostStateManager {
       currentPhase: 0  // Start at Preparation phase
     }
 
-    // Draw initial hands (6 cards) for ALL players
+    // Draw initial hands (6 cards) for HOST and DUMMY players only
+    // Guests will draw their own cards from their local decks when they receive GAME_START
     newState.players = newState.players.map(player => {
       logger.info(`[HostStateManager] Player ${player.id}: hand=${player.hand.length}, deck=${player.deck.length}, isDummy=${player.isDummy}`)
-      if (player.hand.length === 0 && player.deck.length > 0) {
+      // Only draw for host (local player) and dummies
+      // Guests have their own local deck data
+      const isHostOrDummy = player.id === this.localPlayerId || player.isDummy
+
+      if (isHostOrDummy && player.hand.length === 0 && player.deck.length > 0) {
         const cardsToDraw = 6
         const newHand = [...player.hand]
         const newDeck = [...player.deck]

@@ -22,9 +22,13 @@ import type { GameState, StateDelta } from '../types'
 import { logger } from './logger'
 import {
   serializeDelta,
+  serializeDeltaBase64,
   serializeGameState,
   logSerializationStats
 } from './webrtcSerialization'
+import { encodeAbilityEffect, type AbilityEffectType } from './abilityMessages'
+import { encodeSessionEvent } from './sessionMessages'
+import { buildCardRegistry, serializeCardRegistry } from './gameCodec'
 
 // Enable/disable optimized serialization (can be toggled for debugging)
 const USE_OPTIMIZED_SERIALIZATION = true
@@ -36,6 +40,7 @@ export type WebrtcMessageType =
   | 'JOIN_ACCEPT_MINIMAL'  // Host accepts guest with minimal info (to avoid size limit)
   | 'JOIN_ACCEPT_BINARY'   // Host accepts guest with binary optimized state
   | 'STATE_UPDATE'         // Host broadcasts full state update
+  | 'STATE_UPDATE_COMPACT' // Compact state with card IDs only (reduces size)
   | 'STATE_DELTA'          // Compact state change broadcast (JSON)
   | 'STATE_DELTA_BINARY'   // Compact state change broadcast (MessagePack - OPTIMIZED)
   | 'ACTION'               // Guest sends action to host
@@ -58,6 +63,7 @@ export type WebrtcMessageType =
   | 'CHANGE_PLAYER_COLOR'  // Player settings update
   | 'UPDATE_PLAYER_SCORE'  // Player settings update
   | 'CHANGE_PLAYER_DECK'   // Player settings update
+  | 'CUSTOM_DECK_DATA'     // Guest sends custom deck cards to host (before game start)
   | 'SYNC_DECK_SELECTIONS'  // Sync deck selections between all players
   | 'TOGGLE_ACTIVE_PLAYER' // Toggle active player
   | 'TOGGLE_AUTO_DRAW'     // Toggle auto draw
@@ -98,6 +104,17 @@ export type WebrtcMessageType =
   | 'HIGHLIGHTS_SYNC'      // Sync highlights
   | 'CLEAR_ALL_EFFECTS'    // Clear all effects
   | 'VALID_TARGETS_SYNC'   // Sync valid targets
+  // New codec system messages (binary format)
+  | 'CARD_REGISTRY'        // Card definitions registry (sent once per connection)
+  | 'CARD_STATE'           // Game state update (cards, board, players)
+  | 'ABILITY_EFFECT'       // Visual/ability effects
+  | 'SESSION_EVENT'        // Session events (connect, disconnect, phase change, etc.)
+  // Deck view messages
+  | 'REQUEST_DECK_VIEW'    // Request to view another player's deck
+  | 'DECK_VIEW_DATA'       // Response with full deck data
+  | 'DECK_DATA_UPDATE'     // Guest sends their full deck data to host (for deck view)
+  | 'REQUEST_DECK_DATA'    // Host requests deck data from guests after F5 restore
+  | 'GAME_LOGS'            // Game logs for debugging
 
 export interface WebrtcMessage {
   type: WebrtcMessageType
@@ -139,6 +156,8 @@ export class WebrtcManager {
   private hostConnection: DataConnection | null = null
   private eventHandlers: Set<WebrtcEventHandler> = new Set()
   public isReconnecting: boolean = false
+  // Track which player ID each guest connection belongs to (for personalized state)
+  private guestPlayerIds: Map<string, number> = new Map()
   // Reserved for future reconnection logic
   // private reconnectAttempts: number = 0
   // private maxReconnectAttempts: number = 5
@@ -223,10 +242,27 @@ export class WebrtcManager {
           this.hostConnection = conn
           this.emitEvent({ type: 'connected_to_host', data: { hostPeerId } })
 
-          // Send join request
+          // Send join request with deck preference
+          // Try to get deck preference from localStorage (stored when player selects deck)
+          let preferredDeck: string | null = null
+          try {
+            const deckPreference = localStorage.getItem('webrtc_preferred_deck')
+            if (deckPreference) {
+              preferredDeck = deckPreference
+              logger.info(`[initializeAsGuest] Found deck preference in localStorage: ${preferredDeck}`)
+              // Clear after use so it doesn't persist incorrectly
+              localStorage.removeItem('webrtc_preferred_deck')
+            }
+          } catch (e) {
+            logger.warn('[initializeAsGuest] Failed to read deck preference:', e)
+          }
+
           this.sendMessageToHost({
             type: 'JOIN_REQUEST',
             senderId: peerId,
+            data: {
+              preferredDeck: preferredDeck || undefined
+            },
             timestamp: Date.now()
           })
 
@@ -392,10 +428,10 @@ export class WebrtcManager {
   /**
    * Broadcast message to all connected guests (host only)
    */
-  broadcastToGuests(message: WebrtcMessage, excludePeerId?: string): void {
+  broadcastToGuests(message: WebrtcMessage, excludePeerId?: string): number {
     if (!this.isHost) {
       logger.warn('Only host can broadcast to guests')
-      return
+      return 0
     }
 
     let successCount = 0
@@ -411,6 +447,7 @@ export class WebrtcManager {
     })
 
     logger.debug(`Broadcast to ${successCount}/${this.connections.size} guests`)
+    return successCount
   }
 
   /**
@@ -460,7 +497,7 @@ export class WebrtcManager {
     try {
       if (USE_OPTIMIZED_SERIALIZATION) {
         // Use optimized binary serialization
-        const binaryData = serializeGameState(gameState)
+        const binaryData = serializeGameState(gameState, null)
         const message: WebrtcMessage = {
           type: 'JOIN_ACCEPT_BINARY',
           senderId: this.peer?.id,
@@ -500,6 +537,9 @@ export class WebrtcManager {
       logger.error(`[acceptGuestMinimal] Connection for guest ${peerId} is not open`)
       return
     }
+    // Track player ID for this guest (for personalized state broadcasting)
+    this.guestPlayerIds.set(peerId, playerId)
+
     const message: WebrtcMessage = {
       type: 'JOIN_ACCEPT_MINIMAL',
       senderId: this.peer?.id,
@@ -517,21 +557,284 @@ export class WebrtcManager {
 
   /**
    * Broadcast game state to all guests (host only)
+   * OPTIMIZED: Sends personalized data to each player and removes heavy fields
    */
   broadcastGameState(gameState: GameState, excludePeerId?: string): void {
-    const message: WebrtcMessage = {
-      type: 'STATE_UPDATE',
-      senderId: this.peer?.id,
-      data: { gameState },
-      timestamp: Date.now()
+    let successCount = 0
+
+    this.connections.forEach((conn, peerId) => {
+      if (!conn.open || peerId === excludePeerId) {
+        return
+      }
+
+      // Get the player ID for this guest
+      const recipientPlayerId = this.guestPlayerIds.get(peerId) ?? null
+
+      // Create personalized optimized state for this player
+      const personalizedState = WebrtcManager.createPersonalizedGameState(gameState, recipientPlayerId)
+
+      const message: WebrtcMessage = {
+        type: 'STATE_UPDATE_COMPACT', // Use compact message type with card IDs
+        senderId: this.peer?.id,
+        data: {
+          gameState: personalizedState,
+          recipientPlayerId, // IMPORTANT: Tell guest which player this state is for
+        },
+        timestamp: Date.now()
+      }
+
+      try {
+        conn.send(message)
+        successCount++
+      } catch (err) {
+        logger.error(`[broadcastGameState] Failed to send to guest ${peerId} (player ${recipientPlayerId}):`, err)
+      }
+    })
+
+    logger.debug(`[broadcastGameState] Sent to ${successCount}/${this.connections.size} guests`)
+  }
+
+  /**
+   * Create personalized game state for a specific player
+   * - Player sees their own full hand (as card IDs only for size)
+   * - Other players' hands are sent as card backs only
+   * - Board cards are visible to all (with proper face up/down status)
+   * - Decks/discard are sent as card IDs for own player (size optimization)
+   */
+  private static createPersonalizedGameState(gameState: GameState, recipientPlayerId: number | null): GameState {
+    return {
+      ...gameState,
+      players: gameState.players.map(p => {
+        const isOwnHand = recipientPlayerId !== null && p.id === recipientPlayerId
+
+        if (isOwnHand) {
+          // Send COMPACT CARD DATA (id + baseId) for own player's hand, deck, discard
+          // This allows the guest to reconstruct full cards from their local contentDatabase
+          const deckSize = p.deck.length ?? 0
+          const discardSize = p.discard.length ?? 0
+          const handSize = p.hand.length ?? 0
+
+          // Debug: log the first few card IDs and baseIds
+          const firstHandCard = p.hand[0] as any
+          const firstDeckCard = p.deck[0] as any
+          logger.info(`[createPersonalizedGameState] Player ${p.id} (own): sending ${handSize} hand cards, ${deckSize} deck cards, ${discardSize} discard cards`)
+          if (firstHandCard) {
+            logger.info(`[createPersonalizedGameState] First hand card: id=${firstHandCard.id}, baseId=${firstHandCard.baseId}, name=${firstHandCard.name}`)
+          }
+          if (firstDeckCard) {
+            logger.info(`[createPersonalizedGameState] First deck card: id=${firstDeckCard.id}, baseId=${firstDeckCard.baseId}, name=${firstDeckCard.name}`)
+          }
+
+          return {
+            ...p,
+            // Send compact card data with baseId - client can reconstruct using getCardDefinition(baseId)
+            handCards: p.hand.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            })),
+            deckCards: p.deck.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            })),
+            discardCards: p.discard.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            })),
+            // Don't send full arrays to avoid size limit
+            hand: [],
+            deck: [],
+            discard: [],
+            // Include minimal announced card info
+            announcedCard: p.announcedCard ? WebrtcManager.optimizeCard(p.announcedCard) : null,
+            // Always use actual array lengths for own player
+            deckSize: deckSize,
+            discardSize: discardSize,
+            handSize: handSize
+          }
+        } else {
+          // Send card data for other players
+          // - Revealed cards (isFaceDown=false) are sent as compact data for viewing
+          // - Face-down cards are sent as card backs
+          const deckSize = p.deckSize ?? p.deck.length ?? 0
+          logger.debug(`[createPersonalizedGameState] Player ${p.id} (other): deckSize=${deckSize}, deck.length=${p.deck.length}`)
+
+          // Count revealed vs face-down cards for logging
+          const revealedCount = p.hand.filter((c: any) => !c.isFaceDown).length
+          if (revealedCount > 0) {
+            logger.info(`[createPersonalizedGameState] Player ${p.id} (other): sending ${revealedCount} revealed cards, ${p.hand.length - revealedCount} face-down`)
+          }
+
+          return {
+            ...p,
+            hand: p.hand.map((card: any) => {
+              // If card is revealed, send compact data (id + baseId + stats) so others can see it
+              if (!card.isFaceDown) {
+                return {
+                  id: card.id,
+                  baseId: card.baseId,
+                  power: card.power,
+                  powerModifier: card.powerModifier || 0,
+                  isFaceDown: card.isFaceDown,
+                  statuses: card.statuses || [],
+                  // Include minimal owner info for display
+                  ownerId: card.ownerId,
+                  ownerName: card.ownerName,
+                  deck: card.deck
+                }
+              }
+              // Face-down card - send card back
+              return WebrtcManager.createCardBack(card)
+            }),
+            deck: [],
+            discard: [],
+            announcedCard: p.announcedCard ? WebrtcManager.createCardBack(p.announcedCard) : null,
+            // Keep size information for UI display (use stored size if available, fallback to array length)
+            deckSize: deckSize,
+            handSize: p.handSize ?? p.hand.length ?? 0,
+            discardSize: p.discardSize ?? p.discard.length ?? 0
+          }
+        }
+      }),
+      // Optimize board cards - remove heavy fields but keep all gameplay data
+      board: gameState.board.map(row =>
+        row.map(cell => ({
+          ...cell,
+          card: cell.card ? WebrtcManager.optimizeCard(cell.card) : null
+        }))
+      ) as any
     }
-    this.broadcastToGuests(message, excludePeerId)
+  }
+
+  /**
+   * Create compact state for guest to send to host
+   * - Send minimal card data (id + baseId + essential stats) for local player
+   * - Host will reconstruct full cards using baseId from contentDatabase
+   * - Send minimal data for other players (host already has their data)
+   */
+  private static createCompactStateForHost(gameState: GameState, localPlayerId: number): GameState {
+    return {
+      ...gameState,
+      players: gameState.players.map(p => {
+        if (p.id === localPlayerId) {
+          // Local player - send compact card data (id + baseId for reconstruction)
+          logger.debug(`[createCompactStateForHost] Player ${p.id} (local): sending ${p.hand.length} hand cards, ${p.deck.length} deck cards`)
+          return {
+            ...p,
+            // Send compact card data - host can reconstruct from baseId
+            handCards: p.hand.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            })),
+            deckCards: p.deck.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            })),
+            discardCards: p.discard.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            })),
+            // Don't send full arrays
+            hand: [],
+            deck: [],
+            discard: [],
+            // Include sizes for quick access
+            handSize: p.hand.length,
+            deckSize: p.deck.length,
+            discardSize: p.discard.length
+          }
+        } else {
+          // Other players - send only minimal data
+          return {
+            ...p,
+            hand: [],
+            deck: [],
+            discard: [],
+            announcedCard: null,
+            deckSize: p.deckSize ?? p.deck.length ?? 0,
+            handSize: p.handSize ?? p.hand.length ?? 0,
+            discardSize: p.discardSize ?? p.discard.length ?? 0
+          }
+        }
+      }),
+      // Include minimal board state
+      board: gameState.board.map(row =>
+        row.map(cell => ({
+          ...cell,
+          card: cell.card ? WebrtcManager.optimizeCard(cell.card) : null
+        }))
+      ) as any
+    }
+  }
+
+  /**
+   * Optimize a single card by removing heavy fields
+   * Keeps all gameplay-relevant data
+   */
+  private static optimizeCard(card: any): any {
+    return {
+      id: card.id,
+      baseId: card.baseId,
+      name: card.name,
+      power: card.power,
+      powerModifier: card.powerModifier,
+      ability: card.ability,
+      ownerId: card.ownerId,
+      color: card.color,
+      deck: card.deck,
+      isFaceDown: card.isFaceDown,
+      types: card.types,
+      faction: card.faction,
+      statuses: card.statuses || [],
+      hasRevealToken: card.hasRevealToken || false,
+      // Include imageUrl for board cards so they display with images
+      imageUrl: card.imageUrl
+    }
+  }
+
+  /**
+   * Create a card-back representation for other players' hands
+   * Only includes visibility-related info, not card content
+   */
+  private static createCardBack(card: any): any {
+    return {
+      id: card.id,
+      baseId: card.baseId,
+      name: card.name, // Name needed for display
+      isFaceDown: card.isFaceDown,
+      hasRevealToken: card.hasRevealToken || false,
+      statuses: card.statuses || []
+    }
   }
 
   /**
    * Broadcast state delta to all guests (host only)
    * Sends only the changes that happened, not full state
-   * OPTIMIZED: Uses MessagePack binary serialization
+   * OPTIMIZED: Uses MessagePack binary serialization encoded as base64
+   * Base64 encoding is required because PeerJS with JSON serialization converts Uint8Array to plain arrays
    */
   broadcastStateDelta(delta: StateDelta, excludePeerId?: string): void {
     if (USE_OPTIMIZED_SERIALIZATION) {
@@ -540,16 +843,16 @@ export class WebrtcManager {
         logSerializationStats(delta)
       }
 
-      // Serialize to optimized binary format
-      const binaryData = serializeDelta(delta)
+      // Serialize to base64 string (bypasses PeerJS JSON serialization issue)
+      const base64Data = serializeDeltaBase64(delta)
 
       const message: WebrtcMessage = {
         type: 'STATE_DELTA_BINARY',
         senderId: this.peer?.id,
-        data: binaryData,
+        data: base64Data,
         timestamp: Date.now()
       }
-      logger.info(`[broadcastStateDelta] Sending BINARY STATE_DELTA: ${binaryData.byteLength} bytes, playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, boardCells=${delta.boardCells?.length || 0}`)
+      logger.info(`[broadcastStateDelta] Sending BINARY STATE_DELTA (base64): ${base64Data.length} chars, playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, boardCells=${delta.boardCells?.length || 0}`)
       this.broadcastToGuests(message, excludePeerId)
       logger.info(`[broadcastStateDelta] Sent STATE_DELTA from player ${delta.sourcePlayerId} to ${this.connections.size} guests`)
     } else {
@@ -563,6 +866,142 @@ export class WebrtcManager {
       logger.info(`[broadcastStateDelta] Preparing to send STATE_DELTA: playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, boardCells=${delta.boardCells?.length || 0}, phaseDelta=${!!delta.phaseDelta}`)
       this.broadcastToGuests(message, excludePeerId)
       logger.info(`[broadcastStateDelta] Sent STATE_DELTA from player ${delta.sourcePlayerId} to ${this.connections.size} guests`)
+    }
+  }
+
+  // ==================== New Codec System ====================
+
+  /**
+   * Send card registry to a specific guest (once per connection)
+   */
+  sendCardRegistry(peerId: string): boolean {
+    const conn = this.connections.get(peerId)
+    if (!conn || !conn.open) {
+      logger.error(`[sendCardRegistry] No valid connection for ${peerId}`)
+      return false
+    }
+
+    try {
+      const registry = buildCardRegistry()
+      const registryData = serializeCardRegistry(registry)
+
+      // Convert to base64 for PeerJS JSON serialization
+      const base64Data = btoa(String.fromCharCode(...registryData))
+
+      const message: WebrtcMessage = {
+        type: 'CARD_REGISTRY',
+        senderId: this.peer?.id,
+        data: base64Data,
+        timestamp: Date.now()
+      }
+
+      conn.send(message)
+      logger.info(`[sendCardRegistry] Sent card registry to ${peerId}: ${registryData.length} bytes`)
+      return true
+    } catch (err) {
+      logger.error(`[sendCardRegistry] Failed to send registry to ${peerId}:`, err)
+      return false
+    }
+  }
+
+  /**
+   * Broadcast card state to all guests (new codec)
+   */
+  broadcastCardState(gameState: GameState, localPlayerId: number | null, excludePeerId?: string): number {
+    try {
+      const stateData = serializeGameState(gameState, localPlayerId)
+
+      // Convert to base64 for PeerJS JSON serialization
+      const base64Data = btoa(String.fromCharCode(...stateData))
+
+      const message: WebrtcMessage = {
+        type: 'CARD_STATE',
+        senderId: this.peer?.id,
+        data: base64Data,
+        timestamp: Date.now()
+      }
+
+      const successCount = this.broadcastToGuests(message, excludePeerId)
+      logger.info(`[broadcastCardState] Sent ${stateData.length} bytes to ${successCount} guests`)
+      return successCount
+    } catch (err) {
+      logger.error('[broadcastCardState] Failed to encode/broadcast state:', err)
+      return 0
+    }
+  }
+
+  /**
+   * Broadcast ability effect to all guests
+   */
+  broadcastAbilityEffect(
+    effectType: AbilityEffectType,
+    data: {
+      sourcePos?: { row: number; col: number }
+      targetPositions?: Array<{ row: number; col: number }>
+      text?: string
+      value?: number
+      playerId?: number
+    },
+    excludePeerId?: string
+  ): number {
+    try {
+      const effectData = encodeAbilityEffect(effectType, data)
+
+      // Convert to base64 for PeerJS JSON serialization
+      const base64Data = btoa(String.fromCharCode(...effectData))
+
+      const message: WebrtcMessage = {
+        type: 'ABILITY_EFFECT',
+        senderId: this.peer?.id,
+        data: base64Data,
+        timestamp: Date.now()
+      }
+
+      const successCount = this.broadcastToGuests(message, excludePeerId)
+      logger.debug(`[broadcastAbilityEffect] Sent effect ${effectType} to ${successCount} guests`)
+      return successCount
+    } catch (err) {
+      logger.error('[broadcastAbilityEffect] Failed to encode/broadcast effect:', err)
+      return 0
+    }
+  }
+
+  /**
+   * Broadcast session event to all guests
+   */
+  broadcastSessionEvent(
+    eventType: number,
+    data: {
+      playerId?: number
+      playerName?: string
+      startingPlayerId?: number
+      roundNumber?: number
+      winners?: number[]
+      newPhase?: number
+      newActivePlayerId?: number
+      gameWinner?: number | null
+    },
+    excludePeerId?: string
+  ): number {
+    try {
+      const eventData = encodeSessionEvent(eventType, data)
+
+      // Convert to base64 for PeerJS JSON serialization
+      const base64Data = btoa(String.fromCharCode(...eventData))
+
+      const message: WebrtcMessage = {
+        type: 'SESSION_EVENT',
+        senderId: this.peer?.id,
+        data: base64Data,
+        timestamp: Date.now()
+      }
+
+      const successCount = this.broadcastToGuests(message, excludePeerId)
+      logger.debug(`[broadcastSessionEvent] Sent event ${eventType} to ${successCount} guests`)
+      return successCount
+    } catch (err) {
+      logger.error('[broadcastSessionEvent] Failed to encode/broadcast event:', err)
+      return 0
     }
   }
 
@@ -603,6 +1042,93 @@ export class WebrtcManager {
       }
       return this.sendMessageToHost(message)
     }
+  }
+
+  /**
+   * Send compact state to host (guest only)
+   * Guest uses this to send their state changes to host for syncing
+   * OPTIMIZED: Sends only card IDs (not full cards) to stay under size limit
+   * Host will reconstruct full cards from stored guest deck data
+   */
+  sendStateToHost(gameState: GameState, localPlayerId: number | null): boolean {
+    if (localPlayerId === null) {
+      logger.warn('[sendStateToHost] No local player ID, cannot send state to host')
+      return false
+    }
+
+    // Create compact state - send ONLY card IDs for local player
+    const compactState = WebrtcManager.createCompactStateForHost(gameState, localPlayerId)
+
+    // Log the sizes being sent
+    const localPlayer = gameState.players.find((p: any) => p.id === localPlayerId)
+    if (localPlayer) {
+      logger.info(`[sendStateToHost] Player ${localPlayerId} sending compact state: hand=${localPlayer.hand?.length ?? 0}, deck=${localPlayer.deck?.length ?? 0}`)
+    }
+
+    const message: WebrtcMessage = {
+      type: 'STATE_UPDATE_COMPACT', // Use compact type with card IDs
+      senderId: this.peer?.id,
+      playerId: localPlayerId,
+      data: { gameState: compactState },
+      timestamp: Date.now()
+    }
+    return this.sendMessageToHost(message)
+  }
+
+  /**
+   * Send full deck to host (for deck view feature)
+   * Called when guest opens deck view modal for another player
+   */
+  sendFullDeckToHost(localPlayerId: number, deck: any[], deckSize: number): boolean {
+    const message: WebrtcMessage = {
+      type: 'DECK_DATA_UPDATE',
+      senderId: this.peer?.id,
+      playerId: localPlayerId,
+      data: { playerId: localPlayerId, deck: deck.map(c => WebrtcManager.optimizeCard(c)), deckSize },
+      timestamp: Date.now()
+    }
+    return this.sendMessageToHost(message)
+  }
+
+  /**
+   * Send custom deck cards to host (before game start)
+   * Called when guest is ready - sends their custom deck cards so host can sync properly
+   * @param playerId - Local player ID
+   * @param deckCards - Full deck cards (custom deck)
+   * @param isCustomDeck - True if this is a custom deck (not from contentDatabase)
+   */
+  sendCustomDeckData(playerId: number, deckCards: any[], isCustomDeck: boolean): boolean {
+    if (!isCustomDeck) {
+      // Not a custom deck, no need to send cards (host has them in contentDatabase)
+      logger.info(`[sendCustomDeckData] Player ${playerId} has standard deck, skipping card sync`)
+      return true
+    }
+
+    logger.info(`[sendCustomDeckData] Player ${playerId} sending ${deckCards.length} custom deck cards to host`)
+
+    // Send only essential card data (compact format)
+    const compactCards = deckCards.map(card => ({
+      id: card.id,
+      baseId: card.baseId,
+      name: card.name,
+      power: card.power,
+      powerModifier: card.powerModifier,
+      ability: card.ability,
+      types: card.types,
+      faction: card.faction,
+      imageUrl: card.imageUrl,
+      color: card.color,
+      deck: card.deck
+    }))
+
+    const message: WebrtcMessage = {
+      type: 'CUSTOM_DECK_DATA',
+      senderId: this.peer?.id,
+      playerId: playerId,
+      data: { playerId, deckCards: compactCards },
+      timestamp: Date.now()
+    }
+    return this.sendMessageToHost(message)
   }
 
   /**
