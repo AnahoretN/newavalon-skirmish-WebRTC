@@ -1524,7 +1524,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             // Reconstruct board cards from baseId (host sends optimized board data)
             const reconstructedBoard = remoteState.board ? remoteState.board.map((row: any[]) =>
               row.map((cell: any) => {
-                if (!cell || !cell.card) return cell
+                if (!cell || !cell.card) { return cell }
 
                 // Reconstruct card from baseId
                 const cardDef = getCardDefinition(cell.card.baseId || cell.card.id)

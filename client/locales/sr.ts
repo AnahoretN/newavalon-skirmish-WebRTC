@@ -34,6 +34,7 @@ export const sr: TranslationResource = {
   },
   ui: {
     startGame: 'Započni igru',
+    imReady: 'Spreman',
     joinGame: 'Pridruži se',
     deckBuilding: 'Graditelj špila',
     rules: 'Pravila i uputstvo',
@@ -59,7 +60,6 @@ export const sr: TranslationResource = {
     spectatorMode: 'Režim posmatrača',
     spectatorMsg: 'Posmatrate igru.',
     readyCheck: 'Spremni za početak?',
-    imReady: 'Spreman sam',
     waiting: 'Čekanje...',
     cancelStart: 'Otkaži početak',
     assignTeams: 'Dodeli timove',

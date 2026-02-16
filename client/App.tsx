@@ -6,7 +6,6 @@ import { DeckViewModal } from './components/DeckViewModal'
 import { TokensModal } from './components/TokensModal'
 import { CountersModal } from './components/CountersModal'
 import { TeamAssignmentModal } from './components/TeamAssignmentModal'
-import { ReadyCheckModal } from './components/ReadyCheckModal'
 import { CardDetailModal } from './components/CardDetailModal'
 import { RevealRequestModal } from './components/RevealRequestModal'
 import { ContextMenu } from './components/ContextMenu'
@@ -37,7 +36,7 @@ import type {
   CounterSelectionData,
   AbilityAction,
 } from './types'
-import { GameMode, DeckType } from './types'
+import { DeckType } from './types'
 import { STATUS_ICONS, STATUS_DESCRIPTIONS } from './constants'
 import { countersDatabase, fetchContentDatabase } from './content'
 import { validateTarget, calculateValidTargets, checkActionHasTargets } from '@shared/utils/targeting'
@@ -64,8 +63,6 @@ const AppInner = function AppInner() {
     createGame,
     joinGameViaModal,
     joinAsInvite,
-    startReadyCheck,
-    cancelReadyCheck,
     playerReady,
     assignTeams,
     setGameMode,
@@ -1356,24 +1353,10 @@ const AppInner = function AppInner() {
     })
   }, [])
 
-  const handleStartGameSequence = useCallback(() => {
-    if (!isHost) {
-      return
-    }
-    // Make game private when starting
-    setGamePrivacy(true)
-    if (gameState.gameMode === GameMode.FreeForAll) {
-      startReadyCheck()
-    } else {
-      setModalsState(prev => ({ ...prev, isTeamAssignOpen: true }))
-    }
-  }, [isHost, gameState.gameMode, startReadyCheck, setGamePrivacy])
-
   const handleTeamAssignment = useCallback((teamAssignments: Record<number, number[]>) => {
     assignTeams(teamAssignments)
     setModalsState(prev => ({ ...prev, isTeamAssignOpen: false }))
-    startReadyCheck()
-  }, [assignTeams, startReadyCheck])
+  }, [assignTeams])
 
   const handleJoinGame = useCallback((gameId: string) => {
     joinGameViaModal(gameId)
@@ -1995,8 +1978,10 @@ const AppInner = function AppInner() {
       <Header
         gameId={gameState.gameId}
         isGameStarted={gameState.isGameStarted}
-        onStartGame={handleStartGameSequence}
         onResetGame={resetGame}
+        onPlayerReady={playerReady}
+        players={gameState.players}
+        localPlayerId={localPlayerId}
         activeGridSize={gameState.activeGridSize}
         onGridSizeChange={setActiveGridSize}
         dummyPlayerCount={gameState.dummyPlayerCount}
@@ -2058,15 +2043,6 @@ const AppInner = function AppInner() {
           gameMode={gameState.gameMode}
           onCancel={() => setModalsState(prev => ({ ...prev, isTeamAssignOpen: false }))}
           onConfirm={handleTeamAssignment}
-        />
-      )}
-
-      {gameState.isReadyCheckActive && localPlayer && (
-        <ReadyCheckModal
-          players={gameState.players}
-          localPlayer={localPlayer}
-          onReady={playerReady}
-          onCancel={cancelReadyCheck}
         />
       )}
 

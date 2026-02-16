@@ -304,9 +304,9 @@ export function bitmaskToStatuses(mask: number, addedByPlayerId: number, registr
  */
 export function getCardFlags(card: Card): number {
   let flags = 0
-  if (card.isFaceDown) flags |= 1 << 0
-  if (card.enteredThisTurn) flags |= 1 << 1
-  if (card.revealedTo === 'all') flags |= 1 << 2
+  if (card.isFaceDown) { flags |= 1 << 0 }
+  if (card.enteredThisTurn) { flags |= 1 << 1 }
+  if (card.revealedTo === 'all') { flags |= 1 << 2 }
   return flags
 }
 
@@ -662,8 +662,8 @@ export function decodeCardState(
 
   // Read board
   const boardSize = data[offset++]
-  data[offset++] // Skip duplicate rows
-  data[offset++] // Skip duplicate cols
+  offset++ // Skip duplicate rows
+  offset++ // Skip duplicate cols
 
   const boardCardCount = (data[offset++] << 8) | data[offset++]
 
@@ -726,7 +726,7 @@ function decodeCardRef(data: Uint8Array, offset: number, registry: CardRegistry)
 
   // power
   let power = data[offset++]
-  if (power > 127) power = power - 256 // Convert to signed
+  if (power > 127) { power = power - 256 } // Convert to signed
 
   // flags
   const flags = data[offset++]

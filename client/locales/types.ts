@@ -47,6 +47,7 @@ export interface TranslationResource {
   };
   ui: {
     startGame: string;
+    imReady: string;
     joinGame: string;
     deckBuilding: string;
     rules: string;
@@ -72,7 +73,6 @@ export interface TranslationResource {
     spectatorMode: string;
     spectatorMsg: string;
     readyCheck: string;
-    imReady: string;
     waiting: string;
     cancelStart: string;
     assignTeams: string;

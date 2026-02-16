@@ -7,6 +7,7 @@ import { cardDatabase, tokenDatabase, countersDatabase } from '@/content'
 
 const enUI = {
   startGame: 'Start Game',
+  imReady: "I'm ready",
   joinGame: 'Join Game',
   deckBuilding: 'Deck Building',
   rules: 'Rules & Tutorial',
@@ -32,7 +33,6 @@ const enUI = {
   spectatorMode: 'Spectator Mode',
   spectatorMsg: 'You are watching the game.',
   readyCheck: 'Ready to Start?',
-  imReady: 'I\'m Ready',
   waiting: 'Waiting...',
   cancelStart: 'Cancel Start',
   assignTeams: 'Assign Teams',

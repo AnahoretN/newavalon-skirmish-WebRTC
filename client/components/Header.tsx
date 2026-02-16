@@ -3,6 +3,7 @@ import React, { memo, useState, useCallback, useMemo, useRef, useEffect } from '
 import { GameMode } from '@/types'
 import type { GridSize } from '@/types'
 import type { ConnectionStatus } from '@/hooks/useGameState'
+import type { Player } from '@/types'
 import { TURN_PHASES, MAX_PLAYERS, PLAYER_COLORS } from '@/constants'
 import { useLanguage } from '@/contexts/LanguageContext'
 import type { TranslationResource } from '@/locales/types'
@@ -11,8 +12,10 @@ import { generateInviteLink } from '@/utils/inviteLinks'
 interface HeaderProps {
   gameId: string | null;
   isGameStarted: boolean;
-  onStartGame: () => void;
   onResetGame?: () => void;
+  onPlayerReady?: () => void;
+  players?: Player[];
+  localPlayerId?: number | null;
   activeGridSize: GridSize;
   onGridSizeChange: (size: GridSize) => void;
   dummyPlayerCount: number;
@@ -479,8 +482,10 @@ InvitePlayerMenu.displayName = 'InvitePlayerMenu'
 const Header = memo<HeaderProps>(({
   gameId,
   isGameStarted,
-  onStartGame,
   onResetGame,
+  onPlayerReady,
+  players,
+  localPlayerId,
   activeGridSize,
   onGridSizeChange,
   dummyPlayerCount,
@@ -640,16 +645,20 @@ const Header = memo<HeaderProps>(({
           </button>
         </div>
 
-        {/* Right side: Start Game + divider + Exit */}
+        {/* Right side: Ready button + divider + Exit */}
         <div className="flex items-center space-x-2">
-          {/* Start Game button */}
-          {!isGameStarted && (
+          {/* Ready button - shows I'm ready [x/y] */}
+          {!isGameStarted && players && (
             <button
-              onClick={onStartGame}
-              disabled={!isHost}
-              className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-sm animate-pulse disabled:bg-gray-600 disabled:opacity-70 disabled:cursor-not-allowed disabled:animate-none"
+              onClick={onPlayerReady}
+              disabled={localPlayerId === null}
+              className={`font-bold py-2 px-4 rounded text-sm ${
+                localPlayerId !== null && players.some((p: Player) => p.id === localPlayerId && p.isReady)
+                  ? 'bg-blue-600 hover:bg-blue-700'
+                  : 'bg-green-600 hover:bg-green-700 animate-pulse'
+              } disabled:bg-gray-600 disabled:opacity-70 disabled:cursor-not-allowed disabled:animate-none`}
             >
-              {t('startGame')}
+              {t("imReady")} [{players.filter((p: Player) => p.isReady).length}/{players.length}]
             </button>
           )}
 

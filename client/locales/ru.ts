@@ -34,6 +34,7 @@ export const ru: TranslationResource = {
   },
   ui: {
     startGame: 'Начать игру',
+    imReady: 'Я готов',
     joinGame: 'Присоединиться',
     deckBuilding: 'Конструктор колод',
     rules: 'Правила и обучение',
@@ -59,7 +60,6 @@ export const ru: TranslationResource = {
     spectatorMode: 'Режим наблюдателя',
     spectatorMsg: 'Вы наблюдаете за игрой.',
     readyCheck: 'Готовы начать?',
-    imReady: 'Я готов',
     waiting: 'Ожидание...',
     cancelStart: 'Отмена',
     assignTeams: 'Распределить команды',

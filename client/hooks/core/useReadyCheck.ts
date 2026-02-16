@@ -97,7 +97,7 @@ export function useReadyCheck(props: UseReadyCheckProps) {
         const realPlayers = newState.players.filter((p: any) => !p.isDummy && !p.isDisconnected)
         const allReady = realPlayers.length > 0 && realPlayers.every((p: any) => p.isReady)
 
-        if (allReady && newState.isReadyCheckActive && !newState.isGameStarted) {
+        if (allReady && !newState.isGameStarted) {
           logger.info('[playerReady] All players ready! Starting game...')
           const allPlayers = newState.players.filter((p: any) => !p.isDisconnected)
           const randomIndex = Math.floor(Math.random() * allPlayers.length)
