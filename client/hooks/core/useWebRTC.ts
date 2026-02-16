@@ -10,7 +10,6 @@
  */
 
 import { useCallback } from 'react'
-import type { GameState } from '../../types'
 import { logger } from '../../utils/logger'
 import { broadcastHostPeerId, saveHostData } from '../../host/WebrtcStatePersistence'
 

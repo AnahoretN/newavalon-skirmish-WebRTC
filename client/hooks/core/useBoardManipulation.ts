@@ -2,7 +2,6 @@ import { useCallback } from 'react'
 import { DeckType } from '../../types'
 import type { GameState, Card } from '../../types'
 import { recalculateBoardStatuses } from '../../../shared/utils/boardUtils'
-import { logger } from '../../utils/logger'
 import { initializeReadyStatuses } from '../../utils/autoAbilities'
 import { deepCloneState } from '../../utils/common'
 

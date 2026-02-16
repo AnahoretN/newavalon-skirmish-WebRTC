@@ -13,7 +13,6 @@
 
 import { useCallback } from 'react'
 import { PlayerColor, GameState } from '../../types'
-import type { DeckType } from '../../types'
 
 interface UsePlayerActionsProps {
   updateState: (updater: (prevState: GameState) => GameState) => void

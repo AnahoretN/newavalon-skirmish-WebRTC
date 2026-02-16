@@ -1,12 +1,11 @@
 /**
- * useModals - Centralized modal management using Zustand
+ * useModals - Centralized modal management using React Context
  *
  * Provides a single source of truth for all modal state
  * Replaces scattered useState for modal visibility
  */
 
-import { create } from 'zustand'
-import { devtools } from 'zustand/middleware'
+import { createContext, useContext, useState, useCallback, ReactNode } from 'react'
 
 // All modal types in the application
 export type ModalType =
@@ -45,42 +44,55 @@ interface ModalState {
   getSize: () => ModalSize
 }
 
-// Create the modal store
-export const useModals = create<ModalState>()(
-  devtools(
-    (set, get) => ({
-      openModal: null,
-      modalData: {},
-      modalSize: 'lg',
+// Create context
+const ModalsContext = createContext<ModalState | null>(null)
 
-      // Open a modal with optional data and size
-      open: (type, data = {}, size = 'lg') =>
-        set({
-          openModal: type,
-          modalData: data,
-          modalSize: size,
-        }),
+// Provider component
+export const ModalsProvider = ({ children }: { children: ReactNode }) => {
+  const [openModal, setOpenModal] = useState<ModalType | null>(null)
+  const [modalData, setModalData] = useState<Record<string, any>>({})
+  const [modalSize, setModalSize] = useState<ModalSize>('lg')
 
-      // Close the current modal
-      close: () =>
-        set({
-          openModal: null,
-          modalData: {},
-          modalSize: 'lg',
-        }),
+  const open = useCallback((type: ModalType, data: Record<string, any> = {}, size: ModalSize = 'lg') => {
+    setOpenModal(type)
+    setModalData(data)
+    setModalSize(size)
+  }, [])
 
-      // Check if a specific modal is open
-      isOpen: (type) => get().openModal === type,
+  const close = useCallback(() => {
+    setOpenModal(null)
+    setModalData({})
+    setModalSize('lg')
+  }, [])
 
-      // Get the current modal data (typed)
-      getData: <T = Record<string, any>>() => get().modalData as T,
+  const isOpen = useCallback((type: ModalType) => openModal === type, [openModal])
 
-      // Get the current modal size
-      getSize: () => get().modalSize,
-    }),
-    { name: 'ModalsStore' }
-  )
-)
+  const getData = useCallback(<T = Record<string, any>>() => modalData as T, [modalData])
+
+  const getSize = useCallback(() => modalSize, [modalSize])
+
+  const value: ModalState = {
+    openModal,
+    modalData,
+    modalSize,
+    open,
+    close,
+    isOpen,
+    getData,
+    getSize,
+  }
+
+  return <ModalsContext.Provider value={value}>{children}</ModalsContext.Provider>
+}
+
+// Hook to use the modals context
+export const useModals = (): ModalState => {
+  const context = useContext(ModalsContext)
+  if (!context) {
+    throw new Error('useModals must be used within ModalsProvider')
+  }
+  return context
+}
 
 // Convenience hooks for specific modals
 export const useDeckViewModal = () => {
@@ -259,8 +271,9 @@ export interface CardDetailModalData {
 }
 
 export interface JoinGameModalData {
-  isOpen: boolean
   games: any[]
+  onJoin?: (gameId: string) => void
+  onRefreshGames?: () => void
 }
 
 export interface TokensModalData {
@@ -307,6 +320,3 @@ export interface RoundEndModalData {
   gameState: any
   localPlayerId: number | null
 }
-
-// Re-export commonly used types
-export type { ModalType, ModalSize }

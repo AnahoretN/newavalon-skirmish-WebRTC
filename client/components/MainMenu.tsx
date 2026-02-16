@@ -4,11 +4,10 @@ import type { GameState, Card, Player } from '@/types'
 import { STATUS_DESCRIPTIONS } from '@/constants'
 import { APP_VERSION } from 'virtual:version'
 import type { ConnectionStatus } from '@/hooks/useGameState'
-import { useJoinGameModal, useDeckBuilderModal, useSettingsModal, useRulesModal } from '@/hooks/useModals'
+import { useJoinGameModal, useDeckBuilderModal, useSettingsModal, useRulesModal } from '@/hooks/useModals.tsx'
 
 interface MainMenuProps {
     handleCreateGame: () => void;
-    handleOpenJoinModal: () => void;
     handleJoinGame: (gameId: string) => void;
     gamesList: { gameId: string; playerCount: number }[];
     requestGamesList: () => void;
@@ -30,7 +29,6 @@ interface MainMenuProps {
 
 export const MainMenu: React.FC<MainMenuProps> = memo(({
   handleCreateGame,
-  handleOpenJoinModal,
   handleJoinGame,
   gamesList,
   requestGamesList,
@@ -67,9 +65,7 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
   }, [joinGameModal.isOpen, requestGamesList])
 
   const openJoinModal = () => {
-    console.log('[MainMenu] Opening JoinGameModal with games:', gamesList)
     joinGameModal.open({
-      isOpen: true,
       games: gamesList,
       onJoin: handleJoinGame,
       onRefreshGames: requestGamesList
@@ -77,14 +73,12 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
   }
 
   const openDeckBuilder = () => {
-    console.log('[MainMenu] Opening DeckBuilderModal with setViewingCard:', typeof setViewingCard)
     deckBuilderModal.open({
       setViewingCard
     })
   }
 
   const openSettings = () => {
-    console.log('[MainMenu] Opening SettingsModal with:', { connectionStatus, gameId, isGameStarted, isPrivate })
     settingsModal.open({
       connectionStatus,
       onReconnect: forceReconnect,
@@ -96,7 +90,6 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
   }
 
   const openRules = () => {
-    console.log('[MainMenu] Opening RulesModal')
     rulesModal.open({})
   }
 

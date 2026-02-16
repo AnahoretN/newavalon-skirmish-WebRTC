@@ -12,7 +12,6 @@
  */
 
 import { useCallback } from 'react'
-import { logger } from '../../utils/logger'
 import { shuffleDeck } from '@shared/utils/array'
 import { deepCloneState } from '../../utils/common'
 import { recalculateBoardStatuses } from '@shared/utils/boardUtils'

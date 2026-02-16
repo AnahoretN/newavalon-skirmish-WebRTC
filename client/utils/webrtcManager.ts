@@ -22,11 +22,7 @@ import type { GameState, StateDelta } from '../types'
 import { logger } from './logger'
 import {
   serializeDelta,
-  deserializeDelta,
   serializeGameState,
-  deserializeFromBinary,
-  serializeToBinary,
-  createMinimalGameState,
   logSerializationStats
 } from './webrtcSerialization'
 

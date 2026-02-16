@@ -16,7 +16,7 @@ import { RoundEndModal } from './components/RoundEndModal'
 import { CounterSelectionModal } from './components/CounterSelectionModal'
 import { TopDeckView } from './components/TopDeckView'
 import { ReconnectingModal } from './components/ReconnectingModal'
-import { ModalsRenderer } from './components/ModalsRenderer'
+import { ModalsRenderer, ModalsProvider } from './components/ModalsRenderer'
 import { useGameState } from './hooks/useGameState'
 import { useAppAbilities } from './hooks/useAppAbilities'
 import { useAppCommand } from './hooks/useAppCommand'
@@ -47,7 +47,8 @@ import { shuffleDeck } from '@shared/utils/array'
 
 const COUNTER_BG_URL = 'https://res.cloudinary.com/dxxh6meej/image/upload/v1763653192/background_counter_socvss.png'
 
-const App = memo(function App() {
+// Inner app component without ModalsProvider
+const AppInner = function AppInner() {
   const { t } = useLanguage()
 
   // Declare ability state early (needed by useGameState)
@@ -1382,11 +1383,6 @@ const App = memo(function App() {
     setLocalPlayerId(1)
   }, [createGame, setLocalPlayerId])
 
-  const handleOpenJoinModal = useCallback(() => {
-    requestGamesList()
-    setModalsState(prev => ({ ...prev, isJoinModalOpen: true }))
-  }, [requestGamesList])
-
   const handleSaveSettings = useCallback((url: string) => {
     const trimmedUrl = url.trim()
     const oldUrl = localStorage.getItem('custom_ws_url') || ''
@@ -1957,9 +1953,9 @@ const App = memo(function App() {
   // Only show MainMenu if not in game
   if (!isGameActive) {
     return (
-      <MainMenu
+      <>
+        <MainMenu
         handleCreateGame={handleCreateGame}
-        handleOpenJoinModal={handleOpenJoinModal}
         handleJoinGame={handleJoinGame}
         gamesList={gamesList}
         requestGamesList={requestGamesList}
@@ -1976,11 +1972,14 @@ const App = memo(function App() {
         isPrivate={gameState.isPrivate}
         initializeWebrtcHost={initializeWebrtcHost}
       />
+      <ModalsRenderer />
+      </>
     )
   }
 
   return (
-    <div className={`relative w-screen h-screen overflow-hidden ${cursorStack ? 'cursor-none cursor-stack-active' : ''}`}>
+    <>
+      <div className={`relative w-screen h-screen overflow-hidden ${cursorStack ? 'cursor-none cursor-stack-active' : ''}`}>
       <Header
         gameId={gameState.gameId}
         isGameStarted={gameState.isGameStarted}
@@ -2373,6 +2372,16 @@ const App = memo(function App() {
         </div>
       </div>
     </div>
+    </>
+  )
+}
+
+// Wrapper component with ModalsProvider
+const App = memo(function App() {
+  return (
+    <ModalsProvider>
+      <AppInner />
+    </ModalsProvider>
   )
 })
 

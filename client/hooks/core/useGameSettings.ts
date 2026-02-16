@@ -15,7 +15,6 @@ import { useCallback } from 'react'
 import { GameMode as GameModeEnum } from '../../types'
 import type { GridSize, GameState } from '../../types'
 import { MAX_PLAYERS } from '../../constants'
-import { createInitialBoard } from '@shared/utils/boardUtils'
 import { logger } from '../../utils/logger'
 import { createNewPlayer } from './gameCreators'
 

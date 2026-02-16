@@ -12,7 +12,7 @@
  */
 
 import { encode, decode } from '@msgpack/msgpack'
-import type { Card, GameState, StateDelta, Cell } from '../types'
+import type { Card, GameState, StateDelta } from '../types'
 import { logger } from './logger'
 
 // ============================================================================
@@ -63,7 +63,7 @@ export interface OptimizedPlayerDelta {
   i: number              // id
   n?: string             // name
   c?: string             // color
-  s?: number             // score
+  s?: number             // score (not in PlayerDelta, used for compatibility)
   hs?: number            // handSizeDelta
   ds?: number            // deckSizeDelta
   dis?: number           // discardSizeDelta
@@ -79,6 +79,7 @@ export interface OptimizedPlayerDelta {
   d?: boolean            // isDisconnected
   sc?: string            // selectedDeck
   tid?: number           // teamId
+  sd?: number             // scoreDelta
 }
 
 /**
@@ -186,44 +187,30 @@ export function registerTokenDef(token: TokenDefinition): void {
 }
 
 /**
- * Check if a card is a token (lightweight, can be reconstructed)
- */
-function isTokenCard(card: Card): boolean {
-  return !!card && (
-    card.deck === 'Tokens' ||
-    card.deck === 'counter' ||
-    card.types?.includes('Token') ||
-    card.types?.includes('Token Unit')
-  )
-}
-
-/**
  * Optimize card for transmission
  * - For tokens: send only id + stats (recreatable from registry)
  * - For regular cards: send id + baseId + essential stats
  * - Statuses are sent separately as array of {type, addedByPlayerId}
  */
 export function optimizeCard(card: Card): OptimizedCard {
-  const isToken = isTokenCard(card)
-
   const optimized: OptimizedCard = {
     i: card.id,
-    b: card.baseId,
-    p: card.power,
-    o: card.ownerId,
+    b: card.baseId ?? card.id, // Fallback to card.id if baseId is undefined
+    p: card.power ?? 0,
+    o: card.ownerId ?? 0,
   }
 
   // Optional fields (only if present)
-  if (card.name) optimized.n = card.name
-  if (card.powerModifier) optimized.pm = card.powerModifier
-  if (card.bonusPower) optimized.bp = card.bonusPower
-  if (card.ownerName) optimized.on = card.ownerName
-  if (card.enteredThisTurn) optimized.et = true
-  if (card.isFaceDown) optimized.ifd = true
-  if (card.revealedTo) optimized.rt = card.revealedTo
-  if (card.types?.length) optimized.t = card.types
-  if (card.faction) optimized.f = card.faction
-  if (card.deck) optimized.d = card.deck
+  if (card.name) {optimized.n = card.name}
+  if (card.powerModifier) {optimized.pm = card.powerModifier}
+  if (card.bonusPower) {optimized.bp = card.bonusPower}
+  if (card.ownerName) {optimized.on = card.ownerName}
+  if (card.enteredThisTurn) {optimized.et = true}
+  if (card.isFaceDown) {optimized.ifd = true}
+  if (card.revealedTo) {optimized.rt = card.revealedTo}
+  if (card.types?.length) {optimized.t = card.types}
+  if (card.faction) {optimized.f = card.faction}
+  if (card.deck) {optimized.d = card.deck}
 
   // Optimize statuses - extract only type and addedByPlayerId
   if (card.statuses?.length) {
@@ -247,19 +234,28 @@ export function reconstructCard(optimized: OptimizedCard): Card {
     baseId: optimized.b,
     power: optimized.p,
     ownerId: optimized.o,
+    deck: (optimized.d as any) ?? 'counter',
+    name: optimized.n ?? '',
+    imageUrl: '',
+    ability: '',
+    types: optimized.t ?? [],
+    statuses: optimized.s?.map(s => ({
+      type: s.t,
+      addedByPlayerId: s.a
+    })) ?? [],
   }
 
   // Restore optional fields
-  if (optimized.n) card.name = optimized.n
-  if (optimized.pm !== undefined) card.powerModifier = optimized.pm
-  if (optimized.bp !== undefined) card.bonusPower = optimized.bp
-  if (optimized.on) card.ownerName = optimized.on
-  if (optimized.et) card.enteredThisTurn = true
-  if (optimized.ifd) card.isFaceDown = true
-  if (optimized.rt) card.revealedTo = optimized.rt
-  if (optimized.t) card.types = optimized.t
-  if (optimized.f) card.faction = optimized.f
-  if (optimized.d) card.deck = optimized.d
+  if (optimized.n) {card.name = optimized.n}
+  if (optimized.pm !== undefined) {card.powerModifier = optimized.pm}
+  if (optimized.bp !== undefined) {card.bonusPower = optimized.bp}
+  if (optimized.on) {card.ownerName = optimized.on}
+  if (optimized.et) {card.enteredThisTurn = true}
+  if (optimized.ifd) {card.isFaceDown = true}
+  if (optimized.rt) {card.revealedTo = optimized.rt}
+  if (optimized.t) {card.types = optimized.t}
+  if (optimized.f) {card.faction = optimized.f}
+  if (optimized.d) {card.deck = optimized.d as any}
 
   // Restore statuses
   if (optimized.s) {
@@ -276,8 +272,8 @@ export function reconstructCard(optimized: OptimizedCard): Card {
  * Check if two cards are equal (for delta compression)
  */
 export function cardsEqual(card1: Card | null, card2: Card | null): boolean {
-  if (!card1 && !card2) return true
-  if (!card1 || !card2) return false
+  if (!card1 && !card2) {return true}
+  if (!card1 || !card2) {return false}
   return card1.id === card2.id
 }
 
@@ -302,24 +298,24 @@ export function compressDelta(delta: StateDelta): OptimizedStateDelta {
       const opd: OptimizedPlayerDelta = { i: pid }
 
       // Copy fields with short keys
-      if (playerDelta.name) opd.n = playerDelta.name
-      if (playerDelta.color) opd.c = playerDelta.color
-      if (playerDelta.score !== undefined) opd.s = playerDelta.score
-      if (playerDelta.handSizeDelta) opd.hs = playerDelta.handSizeDelta
-      if (playerDelta.deckSizeDelta) opd.ds = playerDelta.deckSizeDelta
-      if (playerDelta.discardSizeDelta) opd.dis = playerDelta.discardSizeDelta
-      if (playerDelta.handAdd) opd.ha = playerDelta.handAdd
-      if (playerDelta.handRemove) opd.hr = playerDelta.handRemove
-      if (playerDelta.deckRemove) opd.dr = playerDelta.deckRemove
-      if (playerDelta.deckAdd) opd.da = playerDelta.deckAdd
-      if (playerDelta.discardAdd) opd.disa = playerDelta.discardAdd
-      if (playerDelta.announcedCard !== undefined) opd.ac = playerDelta.announcedCard
-      if (playerDelta.boardHistory) opd.bh = playerDelta.boardHistory
-      if (playerDelta.removed) opd.rm = true
-      if (playerDelta.isReady !== undefined) opd.r = playerDelta.isReady
-      if (playerDelta.isDisconnected !== undefined) opd.d = playerDelta.isDisconnected
-      if (playerDelta.selectedDeck) opd.sc = playerDelta.selectedDeck
-      if (playerDelta.teamId !== undefined) opd.tid = playerDelta.teamId
+      if (playerDelta.name) {opd.n = playerDelta.name}
+      if (playerDelta.color) {opd.c = playerDelta.color}
+      if (playerDelta.scoreDelta !== undefined) {opd.sd = playerDelta.scoreDelta}
+      if (playerDelta.handSizeDelta) {opd.hs = playerDelta.handSizeDelta}
+      if (playerDelta.deckSizeDelta) {opd.ds = playerDelta.deckSizeDelta}
+      if (playerDelta.discardSizeDelta) {opd.dis = playerDelta.discardSizeDelta}
+      if (playerDelta.handAdd) {opd.ha = playerDelta.handAdd}
+      if (playerDelta.handRemove) {opd.hr = playerDelta.handRemove}
+      if (playerDelta.deckRemove) {opd.dr = playerDelta.deckRemove}
+      if (playerDelta.deckAdd) {opd.da = playerDelta.deckAdd}
+      if (playerDelta.discardAdd) {opd.disa = playerDelta.discardAdd}
+      if (playerDelta.announcedCard !== undefined) {opd.ac = playerDelta.announcedCard}
+      if (playerDelta.boardHistory) {opd.bh = playerDelta.boardHistory}
+      if (playerDelta.removed) {opd.rm = true}
+      if (playerDelta.isReady !== undefined) {opd.r = playerDelta.isReady}
+      if (playerDelta.isDisconnected !== undefined) {opd.d = playerDelta.isDisconnected}
+      if (playerDelta.selectedDeck) {opd.sc = playerDelta.selectedDeck}
+      if (playerDelta.teamId !== undefined) {opd.tid = playerDelta.teamId}
 
       optimized.pd[pid] = opd
     }
@@ -330,7 +326,7 @@ export function compressDelta(delta: StateDelta): OptimizedStateDelta {
     optimized.bc = delta.boardCells.map(cell => ({
       r: cell.row,
       c: cell.col,
-      ...(cardToRemove(cell.card) ? { rm: true } : {}),
+      ...(cardToRemove(cell.card ?? null) ? { rm: true } : {}),
       ...(cell.card ? { ca: optimizeCard(cell.card) } : {})
     }))
   }
@@ -338,28 +334,26 @@ export function compressDelta(delta: StateDelta): OptimizedStateDelta {
   // Compress phase delta
   if (delta.phaseDelta) {
     optimized.ph = {
-      p: delta.phaseDelta.phase,
-      ...(delta.phaseDelta.nextPlayer !== undefined && { n: delta.phaseDelta.nextPlayer })
+      p: delta.phaseDelta.currentPhase ?? 0,
+      ...(delta.phaseDelta.activePlayerId !== null && delta.phaseDelta.activePlayerId !== undefined && { n: delta.phaseDelta.activePlayerId })
     }
   }
 
   // Compress round delta
   if (delta.roundDelta) {
-    optimized.rd = {
-      r: delta.roundDelta.round,
-      ...(delta.roundDelta.roundWinners && { rw: delta.roundDelta.roundWinners }),
-      ...(delta.roundDelta.sweepWinners && { sw: delta.roundDelta.sweepWinners })
-    }
+    const rd: any = { r: delta.roundDelta.currentRound ?? 1 }
+    if (delta.roundDelta.roundWinners) { rd.rw = delta.roundDelta.roundWinners }
+    optimized.rd = rd
   }
 
   // Compress settings delta
   if (delta.settingsDelta) {
-    optimized.sd = {}
-    if (delta.settingsDelta.gameMode) optimized.sd.gm = delta.settingsDelta.gameMode
-    if (delta.settingsDelta.isPrivate !== undefined) optimized.sd.pr = delta.settingsDelta.isPrivate
-    if (delta.settingsDelta.activeGridSize) optimized.sd.gs = delta.settingsDelta.activeGridSize
-    if (delta.settingsDelta.dummyPlayerCount) optimized.sd.dc = delta.settingsDelta.dummyPlayerCount
-    if (delta.settingsDelta.autoAbilitiesEnabled !== undefined) optimized.sd.aa = delta.settingsDelta.autoAbilitiesEnabled
+    const sd: any = {}
+    if (delta.settingsDelta.gameMode) { sd.gm = delta.settingsDelta.gameMode }
+    if (delta.settingsDelta.isPrivate !== undefined) { sd.pr = delta.settingsDelta.isPrivate }
+    if (delta.settingsDelta.activeGridSize) { sd.gs = delta.settingsDelta.activeGridSize }
+    if (delta.settingsDelta.dummyPlayerCount) { sd.dc = delta.settingsDelta.dummyPlayerCount }
+    optimized.sd = sd
   }
 
   // Compress highlights delta
@@ -367,17 +361,17 @@ export function compressDelta(delta: StateDelta): OptimizedStateDelta {
     optimized.hd = {}
     if (delta.highlightsDelta.add?.length) {
       optimized.hd.a = delta.highlightsDelta.add.map(h => ({
-        r: h.row,
-        c: h.col,
-        cid: h.cardId
+        r: h.row ?? 0,
+        c: h.col ?? 0,
+        cid: h.timestamp.toString() // Using timestamp as ID
       }))
     }
-    if (delta.highlightsDelta.clear) optimized.hd.cl = true
+    if (delta.highlightsDelta.clear) {optimized.hd.cl = true}
   }
 
   // Compress floating texts delta
-  if (delta.floatingTextsDelta?.length) {
-    optimized.ftd = delta.floatingTextsDelta.map(ft => ({
+  if (delta.floatingTextsDelta?.add) {
+    optimized.ftd = delta.floatingTextsDelta.add.map(ft => ({
       r: ft.row,
       c: ft.col,
       txt: ft.text,
@@ -420,24 +414,24 @@ export function expandDelta(optimized: OptimizedStateDelta): StateDelta {
     for (const [playerId, opd] of Object.entries(optimized.pd)) {
       const playerDelta: any = { id: parseInt(playerId) }
 
-      if (opd.n) playerDelta.name = opd.n
-      if (opd.c) playerDelta.color = opd.c
-      if (opd.s !== undefined) playerDelta.score = opd.s
-      if (opd.hs) playerDelta.handSizeDelta = opd.hs
-      if (opd.ds) playerDelta.deckSizeDelta = opd.ds
-      if (opd.dis) playerDelta.discardSizeDelta = opd.dis
-      if (opd.ha) playerDelta.handAdd = opd.ha
-      if (opd.hr) playerDelta.handRemove = opd.hr
-      if (opd.dr) playerDelta.deckRemove = opd.dr
-      if (opd.da) playerDelta.deckAdd = opd.da
-      if (opd.disa) playerDelta.discardAdd = opd.disa
-      if (opd.ac !== undefined) playerDelta.announcedCard = opd.ac
-      if (opd.bh) playerDelta.boardHistory = opd.bh
-      if (opd.rm) playerDelta.removed = true
-      if (opd.r !== undefined) playerDelta.isReady = opd.r
-      if (opd.d !== undefined) playerDelta.isDisconnected = opd.d
-      if (opd.sc) playerDelta.selectedDeck = opd.sc
-      if (opd.tid !== undefined) playerDelta.teamId = opd.tid
+      if (opd.n) {playerDelta.name = opd.n}
+      if (opd.c) {playerDelta.color = opd.c}
+      if (opd.sd !== undefined) {playerDelta.scoreDelta = opd.sd}
+      if (opd.hs) {playerDelta.handSizeDelta = opd.hs}
+      if (opd.ds) {playerDelta.deckSizeDelta = opd.ds}
+      if (opd.dis) {playerDelta.discardSizeDelta = opd.dis}
+      if (opd.ha) {playerDelta.handAdd = opd.ha}
+      if (opd.hr) {playerDelta.handRemove = opd.hr}
+      if (opd.dr) {playerDelta.deckRemove = opd.dr}
+      if (opd.da) {playerDelta.deckAdd = opd.da}
+      if (opd.disa) {playerDelta.discardAdd = opd.disa}
+      if (opd.ac !== undefined) {playerDelta.announcedCard = opd.ac}
+      if (opd.bh) {playerDelta.boardHistory = opd.bh}
+      if (opd.rm) {playerDelta.removed = true}
+      if (opd.r !== undefined) {playerDelta.isReady = opd.r}
+      if (opd.d !== undefined) {playerDelta.isDisconnected = opd.d}
+      if (opd.sc) {playerDelta.selectedDeck = opd.sc}
+      if (opd.tid !== undefined) {playerDelta.teamId = opd.tid}
 
       delta.playerDeltas[playerDelta.id] = playerDelta
     }
@@ -454,52 +448,53 @@ export function expandDelta(optimized: OptimizedStateDelta): StateDelta {
 
   // Expand phase delta
   if (optimized.ph) {
-    delta.phaseDelta = {
-      phase: optimized.ph.p,
-      ...(optimized.ph.n !== undefined && { nextPlayer: optimized.ph.n })
-    }
+    const ph: any = { currentPhase: optimized.ph.p }
+    if (optimized.ph.n !== undefined) { ph.activePlayerId = optimized.ph.n }
+    delta.phaseDelta = ph
   }
 
   // Expand round delta
   if (optimized.rd) {
-    delta.roundDelta = {
-      round: optimized.rd.r,
-      ...(optimized.rd.rw && { roundWinners: optimized.rd.rw }),
-      ...(optimized.rd.sw && { sweepWinners: optimized.rd.sw })
-    }
+    const rd: any = { currentRound: optimized.rd.r }
+    if (optimized.rd.rw) { rd.roundWinners = optimized.rd.rw }
+    delta.roundDelta = rd
   }
 
   // Expand settings delta
   if (optimized.sd) {
     delta.settingsDelta = {}
-    if (optimized.sd.gm) delta.settingsDelta.gameMode = optimized.sd.gm
-    if (optimized.sd.pr !== undefined) delta.settingsDelta.isPrivate = optimized.sd.pr
-    if (optimized.sd.gs) delta.settingsDelta.activeGridSize = optimized.sd.gs
-    if (optimized.sd.dc) delta.settingsDelta.dummyPlayerCount = optimized.sd.dc
-    if (optimized.sd.aa !== undefined) delta.settingsDelta.autoAbilitiesEnabled = optimized.sd.aa
+    if (optimized.sd.gm) {delta.settingsDelta.gameMode = optimized.sd.gm as any}
+    if (optimized.sd.pr !== undefined) {delta.settingsDelta.isPrivate = optimized.sd.pr}
+    if (optimized.sd.gs) {delta.settingsDelta.activeGridSize = optimized.sd.gs as any}
+    if (optimized.sd.dc) {delta.settingsDelta.dummyPlayerCount = optimized.sd.dc}
   }
 
   // Expand highlights delta
   if (optimized.hd) {
     delta.highlightsDelta = {}
     if (optimized.hd.a) {
-      delta.highlightsDelta.add = optimized.hd.a.map(h => ({
+      delta.highlightsDelta.add = optimized.hd.a.map((h: any) => ({
+        type: 'cell' as const,
         row: h.r,
         col: h.c,
-        cardId: h.cid
+        playerId: 0,
+        timestamp: parseInt(h.cid)
       }))
     }
-    if (optimized.hd.cl) delta.highlightsDelta.clear = true
+    if (optimized.hd.cl) {delta.highlightsDelta.clear = true}
   }
 
   // Expand floating texts delta
   if (optimized.ftd) {
-    delta.floatingTextsDelta = optimized.ftd.map(ft => ({
-      row: ft.r,
-      col: ft.c,
-      text: ft.txt,
-      playerId: ft.pi
-    }))
+    delta.floatingTextsDelta = {
+      add: optimized.ftd.map((ft: any) => ({
+        row: ft.r,
+        col: ft.c,
+        text: ft.txt,
+        playerId: ft.pi,
+        timestamp: Date.now()
+      }))
+    }
   }
 
   // Expand targeting mode delta
@@ -638,14 +633,14 @@ export class DifferentialCompressor {
     const key = this.getCellKey(row, col)
     const previous = this.previousBoard.get(key)
 
-    if (!previous && !card) return false
-    if (!previous || !card) return true
-    if (previous.i !== card.id) return true
+    if (!previous && !card) {return false}
+    if (!previous || !card) {return true}
+    if (previous.i !== card.id) {return true}
 
     // Check if stats changed
-    if (previous.pm !== (card.powerModifier || 0)) return true
-    if (previous.bp !== (card.bonusPower || 0)) return true
-    if (previous.s?.length !== (card.statuses?.length || 0)) return true
+    if (previous.pm !== (card.powerModifier || 0)) {return true}
+    if (previous.bp !== (card.bonusPower || 0)) {return true}
+    if (previous.s?.length !== (card.statuses?.length || 0)) {return true}
 
     return false
   }
@@ -663,13 +658,13 @@ export class DifferentialCompressor {
    */
   playerStateChanged(playerId: number, currentState: any): boolean {
     const previous = this.previousPlayerStates.get(playerId)
-    if (!previous) return true
+    if (!previous) {return true}
 
     // Check key fields
-    if (previous.s !== currentState.score) return true
-    if (previous.hs !== currentState.handSize) return true
-    if (previous.ds !== currentState.deckSize) return true
-    if (previous.r !== currentState.isReady) return true
+    if (previous.s !== currentState.score) {return true}
+    if (previous.hs !== currentState.handSize) {return true}
+    if (previous.ds !== currentState.deckSize) {return true}
+    if (previous.r !== currentState.isReady) {return true}
 
     return false
   }

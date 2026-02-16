@@ -2,31 +2,35 @@
  * ModalsRenderer - Centralized modal rendering system
  *
  * Handles lazy loading and rendering of all modals
- * Uses the useModals store to determine which modal to show
+ * Uses the useModals context to determine which modal to show
  *
  * For modals that need callbacks (onJoin, onSave, etc.),
  * the callbacks are passed through modalData
  */
 
 import { lazy, Suspense } from 'react'
-import { useModals } from '../hooks/useModals'
+import { useModals } from '../hooks/useModals.tsx'
 import { BaseModal } from './BaseModal'
 
+// Re-export ModalsProvider for convenience
+export { ModalsProvider } from '../hooks/useModals.tsx'
+
 // Lazy load all modal components for code splitting
-const DeckViewModal = lazy(() => import('./DeckViewModal'))
-const CardDetailModal = lazy(() => import('./CardDetailModal'))
-const TokensModal = lazy(() => import('./TokensModal'))
-const CountersModal = lazy(() => import('./CountersModal'))
-const TeamAssignmentModal = lazy(() => import('./TeamAssignmentModal'))
-const ReadyCheckModal = lazy(() => import('./ReadyCheckModal'))
-const RulesModal = lazy(() => import('./RulesModal'))
-const SettingsModal = lazy(() => import('./SettingsModal'))
-const CommandModal = lazy(() => import('./CommandModal'))
-const CounterSelectionModal = lazy(() => import('./CounterSelectionModal'))
-const RevealRequestModal = lazy(() => import('./RevealRequestModal'))
-const RoundEndModal = lazy(() => import('./RoundEndModal'))
-const JoinGameModal = lazy(() => import('./JoinGameModal'))
-const DeckBuilderModal = lazy(() => import('./DeckBuilderModal'))
+// Using wrapper functions for components with named exports
+const DeckViewModal = lazy(() => import('./DeckViewModal').then(m => ({ default: m.DeckViewModal })))
+const CardDetailModal = lazy(() => import('./CardDetailModal').then(m => ({ default: m.CardDetailModal })))
+const TokensModal = lazy(() => import('./TokensModal').then(m => ({ default: m.TokensModal })))
+const CountersModal = lazy(() => import('./CountersModal').then(m => ({ default: m.CountersModal })))
+const TeamAssignmentModal = lazy(() => import('./TeamAssignmentModal').then(m => ({ default: m.TeamAssignmentModal })))
+const ReadyCheckModal = lazy(() => import('./ReadyCheckModal').then(m => ({ default: m.ReadyCheckModal })))
+const RulesModal = lazy(() => import('./RulesModal').then(m => ({ default: m.RulesModal })))
+const SettingsModal = lazy(() => import('./SettingsModal').then(m => ({ default: m.SettingsModal })))
+const CommandModal = lazy(() => import('./CommandModal').then(m => ({ default: m.CommandModal })))
+const CounterSelectionModal = lazy(() => import('./CounterSelectionModal').then(m => ({ default: m.CounterSelectionModal })))
+const RevealRequestModal = lazy(() => import('./RevealRequestModal').then(m => ({ default: m.RevealRequestModal })))
+const RoundEndModal = lazy(() => import('./RoundEndModal').then(m => ({ default: m.RoundEndModal })))
+const JoinGameModal = lazy(() => import('./JoinGameModal').then(m => ({ default: m.JoinGameModal })))
+const DeckBuilderModal = lazy(() => import('./DeckBuilderModal').then(m => ({ default: m.DeckBuilderModal })))
 
 // Loading fallback component
 const ModalLoader = () => (
@@ -34,28 +38,6 @@ const ModalLoader = () => (
     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500" />
   </div>
 )
-
-// Modal content wrapper - handles wrapping content in BaseModal
-const ModalWrapper = ({ children, title, onClose, size }: {
-  children: React.ReactNode
-  title?: string
-  onClose: () => void
-  size: 'sm' | 'md' | 'lg' | 'xl' | 'full'
-}) => {
-  return (
-    <BaseModal
-      isOpen={true}
-      onClose={onClose}
-      title={title}
-      size={size}
-      showCloseButton={true}
-      closeOnEscape={true}
-      closeOnBackdropClick={true}
-    >
-      {children}
-    </BaseModal>
-  )
-}
 
 /**
  * Main modal renderer component
@@ -74,47 +56,88 @@ export const ModalsRenderer = () => {
   // Extract callbacks from modalData
   const { onJoin, onSave, onConfirm, onReady, onCancel, onAccept, onDecline, onContinueGame, onStartNextRound, onExit, ...restData } = modalData
 
-  // Debug logging
-  if (process.env.NODE_ENV === 'development' && (openModal === 'settings' || openModal === 'deckBuilder' || openModal === 'rules' || openModal === 'joinGame')) {
-    console.log('[ModalsRenderer] Rendering modal:', openModal, 'restData:', restData)
-  }
-
   return (
     <Suspense fallback={<ModalLoader />}>
       {openModal === 'deckView' && (
-        <ModalWrapper title="Deck View" onClose={close} size={modalSize}>
-          <DeckViewModal {...restData} isOpen={true} onClose={close} />
-        </ModalWrapper>
+        <BaseModal title={restData.title || 'Deck View'} onClose={close} size={modalSize} isOpen={true}>
+          <DeckViewModal
+            isOpen={true}
+            onClose={close}
+            title={restData.title || 'Deck View'}
+            player={restData.player}
+            cards={restData.cards || []}
+            setDraggedItem={restData.setDraggedItem || (() => {})}
+            onCardContextMenu={restData.onCardContextMenu}
+            onCardDoubleClick={restData.onCardDoubleClick}
+            onCardClick={restData.onCardClick}
+            onReorder={restData.onReorder}
+            canInteract={restData.canInteract ?? true}
+            isDeckView={restData.isDeckView}
+            playerColorMap={restData.playerColorMap}
+            localPlayerId={restData.localPlayerId ?? null}
+            imageRefreshVersion={restData.imageRefreshVersion}
+            highlightFilter={restData.highlightFilter}
+          />
+        </BaseModal>
       )}
 
       {openModal === 'cardDetail' && (
-        <ModalWrapper title="Card Details" onClose={close} size={modalSize}>
-          <CardDetailModal {...restData} isOpen={true} onClose={close} />
-        </ModalWrapper>
+        <BaseModal title="Card Details" onClose={close} size="md" isOpen={true}>
+          <CardDetailModal
+            card={restData.card ?? null}
+            ownerPlayer={restData.ownerPlayer ?? null}
+            onClose={close}
+            statusDescriptions={restData.statusDescriptions ?? {}}
+            allPlayers={restData.allPlayers ?? []}
+            imageRefreshVersion={restData.imageRefreshVersion}
+          />
+        </BaseModal>
       )}
 
       {openModal === 'tokens' && (
-        <ModalWrapper title="Tokens" onClose={close} size={modalSize}>
-          <TokensModal {...restData} isOpen={true} onClose={close} />
-        </ModalWrapper>
+        <TokensModal
+          isOpen={true}
+          onClose={close}
+          setDraggedItem={restData.setDraggedItem || (() => {})}
+          openContextMenu={restData.openContextMenu || (() => {})}
+          canInteract={restData.canInteract ?? true}
+          anchorEl={restData.anchorEl ?? null}
+          imageRefreshVersion={restData.imageRefreshVersion}
+        />
       )}
 
       {openModal === 'counters' && (
-        <ModalWrapper title="Counters" onClose={close} size={modalSize}>
-          <CountersModal {...restData} isOpen={true} onClose={close} />
-        </ModalWrapper>
+        <CountersModal
+          isOpen={true}
+          onClose={close}
+          canInteract={restData.canInteract ?? true}
+          anchorEl={restData.anchorEl ?? null}
+          imageRefreshVersion={restData.imageRefreshVersion}
+          onCounterMouseDown={restData.onCounterMouseDown || (() => {})}
+          cursorStack={restData.cursorStack ?? null}
+        />
       )}
 
       {openModal === 'teamAssignment' && (
-        <ModalWrapper title="Assign Teams" onClose={close} size={modalSize}>
-          <TeamAssignmentModal {...restData} isOpen={true} onClose={close} onCancel={onCancel || close} onConfirm={onConfirm || close} />
-        </ModalWrapper>
+        <BaseModal title="Assign Teams" onClose={onCancel || close} size="lg" isOpen={true}>
+          <TeamAssignmentModal
+            players={restData.players ?? []}
+            gameMode={restData.gameMode}
+            onCancel={onCancel || close}
+            onConfirm={onConfirm || (() => {})}
+          />
+        </BaseModal>
       )}
 
       {openModal === 'readyCheck' && (
-        <ModalWrapper title="Ready Check" onClose={close} size={modalSize}>
-          <ReadyCheckModal {...restData} isOpen={true} onClose={close} onReady={onReady || close} onCancel={onCancel || close} />
-        </ModalWrapper>
+        <BaseModal title="Ready Check" onClose={onCancel || close} size="md" isOpen={true}>
+          <ReadyCheckModal
+            players={restData.players ?? []}
+            localPlayer={restData.localPlayer}
+            onReady={onReady || close}
+            onCancel={onCancel || close}
+          />
+        </BaseModal>
       )}
 
       {openModal === 'rules' && (
@@ -123,7 +146,6 @@ export const ModalsRenderer = () => {
 
       {openModal === 'settings' && (
         <SettingsModal
-          {...restData}
           isOpen={true}
           onClose={close}
           onSave={onSave || close}
@@ -136,36 +158,53 @@ export const ModalsRenderer = () => {
       )}
 
       {openModal === 'command' && (
-        <ModalWrapper title="Command" onClose={close} size={modalSize}>
-          <CommandModal {...restData} isOpen={true} onClose={close} onConfirm={onConfirm || close} onCancel={onCancel || close} />
-        </ModalWrapper>
+        <CommandModal
+          isOpen={true}
+          card={restData.card}
+          playerColorMap={restData.playerColorMap}
+          onConfirm={onConfirm || (() => {})}
+          onCancel={onCancel || close}
+        />
       )}
 
       {openModal === 'counterSelection' && (
-        <ModalWrapper title="Select Counter" onClose={close} size={modalSize}>
-          <CounterSelectionModal {...restData} isOpen={true} onClose={close} onConfirm={onConfirm || close} onCancel={onCancel || close} />
-        </ModalWrapper>
+        <CounterSelectionModal
+          isOpen={true}
+          data={restData.data}
+          onConfirm={onConfirm || (() => {})}
+          onCancel={onCancel || close}
+        />
       )}
 
       {openModal === 'revealRequest' && (
-        <ModalWrapper title="Reveal Request" onClose={close} size={modalSize}>
-          <RevealRequestModal {...restData} isOpen={true} onAccept={onAccept || close} onDecline={onDecline || close} />
-        </ModalWrapper>
+        <BaseModal title="Reveal Request" onClose={onDecline || close} size="md" isOpen={true}>
+          <RevealRequestModal
+            fromPlayer={restData.fromPlayer}
+            cardCount={restData.cardCount}
+            onAccept={onAccept || close}
+            onDecline={onDecline || close}
+          />
+        </BaseModal>
       )}
 
       {openModal === 'roundEnd' && (
-        <ModalWrapper title="Round Complete" onClose={close} size={modalSize}>
-          <RoundEndModal {...restData} isOpen={true} onClose={close} onContinueGame={onContinueGame || close} onStartNextRound={onStartNextRound || close} onExit={onExit || close} />
-        </ModalWrapper>
+        <BaseModal title="Round Complete" onClose={onExit || close} size="lg" isOpen={true}>
+          <RoundEndModal
+            gameState={restData.gameState}
+            onContinueGame={onContinueGame || close}
+            onStartNextRound={onStartNextRound || close}
+            onExit={onExit || close}
+          />
+        </BaseModal>
       )}
 
       {openModal === 'joinGame' && (
         <JoinGameModal
-          {...restData}
           isOpen={true}
           onClose={close}
-          onJoin={onJoin || close}
+          onJoin={onJoin || (() => {})}
           onRefreshGames={restData.onRefreshGames || (() => {})}
+          games={restData.games ?? []}
         />
       )}
 

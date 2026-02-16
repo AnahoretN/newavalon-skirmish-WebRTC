@@ -15,15 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Card serialization by reference (id + stats only, tokens tracked separately)
   - Optimized delta format with short property keys
   - Compact reconnect snapshot for faster guest reconnection
-- **Modal System**: Unified modal management with lazy loading (~47KB reduction)
-  - Zustand-based state manager (`useModals` hook)
-  - Centralized `ModalsRenderer` component with React.lazy
-  - All 14 modals now lazy-loaded for code splitting
-  - Improved `BaseModal` with smooth animations
-  - Custom scrollbar styles for modal content
-  - Callback support via modalData for flexible modal interactions
+- **Unified Modal System**: Complete modal management with React Context
+  - Created `useModals.tsx` with React Context-based state management (replaced Zustand v5 due to reactivity issues)
+  - Added `ModalsRenderer` component for centralized modal rendering
+  - Implemented React.lazy for menu modals (Settings, Rules, Deck Builder, Join Game)
+  - Code splitting: ~47 KB moved to lazy-loaded chunks
+  - Convenience hooks: `useSettingsModal()`, `useRulesModal()`, `useDeckBuilderModal()`, etc.
 
 ### Changed
+- **App.tsx Refactor**: Split into `AppInner` and `App` components
+  - `ModalsProvider` now wraps the entire application
+  - `ModalsRenderer` available in both MainMenu and Game views
+- **useModals.ts → useModals.tsx**: Renamed to .tsx for JSX support
+  - Replaced Zustand with React Context (Zustand v5 had reactivity issues)
 - **Code Splitting**: Refactored useGameState.ts into focused modules
   - `useGameLifecycle.ts` - game creation, joining, exiting
   - `gameCreators.ts` - game ID generation, deck creation, initial state
@@ -45,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `types.ts` - shared type definitions
 
 ### Fixed
+- **Modal Opening Bug**: Fixed modal windows not opening from main menu
+  - Root cause: `ModalsRenderer` was only rendered in game state, not in MainMenu
+  - Added `ModalsRenderer` to both return paths in App.tsx
+  - Fixed double wrapper issue (BaseModal + custom wrapper)
+  - Fixed callback passing through modalData
 - **DeckType Runtime Error**: Fixed import type vs regular import causing runtime error
 - **WebRTC Reconnection Loop**: Fixed infinite reconnect cycle on HMR (Hot Module Replacement)
   - Added sessionStorage flag to prevent duplicate auto-restore attempts
