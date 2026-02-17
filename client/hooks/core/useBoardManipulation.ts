@@ -4,6 +4,7 @@ import type { GameState, Card } from '../../types'
 import { recalculateBoardStatuses } from '../../../shared/utils/boardUtils'
 import { initializeReadyStatuses } from '../../utils/autoAbilities'
 import { deepCloneState } from '../../utils/common'
+import { logger } from '../../utils/logger'
 
 export interface UseBoardManipulationProps {
   updateState: (newStateOrFn: GameState | ((prevState: GameState) => GameState)) => void
@@ -28,9 +29,9 @@ export const useBoardManipulation = (props: UseBoardManipulationProps) => {
         if (readyStatusToRemove && card.statuses) {
           card.statuses = card.statuses.filter(s => s.type !== readyStatusToRemove)
           const newStatusesTypes = card.statuses.map(s => s.type)
-          console.log(`[markAbilityUsed] Removed status '${readyStatusToRemove}' from ${card.name} at [${boardCoords.row},${boardCoords.col}]: [${oldStatusesTypes.join(', ')}] -> [${newStatusesTypes.join(', ')}]`)
+          logger.debug(`[markAbilityUsed] Removed status '${readyStatusToRemove}' from ${card.name} at [${boardCoords.row},${boardCoords.col}]: [${oldStatusesTypes.join(', ')}] -> [${newStatusesTypes.join(', ')}]`)
         } else {
-          console.log(`[markAbilityUsed] Called for ${card.name} at [${boardCoords.row},${boardCoords.col}] but no readyStatusToRemove specified. Current statuses: [${oldStatusesTypes.join(', ')}]`)
+          logger.debug(`[markAbilityUsed] Called for ${card.name} at [${boardCoords.row},${boardCoords.col}] but no readyStatusToRemove specified. Current statuses: [${oldStatusesTypes.join(', ')}]`)
         }
       }
       return newState

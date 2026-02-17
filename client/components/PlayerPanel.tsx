@@ -68,6 +68,7 @@ import { CardTooltipContent } from './Tooltip'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { parseTextDeckFormat } from '@/utils/textDeckFormat'
 import { calculateGlowColor, rgba, getPlayerColorRgbOrDefault, TIMING } from '@/utils/common'
+import { logger } from '@/utils/logger'
 
 // Track deck change deltas for each player
 const deckChangeDeltas = new Map<number, { delta: number, timerId: NodeJS.Timeout }>()
@@ -484,7 +485,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
         // Try text deck format
         const validation = parseTextDeckFormat(text)
         if (!validation.isValid) {
-          console.error('Failed to load deck:', validation.error)
+          logger.error('Failed to load deck:', validation.error)
           alert((validation as { error: string }).error)
           return
         }
@@ -493,7 +494,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
         onLoadCustomDeck(deckFile)
 
       } catch (err) {
-        console.error('Failed to parse deck file', err)
+        logger.error('Failed to parse deck file', err)
         alert('Failed to parse deck file.')
       }
     }

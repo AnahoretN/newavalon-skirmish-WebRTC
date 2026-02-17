@@ -3,6 +3,7 @@ import type { Card, GameState, AbilityAction, CommandContext, DragItem, CounterS
 import { getCommandAction } from '@server/utils/commandLogic'
 import { deepCloneState } from '@/utils/common'
 import { recalculateBoardStatuses } from '@shared/utils/boardUtils'
+import { logger } from '@/utils/logger'
 
 interface UseAppCommandProps {
     gameState: GameState;
@@ -166,7 +167,7 @@ export const useAppCommand = ({
 
     // If card was not found on board, log and cleanup only
     if (!boardCoords) {
-      console.warn(`Card ${data.card.id} not found on board during counter removal`)
+      logger.warn(`Card ${data.card.id} not found on board during counter removal`)
       setCounterSelectionData(null)
       return
     }

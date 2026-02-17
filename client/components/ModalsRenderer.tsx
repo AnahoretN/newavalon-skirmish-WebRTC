@@ -22,7 +22,6 @@ const CardDetailModal = lazy(() => import('./CardDetailModal').then(m => ({ defa
 const TokensModal = lazy(() => import('./TokensModal').then(m => ({ default: m.TokensModal })))
 const CountersModal = lazy(() => import('./CountersModal').then(m => ({ default: m.CountersModal })))
 const TeamAssignmentModal = lazy(() => import('./TeamAssignmentModal').then(m => ({ default: m.TeamAssignmentModal })))
-const ReadyCheckModal = lazy(() => import('./ReadyCheckModal').then(m => ({ default: m.ReadyCheckModal })))
 const RulesModal = lazy(() => import('./RulesModal').then(m => ({ default: m.RulesModal })))
 const SettingsModal = lazy(() => import('./SettingsModal').then(m => ({ default: m.SettingsModal })))
 const CommandModal = lazy(() => import('./CommandModal').then(m => ({ default: m.CommandModal })))
@@ -125,17 +124,6 @@ export const ModalsRenderer = () => {
             gameMode={restData.gameMode}
             onCancel={onCancel || close}
             onConfirm={onConfirm || (() => {})}
-          />
-        </BaseModal>
-      )}
-
-      {openModal === 'readyCheck' && (
-        <BaseModal title="Ready Check" onClose={onCancel || close} size="md" isOpen={true}>
-          <ReadyCheckModal
-            players={restData.players ?? []}
-            localPlayer={restData.localPlayer}
-            onReady={onReady || close}
-            onCancel={onCancel || close}
           />
         </BaseModal>
       )}

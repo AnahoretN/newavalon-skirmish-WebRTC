@@ -15,6 +15,7 @@
  */
 
 import { useCallback } from 'react'
+import { getWebRTCEnabled } from '../useWebRTCEnabled'
 import { logger } from '../../utils/logger'
 import { deepCloneState } from '../../utils/common'
 import { recalculateBoardStatuses } from '@shared/utils/boardUtils'
@@ -52,7 +53,7 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
    * Toggle active player
    */
   const toggleActivePlayer = useCallback((playerId: number) => {
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     if (isWebRTCMode && webrtcManagerRef.current) {
       // WebRTC P2P mode
@@ -170,7 +171,7 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
     }
 
     const currentState = gameStateRef.current
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     // When at Scoring phase (4) or in scoring step, send NEXT_PHASE to server
     // Server will handle turn passing and Preparation phase for next player
@@ -319,7 +320,7 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
    * Resets player scores and closes the modal
    */
   const closeRoundEndModal = useCallback(() => {
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     if (isWebRTCMode) {
       // WebRTC mode: Update state locally and broadcast via updateState
@@ -368,7 +369,7 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
    * Supports both WebSocket (server) and WebRTC (P2P) modes
    */
   const resetGame = useCallback(() => {
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     if (isWebRTCMode) {
       // WebRTC P2P mode: Reset locally and broadcast

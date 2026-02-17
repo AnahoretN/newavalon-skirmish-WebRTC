@@ -4,13 +4,14 @@ import ReactDOM from 'react-dom/client'
 import './index.css'
 import App from './App'
 import { LanguageProvider } from './contexts/LanguageContext'
+import { logger } from './utils/logger'
 
 // Parse URL parameters for invite links
 // Support both query parameters (?game=...) and hash parameters (#game=...)
 const urlParams = new URLSearchParams(window.location.search)
 const hashParams = new URLSearchParams(window.location.hash.slice(1))
 
-console.log('[index.tsx] URL params:', {
+logger.info('[index.tsx] URL params:', {
   search: window.location.search,
   hash: window.location.hash,
   urlParams: Object.fromEntries(urlParams.entries()),
@@ -23,14 +24,14 @@ const encodedServerUrl = urlParams.get('s') || hashParams.get('s')
 const inviteHostId = urlParams.get('hostId') || hashParams.get('hostId')
 // const autoJoin = urlParams.get('autojoin') || hashParams.get('autojoin') // Reserved for future auto-join functionality
 
-console.log('[index.tsx] Parsed invite params:', { inviteGameId, inviteServerUrl, encodedServerUrl, inviteHostId })
+logger.info('[index.tsx] Parsed invite params:', { inviteGameId, inviteServerUrl, encodedServerUrl, inviteHostId })
 
 // Store invite data in sessionStorage for App to use
 if (inviteGameId) {
   sessionStorage.setItem('invite_game_id', inviteGameId)
   // Set auto-join flag
   sessionStorage.setItem('invite_auto_join', 'true')
-  console.log('[index.tsx] Stored invite_game_id:', inviteGameId)
+  logger.info('[index.tsx] Stored invite_game_id:', inviteGameId)
 }
 
 // Handle WebRTC hostId invite link
@@ -39,7 +40,7 @@ if (inviteHostId) {
   sessionStorage.setItem('invite_auto_join', 'true')
   // Enable WebRTC mode if not already enabled
   localStorage.setItem('webrtc_enabled', 'true')
-  console.log('[index.tsx] Stored invite_host_id:', inviteHostId)
+  logger.info('[index.tsx] Stored invite_host_id:', inviteHostId)
 }
 
 if (inviteServerUrl) {
@@ -58,7 +59,7 @@ if (encodedServerUrl) {
       localStorage.setItem('custom_ws_url', decodedServerUrl)
     }
   } catch (e) {
-    console.error('Failed to decode server URL:', e)
+    logger.error('Failed to decode server URL:', e)
   }
 }
 
@@ -83,7 +84,7 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
   }
 
   componentDidCatch(error: any, errorInfo: any) {
-    console.error('Uncaught error:', error, errorInfo)
+    logger.error('Uncaught error:', error, errorInfo)
   }
 
   render() {

@@ -9,6 +9,7 @@
  */
 
 import { useCallback } from 'react'
+import { getWebRTCEnabled } from '../useWebRTCEnabled'
 import { deepCloneState } from '../../utils/common'
 import { passTurnToNextPlayer } from '../../host/PhaseManagement'
 import type { GameState, FloatingTextData } from '../../types'
@@ -96,7 +97,7 @@ export function useScoring(props: UseScoringProps) {
     }
 
     // Update score
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     // Use updateState in WebRTC mode to broadcast delta, use updatePlayerScore in WebSocket mode
     if (isWebRTCMode) {
@@ -198,7 +199,7 @@ export function useScoring(props: UseScoringProps) {
     }
 
     // Update score
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     // Use updateState in WebRTC mode to broadcast delta, use updatePlayerScore in WebSocket mode
     if (isWebRTCMode) {

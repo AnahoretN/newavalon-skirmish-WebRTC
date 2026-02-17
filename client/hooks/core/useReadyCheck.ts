@@ -1,17 +1,19 @@
 /**
- * useReadyCheck - Хук для управления ready check (проверкой готовности)
+ * useReadyCheck - Хук для управления готовностью игроков
  *
  * Вынесено из useGameState.ts для разделения ответственности
  *
  * Функции:
- * - startReadyCheck - начать проверку готовности
- * - cancelReadyCheck - отменить проверку готовности
- * - playerReady - отметить игрока как готового
+ * - playerReady - отметить игрока как готового (автостарт когда все готовы)
+ *
+ * @deprecated startReadyCheck и cancelReadyCheck оставлены для совместимости с HostManager
+ * but are no longer used in the simplified ready system (button-based)
  */
 
 import { useCallback } from 'react'
 import { logger } from '../../utils/logger'
 import type { GameState } from '../../types'
+import { getWebRTCEnabled } from '../useWebRTCEnabled'
 
 interface UseReadyCheckProps {
   ws: React.MutableRefObject<WebSocket | null>
@@ -36,7 +38,7 @@ export function useReadyCheck(props: UseReadyCheckProps) {
    * Start ready check
    */
   const startReadyCheck = useCallback(() => {
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     if (isWebRTCMode && webrtcManager.current && webrtcIsHostRef.current) {
       logger.info('[startReadyCheck] Starting ready check via WebRTC')
@@ -58,7 +60,7 @@ export function useReadyCheck(props: UseReadyCheckProps) {
    * Cancel ready check
    */
   const cancelReadyCheck = useCallback(() => {
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     if (isWebRTCMode && webrtcManager.current && webrtcIsHostRef.current) {
       logger.info('[cancelReadyCheck] Cancelling ready check via WebRTC')
@@ -83,7 +85,7 @@ export function useReadyCheck(props: UseReadyCheckProps) {
    * This is a complex function that handles both host and guest scenarios
    */
   const playerReady = useCallback(() => {
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     // WebRTC P2P mode - host
     if (isWebRTCMode && webrtcManager.current && webrtcIsHostRef.current && localPlayerIdRef.current !== null) {

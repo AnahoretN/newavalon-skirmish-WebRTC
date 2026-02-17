@@ -8,6 +8,7 @@ import { createInitialBoard, recalculateBoardStatuses } from '@shared/utils/boar
 import { logger } from '../utils/logger'
 import { deepCloneState, TIMING } from '../utils/common'
 import { getWebrtcManager, type WebrtcEvent } from '../utils/webrtcManager'
+import { getWebRTCEnabled } from './useWebRTCEnabled'
 import type { WebrtcMessage } from '../host/types'
 import { toggleActivePlayer as toggleActivePlayerPhase, performPreparationPhase } from '../host/PhaseManagement'
 import {
@@ -91,7 +92,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       prevStateRef.current = prevState
 
       // In WebRTC host mode, broadcast state to guests
-      const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+      const isWebRTCMode = getWebRTCEnabled()
       if (isWebRTCMode && webrtcIsHostRef.current) {
         // Schedule state broadcast after state update (use setTimeout to avoid blocking)
         setTimeout(() => {
@@ -185,7 +186,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   // Initialize WebRTC manager
   useEffect(() => {
     // Check if WebRTC is enabled in settings
-    const webrtcSetting = localStorage.getItem('webrtc_enabled') === 'true'
+    const webrtcSetting = getWebRTCEnabled()
     setWebrtcEnabled(webrtcSetting)
 
     if (webrtcSetting) {
@@ -209,7 +210,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   // Auto-restore WebRTC session on page load
   useEffect(() => {
     // Skip if WebRTC is not enabled
-    const webrtcSetting = localStorage.getItem('webrtc_enabled') === 'true'
+    const webrtcSetting = getWebRTCEnabled()
     if (!webrtcSetting) {return}
 
     // Skip if URL has hostId parameter (fresh join link)
@@ -3963,7 +3964,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   // ... WebSocket logic (connectWebSocket, forceReconnect, joinGame, etc.) kept as is ...
   const connectWebSocket = useCallback(() => {
     // Skip WebSocket connection in WebRTC P2P mode
-    if (localStorage.getItem('webrtc_enabled') === 'true') {
+    if (getWebRTCEnabled()) {
       logger.info('WebRTC P2P mode enabled - skipping WebSocket connection')
       setConnectionStatus('Connected') // Set as "connected" for UI purposes
       return
@@ -3991,7 +3992,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     try {
       ws.current = new WebSocket(WS_URL)
     } catch (error) {
-      console.error('Failed to create WebSocket:', error)
+      logger.error('Failed to create WebSocket:', error)
       setConnectionStatus('Disconnected')
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
@@ -4355,7 +4356,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           console.warn('Unknown message type:', data.type, 'keys:', Object.keys(data), 'data:', data)
         }
       } catch (error) {
-        console.error('Failed to parse message from server:', event.data, error)
+        logger.error('Failed to parse message from server:', event.data, error)
       }
     }
     ws.current.onclose = () => {
@@ -4369,7 +4370,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         reconnectTimeoutRef.current = window.setTimeout(connectWebSocket, TIMING.RECONNECT_DELAY)
       }
     }
-    ws.current.onerror = (event) => console.error('WebSocket error event:', event)
+    ws.current.onerror = (event) => logger.error('WebSocket error event:', event)
   }, [setGameState, createInitialState])
 
   // Join as invite - automatically joins as new player or spectator
@@ -4588,7 +4589,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       return
     }
 
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     // IMMEDIATE local update for UI responsiveness
     // In WebRTC mode, use updateState to broadcast delta

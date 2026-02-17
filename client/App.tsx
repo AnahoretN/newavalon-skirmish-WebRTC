@@ -44,6 +44,7 @@ import { getCommandAction } from '@server/utils/commandLogic'
 import { useLanguage } from './contexts/LanguageContext'
 import { TIMING } from './utils/common'
 import { shuffleDeck } from '@shared/utils/array'
+import { getWebRTCEnabled } from './hooks/useWebRTCEnabled'
 
 const COUNTER_BG_URL = 'https://res.cloudinary.com/dxxh6meej/image/upload/v1763653192/background_counter_socvss.png'
 
@@ -202,7 +203,7 @@ const AppInner = function AppInner() {
         }
       }
     } catch (e) {
-      console.error('Error parsing image refresh data', e)
+      logger.error('Error parsing image refresh data', e)
     }
     const newVersion = Date.now()
     localStorage.setItem('image_refresh_data', JSON.stringify({ version: newVersion, timestamp: newVersion }))
@@ -472,8 +473,8 @@ const AppInner = function AppInner() {
     () => {
       const active = gameState?.gameId && (localPlayer || isSpectator)
       // Debug logging for WebRTC P2P restore
-      if (localStorage.getItem('webrtc_enabled') === 'true') {
-        console.log('[isGameActive] Check:', {
+      if (getWebRTCEnabled()) {
+        logger.debug('[isGameActive] Check:', {
           hasGameId: !!gameState?.gameId,
           gameId: gameState?.gameId,
           hasLocalPlayer: !!localPlayer,
@@ -671,7 +672,7 @@ const AppInner = function AppInner() {
         setImageRefreshVersion(prev => prev + 1)
       }
     }).catch(err => {
-      console.error('Failed to load content database:', err)
+      logger.error('Failed to load content database:', err)
     })
 
     return () => { mounted = false }
@@ -1385,10 +1386,10 @@ const AppInner = function AppInner() {
     const inviteHostId = sessionStorage.getItem('invite_host_id')
     const autoJoinFlag = sessionStorage.getItem('invite_auto_join')
 
-    console.log('[App] WebRTC Invite Check - inviteHostId:', inviteHostId, 'autoJoinFlag:', autoJoinFlag, 'connectAsGuest exists:', typeof connectAsGuest)
+    logger.info('[App] WebRTC Invite Check - inviteHostId:', inviteHostId, 'autoJoinFlag:', autoJoinFlag, 'connectAsGuest exists:', typeof connectAsGuest)
 
     if (inviteHostId && autoJoinFlag && typeof connectAsGuest === 'function') {
-      console.log('[App] Auto-connecting to WebRTC host:', inviteHostId)
+      logger.info('[App] Auto-connecting to WebRTC host:', inviteHostId)
       // Clear the stored invite data
       sessionStorage.removeItem('invite_host_id')
       sessionStorage.removeItem('invite_auto_join')
@@ -1396,12 +1397,12 @@ const AppInner = function AppInner() {
       // Connect to host (async, but we don't need to wait for it here)
       connectAsGuest(inviteHostId).then(success => {
         if (success) {
-          console.log('[App] Successfully connected to WebRTC host')
+          logger.info('[App] Successfully connected to WebRTC host')
         } else {
-          console.error('[App] Failed to connect to WebRTC host')
+          logger.error('[App] Failed to connect to WebRTC host')
         }
       }).catch(err => {
-        console.error('[App] Error connecting to WebRTC host:', err)
+        logger.error('[App] Error connecting to WebRTC host:', err)
       })
     }
   }, [connectAsGuest]) // Run when connectAsGuest is available
@@ -1420,7 +1421,7 @@ const AppInner = function AppInner() {
       const shouldJoinAsInvite = !gameState.gameId || gameState.gameId !== inviteGameId
 
       if (shouldJoinAsInvite) {
-        console.warn('[App] Auto-joining game from invite link:', inviteGameId)
+        logger.warn('[App] Auto-joining game from invite link:', inviteGameId)
         // Clear the stored invite data so we don't try again
         sessionStorage.removeItem('invite_game_id')
         sessionStorage.removeItem('invite_auto_join')
@@ -1532,7 +1533,7 @@ const AppInner = function AppInner() {
 
   const handleViewDeck = useCallback((player: Player) => {
     // Check if WebRTC is enabled and we're viewing another player's deck
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
     const isOtherPlayerDeck = player.id !== localPlayerId
 
     if (isWebRTCMode && isOtherPlayerDeck && player.deck.length === 0) {

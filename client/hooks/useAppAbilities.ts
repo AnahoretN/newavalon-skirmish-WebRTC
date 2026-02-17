@@ -4,6 +4,7 @@ import { getCardAbilityAction, canActivateAbility } from '@server/utils/autoAbil
 import { checkActionHasTargets, validateTarget } from '@shared/utils/targeting'
 import { hasReadyAbilityInCurrentPhase } from '@/utils/autoAbilities'
 import { TIMING } from '@/utils/common'
+import { logger } from '@/utils/logger'
 
 interface UseAppAbilitiesProps {
     gameState: GameState;
@@ -146,7 +147,7 @@ export const useAppAbilities = ({
 
         // Defensive check: if source card has no owner, this scoring is invalid
         if (finnOwnerId === undefined) {
-          console.warn('[FINN_SCORING] Source card missing ownerId, skipping scoring')
+          logger.warn('[FINN_SCORING] Source card missing ownerId, skipping scoring')
           markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
           return
         }
@@ -252,7 +253,7 @@ export const useAppAbilities = ({
           if (amount > 0) {
             const playerId = action.sourceCard.ownerId
             if (playerId === undefined) {
-              console.error('Cannot apply reward: sourceCard has no ownerId')
+              logger.error('Cannot apply reward: sourceCard has no ownerId')
               return
             }
             const rewardType = action.payload.contextReward
@@ -274,7 +275,7 @@ export const useAppAbilities = ({
             if (playerId !== undefined) {
               addBoardCardStatus(coords, 'Stun', playerId)
             } else {
-              console.error('Cannot apply stun: sourceCard has no ownerId')
+              logger.error('Cannot apply stun: sourceCard has no ownerId')
             }
           }
           return

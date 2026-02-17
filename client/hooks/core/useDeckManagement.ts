@@ -15,6 +15,7 @@
 import { useCallback } from 'react'
 import { logger } from '../../utils/logger'
 import { deepCloneState } from '../../utils/common'
+import { getWebRTCEnabled } from '../useWebRTCEnabled'
 import { recalculateBoardStatuses } from '@shared/utils/boardUtils'
 import { initializeReadyStatuses } from '../../utils/autoAbilities'
 import { shuffleDeck } from '@shared/utils/array'
@@ -49,7 +50,7 @@ export function useDeckManagement(props: UseDeckManagementProps) {
    * Change player's deck to a predefined deck type
    */
   const changePlayerDeck = useCallback((playerId: number, deckType: DeckType) => {
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     // Save deck preference for WebRTC guest join
     // When guest joins a host, this preference will be sent with JOIN_REQUEST
@@ -135,7 +136,7 @@ export function useDeckManagement(props: UseDeckManagementProps) {
    * Load a custom deck for a player
    */
   const loadCustomDeck = useCallback((playerId: number, deckFile: CustomDeckFile) => {
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     let newDeck: Card[] = []
     const cardInstanceCounter = new Map<string, number>()

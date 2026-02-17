@@ -16,6 +16,7 @@ import { PLAYER_COLOR_NAMES } from '../../constants'
 import { getDecksData } from '../../content'
 import { shuffleDeck } from '@shared/utils/array'
 import { createInitialBoard } from '@shared/utils/boardUtils'
+import { logger } from '../../utils/logger'
 
 /**
  * Generate a random game ID
@@ -36,20 +37,20 @@ export function createDeck(deckType: DeckType, playerId: number, playerName: str
   if (deckType === 'Random' || !currentDecksData[deckType]) {
     const deckKeys = Object.keys(currentDecksData)
     if (deckKeys.length === 0) {
-      console.error('[createDeck] No decks loaded yet!')
+      logger.error('[createDeck] No decks loaded yet!')
       return []
     }
     actualDeckType = deckKeys[0] as DeckType
     if (deckType === 'Random') {
-      console.log(`[createDeck] Random deck selected, using ${actualDeckType} instead`)
+      logger.info(`[createDeck] Random deck selected, using ${actualDeckType} instead`)
     } else {
-      console.warn(`[createDeck] Deck ${deckType} not found, using ${actualDeckType} instead`)
+      logger.warn(`[createDeck] Deck ${deckType} not found, using ${actualDeckType} instead`)
     }
   }
 
   const deck = currentDecksData[actualDeckType]
   if (!deck) {
-    console.error(`Deck data for ${actualDeckType} not loaded! Returning empty deck. Available decks:`, Object.keys(currentDecksData))
+    logger.error(`Deck data for ${actualDeckType} not loaded! Returning empty deck. Available decks:`, Object.keys(currentDecksData))
     return []
   }
   const deckWithOwner = [...deck].map(card => ({ ...card, ownerId: playerId, ownerName: playerName }))
@@ -64,7 +65,7 @@ export function createNewPlayer(id: number, isDummy = false): Player {
   const currentDecksData = getDecksData()
   const deckKeys = Object.keys(currentDecksData)
   if (deckKeys.length === 0) {
-    console.error('[createNewPlayer] No decks loaded yet!')
+    logger.error('[createNewPlayer] No decks loaded yet!')
     // Return minimal player without deck
     return {
       id,

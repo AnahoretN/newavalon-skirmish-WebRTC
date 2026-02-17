@@ -191,17 +191,6 @@ export const useTeamAssignmentModal = () => {
   }
 }
 
-export const useReadyCheckModal = () => {
-  const { open, close, isOpen, getData } = useModals()
-
-  return {
-    isOpen: isOpen('readyCheck'),
-    open: (data?: ReadyCheckModalData) => open('readyCheck', data, 'md'),
-    close,
-    getData: () => getData<ReadyCheckModalData>(),
-  }
-}
-
 export const useCommandModal = () => {
   const { open, close, isOpen, getData } = useModals()
 
@@ -295,11 +284,6 @@ export interface CountersModalData {
 export interface TeamAssignmentModalData {
   players: any[]
   gameMode: any
-}
-
-export interface ReadyCheckModalData {
-  players: any[]
-  localPlayer: any
 }
 
 export interface CommandModalData {

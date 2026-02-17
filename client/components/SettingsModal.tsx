@@ -4,6 +4,7 @@ import { AVAILABLE_LANGUAGES, LANGUAGE_NAMES } from '@/locales'
 import type { LanguageCode } from '@/locales/types'
 import type { ConnectionStatus } from '@/hooks/useGameState'
 import { generateInviteLink } from '@/utils/inviteLinks'
+import { logger } from '@/utils/logger'
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -112,7 +113,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setLinkCopySuccess(true)
       setTimeout(() => setLinkCopySuccess(false), 2000)
     }).catch(err => {
-      console.error('Failed to copy:', err)
+      logger.error('Failed to copy:', err)
     })
   }
 

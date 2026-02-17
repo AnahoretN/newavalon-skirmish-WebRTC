@@ -5,6 +5,7 @@ import { STATUS_DESCRIPTIONS } from '@/constants'
 import { APP_VERSION } from 'virtual:version'
 import type { ConnectionStatus } from '@/hooks/useGameState'
 import { useJoinGameModal, useDeckBuilderModal, useSettingsModal, useRulesModal } from '@/hooks/useModals.tsx'
+import { getWebRTCEnabled } from '@/hooks/useWebRTCEnabled'
 
 interface MainMenuProps {
     handleCreateGame: () => void;
@@ -54,7 +55,7 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
   const rulesModal = useRulesModal()
 
   // Check actual WebRTC mode from localStorage (source of truth)
-  const actualWebrtcEnabled = localStorage.getItem('webrtc_enabled') === 'true'
+  const actualWebrtcEnabled = getWebRTCEnabled()
 
   // Sync old props-based calls to new modal system
   useEffect(() => {

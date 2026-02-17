@@ -1,6 +1,7 @@
 import type { Card, GameState } from '@/types'
 import { canActivateAbility as serverCanActivateAbility, getCardAbilityTypes } from '@server/utils/autoAbilities'
 import { READY_STATUS_DEPLOY, READY_STATUS_SETUP, READY_STATUS_COMMIT } from '@shared/constants/readyStatuses'
+import { logger } from './logger'
 
 // Re-export for backward compatibility
 export { READY_STATUS_DEPLOY, READY_STATUS_SETUP, READY_STATUS_COMMIT }
@@ -139,7 +140,7 @@ export const initializeReadyStatuses = (card: Card, ownerId: number): void => {
   // Use server-side ability definitions to determine which ready statuses to add
   const abilityTypes = getCardAbilityTypes(card as any)
 
-  console.log(`[initializeReadyStatuses] Card: ${card.name} (${card.id}), ownerId: ${ownerId}, abilities: [${abilityTypes.join(', ')}]`)
+  logger.debug(`[initializeReadyStatuses] Card: ${card.name} (${card.id}), ownerId: ${ownerId}, abilities: [${abilityTypes.join(', ')}]`)
 
   for (const abilityType of abilityTypes) {
     let readyStatusType = ''
@@ -153,12 +154,12 @@ export const initializeReadyStatuses = (card: Card, ownerId: number): void => {
 
     if (readyStatusType && !card.statuses.some(s => s.type === readyStatusType)) {
       card.statuses.push({ type: readyStatusType, addedByPlayerId: ownerId })
-      console.log(`[initializeReadyStatuses] Added status: ${readyStatusType} to ${card.name}`)
+      logger.debug(`[initializeReadyStatuses] Added status: ${readyStatusType} to ${card.name}`)
     }
   }
 
   if (card.statuses.length !== oldStatusesLength) {
-    console.log(`[initializeReadyStatuses] Card ${card.name}: statuses changed from [${oldStatusesTypes.join(', ')}] to [${card.statuses.map(s => s.type).join(', ')}]`)
+    logger.debug(`[initializeReadyStatuses] Card ${card.name}: statuses changed from [${oldStatusesTypes.join(', ')}] to [${card.statuses.map(s => s.type).join(', ')}]`)
   }
 }
 

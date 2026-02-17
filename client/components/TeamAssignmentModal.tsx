@@ -3,6 +3,7 @@ import { GameMode } from '@/types'
 import type { Player } from '@/types'
 import { PLAYER_COLORS } from '@/constants'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { logger } from '@/utils/logger'
 
 interface TeamAssignmentModalProps {
   players: Player[];
@@ -65,7 +66,7 @@ export const TeamAssignmentModal: React.FC<TeamAssignmentModalProps> = ({ player
       return { team1Capacity: 3, team2Capacity: 1 }
     }
     // Unexpected gameMode - fall back to TwoVTwo capacities and log warning
-    console.warn(`Unexpected gameMode: ${gameMode}, falling back to TwoVTwo capacities`)
+    logger.warn(`Unexpected gameMode: ${gameMode}, falling back to TwoVTwo capacities`)
     return { team1Capacity: 2, team2Capacity: 2 }
   }, [gameMode])
 

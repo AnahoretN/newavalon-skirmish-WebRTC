@@ -8,6 +8,8 @@ import { TURN_PHASES, MAX_PLAYERS, PLAYER_COLORS } from '@/constants'
 import { useLanguage } from '@/contexts/LanguageContext'
 import type { TranslationResource } from '@/locales/types'
 import { generateInviteLink } from '@/utils/inviteLinks'
+import { logger } from '@/utils/logger'
+import { getWebRTCEnabled } from '@/hooks/useWebRTCEnabled'
 
 interface HeaderProps {
   gameId: string | null;
@@ -357,7 +359,7 @@ const InvitePlayerMenu = memo<{
       setGameIdCopySuccess(true)
       setTimeout(() => setGameIdCopySuccess(false), 1500)
     }).catch(err => {
-      console.error('Failed to copy:', err)
+      logger.error('Failed to copy:', err)
     })
   }, [gameId])
 
@@ -365,7 +367,7 @@ const InvitePlayerMenu = memo<{
     if (!gameId) {return}
 
     // Check if WebRTC mode is enabled
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     // For WebRTC mode, generate host link; otherwise use standard invite link
     let inviteLink: string
@@ -384,7 +386,7 @@ const InvitePlayerMenu = memo<{
       setLinkCopySuccess(true)
       setTimeout(() => setLinkCopySuccess(false), 2000)
     }).catch(err => {
-      console.error('Failed to copy:', err)
+      logger.error('Failed to copy:', err)
     })
   }, [gameId, isGameStarted, isPrivate, hostId])
 

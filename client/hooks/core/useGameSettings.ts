@@ -12,6 +12,7 @@
  */
 
 import { useCallback } from 'react'
+import { getWebRTCEnabled } from '../useWebRTCEnabled'
 import { GameMode as GameModeEnum } from '../../types'
 import type { GridSize, GameState } from '../../types'
 import { MAX_PLAYERS } from '../../constants'
@@ -41,7 +42,7 @@ export function useGameSettings(props: UseGameSettingsProps) {
    * Assign teams to players
    */
   const assignTeams = useCallback((teamAssignments: Record<number, number[]>) => {
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     if (isWebRTCMode && webrtcManager.current && webrtcIsHostRef.current) {
       logger.info('[assignTeams] Assigning teams via WebRTC')
@@ -75,7 +76,7 @@ export function useGameSettings(props: UseGameSettingsProps) {
    * Set game mode (FreeForAll, Teams, etc.)
    */
   const setGameMode = useCallback((mode: GameModeEnum) => {
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     if (isWebRTCMode && webrtcManager.current && webrtcIsHostRef.current) {
       logger.info('[setGameMode] Setting game mode via WebRTC')
@@ -97,7 +98,7 @@ export function useGameSettings(props: UseGameSettingsProps) {
    * Set game privacy (public/private)
    */
   const setGamePrivacy = useCallback((isPrivate: boolean) => {
-    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isWebRTCMode = getWebRTCEnabled()
 
     if (isWebRTCMode && webrtcManager.current && webrtcIsHostRef.current) {
       logger.info('[setGamePrivacy] Setting game privacy via WebRTC')
