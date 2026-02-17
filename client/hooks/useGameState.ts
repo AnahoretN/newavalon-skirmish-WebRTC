@@ -1254,20 +1254,24 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                 })
 
                 // Also update board from guest's state (they may have placed cards)
-                // Need to reconstruct board cards with correct ownerId for host's perspective
+                // Need to reconstruct board cards - preserve original ownerId!
                 const reconstructedBoard = guestState.board ? guestState.board.map((row: any[]) =>
                   row.map((cell: any) => {
                     if (!cell || !cell.card) { return cell }
-                    // Reconstruct card from baseId and update ownerId
+                    // Reconstruct card from baseId, preserving original ownerId
                     const cardDef = getCardDefinition(cell.card.baseId || cell.card.id)
                     if (cardDef) {
+                      // Preserve the original ownerId - don't reassign to guestPlayerId
+                      // This allows players to move each other's cards without changing ownership
+                      const originalOwnerId = cell.card.ownerId
                       return {
                         ...cell,
                         card: {
                           ...cardDef,
                           id: cell.card.id,
                           baseId: cell.card.baseId || cell.card.id,
-                          ownerId: guestPlayerId, // Update ownerId to match host's player ID
+                          ownerId: originalOwnerId, // Keep original owner
+                          ownerName: cell.card.ownerName,
                           power: cell.card.power,
                           powerModifier: cell.card.powerModifier,
                           isFaceDown: cell.card.isFaceDown || false,
@@ -1643,14 +1647,14 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               })
 
               // Also update board from guest's state (they may have placed cards)
-              // Need to reconstruct board cards with correct ownerId for host's perspective
+              // IMPORTANT: Preserve original ownerId - don't change card ownership!
               const reconstructedBoard = guestState.board ? guestState.board.map((row: any[]) =>
                 row.map((cell: any) => {
                   if (!cell || !cell.card) { return cell }
-                  // Update ownerId on board cards to match host's player ID
+                  // Preserve original ownerId - players can move cards without changing ownership
                   return {
                     ...cell,
-                    card: { ...cell.card, ownerId: guestPlayerId }
+                    card: { ...cell.card, ownerId: cell.card.ownerId }
                   }
                 })
               ) : currentState.board
