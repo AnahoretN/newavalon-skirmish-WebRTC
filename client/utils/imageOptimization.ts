@@ -169,3 +169,18 @@ export function prefetchImages(urls: string[], maxConcurrent: number = 3): void 
     loadNext()
   }
 }
+
+/**
+ * Add cache-busting parameter to image URL
+ * Works with both Cloudinary and non-Cloudinary URLs
+ * For Cloudinary URLs, adds query parameter at the end
+ * For non-Cloudinary URLs, also uses query parameter
+ */
+export function addCacheBust(url: string, version?: number): string {
+  if (!url || !version) {
+    return url
+  }
+  // Use query parameter for cache busting - this works with any URL
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}v=${version}`
+}

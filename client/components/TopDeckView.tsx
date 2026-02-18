@@ -3,7 +3,7 @@ import type { Card as CardType, PlayerColor, Player, ContextMenuItem, DragItem }
 import { Card } from './Card'
 import { ContextMenu } from './ContextMenu'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { isCloudinaryUrl, getThumbnailImageUrl } from '@/utils/imageOptimization'
+import { isCloudinaryUrl, getThumbnailImageUrl, addCacheBust } from '@/utils/imageOptimization'
 
 /**
  * TopDeckCard - Optimized card component for TopDeckView
@@ -23,55 +23,57 @@ const TopDeckCard: React.FC<{
   // Track which URL to display - only update when target is loaded
   const [displayUrl, setDisplayUrl] = useState<string>(() => {
     // Initialize with original URL or preview
-    if (!card.imageUrl || !isCloudinaryUrl(card.imageUrl)) {
+    if (!card.imageUrl) {
       return card.imageUrl
     }
-    const version = imageRefreshVersion ? `v=${imageRefreshVersion}` : ''
-    const previewUrl = getThumbnailImageUrl(card.imageUrl, PREVIEW_SIZE)
-    return version ? `${previewUrl}&${version}` : previewUrl
+    const previewUrl = isCloudinaryUrl(card.imageUrl)
+      ? getThumbnailImageUrl(card.imageUrl, PREVIEW_SIZE)
+      : card.imageUrl
+    return addCacheBust(previewUrl, imageRefreshVersion)
   })
 
   useEffect(() => {
-    if (!card.imageUrl || !isCloudinaryUrl(card.imageUrl)) {
-      // Non-Cloudinary images - use as-is
-      setDisplayUrl(card.imageUrl)
+    if (!card.imageUrl) {
       return
     }
 
-    // Get URLs with version parameter
-    const version = imageRefreshVersion ? `v=${imageRefreshVersion}` : ''
+    if (!isCloudinaryUrl(card.imageUrl)) {
+      // Non-Cloudinary images - use as-is with cache bust
+      setDisplayUrl(addCacheBust(card.imageUrl, imageRefreshVersion))
+      return
+    }
 
-    // getThumbnailImageUrl already adds q_auto,f_auto,w_SIZE, so we need to append version
+    // Get optimized URLs
     const previewUrl = getThumbnailImageUrl(card.imageUrl, PREVIEW_SIZE)
     const targetUrl = getThumbnailImageUrl(card.imageUrl, TARGET_SIZE)
 
-    // Append version parameter to URLs
-    const previewWithVersion = version ? `${previewUrl}&${version}` : previewUrl
-    const targetWithVersion = version ? `${targetUrl}&${version}` : targetUrl
+    // Add cache-busting parameter
+    const previewWithVersion = addCacheBust(previewUrl, imageRefreshVersion)
+    const targetWithVersion = addCacheBust(targetUrl, imageRefreshVersion)
 
     // Show preview immediately
     setDisplayUrl(previewWithVersion)
 
     // Load target image in background, only show when loaded
     const img = new Image()
-    img.onload = () => {
+
+    const handleLoad = () => {
       setDisplayUrl(targetWithVersion)
     }
+
+    img.onload = handleLoad
     img.onerror = () => {
       // If target fails to load, keep preview
       console.warn('Failed to load target image:', targetWithVersion)
     }
 
-    // Also check if image is already cached/loaded
+    // Set src first, then check if already loaded
+    img.src = targetWithVersion
+
+    // Check if image is already cached/loaded (must be AFTER setting src)
     if (img.complete && img.naturalWidth > 0) {
       // Image already loaded (from cache)
-      setDisplayUrl(targetWithVersion)
-    } else {
-      // Start loading target after a brief delay
-      const timer = setTimeout(() => {
-        img.src = targetWithVersion
-      }, 10)
-      return () => clearTimeout(timer)
+      handleLoad()
     }
   }, [card.imageUrl, card.id, imageRefreshVersion])
 
