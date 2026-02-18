@@ -89,6 +89,7 @@ const TopDeckCard: React.FC<{
       isFaceUp={true}
       playerColorMap={playerColorMap}
       localPlayerId={localPlayerId}
+      loadPriority="high"
       // Don't pass imageRefreshVersion - URL already has version
     />
   )
@@ -343,7 +344,7 @@ const TopDeckView: React.FC<TopDeckViewProps> = memo(({
 
               return (
                 <div
-                  key={`${card.id || index}-${imageRefreshVersion}`}
+                  key={card.id || index}
                   draggable={true}
                   onDragStart={() => handleDragStart(card, originalIndex)}
                   onDragOver={(e) => handleDragOver(e, index)}

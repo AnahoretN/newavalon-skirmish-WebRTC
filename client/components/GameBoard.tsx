@@ -282,6 +282,7 @@ const GridCell = memo<{
                 playerColorMap={playerColorMap}
                 localPlayerId={localPlayerId}
                 imageRefreshVersion={imageRefreshVersion}
+                loadPriority="high"
                 activePhaseIndex={currentPhase}
                 activePlayerId={activePlayerId}
                 disableActiveHighlights={disableActiveHighlights}

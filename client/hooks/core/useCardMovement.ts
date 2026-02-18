@@ -5,6 +5,7 @@
  *
  * Функции:
  * - moveItem - переместить карту из источника в цель (drag & drop)
+ * - swapBoardCards - обменять две карты на доске местами
  */
 
 import { useCallback } from 'react'
@@ -587,7 +588,52 @@ export function useCardMovement(props: UseCardMovementProps) {
     })
   }, [updateState, localPlayerIdRef, updatePlayerScore])
 
+  /**
+   * Swap two cards on the board (for Reckless Provocateur deploy ability)
+   * This is a special operation that exchanges two cards regardless of cell occupancy
+   */
+  const swapBoardCards = useCallback((
+    coords1: { row: number; col: number },
+    coords2: { row: number; col: number }
+  ) => {
+    updateState(currentState => {
+      if (!currentState.isGameStarted) {
+        return currentState
+      }
+
+      const newState: GameState = deepCloneState(currentState)
+
+      // Validate coordinates
+      const gridSize = newState.board.length
+      if (coords1.row < 0 || coords1.row >= gridSize || coords1.col < 0 || coords1.col >= gridSize ||
+          coords2.row < 0 || coords2.row >= gridSize || coords2.col < 0 || coords2.col >= gridSize) {
+        return currentState
+      }
+
+      const cell1 = newState.board[coords1.row][coords1.col]
+      const cell2 = newState.board[coords2.row][coords2.col]
+
+      const card1 = cell1.card
+      const card2 = cell2.card
+
+      // Both cells should have cards for a proper swap
+      if (!card1 || !card2) {
+        return currentState
+      }
+
+      // Swap the cards
+      newState.board[coords1.row][coords1.col].card = card2
+      newState.board[coords2.row][coords2.col].card = card1
+
+      // Recalculate board statuses after swap
+      newState.board = recalculateBoardStatuses(newState)
+
+      return newState
+    })
+  }, [updateState])
+
   return {
     moveItem,
+    swapBoardCards,
   }
 }

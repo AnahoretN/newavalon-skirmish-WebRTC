@@ -89,6 +89,7 @@ const DeckViewCard: React.FC<{
       isFaceUp={true}
       playerColorMap={playerColorMap}
       localPlayerId={localPlayerId}
+      loadPriority="high"
       disableActiveHighlights={disableActiveHighlights}
       // Don't pass imageRefreshVersion - URL already has version
     />

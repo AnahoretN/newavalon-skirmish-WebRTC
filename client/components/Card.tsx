@@ -18,7 +18,7 @@ interface CardCoreProps {
   smallStatusIcons?: boolean;
   extraPowerSpacing?: boolean;
   hidePower?: boolean;
-  previewSize?: number; // Size of preview image for progressive loading (default: 50)
+  loadPriority?: 'high' | 'low'; // Loading priority: high for visible cards, low for remote cards (default: high)
 }
 
 interface CardInteractionProps {
@@ -148,7 +148,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   disableActiveHighlights = false,
   extraPowerSpacing = false,
   hidePower = false,
-  previewSize = 50, // Default preview size for progressive loading
+  loadPriority = 'high', // Default to high priority for immediate loading
   preserveDeployAbilities: _preserveDeployAbilities = false, // Used in arePropsEqual comparison
   activeAbilitySourceCoords = null,
   boardCoords = null,
@@ -164,13 +164,15 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   const [isShining, setIsShining] = useState(false)
 
   // Progressive image loading: show preview first, then load to full size
-  // Display size depends on context, but we use 100px as a good middle ground
-  // for cards in hand (70px) and on board (~85-100px)
-  // Preview size is configurable via props (default 50px, 100px for local player)
-  const TARGET_SIZE = 100
-  const PREVIEW_SIZE = previewSize // Use prop value
+  // Right panels (opponents): 64px preview → 128px target
+  // Left panel & board: 128px preview → 384px target
+  const isHighQuality = loadPriority === 'high'
+  const TARGET_SIZE = isHighQuality ? 384 : 128
+  const PREVIEW_SIZE = isHighQuality ? 128 : 64
 
   // Track which URL to display - only update when target is loaded
+  // Use ref to track the last loaded target URL to prevent unnecessary updates
+  const lastLoadedTargetUrlRef = useRef<string | null>(null)
   const [displayUrl, setDisplayUrl] = useState<string>(() => {
     if (!card.imageUrl) {
       return card.imageUrl || ''
@@ -218,7 +220,9 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     if (!isCloudinaryUrl(card.imageUrl)) {
       // Non-Cloudinary images - direct load
       const directUrl = addCacheBust(card.imageUrl, imageRefreshVersion)
-      setDisplayUrl(directUrl)
+      setDisplayUrl(prev => prev === directUrl ? prev : directUrl)
+      setImageLoadState('loaded')
+      lastLoadedTargetUrlRef.current = directUrl
       return
     }
 
@@ -229,35 +233,62 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     const previewWithVersion = addCacheBust(previewUrl, imageRefreshVersion)
     const targetWithVersion = addCacheBust(targetUrl, imageRefreshVersion)
 
-    // Show preview immediately
-    setDisplayUrl(previewWithVersion)
-
-    // Load target image in background
-    const img = new Image()
+    // Check if target image is already loaded (in memory cache or globalImageLoader)
+    const isAlreadyLoaded = globalImageLoader.isLoaded(targetWithVersion) ||
+                            lastLoadedTargetUrlRef.current === targetWithVersion
 
     const handleLoad = () => {
-      setDisplayUrl(targetWithVersion)
+      // Only update if URL actually changed to prevent flash
+      setDisplayUrl(prev => prev === targetWithVersion ? prev : targetWithVersion)
       setImageLoadState('loaded')
+      lastLoadedTargetUrlRef.current = targetWithVersion
       if (targetWithVersion) {
         globalImageLoader.markLoaded(targetWithVersion)
       }
     }
 
+    // If already loaded (either in cache or we loaded it before), show target immediately without flash
+    if (isAlreadyLoaded) {
+      setDisplayUrl(prev => prev === targetWithVersion ? prev : targetWithVersion)
+      setImageLoadState('loaded')
+      lastLoadedTargetUrlRef.current = targetWithVersion
+      return
+    }
+
+    // Show preview first for progressive loading
+    // Only update if current URL is not already target or preview
+    setDisplayUrl(prev => {
+      // If we already have the target URL, keep it
+      if (prev === targetWithVersion) return prev
+      // If we already have the preview URL, keep it
+      if (prev === previewWithVersion) return prev
+      // Otherwise show preview
+      return previewWithVersion
+    })
+
+    // Load target image
+    const img = new Image()
+
     img.onload = handleLoad
     img.onerror = () => {
-      // If target fails, try preview
+      // If target fails, keep preview visible
       console.warn('Failed to load target image:', targetWithVersion)
-      // Keep preview visible
       setImageLoadState('loaded')
     }
 
     img.src = targetWithVersion
 
-    // Check if already cached
+    // Check if already cached in browser
     if (img.complete && img.naturalWidth > 0) {
       handleLoad()
     }
-  }, [card.imageUrl, card.id, imageRefreshVersion, previewSize])
+
+    // Cleanup
+    return () => {
+      img.onload = null
+      img.onerror = null
+    }
+  }, [card.imageUrl, card.id, imageRefreshVersion, loadPriority, isHighQuality, TARGET_SIZE, PREVIEW_SIZE])
 
   const currentImageSrc = displayUrl
 
@@ -624,7 +655,8 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
                       onLoad={handleImageLoad}
                       onError={handleImageError}
                       alt={displayCard.name}
-                      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${imageLoadState === 'loading' ? 'opacity-0' : 'opacity-100'}`}
+                      className={`absolute inset-0 w-full h-full object-cover ${imageLoadState === 'loading' ? 'opacity-0' : 'opacity-100'}`}
+                      style={{ transition: 'opacity 0.15s ease-out' }}
                     />
                   )}
                   {readyAbilityOverlay}
@@ -728,7 +760,7 @@ const arePropsEqual = (prevProps: CardCoreProps & CardInteractionProps, nextProp
   if (prevProps.hidePower !== nextProps.hidePower) {
     return false
   }
-  if (prevProps.previewSize !== nextProps.previewSize) {
+  if (prevProps.loadPriority !== nextProps.loadPriority) {
     return false
   }
 

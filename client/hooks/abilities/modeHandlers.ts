@@ -573,7 +573,7 @@ function handleSwapPositions(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, gameState, moveItem, markAbilityUsed, setAbilityMode, validTargets } = props
+  const { abilityMode, gameState, swapCards, markAbilityUsed, setAbilityMode, validTargets } = props
 
   if (!abilityMode || abilityMode.mode !== 'SWAP_POSITIONS') {
     return false
@@ -606,9 +606,8 @@ function handleSwapPositions(
     }
   }
 
-  // Swap positions
-  moveItem({ card: actualSourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
-  moveItem({ card, source: 'board', boardCoords }, { target: 'board', boardCoords: sourceCoords })
+  // Swap positions using the dedicated swap function
+  swapCards(sourceCoords, boardCoords)
 
   markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
   setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)

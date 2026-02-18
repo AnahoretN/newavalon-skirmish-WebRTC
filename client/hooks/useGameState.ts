@@ -4413,6 +4413,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   // Destructure card movement functions for direct access
   const {
     moveItem,
+    swapBoardCards,
   } = cardMovement
 
   return {

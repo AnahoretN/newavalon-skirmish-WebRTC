@@ -394,6 +394,9 @@ export const useAppCounters = ({
                     // Use the new { row, col } as sourceCoords for chained action, not cursorStack.sourceCoords
                     onAction(chained, { row, col })
                   }
+                  // Clear targeting mode when cursor stack is fully consumed
+                  // This handles cases like GAWAIN_DEPLOY_SHIELD_AIM where no chained action exists
+                  clearTargetingMode()
                   setCursorStack(null)
                 }
                 interactionLock.current = true
@@ -415,12 +418,14 @@ export const useAppCounters = ({
               // Only close if not clicking on game board or hand cards
               // This allows retrying token placement on valid targets
               if (!isOverGameBoard && !isOverHandCard) {
+                clearTargetingMode()
                 setCursorStack(null)
               }
             }
           } else {
             // Only close if clicking outside modal and outside game areas
             if (!isOverModal && !isOverGameBoard && !isOverHandCard) {
+              clearTargetingMode()
               setCursorStack(null)
             }
           }
@@ -442,13 +447,14 @@ export const useAppCounters = ({
       }
       // Right-click cancels token placement mode
       e.preventDefault()
+      clearTargetingMode()
       setCursorStack(null)
     }
     window.addEventListener('contextmenu', handleGlobalContextMenu)
     return () => {
       window.removeEventListener('contextmenu', handleGlobalContextMenu)
     }
-  }, [cursorStack, setCursorStack])
+  }, [cursorStack, setCursorStack, clearTargetingMode])
 
   const handleCounterMouseDown = (type: string, e: React.MouseEvent) => {
     mousePos.current = { x: e.clientX, y: e.clientY }

@@ -660,7 +660,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       isFaceUp={true}
                       playerColorMap={playerColorMap}
                       imageRefreshVersion={imageRefreshVersion}
-                      previewSize={isLocalPlayer ? 100 : 50}
+                      loadPriority={isLocalPlayer ? 'high' : 'low'}
                       activePhaseIndex={currentPhase}
                       activePlayerId={activePlayerId}
                       disableActiveHighlights={disableActiveHighlights}
@@ -736,7 +736,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
 
                 return (
                   <div
-                    key={`${player.id}-hand-${index}-${card.id}`}
+key={`card-${card.id}`}
                     className="relative"
                   >
                     {/* Highlight overlay - doesn't interfere with card visibility */}
@@ -793,6 +793,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                           localPlayerId={localPlayerId}
                           imageRefreshVersion={imageRefreshVersion}
                           previewSize={isLocalPlayer ? 100 : 50}
+                          loadPriority={isLocalPlayer ? 'high' : 'low'}
                           disableTooltip={true}
                           disableActiveHighlights={disableActiveHighlights}
                           preserveDeployAbilities={preserveDeployAbilities}
@@ -983,6 +984,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         playerColorMap={playerColorMap}
                         imageRefreshVersion={imageRefreshVersion}
                         previewSize={isLocalPlayer ? 100 : 50}
+                        loadPriority={isLocalPlayer ? 'high' : 'low'}
                         disableTooltip={false}
                         disableActiveHighlights={disableActiveHighlights}
                         preserveDeployAbilities={preserveDeployAbilities}
@@ -1122,7 +1124,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       playerColorMap={playerColorMap}
                       localPlayerId={localPlayerId}
                       imageRefreshVersion={imageRefreshVersion}
-                      previewSize={isLocalPlayer ? 100 : 50}
+                      loadPriority={isLocalPlayer ? 'high' : 'low'}
                       disableTooltip={!isVisible}
                       disableActiveHighlights={disableActiveHighlights}
                       smallStatusIcons={true}
