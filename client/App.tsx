@@ -452,6 +452,7 @@ const AppInner = function AppInner() {
     setCursorStack,
     setAbilityMode,
     triggerTargetSelection,
+    clearTargetingMode,
   })
 
   const isSpectator = useMemo(

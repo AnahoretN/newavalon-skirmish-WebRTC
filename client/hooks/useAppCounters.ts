@@ -15,6 +15,7 @@ interface UseAppCountersProps {
     setCursorStack: React.Dispatch<React.SetStateAction<CursorStackState | null>>;
     setAbilityMode: React.Dispatch<React.SetStateAction<AbilityAction | null>>;
     triggerTargetSelection: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number; cardIndex: number }) => void;
+  clearTargetingMode: () => void;
 }
 
 export const useAppCounters = ({
@@ -30,6 +31,7 @@ export const useAppCounters = ({
   setCursorStack,
   setAbilityMode,
   triggerTargetSelection,
+  clearTargetingMode,
 }: UseAppCountersProps) => {
   const cursorFollowerRef = useRef<HTMLDivElement>(null)
   const mousePos = useRef({ x: 0, y: 0 })
@@ -173,6 +175,7 @@ export const useAppCounters = ({
                 if (cursorStack.chainedAction) {
                   onAction(cursorStack.chainedAction, cursorStack.sourceCoords || { row: -1, col: -1 })
                 }
+                clearTargetingMode()
                 setCursorStack(null)
               }
               interactionLock.current = true
