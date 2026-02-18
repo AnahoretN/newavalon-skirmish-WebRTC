@@ -7,6 +7,7 @@ import { isCloudinaryUrl, getThumbnailImageUrl } from '@/utils/imageOptimization
 /**
  * DeckViewCard - Optimized card component for DeckViewModal
  * Uses progressive loading: tiny (50px) for instant preview -> optimal (130px) for display
+ * The preview stays visible until target image is fully loaded (no white flash)
  */
 const DeckViewCard: React.FC<{
   card: CardType;
@@ -19,49 +20,52 @@ const DeckViewCard: React.FC<{
   const TARGET_SIZE = 130
   const PREVIEW_SIZE = 50  // Tiny preview for instant load
 
-  const [imageSrc, setImageSrc] = useState<string>(() => {
-    // Start with tiny preview for instant display
+  // Track which URL to display - only update when target is loaded
+  const [displayUrl, setDisplayUrl] = useState<string>(() => {
+    // Initialize with original URL or preview
     if (!card.imageUrl || !isCloudinaryUrl(card.imageUrl)) {
       return card.imageUrl
     }
-    return getThumbnailImageUrl(card.imageUrl, PREVIEW_SIZE)
+    const version = imageRefreshVersion ? `?v=${imageRefreshVersion}` : ''
+    return getThumbnailImageUrl(card.imageUrl, PREVIEW_SIZE) + version
   })
 
   useEffect(() => {
     if (!card.imageUrl || !isCloudinaryUrl(card.imageUrl)) {
+      // Non-Cloudinary images - use as-is
+      setDisplayUrl(card.imageUrl)
       return
     }
 
-    // Load target quality image after preview is shown
-    const targetImage = getThumbnailImageUrl(card.imageUrl, TARGET_SIZE)
-    const img = new Image()
+    // Get URLs with version parameter
+    const version = imageRefreshVersion ? `?v=${imageRefreshVersion}` : ''
+    const separator = imageRefreshVersion ? '&' : '?'
 
+    const previewUrl = getThumbnailImageUrl(card.imageUrl, PREVIEW_SIZE) + version
+    const targetUrl = getThumbnailImageUrl(card.imageUrl, TARGET_SIZE) + separator + version
+
+    // Show preview immediately
+    setDisplayUrl(previewUrl)
+
+    // Load target image in background, only show when loaded
+    const img = new Image()
     img.onload = () => {
-      setImageSrc(targetImage)
+      setDisplayUrl(targetUrl)
     }
 
-    // Small delay to let preview render first
+    // Start loading target after a brief delay
     const timer = setTimeout(() => {
-      img.src = targetImage
+      img.src = targetUrl
     }, 10)
 
     return () => clearTimeout(timer)
-  }, [card.imageUrl])
-
-  // Add version parameter for cache busting
-  const finalImageUrl = useMemo(() => {
-    if (imageRefreshVersion && imageSrc && isCloudinaryUrl(imageSrc)) {
-      const separator = imageSrc.includes('?') ? '&' : '?'
-      return `${imageSrc}${separator}v=${imageRefreshVersion}`
-    }
-    return imageSrc
-  }, [imageSrc, imageRefreshVersion])
+  }, [card.imageUrl, card.id, imageRefreshVersion])
 
   // Create optimized card with current image source
   const optimizedCard = useMemo(() => ({
     ...card,
-    imageUrl: finalImageUrl,
-  }), [card, finalImageUrl])
+    imageUrl: displayUrl,
+  }), [card, displayUrl])
 
   return (
     <Card
