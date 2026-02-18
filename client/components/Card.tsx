@@ -5,7 +5,7 @@ import { DECK_THEMES, PLAYER_COLORS, STATUS_ICONS, PLAYER_COLOR_RGB } from '@/co
 import { Tooltip, CardTooltipContent } from './Tooltip'
 import { hasReadyAbilityInCurrentPhase, hasReadyStatusForPhase } from '@/utils/autoAbilities'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { getOptimizedImageUrl } from '@/utils/imageOptimization'
+import { getOptimizedImageUrl, getThumbnailImageUrl, addCacheBust, isCloudinaryUrl } from '@/utils/imageOptimization'
 import { globalImageLoader } from '@/utils/imageLoader'
 
 // Split props to prevent unnecessary rerenders when only display props change
@@ -160,32 +160,35 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
 
   const [isShining, setIsShining] = useState(false)
 
-  // Helper to compute optimized image URL
-  const computeImageUrl = useCallback((imageUrl: string, refreshVersion?: number) => {
-    let src = imageUrl
-    if (src) {
-      src = getOptimizedImageUrl(src)
-    }
-    if (refreshVersion && src) {
-      const separator = src.includes('?') ? '&' : '?'
-      src = `${src}${separator}v=${refreshVersion}`
-    }
-    return src
-  }, [])
+  // Progressive image loading: show 50px preview first, then load to full size
+  // Display size depends on context, but we use 100px as a good middle ground
+  // for cards in hand (70px) and on board (~85-100px)
+  const TARGET_SIZE = 100
+  const PREVIEW_SIZE = 50
 
-  // Initial image source computation
-  const initialImageSrc = computeImageUrl(card.imageUrl, imageRefreshVersion)
+  // Track which URL to display - only update when target is loaded
+  const [displayUrl, setDisplayUrl] = useState<string>(() => {
+    if (!card.imageUrl) {
+      return card.imageUrl || ''
+    }
+    // For Cloudinary images, start with preview
+    const previewUrl = isCloudinaryUrl(card.imageUrl)
+      ? getThumbnailImageUrl(card.imageUrl, PREVIEW_SIZE)
+      : card.imageUrl
+    return addCacheBust(previewUrl, imageRefreshVersion)
+  })
 
-  // Check global cache for initial load state
   const [imageLoadState, setImageLoadState] = useState<'loading' | 'loaded' | 'failed'>(() => {
-    if (initialImageSrc && globalImageLoader.isLoaded(initialImageSrc)) {
+    const url = addCacheBust(card.imageUrl || '', imageRefreshVersion)
+    if (url && globalImageLoader.isLoaded(url)) {
       return 'loaded'
     }
-    if (initialImageSrc && globalImageLoader.hasFailed(initialImageSrc)) {
+    if (url && globalImageLoader.hasFailed(url)) {
       return 'failed'
     }
     return 'loading'
   })
+
   const retryTimeoutRef = useRef<number | null>(null)
 
   const [highlightDismissed, setHighlightDismissed] = useState(false)
@@ -202,37 +205,60 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     }
   }, [disableActiveHighlights])
 
-  const [currentImageSrc, setCurrentImageSrc] = useState(() => {
-    return computeImageUrl(card.imageUrl, imageRefreshVersion)
-  })
-
-  // Track previous image source to detect changes
-  const prevImageSrcRef = useRef<string | undefined>(currentImageSrc)
-
+  // Progressive loading effect
   useEffect(() => {
-    const src = computeImageUrl(card.imageUrl, imageRefreshVersion)
+    if (!card.imageUrl) {
+      return
+    }
 
-    const hasChanged = prevImageSrcRef.current !== src
-    prevImageSrcRef.current = src
+    if (!isCloudinaryUrl(card.imageUrl)) {
+      // Non-Cloudinary images - direct load
+      const directUrl = addCacheBust(card.imageUrl, imageRefreshVersion)
+      setDisplayUrl(directUrl)
+      return
+    }
 
-    setCurrentImageSrc(src)
+    // For Cloudinary images, use progressive loading
+    const previewUrl = getThumbnailImageUrl(card.imageUrl, PREVIEW_SIZE)
+    const targetUrl = getThumbnailImageUrl(card.imageUrl, TARGET_SIZE)
 
-    // Only reset to loading if the URL actually changed
-    // AND it's not already loaded in the global cache
-    if (hasChanged) {
-      if (src && globalImageLoader.isLoaded(src)) {
-        setImageLoadState('loaded')
-      } else if (src && globalImageLoader.hasFailed(src)) {
-        setImageLoadState('failed')
-      } else {
-        setImageLoadState('loading')
+    const previewWithVersion = addCacheBust(previewUrl, imageRefreshVersion)
+    const targetWithVersion = addCacheBust(targetUrl, imageRefreshVersion)
+
+    // Show preview immediately
+    setDisplayUrl(previewWithVersion)
+
+    // Load target image in background
+    const img = new Image()
+
+    const handleLoad = () => {
+      setDisplayUrl(targetWithVersion)
+      setImageLoadState('loaded')
+      if (targetWithVersion) {
+        globalImageLoader.markLoaded(targetWithVersion)
       }
     }
-  }, [card.imageUrl, imageRefreshVersion, computeImageUrl])
+
+    img.onload = handleLoad
+    img.onerror = () => {
+      // If target fails, try preview
+      console.warn('Failed to load target image:', targetWithVersion)
+      // Keep preview visible
+      setImageLoadState('loaded')
+    }
+
+    img.src = targetWithVersion
+
+    // Check if already cached
+    if (img.complete && img.naturalWidth > 0) {
+      handleLoad()
+    }
+  }, [card.imageUrl, card.id, imageRefreshVersion])
+
+  const currentImageSrc = displayUrl
 
   const handleImageLoad = useCallback(() => {
     setImageLoadState('loaded')
-    // Mark as loaded in global loader
     if (currentImageSrc) {
       globalImageLoader.markLoaded(currentImageSrc)
     }
@@ -253,18 +279,17 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
       retryTimeoutRef.current = window.setTimeout(() => {
         // Force reload by adding timestamp
         const separator = currentImageSrc.includes('?') ? '&' : '?'
-        setCurrentImageSrc(`${currentImageSrc}${separator}retry=${Date.now()}`)
+        setDisplayUrl(`${currentImageSrc}${separator}retry=${Date.now()}`)
       }, delay)
     } else {
       // Max retries reached, try fallback
       let fallback = card.fallbackImage
       if (imageRefreshVersion && fallback) {
-        const separator = fallback.includes('?') ? '&' : '?'
-        fallback = `${fallback}${separator}v=${imageRefreshVersion}`
+        fallback = addCacheBust(fallback, imageRefreshVersion)
       }
 
       if (currentImageSrc !== fallback && fallback) {
-        setCurrentImageSrc(fallback)
+        setDisplayUrl(fallback)
         globalImageLoader.reset(fallback)
       } else {
         setImageLoadState('failed')
