@@ -3,7 +3,7 @@ import type { Card as CardType, PlayerColor, Player, ContextMenuItem, DragItem }
 import { Card } from './Card'
 import { ContextMenu } from './ContextMenu'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { isCloudinaryUrl, getThumbnailImageUrl, getFullImageUrl } from '@/utils/imageOptimization'
+import { isCloudinaryUrl, getThumbnailImageUrl } from '@/utils/imageOptimization'
 
 /**
  * TopDeckCard - Optimized card component for TopDeckView
@@ -26,8 +26,9 @@ const TopDeckCard: React.FC<{
     if (!card.imageUrl || !isCloudinaryUrl(card.imageUrl)) {
       return card.imageUrl
     }
-    const version = imageRefreshVersion ? `?v=${imageRefreshVersion}` : ''
-    return getThumbnailImageUrl(card.imageUrl, PREVIEW_SIZE) + version
+    const version = imageRefreshVersion ? `v=${imageRefreshVersion}` : ''
+    const previewUrl = getThumbnailImageUrl(card.imageUrl, PREVIEW_SIZE)
+    return version ? `${previewUrl}&${version}` : previewUrl
   })
 
   useEffect(() => {
@@ -38,27 +39,40 @@ const TopDeckCard: React.FC<{
     }
 
     // Get URLs with version parameter
-    const version = imageRefreshVersion ? `?v=${imageRefreshVersion}` : ''
-    const separator = imageRefreshVersion ? '&' : '?'
+    const version = imageRefreshVersion ? `v=${imageRefreshVersion}` : ''
 
-    const previewUrl = getThumbnailImageUrl(card.imageUrl, PREVIEW_SIZE) + version
-    const targetUrl = getThumbnailImageUrl(card.imageUrl, TARGET_SIZE) + separator + version
+    // getThumbnailImageUrl already adds q_auto,f_auto,w_SIZE, so we need to append version
+    const previewUrl = getThumbnailImageUrl(card.imageUrl, PREVIEW_SIZE)
+    const targetUrl = getThumbnailImageUrl(card.imageUrl, TARGET_SIZE)
+
+    // Append version parameter to URLs
+    const previewWithVersion = version ? `${previewUrl}&${version}` : previewUrl
+    const targetWithVersion = version ? `${targetUrl}&${version}` : targetUrl
 
     // Show preview immediately
-    setDisplayUrl(previewUrl)
+    setDisplayUrl(previewWithVersion)
 
     // Load target image in background, only show when loaded
     const img = new Image()
     img.onload = () => {
-      setDisplayUrl(targetUrl)
+      setDisplayUrl(targetWithVersion)
+    }
+    img.onerror = () => {
+      // If target fails to load, keep preview
+      console.warn('Failed to load target image:', targetWithVersion)
     }
 
-    // Start loading target after a brief delay
-    const timer = setTimeout(() => {
-      img.src = targetUrl
-    }, 10)
-
-    return () => clearTimeout(timer)
+    // Also check if image is already cached/loaded
+    if (img.complete && img.naturalWidth > 0) {
+      // Image already loaded (from cache)
+      setDisplayUrl(targetWithVersion)
+    } else {
+      // Start loading target after a brief delay
+      const timer = setTimeout(() => {
+        img.src = targetWithVersion
+      }, 10)
+      return () => clearTimeout(timer)
+    }
   }, [card.imageUrl, card.id, imageRefreshVersion])
 
   // Create optimized card with current image source
