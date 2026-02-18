@@ -14,6 +14,29 @@ export function isCloudinaryUrl(url: string): boolean {
 }
 
 /**
+ * Check if URL already has Cloudinary transformations
+ */
+export function hasTransformations(url: string): boolean {
+  if (!url || !isCloudinaryUrl(url)) {
+    return false
+  }
+  const uploadIndex = url.indexOf('/image/upload/')
+  if (uploadIndex === -1) {
+    return false
+  }
+  const afterUpload = url.substring(uploadIndex + '/image/upload/'.length)
+  // Check if the next segment starts with a transformation (q_, f_, w_, h_, etc.)
+  // or a version number (v followed by digits)
+  const firstSlash = afterUpload.indexOf('/')
+  if (firstSlash === -1) {
+    return false
+  }
+  const segment = afterUpload.substring(0, firstSlash)
+  // If segment doesn't start with 'v' followed by digits, it's likely a transformation
+  return !/^v\d+/.test(segment)
+}
+
+/**
  * Add Cloudinary optimization parameters to URL
  * - q_auto: automatic quality
  * - f_auto: automatic format (WebP/AVIF for modern browsers)
@@ -26,6 +49,11 @@ export function getOptimizedImageUrl(url: string, options?: {
   blur?: number
 }): string {
   if (!url || !isCloudinaryUrl(url)) {
+    return url
+  }
+
+  // If URL already has transformations, return it as-is to avoid corruption
+  if (hasTransformations(url)) {
     return url
   }
 

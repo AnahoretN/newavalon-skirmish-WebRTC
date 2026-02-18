@@ -22,7 +22,8 @@ const TopDeckCard: React.FC<{
     // Apply Cloudinary optimizations for faster loading (single URL)
     if (imageUrl && isCloudinaryUrl(imageUrl)) {
       // Use thumbnail size for modal display (128x128 cards) - instant load
-      imageUrl = getThumbnailImageUrl(imageUrl, 200)
+      // 150px is enough for 112x112 display slots with some margin
+      imageUrl = getThumbnailImageUrl(imageUrl, 150)
     }
 
     if (imageRefreshVersion && imageUrl) {
