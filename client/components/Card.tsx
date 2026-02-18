@@ -159,7 +159,33 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   const tooltipTimeoutRef = useRef<number | null>(null)
 
   const [isShining, setIsShining] = useState(false)
-  const [imageLoadState, setImageLoadState] = useState<'loading' | 'loaded' | 'failed'>('loading')
+
+  // Helper to compute optimized image URL
+  const computeImageUrl = useCallback((imageUrl: string, refreshVersion?: number) => {
+    let src = imageUrl
+    if (src) {
+      src = getOptimizedImageUrl(src)
+    }
+    if (refreshVersion && src) {
+      const separator = src.includes('?') ? '&' : '?'
+      src = `${src}${separator}v=${refreshVersion}`
+    }
+    return src
+  }, [])
+
+  // Initial image source computation
+  const initialImageSrc = computeImageUrl(card.imageUrl, imageRefreshVersion)
+
+  // Check global cache for initial load state
+  const [imageLoadState, setImageLoadState] = useState<'loading' | 'loaded' | 'failed'>(() => {
+    if (initialImageSrc && globalImageLoader.isLoaded(initialImageSrc)) {
+      return 'loaded'
+    }
+    if (initialImageSrc && globalImageLoader.hasFailed(initialImageSrc)) {
+      return 'failed'
+    }
+    return 'loading'
+  })
   const retryTimeoutRef = useRef<number | null>(null)
 
   const [highlightDismissed, setHighlightDismissed] = useState(false)
@@ -177,36 +203,32 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   }, [disableActiveHighlights])
 
   const [currentImageSrc, setCurrentImageSrc] = useState(() => {
-    let src = card.imageUrl
-
-    // Apply Cloudinary optimizations for faster loading
-    if (src) {
-      src = getOptimizedImageUrl(src)
-    }
-
-    if (imageRefreshVersion && src) {
-      const separator = src.includes('?') ? '&' : '?'
-      src = `${src}${separator}v=${imageRefreshVersion}`
-    }
-    return src
+    return computeImageUrl(card.imageUrl, imageRefreshVersion)
   })
 
+  // Track previous image source to detect changes
+  const prevImageSrcRef = useRef<string | undefined>(currentImageSrc)
+
   useEffect(() => {
-    let src = card.imageUrl
+    const src = computeImageUrl(card.imageUrl, imageRefreshVersion)
 
-    // Apply Cloudinary optimizations for faster loading
-    if (src) {
-      src = getOptimizedImageUrl(src)
-    }
+    const hasChanged = prevImageSrcRef.current !== src
+    prevImageSrcRef.current = src
 
-    if (imageRefreshVersion && src) {
-      const separator = src.includes('?') ? '&' : '?'
-      src = `${src}${separator}v=${imageRefreshVersion}`
-    }
     setCurrentImageSrc(src)
-    // Reset loading state when image source changes
-    setImageLoadState('loading')
-  }, [card.imageUrl, imageRefreshVersion])
+
+    // Only reset to loading if the URL actually changed
+    // AND it's not already loaded in the global cache
+    if (hasChanged) {
+      if (src && globalImageLoader.isLoaded(src)) {
+        setImageLoadState('loaded')
+      } else if (src && globalImageLoader.hasFailed(src)) {
+        setImageLoadState('failed')
+      } else {
+        setImageLoadState('loading')
+      }
+    }
+  }, [card.imageUrl, imageRefreshVersion, computeImageUrl])
 
   const handleImageLoad = useCallback(() => {
     setImageLoadState('loaded')

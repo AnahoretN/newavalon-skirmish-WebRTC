@@ -3,11 +3,11 @@ import type { Card as CardType, PlayerColor, Player, ContextMenuItem, DragItem }
 import { Card } from './Card'
 import { ContextMenu } from './ContextMenu'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { isCloudinaryUrl, getThumbnailImageUrl, getFullImageUrl } from '@/utils/imageOptimization'
+import { isCloudinaryUrl, getThumbnailImageUrl } from '@/utils/imageOptimization'
 
 /**
  * TopDeckCard - Optimized card component for TopDeckView
- * Uses progressive loading: thumbnail (100px) -> full quality
+ * Uses direct Cloudinary URL without progressive loading to prevent flicker
  */
 const TopDeckCard: React.FC<{
   card: CardType;
@@ -15,36 +15,26 @@ const TopDeckCard: React.FC<{
   localPlayerId: number | null;
   imageRefreshVersion?: number;
 }> = memo(({ card, playerColorMap, localPlayerId, imageRefreshVersion }) => {
-  const [imageSrc, setImageSrc] = useState<string>(() => {
-    // Always start with thumbnail for instant display
-    if (!card.imageUrl || !isCloudinaryUrl(card.imageUrl)) {
-      return card.imageUrl
-    }
-    return getThumbnailImageUrl(card.imageUrl, 100)
-  })
+  // Direct optimized URL - no progressive loading to prevent flicker
+  const optimizedCard = useMemo(() => {
+    let imageUrl = card.imageUrl
 
-  useEffect(() => {
-    if (!card.imageUrl || !isCloudinaryUrl(card.imageUrl)) {
-      return
+    // Apply Cloudinary optimizations for faster loading (single URL)
+    if (imageUrl && isCloudinaryUrl(imageUrl)) {
+      // Use thumbnail size for modal display (128x128 cards) - instant load
+      imageUrl = getThumbnailImageUrl(imageUrl, 200)
     }
 
-    // Load full quality image after thumbnail is shown
-    const fullImage = getFullImageUrl(card.imageUrl)
-    const fullImg = new Image()
-    fullImg.onload = () => {
-      setImageSrc(fullImage)
+    if (imageRefreshVersion && imageUrl) {
+      const separator = imageUrl.includes('?') ? '&' : '?'
+      imageUrl = `${imageUrl}${separator}v=${imageRefreshVersion}`
     }
-    // Small delay to let thumbnail render first
-    setTimeout(() => {
-      fullImg.src = fullImage
-    }, 50)
-  }, [card.imageUrl])
 
-  // Create a modified card with optimized image URL
-  const optimizedCard = useMemo(() => ({
-    ...card,
-    imageUrl: imageSrc,
-  }), [card, imageSrc])
+    return {
+      ...card,
+      imageUrl,
+    }
+  }, [card.imageUrl, card.id, card.name, card.types, card.power, card.ability, card.statuses, card.deck, card.color, card.fallbackImage, card.baseId, card.ownerId, card.powerModifier, card.bonusPower, imageRefreshVersion])
 
   return (
     <Card
@@ -52,7 +42,7 @@ const TopDeckCard: React.FC<{
       isFaceUp={true}
       playerColorMap={playerColorMap}
       localPlayerId={localPlayerId}
-      imageRefreshVersion={imageRefreshVersion}
+      // Don't pass imageRefreshVersion - URL is already optimized with version
     />
   )
 })
