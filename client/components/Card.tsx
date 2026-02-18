@@ -7,6 +7,7 @@ import { hasReadyAbilityInCurrentPhase, hasReadyStatusForPhase } from '@/utils/a
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getOptimizedImageUrl, getThumbnailImageUrl, addCacheBust, isCloudinaryUrl } from '@/utils/imageOptimization'
 import { globalImageLoader } from '@/utils/imageLoader'
+import { backgroundLoader } from '@/utils/backgroundImageLoader'
 
 // Split props to prevent unnecessary rerenders when only display props change
 interface CardCoreProps {
@@ -367,13 +368,21 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
       setTooltipPos({ x: e.clientX, y: e.clientY })
     }
 
+    // Preload full-size image for card detail view
+    if (card.imageUrl && isCloudinaryUrl(card.imageUrl)) {
+      // Use normal priority for hover preloading since user is likely to click
+      const fullSizeUrl = getOptimizedImageUrl(card.imageUrl, { width: 300 })
+      const urlWithVersion = addCacheBust(fullSizeUrl, imageRefreshVersion)
+      backgroundLoader.preload(urlWithVersion, 'normal')
+    }
+
     if (tooltipTimeoutRef.current) {
       clearTimeout(tooltipTimeoutRef.current)
     }
     tooltipTimeoutRef.current = window.setTimeout(() => {
       setTooltipVisible(true)
     }, 250)
-  }, [disableTooltip])
+  }, [disableTooltip, card.imageUrl, imageRefreshVersion])
 
   const handleMouseLeave = useCallback(() => {
     if (tooltipTimeoutRef.current) {

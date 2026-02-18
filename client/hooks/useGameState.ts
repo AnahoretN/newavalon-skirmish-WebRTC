@@ -62,6 +62,8 @@ import { useCardMovement } from './core/useCardMovement'
 import { useTargetingMode } from './core/useTargetingMode'
 import { useWebRTC } from './core/useWebRTC'
 import { useServerConnection } from './core/useServerConnection'
+// Background image preloading
+import { backgroundLoader, extractCardUrls } from '../utils/backgroundImageLoader'
 
 /**
  * Accumulates score change deltas for each player.
@@ -503,6 +505,21 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   useEffect(() => {
     localPlayerIdRef.current = localPlayerId
   }, [localPlayerId])
+
+  // Background image preloading - loads invisible cards in the background
+  // with rate limiting to avoid interfering with game traffic
+  useEffect(() => {
+    // Only preload when game is active and we have a local player
+    if (!gameState || !gameState.players || !localPlayerId) {
+      return
+    }
+
+    // Extract card URLs from all players (except local player's visible cards)
+    const urls = extractCardUrls(gameState.players, localPlayerId)
+
+    // Preload with low priority (background, rate limited)
+    backgroundLoader.preloadMany(urls, 'low')
+  }, [gameState?.players, localPlayerId])
 
   // Visual effects hook - handles all visual effect triggers and broadcasts
   const visualEffects = useVisualEffects({
