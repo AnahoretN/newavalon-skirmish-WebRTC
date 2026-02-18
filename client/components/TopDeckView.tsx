@@ -7,7 +7,7 @@ import { isCloudinaryUrl, getThumbnailImageUrl, addCacheBust } from '@/utils/ima
 
 /**
  * TopDeckCard - Optimized card component for TopDeckView
- * Uses progressive loading: tiny (50px) for instant preview -> optimal (150px) for display
+ * Uses progressive loading: preview (100px) for instant preview -> optimal (150px) for display
  * The preview stays visible until target image is fully loaded (no white flash)
  */
 const TopDeckCard: React.FC<{
@@ -18,7 +18,7 @@ const TopDeckCard: React.FC<{
 }> = memo(({ card, playerColorMap, localPlayerId, imageRefreshVersion }) => {
   // Target size: 128x128 display, so 150px gives some margin
   const TARGET_SIZE = 150
-  const PREVIEW_SIZE = 50  // Tiny preview for instant load
+  const PREVIEW_SIZE = 100  // Larger preview for better quality in modal
 
   // Track which URL to display - only update when target is loaded
   const [displayUrl, setDisplayUrl] = useState<string>(() => {

@@ -18,7 +18,7 @@ const DeckViewCard: React.FC<{
 }> = memo(({ card, playerColorMap, localPlayerId, imageRefreshVersion, disableActiveHighlights }) => {
   // Target size: 112x112 display, so 130px gives some margin
   const TARGET_SIZE = 130
-  const PREVIEW_SIZE = 50  // Tiny preview for instant load
+  const PREVIEW_SIZE = 100  // Larger preview for better quality in modal
 
   // Track which URL to display - only update when target is loaded
   const [displayUrl, setDisplayUrl] = useState<string>(() => {

@@ -17,6 +17,7 @@ interface CardCoreProps {
   smallStatusIcons?: boolean;
   extraPowerSpacing?: boolean;
   hidePower?: boolean;
+  previewSize?: number; // Size of preview image for progressive loading (default: 50)
 }
 
 interface CardInteractionProps {
@@ -146,6 +147,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   disableActiveHighlights = false,
   extraPowerSpacing = false,
   hidePower = false,
+  previewSize = 50, // Default preview size for progressive loading
   preserveDeployAbilities: _preserveDeployAbilities = false, // Used in arePropsEqual comparison
   activeAbilitySourceCoords = null,
   boardCoords = null,
@@ -160,11 +162,12 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
 
   const [isShining, setIsShining] = useState(false)
 
-  // Progressive image loading: show 50px preview first, then load to full size
+  // Progressive image loading: show preview first, then load to full size
   // Display size depends on context, but we use 100px as a good middle ground
   // for cards in hand (70px) and on board (~85-100px)
+  // Preview size is configurable via props (default 50px, 100px for local player)
   const TARGET_SIZE = 100
-  const PREVIEW_SIZE = 50
+  const PREVIEW_SIZE = previewSize // Use prop value
 
   // Track which URL to display - only update when target is loaded
   const [displayUrl, setDisplayUrl] = useState<string>(() => {
@@ -253,7 +256,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     if (img.complete && img.naturalWidth > 0) {
       handleLoad()
     }
-  }, [card.imageUrl, card.id, imageRefreshVersion])
+  }, [card.imageUrl, card.id, imageRefreshVersion, previewSize])
 
   const currentImageSrc = displayUrl
 
@@ -714,6 +717,9 @@ const arePropsEqual = (prevProps: CardCoreProps & CardInteractionProps, nextProp
     return false
   }
   if (prevProps.hidePower !== nextProps.hidePower) {
+    return false
+  }
+  if (prevProps.previewSize !== nextProps.previewSize) {
     return false
   }
 
