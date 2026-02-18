@@ -2,6 +2,78 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import type { Player, Card as CardType, DragItem, PlayerColor, CursorStackState } from '@/types'
 import { Card } from './Card'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { isCloudinaryUrl, getThumbnailImageUrl } from '@/utils/imageOptimization'
+
+/**
+ * DeckViewCard - Optimized card component for DeckViewModal
+ * Uses progressive loading: tiny (50px) for instant preview -> optimal (130px) for display
+ */
+const DeckViewCard: React.FC<{
+  card: CardType;
+  playerColorMap: Map<number, PlayerColor>;
+  localPlayerId: number | null;
+  imageRefreshVersion?: number;
+  disableActiveHighlights?: boolean;
+}> = memo(({ card, playerColorMap, localPlayerId, imageRefreshVersion, disableActiveHighlights }) => {
+  // Target size: 112x112 display, so 130px gives some margin
+  const TARGET_SIZE = 130
+  const PREVIEW_SIZE = 50  // Tiny preview for instant load
+
+  const [imageSrc, setImageSrc] = useState<string>(() => {
+    // Start with tiny preview for instant display
+    if (!card.imageUrl || !isCloudinaryUrl(card.imageUrl)) {
+      return card.imageUrl
+    }
+    return getThumbnailImageUrl(card.imageUrl, PREVIEW_SIZE)
+  })
+
+  useEffect(() => {
+    if (!card.imageUrl || !isCloudinaryUrl(card.imageUrl)) {
+      return
+    }
+
+    // Load target quality image after preview is shown
+    const targetImage = getThumbnailImageUrl(card.imageUrl, TARGET_SIZE)
+    const img = new Image()
+
+    img.onload = () => {
+      setImageSrc(targetImage)
+    }
+
+    // Small delay to let preview render first
+    const timer = setTimeout(() => {
+      img.src = targetImage
+    }, 10)
+
+    return () => clearTimeout(timer)
+  }, [card.imageUrl])
+
+  // Add version parameter for cache busting
+  const finalImageUrl = useMemo(() => {
+    if (imageRefreshVersion && imageSrc && isCloudinaryUrl(imageSrc)) {
+      const separator = imageSrc.includes('?') ? '&' : '?'
+      return `${imageSrc}${separator}v=${imageRefreshVersion}`
+    }
+    return imageSrc
+  }, [imageSrc, imageRefreshVersion])
+
+  // Create optimized card with current image source
+  const optimizedCard = useMemo(() => ({
+    ...card,
+    imageUrl: finalImageUrl,
+  }), [card, finalImageUrl])
+
+  return (
+    <Card
+      card={optimizedCard}
+      isFaceUp={true}
+      playerColorMap={playerColorMap}
+      localPlayerId={localPlayerId}
+      disableActiveHighlights={disableActiveHighlights}
+      // Don't pass imageRefreshVersion - URL already has version
+    />
+  )
+})
 
 interface DeckViewModalProps {
   isOpen: boolean;
@@ -232,9 +304,8 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
                   `}
                 >
                   <div className={`w-full h-full ${isHighlighted && highlightFilter ? 'ring-3 ring-cyan-400 rounded-md shadow-[0_0_9px_#22d3ee]' : ''}`}>
-                    <Card
+                    <DeckViewCard
                       card={card}
-                      isFaceUp={true}
                       playerColorMap={playerColorMap}
                       localPlayerId={localPlayerId}
                       imageRefreshVersion={imageRefreshVersion}

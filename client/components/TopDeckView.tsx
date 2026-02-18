@@ -3,11 +3,11 @@ import type { Card as CardType, PlayerColor, Player, ContextMenuItem, DragItem }
 import { Card } from './Card'
 import { ContextMenu } from './ContextMenu'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { isCloudinaryUrl, getThumbnailImageUrl } from '@/utils/imageOptimization'
+import { isCloudinaryUrl, getThumbnailImageUrl, getFullImageUrl } from '@/utils/imageOptimization'
 
 /**
  * TopDeckCard - Optimized card component for TopDeckView
- * Uses direct Cloudinary URL without progressive loading to prevent flicker
+ * Uses progressive loading: tiny (50px) for instant preview -> optimal (150px) for display
  */
 const TopDeckCard: React.FC<{
   card: CardType;
@@ -15,27 +15,53 @@ const TopDeckCard: React.FC<{
   localPlayerId: number | null;
   imageRefreshVersion?: number;
 }> = memo(({ card, playerColorMap, localPlayerId, imageRefreshVersion }) => {
-  // Direct optimized URL - no progressive loading to prevent flicker
-  const optimizedCard = useMemo(() => {
-    let imageUrl = card.imageUrl
+  // Target size: 128x128 display, so 150px gives some margin
+  const TARGET_SIZE = 150
+  const PREVIEW_SIZE = 50  // Tiny preview for instant load
 
-    // Apply Cloudinary optimizations for faster loading (single URL)
-    if (imageUrl && isCloudinaryUrl(imageUrl)) {
-      // Use thumbnail size for modal display (128x128 cards) - instant load
-      // 150px is enough for 112x112 display slots with some margin
-      imageUrl = getThumbnailImageUrl(imageUrl, 150)
+  const [imageSrc, setImageSrc] = useState<string>(() => {
+    // Start with tiny preview for instant display
+    if (!card.imageUrl || !isCloudinaryUrl(card.imageUrl)) {
+      return card.imageUrl
+    }
+    return getThumbnailImageUrl(card.imageUrl, PREVIEW_SIZE)
+  })
+
+  useEffect(() => {
+    if (!card.imageUrl || !isCloudinaryUrl(card.imageUrl)) {
+      return
     }
 
-    if (imageRefreshVersion && imageUrl) {
-      const separator = imageUrl.includes('?') ? '&' : '?'
-      imageUrl = `${imageUrl}${separator}v=${imageRefreshVersion}`
+    // Load target quality image after preview is shown
+    const targetImage = getThumbnailImageUrl(card.imageUrl, TARGET_SIZE)
+    const img = new Image()
+
+    img.onload = () => {
+      setImageSrc(targetImage)
     }
 
-    return {
-      ...card,
-      imageUrl,
+    // Small delay to let preview render first
+    const timer = setTimeout(() => {
+      img.src = targetImage
+    }, 10)
+
+    return () => clearTimeout(timer)
+  }, [card.imageUrl])
+
+  // Add version parameter for cache busting
+  const finalImageUrl = useMemo(() => {
+    if (imageRefreshVersion && imageSrc && isCloudinaryUrl(imageSrc)) {
+      const separator = imageSrc.includes('?') ? '&' : '?'
+      return `${imageSrc}${separator}v=${imageRefreshVersion}`
     }
-  }, [card.imageUrl, card.id, card.name, card.types, card.power, card.ability, card.statuses, card.deck, card.color, card.fallbackImage, card.baseId, card.ownerId, card.powerModifier, card.bonusPower, imageRefreshVersion])
+    return imageSrc
+  }, [imageSrc, imageRefreshVersion])
+
+  // Create optimized card with current image source
+  const optimizedCard = useMemo(() => ({
+    ...card,
+    imageUrl: finalImageUrl,
+  }), [card, finalImageUrl])
 
   return (
     <Card
@@ -43,7 +69,7 @@ const TopDeckCard: React.FC<{
       isFaceUp={true}
       playerColorMap={playerColorMap}
       localPlayerId={localPlayerId}
-      // Don't pass imageRefreshVersion - URL is already optimized with version
+      // Don't pass imageRefreshVersion - URL already has version
     />
   )
 })
