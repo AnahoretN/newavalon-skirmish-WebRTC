@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react'
 import type { Player, Card as CardType, DragItem, PlayerColor, CursorStackState } from '@/types'
 import { Card } from './Card'
 import { useLanguage } from '@/contexts/LanguageContext'
