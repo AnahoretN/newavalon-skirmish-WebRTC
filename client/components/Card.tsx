@@ -19,6 +19,7 @@ interface CardCoreProps {
   extraPowerSpacing?: boolean;
   hidePower?: boolean;
   loadPriority?: 'high' | 'low'; // Loading priority: high for visible cards, low for remote cards (default: high)
+  disableImageTransition?: boolean; // Disable opacity transition for board cards (default: false)
 }
 
 interface CardInteractionProps {
@@ -149,6 +150,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   extraPowerSpacing = false,
   hidePower = false,
   loadPriority = 'high', // Default to high priority for immediate loading
+  disableImageTransition = false, // Disable opacity transition for board cards
   preserveDeployAbilities: _preserveDeployAbilities = false, // Used in arePropsEqual comparison
   activeAbilitySourceCoords = null,
   boardCoords = null,
@@ -656,7 +658,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
                       onError={handleImageError}
                       alt={displayCard.name}
                       className={`absolute inset-0 w-full h-full object-cover ${imageLoadState === 'loading' ? 'opacity-0' : 'opacity-100'}`}
-                      style={{ transition: 'opacity 0.15s ease-out' }}
+                      style={disableImageTransition ? undefined : { transition: 'opacity 0.15s ease-out' }}
                     />
                   )}
                   {readyAbilityOverlay}
@@ -761,6 +763,9 @@ const arePropsEqual = (prevProps: CardCoreProps & CardInteractionProps, nextProp
     return false
   }
   if (prevProps.loadPriority !== nextProps.loadPriority) {
+    return false
+  }
+  if (prevProps.disableImageTransition !== nextProps.disableImageTransition) {
     return false
   }
 

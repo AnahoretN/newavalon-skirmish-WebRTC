@@ -283,6 +283,7 @@ const GridCell = memo<{
                 localPlayerId={localPlayerId}
                 imageRefreshVersion={imageRefreshVersion}
                 loadPriority="high"
+                disableImageTransition={true}
                 activePhaseIndex={currentPhase}
                 activePlayerId={activePlayerId}
                 disableActiveHighlights={disableActiveHighlights}
