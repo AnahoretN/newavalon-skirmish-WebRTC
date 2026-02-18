@@ -620,8 +620,13 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
     }
 
     // Check Hand targets if stack type is compatible
-    // Check if 'Revealed' or simple buffs/debuffs
-    if (action.tokenType === 'Revealed' || action.tokenType?.startsWith('Power')) {
+    // RULE: Targeting tokens (Aim, Exploit, Stun, Shield) CANNOT target cards in hand
+    // Only Revealed status and Rule tokens can target hand cards
+    const targetingTokens = ['Aim', 'Exploit', 'Stun', 'Shield']
+    const isTargetingToken = action.tokenType && targetingTokens.includes(action.tokenType)
+
+    // Only allow hand targeting for Revealed status or Power buffs (not targeting tokens)
+    if (!isTargetingToken && (action.tokenType === 'Revealed' || action.tokenType?.startsWith('Power'))) {
       // We need to check if ANY hand card is valid
       for (const p of currentGameState.players) {
         for (let i = 0; i < p.hand.length; i++) {

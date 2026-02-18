@@ -281,12 +281,27 @@ export class HostManager {
    * Handle incoming message from guest
    */
   private handleIncomingMessage(message: any, fromPeerId: string): void {
-    if (!message || !message.type) {return}
+    if (!message || !message.type) {
+      logger.warn('[HostManager] Received invalid message:', message)
+      return
+    }
 
     const guest = this.connectionManager.getGuest(fromPeerId)
     const guestPlayerId = guest?.playerId || message.playerId
 
-    logger.info(`[HostManager] Received ${message.type} from ${fromPeerId} (player ${guestPlayerId})`)
+    // Detailed logging for targeting mode messages
+    if (message.type === 'SET_TARGETING_MODE' || message.type === 'CLEAR_TARGETING_MODE') {
+      logger.info(`[HostManager] Received ${message.type} from ${fromPeerId} (player ${guestPlayerId})`, {
+        hasData: !!message.data,
+        hasTargetingMode: !!message.data?.targetingMode,
+        targetingModePlayerId: message.data?.targetingMode?.playerId,
+        mode: message.data?.targetingMode?.action?.mode,
+        boardTargetsCount: message.data?.targetingMode?.boardTargets?.length || 0,
+        handTargetsCount: message.data?.targetingMode?.handTargets?.length || 0
+      })
+    } else {
+      logger.info(`[HostManager] Received ${message.type} from ${fromPeerId} (player ${guestPlayerId})`)
+    }
 
     // Reset inactivity timer on any message
     if (this.config.enableTimers !== false) {
@@ -414,12 +429,14 @@ export class HostManager {
 
       case 'SET_TARGETING_MODE':
         if (message.data?.targetingMode) {
-          this.visualEffects.setTargetingMode(message.data.targetingMode)
+          // Update host's internal state and broadcast to all guests
+          this.stateManager.setTargetingMode(message.data.targetingMode)
         }
         break
 
       case 'CLEAR_TARGETING_MODE':
-        this.visualEffects.clearTargetingMode()
+        // Update host's internal state and broadcast to all guests
+        this.stateManager.clearTargetingMode()
         break
 
       // Ability activation messages

@@ -20,6 +20,7 @@ interface UseScoringProps {
   updateState: (updater: (prevState: GameState) => GameState) => void
   updatePlayerScore: (playerId: number, delta: number) => void
   triggerFloatingText: (events: Omit<FloatingTextData, 'timestamp'>[]) => void
+  clearTargetingMode?: () => void
 }
 
 export function useScoring(props: UseScoringProps) {
@@ -29,6 +30,7 @@ export function useScoring(props: UseScoringProps) {
     updateState,
     updatePlayerScore,
     triggerFloatingText,
+    clearTargetingMode,
   } = props
 
   /**
@@ -121,20 +123,24 @@ export function useScoring(props: UseScoringProps) {
     // Case 3: Auto-pass after scoring: if in Scoring phase (4) and points were scored,
     // automatically pass turn to next player after a short delay
     if (totalScore > 0 && currentState.currentPhase === 4 && currentState.activePlayerId === playerId) {
+      const gameId = currentState.gameId
       setTimeout(() => {
+        // Clear targeting mode first (for all clients)
+        clearTargetingMode?.()
+
         if (isWebRTCMode) {
           // WebRTC mode: Pass turn locally
           updateState(prevState => passTurnToNextPlayer(prevState))
-        } else if (ws.current?.readyState === WebSocket.OPEN) {
+        } else if (ws.current?.readyState === WebSocket.OPEN && gameId) {
           // WebSocket mode: Send NEXT_PHASE to server
           ws.current.send(JSON.stringify({
             type: 'NEXT_PHASE',
-            gameId: currentState.gameId
+            gameId: gameId
           }))
         }
       }, 100) // 100ms delay to show scoring animation
     }
-  }, [triggerFloatingText, updatePlayerScore, updateState, ws, gameStateRef])
+  }, [triggerFloatingText, updatePlayerScore, updateState, ws, gameStateRef, clearTargetingMode, passTurnToNextPlayer])
 
   /**
    * Score a diagonal for a player with optional bonus per support
@@ -239,20 +245,24 @@ export function useScoring(props: UseScoringProps) {
     // Case 3: Auto-pass after scoring: if in Scoring phase (4) and points were scored,
     // automatically pass turn to next player after a short delay
     if (totalScore > 0 && currentState.currentPhase === 4 && currentState.activePlayerId === playerId) {
+      const gameId = currentState.gameId
       setTimeout(() => {
+        // Clear targeting mode first (for all clients)
+        clearTargetingMode?.()
+
         if (isWebRTCMode) {
           // WebRTC mode: Pass turn locally
           updateState(prevState => passTurnToNextPlayer(prevState))
-        } else if (ws.current?.readyState === WebSocket.OPEN) {
+        } else if (ws.current?.readyState === WebSocket.OPEN && gameId) {
           // WebSocket mode: Send NEXT_PHASE to server
           ws.current.send(JSON.stringify({
             type: 'NEXT_PHASE',
-            gameId: currentState.gameId
+            gameId: gameId
           }))
         }
       }, 500) // 500ms delay to show scoring animation
     }
-  }, [triggerFloatingText, updatePlayerScore, updateState, ws, gameStateRef])
+  }, [triggerFloatingText, updatePlayerScore, updateState, ws, gameStateRef, clearTargetingMode, passTurnToNextPlayer])
 
   return {
     scoreLine,

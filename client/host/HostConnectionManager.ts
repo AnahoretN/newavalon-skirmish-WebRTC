@@ -138,7 +138,22 @@ export class HostConnectionManager {
    * Handle incoming message from guest
    */
   private handleMessage(message: WebrtcMessage, fromPeerId: string): void {
-    logger.debug(`Received WebRTC message from ${fromPeerId}:`, message.type)
+    // Detailed logging to track all incoming messages
+    const guest = this.guests.get(fromPeerId)
+    const playerId = guest?.playerId ?? message.playerId ?? 'unknown'
+
+    // Always log message reception for debugging targeting mode issues
+    if (message.type === 'SET_TARGETING_MODE' || message.type === 'CLEAR_TARGETING_MODE') {
+      logger.info(`[HostConnectionManager] Received ${message.type} from peer ${fromPeerId} (player ${playerId})`, {
+        hasData: !!message.data,
+        hasTargetingMode: !!message.data?.targetingMode,
+        targetingModePlayerId: message.data?.targetingMode?.playerId,
+        timestamp: message.timestamp
+      })
+    } else {
+      logger.debug(`Received WebRTC message from ${fromPeerId}:`, message.type)
+    }
+
     this.emitEvent({
       type: 'message_received',
       data: { message, fromPeerId }

@@ -54,7 +54,7 @@ export interface CounterDefinition {
     description: string;
     sortOrder: number;
     allowedPanels?: string[]; // Controls visibility in UI panels (e.g. 'COUNTER_PANEL')
-    allowedTargets?: ('board' | 'hand' | 'deck' | 'discard' | 'announced')[]; // Controls where this counter can be placed
+    allowedTargets?: ('board' | 'board-facedown' | 'hand' | 'deck' | 'discard' | 'announced')[]; // Controls where this counter can be placed
 }
 
 
@@ -346,6 +346,7 @@ export interface CursorStackState {
     maxDistanceFromSource?: number; // Maximum Chebyshev distance from source (e.g., 2 = within 2 cells including diagonals)
     maxOrthogonalDistance?: number; // Maximum Manhattan/orthogonal distance from source (walking distance)
     placeAllAtOnce?: boolean; // Optional: if true, placing the stack puts ALL counters on one target instead of one by one
+    range?: number; // Optional: targeting range for ability (e.g., 2 = within 2 cells)
     chainedAction?: AbilityAction; // Optional: Action to enter immediately after the stack is depleted
     recordContext?: boolean; // Optional: If true, saves the target to CommandContext
     replaceStatus?: boolean; // If true, replace the requiredTargetStatus with type (e.g., Censor: Exploit -> Stun)
@@ -367,6 +368,11 @@ export interface CommandContext {
 export interface CounterSelectionData {
     card: Card;
     callbackAction: 'DRAW_REMOVED' | 'SCORE_REMOVED';
+    coords?: {row: number, col: number};
+    counterTypes?: string[];
+    sourceCoords?: {row: number, col: number};
+    isDeployAbility?: boolean;
+    readyStatusToRemove?: string[];
 }
 
 /**

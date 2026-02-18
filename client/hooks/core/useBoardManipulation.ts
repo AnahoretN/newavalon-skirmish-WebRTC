@@ -21,8 +21,12 @@ export const useBoardManipulation = (props: UseBoardManipulationProps) => {
       if (!currentState.isGameStarted) {
         return currentState
       }
+      // Skip if coords are invalid (row = -1 means not on board)
+      if (boardCoords.row < 0 || boardCoords.col < 0) {
+        return currentState
+      }
       const newState: GameState = deepCloneState(currentState)
-      const card = newState.board[boardCoords.row][boardCoords.col].card
+      const card = newState.board[boardCoords.row]?.[boardCoords.col]?.card
       if (card) {
         const oldStatusesTypes = card.statuses ? card.statuses.map(s => s.type) : []
         // Remove the ready status if specified (new ready status system)
@@ -43,8 +47,12 @@ export const useBoardManipulation = (props: UseBoardManipulationProps) => {
       if (!currentState.isGameStarted) {
         return currentState
       }
+      // Skip if coords are invalid (row = -1 means not on board)
+      if (boardCoords.row < 0 || boardCoords.col < 0) {
+        return currentState
+      }
       const newState: GameState = deepCloneState(currentState)
-      const card = newState.board[boardCoords.row][boardCoords.col].card
+      const card = newState.board[boardCoords.row]?.[boardCoords.col]?.card
       if (card) {
         // New system: Add readyDeploy status back (for Command cards that restore deploy ability)
         if (!card.statuses) {

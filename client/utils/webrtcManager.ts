@@ -417,11 +417,27 @@ export class WebrtcManager {
     if (!this.isHost && this.hostConnection && this.hostConnection.open) {
       try {
         this.hostConnection.send(message)
+        // Log successful send for targeting mode messages (debugging)
+        if (message.type === 'SET_TARGETING_MODE' || message.type === 'CLEAR_TARGETING_MODE') {
+          logger.info(`[WebrtcManager] Sent ${message.type} to host`, {
+            hasData: !!message.data,
+            hasTargetingMode: !!message.data?.targetingMode,
+            targetingModePlayerId: message.data?.targetingMode?.playerId
+          })
+        }
         return true
       } catch (err) {
         logger.error('Failed to send message to host:', err)
         return false
       }
+    }
+    // Log if message couldn't be sent
+    if (message.type === 'SET_TARGETING_MODE' || message.type === 'CLEAR_TARGETING_MODE') {
+      logger.warn(`[WebrtcManager] Could not send ${message.type} to host`, {
+        isHost: this.isHost,
+        hasHostConnection: !!this.hostConnection,
+        isConnectionOpen: this.hostConnection?.open ?? false
+      })
     }
     return false
   }

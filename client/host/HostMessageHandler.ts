@@ -215,6 +215,7 @@ export class HostMessageHandler {
     // Handle different action types
     switch (actionType) {
       case 'STATE_UPDATE':
+      case 'STATE_UPDATE_COMPACT': // Handle compact state updates from guests
         this.handleStateUpdateAction(actionData, guestPlayerId)
         break
 
@@ -236,15 +237,20 @@ export class HostMessageHandler {
 
     const guestState = actionData.gameState
 
-    // Merge players: preserve deck/discard from host state for players that aren't the guest
+    // Merge players: preserve deck/discard AND score from host state for players that aren't the guest
+    // This prevents guest's stale data from overwriting other players' scores
     const mergedPlayers = guestState.players.map((guestPlayer: Player) => {
       const hostPlayer = this.gameState!.players.find(p => p.id === guestPlayer.id)
       if (hostPlayer && guestPlayer.id !== guestPlayerId) {
-        // This is another player (not guest, not local) - preserve deck from host
+        // This is another player (not guest, not local) - preserve deck, discard, AND score from host
         return {
           ...guestPlayer,
           deck: hostPlayer.deck || guestPlayer.deck,
           discard: hostPlayer.discard || guestPlayer.discard,
+          score: hostPlayer.score,  // CRITICAL: Preserve host's score data (guest may have stale data)
+          handSize: hostPlayer.handSize ?? guestPlayer.handSize,
+          deckSize: hostPlayer.deckSize ?? guestPlayer.deckSize,
+          discardSize: hostPlayer.discardSize ?? guestPlayer.discardSize,
         }
       }
       return guestPlayer

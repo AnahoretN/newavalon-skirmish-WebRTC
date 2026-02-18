@@ -54,7 +54,7 @@ export interface CounterDefinition {
     description: string;
     sortOrder: number;
     allowedPanels?: string[]; // Controls visibility in UI panels (e.g. 'COUNTER_PANEL')
-    allowedTargets?: ('board' | 'hand' | 'deck' | 'discard' | 'announced')[]; // Controls where this counter can be placed
+    allowedTargets?: ('board' | 'board-facedown' | 'hand' | 'deck' | 'discard' | 'announced')[]; // Controls where this counter can be placed
 }
 
 

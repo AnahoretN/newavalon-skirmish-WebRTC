@@ -6,8 +6,6 @@ import { Tooltip, CardTooltipContent } from './Tooltip'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getCardDatabaseMap } from '@/content'
 
-const COUNTER_BG_URL = 'https://res.cloudinary.com/dxxh6meej/image/upload/v1763653192/background_counter_socvss.png'
-
 interface CountersModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -18,7 +16,15 @@ interface CountersModalProps {
   cursorStack: { type: string; count: number } | null;
 }
 
-export const CountersModal: React.FC<CountersModalProps> = ({ isOpen, onClose, canInteract, anchorEl, imageRefreshVersion, onCounterMouseDown, cursorStack }) => {
+export const CountersModal: React.FC<CountersModalProps> = ({
+  isOpen,
+  onClose,
+  canInteract,
+  anchorEl,
+  imageRefreshVersion,
+  onCounterMouseDown,
+  cursorStack
+}) => {
   const { getCounterTranslation, t } = useLanguage()
   const [tooltipCard, setTooltipCard] = useState<CardType | null>(null)
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 })
@@ -135,12 +141,10 @@ export const CountersModal: React.FC<CountersModalProps> = ({ isOpen, onClose, c
                     onMouseDown={(e) => handleMouseDown(e, counter.type, displayLabel)}
                     onMouseUp={handleMouseUp}
                     onMouseMove={handleMouseMove}
-                    className={`w-12 h-12 rounded-full border-white flex items-center justify-center shadow-lg mx-auto relative select-none ${canInteract ? 'cursor-pointer hover:ring-2 ring-indigo-400' : 'cursor-not-allowed'}`}
+                    className="w-12 h-12 rounded-full border-2 border-white shadow-lg mx-auto relative select-none"
                     style={{
-                      backgroundImage: `url(${COUNTER_BG_URL})`,
-                      backgroundSize: 'contain',
-                      backgroundPosition: 'center',
-                      backgroundRepeat: 'no-repeat',
+                      backgroundColor: 'rgb(107, 114, 128)', // gray-600 no opacity
+                      cursor: canInteract ? 'pointer' : 'not-allowed'
                     }}
                   >
                     {iconUrl ? (

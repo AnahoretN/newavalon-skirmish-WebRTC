@@ -39,6 +39,12 @@ export default defineConfig(({ mode }) => {
     server: {
       host: true,
       port: 8080,
+      headers: {
+        // Disable caching for development to ensure fresh code is always loaded
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      },
     },
     css: {
       postcss: {
@@ -51,6 +57,10 @@ export default defineConfig(({ mode }) => {
       emptyOutDir: true,
       rollupOptions: {
         output: {
+          // Add version to chunk filenames for cache busting
+          chunkFileNames: `assets/[name]-[hash]-${APP_VERSION}.js`,
+          entryFileNames: `assets/[name]-[hash]-${APP_VERSION}.js`,
+          assetFileNames: `assets/[name]-[hash]-${APP_VERSION}.[ext]`,
           manualChunks: (id) => {
             // Vendor chunk - React и основные зависимости
             if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {

@@ -22,8 +22,8 @@ export const MAX_PLAYERS = 4
  * URLs for game-related icons and images.
  */
 export const GAME_ICONS = {
-  FIRST_PLAYER: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1763478810/LastPlayed_bfkbwb.png',
-  ROUND_WIN_MEDAL: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1764252181/medal_rgbw8d.png',
+  FIRST_PLAYER: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1771365397/LastPlayed_ge4gyh.webp',
+  ROUND_WIN_MEDAL: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1771365397/medal_tavarc.webp',
 } as const
 
 /**
@@ -170,10 +170,14 @@ export const STATUS_DESCRIPTIONS: Record<string, string> = new Proxy({} as Recor
 /**
  * Available counters for the Counters Modal, sorted by sortOrder.
  * Filters counters to only show those allowed in the COUNTER_PANEL.
+ * Excludes Resurrected - players cannot place it manually, only via card effects.
  */
 export const getAvailableCounters = () => {
   return Object.entries(countersDatabase)
-    .filter(([, def]) => !def.allowedPanels || def.allowedPanels.includes('COUNTER_PANEL'))
+    .filter(([key, def]) =>
+      key !== 'Resurrected' && // Exclude Resurrected token
+      (!def.allowedPanels || def.allowedPanels.includes('COUNTER_PANEL'))
+    )
     .sort(([, a], [, b]) => a.sortOrder - b.sortOrder)
     .map(([key, def]) => ({ type: key, label: def.name }))
 }

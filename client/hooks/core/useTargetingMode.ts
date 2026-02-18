@@ -53,6 +53,12 @@ export function useTargetingMode(props: UseTargetingModeProps) {
   ) => {
     const currentGameState = gameStateRef.current
 
+    // Validate playerId
+    if (typeof playerId !== 'number') {
+      logger.error(`[TargetingMode] Invalid playerId type: ${typeof playerId}, value:`, playerId)
+      return
+    }
+
     // Use pre-calculated targets if provided, otherwise calculate them
     let boardTargets: {row: number, col: number}[] = []
     if (preCalculatedTargets) {
@@ -67,22 +73,35 @@ export function useTargetingMode(props: UseTargetingModeProps) {
 
     // Calculate hand targets if action has a filter for hand cards
     if (action.payload?.filter && action.mode === 'SELECT_TARGET') {
-      // Find the player who owns the source card
-      const sourceOwnerId = action.sourceCard?.ownerId || action.originalOwnerId || playerId
-      const player = currentGameState.players.find(p => p.id === sourceOwnerId)
-
-      if (player && player.hand) {
-        // Apply the filter to each card in hand to find valid targets
-        player.hand.forEach((card, index) => {
-          try {
-            if (action.payload.filter(card)) {
-              handTargets.push({ playerId: player.id, cardIndex: index })
+      logger.info(`[TargetingMode] Calculating hand targets for action`, {
+        actionMode: action.mode,
+        filterType: typeof action.payload.filter,
+        hasActionType: !!action.payload.actionType,
+      })
+      // Check ALL players' hands for valid targets, not just the source card owner
+      // This allows abilities that target other players' hand cards
+      for (const player of currentGameState.players) {
+        if (player.hand) {
+          // Apply the filter to each card in hand to find valid targets
+          player.hand.forEach((card, index) => {
+            try {
+              if (action.payload.filter(card)) {
+                handTargets.push({ playerId: player.id, cardIndex: index })
+                logger.debug(`[TargetingMode] Found hand target: player ${player.id}, card ${index}, card ${card.name}`)
+              }
+            } catch (e) {
+              logger.warn(`[TargetingMode] Filter failed for card ${card.name}:`, e)
+              // Filter failed, skip this card
             }
-          } catch (e) {
-            // Filter failed, skip this card
-          }
-        })
+          })
+        }
       }
+      logger.info(`[TargetingMode] Hand targets calculated: ${handTargets.length} targets`)
+    } else {
+      logger.info(`[TargetingMode] No hand targets calculated - no filter or wrong mode`, {
+        hasFilter: !!action.payload?.filter,
+        mode: action.mode,
+      })
     }
 
     // Build targeting mode data
@@ -125,18 +144,26 @@ export function useTargetingMode(props: UseTargetingModeProps) {
         })
       } else {
         // Guest sends to host for rebroadcasting
-        webrtcManager.current.sendMessageToHost({
+        const success = webrtcManager.current.sendMessageToHost({
           type: 'SET_TARGETING_MODE',
           senderId: webrtcManager.current.getPeerId?.() ?? undefined,
           data: { targetingMode: targetingModeData },
           timestamp: Date.now()
         })
+        logger.info(`[TargetingMode] Guest sent SET_TARGETING_MODE to host`, {
+          success,
+          playerId,
+          boardTargetsCount: boardTargets.length,
+          handTargetsCount: handTargets.length
+        })
       }
     }
 
-    logger.info(`[TargetingMode] Player ${playerId} activated targeting mode`, {
+    logger.info(`[TargetingMode] Player ${playerId} (type: ${typeof playerId}) activated targeting mode`, {
       mode: action.mode,
       boardTargetsCount: boardTargets.length,
+      handTargetsCount: handTargets.length,
+      isDeckSelectable: isDeckSelectable || false,
     })
   }, [ws, webrtcManager, gameStateRef, webrtcIsHostRef, setGameState])
 

@@ -283,9 +283,18 @@ export const useAppCounters = ({
 
                 const targetPlayer = gameState.players.find(p => p.id === targetCard.ownerId)
 
-                // Special handling for Revealed tokens on ANY board cards (not just opponents)
-                // Revealed can be placed on any player's face-down board cards as long as they don't already have your Revealed
+                // Special handling for Revealed tokens on opponent's face-down board cards
                 if (cursorStack.type === 'Revealed' && !targetPlayer?.isDummy) {
+                  // RULE: Revealed tokens cannot be placed on own cards
+                  if (targetCard.ownerId === localPlayerId) {
+                    return
+                  }
+
+                  // RULE: Revealed tokens can only be placed on face-down cards
+                  if (!targetCard.isFaceDown) {
+                    return
+                  }
+
                   // Check if card already has Revealed from this player (unique constraint)
                   const alreadyHasRevealed = targetCard.statuses?.some(s => s.type === 'Revealed' && s.addedByPlayerId === effectiveActorId)
                   if (alreadyHasRevealed) {
@@ -293,20 +302,9 @@ export const useAppCounters = ({
                     return
                   }
 
-                  if (targetCard.isFaceDown) {
-                    if (localPlayerId !== null) {
-                      requestCardReveal({ source: 'board', ownerId: targetCard.ownerId, boardCoords: { row, col } }, localPlayerId)
-                    }
-                  } else {
-                    handleDrop({
-                      card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
-                      source: 'counter_panel',
-                      ownerId: cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId ?? effectiveActorId ?? undefined,
-                      statusType: cursorStack.type,
-                      count: 1,
-                    }, { target: 'board', boardCoords: { row, col } })
-                    // Trigger target selection effect
-                    triggerTargetSelection('board', { row, col })
+                  // Request card reveal from opponent
+                  if (localPlayerId !== null) {
+                    requestCardReveal({ source: 'board', ownerId: targetCard.ownerId, boardCoords: { row, col } }, localPlayerId)
                   }
 
                   if (cursorStack.sourceCoords && cursorStack.sourceCoords.row >= 0) {

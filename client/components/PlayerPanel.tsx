@@ -58,7 +58,7 @@
  * ===============================================================================
  */
 
-import React, { memo, useRef, useState, useEffect, useMemo } from 'react'
+import React, { memo, useRef, useState, useEffect, useMemo, useCallback } from 'react'
 import { DeckType as DeckTypeEnum } from '@/types'
 import type { Player, PlayerColor, Card as CardType, DragItem, DropTarget, CustomDeckFile, ContextMenuParams, CursorStackState } from '@/types'
 import { PLAYER_COLORS, GAME_ICONS } from '@/constants'
@@ -119,6 +119,7 @@ interface PlayerPanelProps {
   cursorStack?: CursorStackState | null;
   remoteValidTargets?: { playerId: number, validHandTargets: { playerId: number, cardIndex: number }[], isDeckSelectable: boolean } | null;
   highlightOwnerId?: number; // The owner of the current ability/mode (for correct highlight color)
+  onCancelAllModes?: () => void; // Right-click to cancel all modes
 }
 
 const ColorPicker: React.FC<{ player: Player, canEditSettings: boolean, selectedColors: Set<PlayerColor>, onColorChange: (c: PlayerColor) => void, compact?: boolean }> = memo(({ player, canEditSettings, selectedColors, onColorChange, compact = false }) => {
@@ -391,9 +392,19 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   cursorStack = null,
   remoteValidTargets = null,
   highlightOwnerId,
+  onCancelAllModes,
 }) => {
   const { t, resources } = useLanguage()
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Helper: Handle context menu with mode cancellation
+  const handleContextMenuWithCancel = useCallback((e: React.MouseEvent, type: ContextMenuParams['type'], data: ContextMenuData) => {
+    // Right-click cancels all targeting/ability modes for all players
+    if (onCancelAllModes) {
+      onCancelAllModes()
+    }
+    openContextMenu(e, type, data)
+  }, [openContextMenu, onCancelAllModes])
 
   // Helper: Get effective deck size
   // Always use deck.length - the actual array length is the source of truth
@@ -544,7 +555,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
         <div className="bg-gray-800 p-1 rounded-lg mb-1 flex-shrink-0">
           <div className="grid grid-cols-4 gap-1 sm:gap-2">
             {/* Deck */}
-            <DropZone className="relative" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => openContextMenu(e, 'deckPile', { player })} isOverClassName="rounded ring-2 ring-white">
+            <DropZone className="relative" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => handleContextMenuWithCancel(e, 'deckPile', { player })} isOverClassName="rounded ring-2 ring-white">
               {(() => {
                 // Check if deck is selectable (either from local player or from remote player)
                 const isLocalDeckSelectable = isDeckSelectable
@@ -617,7 +628,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
             </DropZone>
 
             {/* Discard */}
-            <DropZone onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'discard', playerId: player.id })} onContextMenu={(e) => openContextMenu(e, 'discardPile', { player })} isOverClassName="rounded ring-2 ring-white">
+            <DropZone onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'discard', playerId: player.id })} onContextMenu={(e) => handleContextMenuWithCancel(e, 'discardPile', { player })} isOverClassName="rounded ring-2 ring-white">
               <div className="aspect-square bg-gray-700 rounded flex flex-col items-center justify-center cursor-pointer hover:bg-gray-600 transition-all shadow-md border border-gray-600 select-none text-white">
                 <span className="text-[10px] sm:text-xs font-bold mb-0.5 text-gray-400 uppercase tracking-tight">{t('discard')}</span>
                 <span className="text-base sm:text-lg font-bold">{player.discard.length}</span>
@@ -638,7 +649,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       isManual: true
                     })}
                     onDragEnd={() => { setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK) }}
-                    onContextMenu={(e) => canPerformActions && player.announcedCard && openContextMenu(e, 'announcedCard', {
+                    onContextMenu={(e) => canPerformActions && player.announcedCard && handleContextMenuWithCancel(e, 'announcedCard', {
                       card: player.announcedCard,
                       player
                     })}
@@ -761,7 +772,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         isManual: true
                       })}
                       onDragEnd={() => { setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK) }}
-                      onContextMenu={(e) => canPerformActions && openContextMenu(e, 'handCard', {
+                      onContextMenu={(e) => canPerformActions && handleContextMenuWithCancel(e, 'handCard', {
                         card,
                         player,
                         cardIndex: index
@@ -866,7 +877,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
             <div className="grid grid-cols-6 gap-1 flex-shrink-0 scale-[0.975] origin-left">
             {/* Deck */}
             <div className="aspect-square relative">
-              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => openContextMenu(e, 'deckPile', { player })} isOverClassName="rounded ring-2 ring-white">
+              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => handleContextMenuWithCancel(e, 'deckPile', { player })} isOverClassName="rounded ring-2 ring-white">
                 {(() => {
                   // Check if deck is selectable (either from local player or from remote player)
                   const isLocalDeckSelectable = isDeckSelectable
@@ -934,7 +945,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
 
             {/* Discard */}
             <div className="aspect-square relative">
-              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'discard', playerId: player.id })} onContextMenu={(e) => openContextMenu(e, 'discardPile', { player })} isOverClassName="rounded ring-2 ring-white">
+              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'discard', playerId: player.id })} onContextMenu={(e) => handleContextMenuWithCancel(e, 'discardPile', { player })} isOverClassName="rounded ring-2 ring-white">
                 <RemotePile
                   label={t('discard')}
                   count={player.discard.length}
@@ -958,7 +969,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         isManual: true
                       })}
                       onDragEnd={() => { setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK) }}
-                      onContextMenu={(e) => player.announcedCard && openContextMenu(e, 'announcedCard', {
+                      onContextMenu={(e) => player.announcedCard && handleContextMenuWithCancel(e, 'announcedCard', {
                         card: player.announcedCard,
                         player
                       })}
@@ -1053,7 +1064,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   onContextMenu={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
-                    openContextMenu(e, 'handCard', { card, player, cardIndex: index })
+                    handleContextMenuWithCancel(e, 'handCard', { card, player, cardIndex: index })
                   }}
                   onDoubleClick={() => onHandCardDoubleClick(player, card, index)}
                   onClick={() => {

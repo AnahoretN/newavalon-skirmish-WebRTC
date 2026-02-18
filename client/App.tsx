@@ -37,16 +37,15 @@ import type {
   AbilityAction,
 } from './types'
 import { DeckType } from './types'
-import { STATUS_ICONS, STATUS_DESCRIPTIONS } from './constants'
+import { STATUS_ICONS, STATUS_DESCRIPTIONS, PLAYER_COLORS, PLAYER_COLOR_RGB } from './constants'
 import { countersDatabase, fetchContentDatabase } from './content'
 import { validateTarget, calculateValidTargets, checkActionHasTargets } from '@shared/utils/targeting'
 import { getCommandAction } from '@server/utils/commandLogic'
+import { createTargetingActionFromCursorStack, createTargetingActionFromAbilityMode, determineTargetingPlayerId } from './utils/targetingActionUtils'
 import { useLanguage } from './contexts/LanguageContext'
 import { TIMING } from './utils/common'
 import { shuffleDeck } from '@shared/utils/array'
 import { getWebRTCEnabled } from './hooks/useWebRTCEnabled'
-
-const COUNTER_BG_URL = 'https://res.cloudinary.com/dxxh6meej/image/upload/v1763653192/background_counter_socvss.png'
 
 // Inner app component without ModalsProvider
 const AppInner = function AppInner() {
@@ -298,6 +297,7 @@ const AppInner = function AppInner() {
 
   // Track if we previously had targeting mode to avoid clearing validTargets too aggressively
   const prevHadTargetingModeRef = useRef(false)
+  const prevTargetingModePlayerIdRef = useRef<number | undefined>(undefined)
 
   // Lifted state for cursor stack to resolve circular dependency
   const [cursorStack, setCursorStack] = useState<CursorStackState | null>(null)
@@ -373,9 +373,10 @@ const AppInner = function AppInner() {
     commandContext,
     setCommandContext,
     setViewingDiscard,
-    setPlayMode,
     triggerNoTarget,
     triggerTargetSelection,
+    playMode,
+    setPlayMode,
     setCounterSelectionData,
     interactionLock,
     onAbilityComplete: () => setAbilityCheckKey(prev => prev + 1),
@@ -405,6 +406,7 @@ const AppInner = function AppInner() {
     clearValidTargets: () => setValidTargets([]),
     setTargetingMode,
     clearTargetingMode,
+    validTargets,
   })
 
   const handleAnnouncedCardDoubleClick = (player: Player, card: Card) => {
@@ -501,20 +503,50 @@ const AppInner = function AppInner() {
   )
 
   const handleDeckClick = useCallback((targetPlayerId: number) => {
-    if (abilityMode?.mode === 'SELECT_DECK') {
+    // Check both local abilityMode and synchronized targetingMode
+    const isLocalDeckSelect = abilityMode?.mode === 'SELECT_DECK'
+    const isTargetingModeDeckSelect = gameState.targetingMode?.isDeckSelectable === true
+
+    if (isLocalDeckSelect || isTargetingModeDeckSelect) {
+      // Use abilityMode if available (host), otherwise use targetingMode (client)
+      const modeData = abilityMode || gameState.targetingMode
+      if (!modeData) {
+        return
+      }
+
+      // For abilityMode (AbilityAction), sourceCard is directly on the object
+      // For targetingMode (TargetingModeData), sourceCard is in the action property
+      const sourceCard = abilityMode ? (abilityMode.sourceCard) : (gameState.targetingMode?.action?.sourceCard)
+      const isDeployAbility = abilityMode?.isDeployAbility
+      const sourceCoords = modeData.sourceCoords
+
       // Trigger deck selection effect visible to all players via WebSocket
       triggerDeckSelection(targetPlayerId, gameState.activePlayerId ?? localPlayerId ?? 1)
       setTopDeckViewState({
         targetPlayerId,
         isLocked: true,
         initialCount: 3,
-        ...(abilityMode.sourceCard && { sourceCard: abilityMode.sourceCard }),
-        ...(abilityMode.isDeployAbility !== undefined && { isDeployAbility: abilityMode.isDeployAbility }),
-        ...(abilityMode.sourceCoords && { sourceCoords: abilityMode.sourceCoords }),
+        ...(sourceCard && { sourceCard }),
+        ...(isDeployAbility !== undefined && { isDeployAbility }),
+        ...(sourceCoords && { sourceCoords }),
       })
+
+      // Clear modes
       setAbilityMode(null)
+      // Note: targetingMode will be cleared when abilityMode is cleared (see useAppAbilities.ts useEffect)
     }
-  }, [abilityMode, gameState.activePlayerId, localPlayerId, triggerDeckSelection])
+  }, [abilityMode, gameState.targetingMode, gameState.activePlayerId, localPlayerId, triggerDeckSelection])
+
+  // Sync validHandTargets when targetingMode.handTargets changes (for P2P mode)
+  // When another player activates targeting mode with hand targets, we need to update our local state
+  useEffect(() => {
+    if (gameState.targetingMode?.handTargets) {
+      setValidHandTargets(gameState.targetingMode.handTargets)
+    } else if (!abilityMode && !cursorStack) {
+      // Clear validHandTargets when targetingMode is cleared and no local mode is active
+      setValidHandTargets([])
+    }
+  }, [gameState.targetingMode?.handTargets, gameState.targetingMode?.timestamp, abilityMode, cursorStack])
 
   const handleTopDeckReorder = useCallback((playerId: number, newTopCards: Card[]) => {
     reorderTopDeck(playerId, newTopCards)
@@ -911,6 +943,13 @@ const AppInner = function AppInner() {
     }
 
     if (abilityMode?.type === 'ENTER_MODE' && abilityMode.mode === 'SELECT_TARGET') {
+      // Debug logging for targeting mode activation
+      logger.info(`[App.tsx] ENTER_MODE SELECT_TARGET detected`, {
+        actionType: abilityMode.payload?.actionType,
+        hasFilter: !!abilityMode.payload?.filter,
+        filterType: typeof abilityMode.payload?.filter,
+        sourceCardName: abilityMode.sourceCard?.name,
+      })
       // Special logic for Quick Response Team Hand Selection highlight
       if (abilityMode.payload.actionType === 'SELECT_HAND_FOR_DEPLOY' || abilityMode.payload.filter) {
         gameState.players.forEach(p => {
@@ -932,22 +971,15 @@ const AppInner = function AppInner() {
       }
     }
 
-    // CRITICAL: Update validHandTargets state to trigger visual highlights in PlayerPanel
-    if (handTargets.length > 0) {
-      setValidHandTargets(handTargets)
-    } else if (abilityMode?.type === 'ENTER_MODE' && abilityMode.mode === 'SELECT_TARGET' && abilityMode.payload?.filter) {
-      // In SELECT_TARGET mode with filter - always update (even with empty array)
-      setValidHandTargets(handTargets)
-    } else {
-      // Not in SELECT_TARGET mode with filter - clear valid hand targets
-      setValidHandTargets([])
-    }
-
+    // Handle cursorStack - process BEFORE setting validHandTargets
     if (cursorStack) {
       const counterDef = countersDatabase[cursorStack.type]
       const allowsHand = cursorStack.type === 'Revealed' || (counterDef?.allowedTargets?.includes('hand'))
 
-      if (allowsHand) {
+      // If cursorStack doesn't allow hand targets, clear any from abilityMode
+      if (!allowsHand) {
+        handTargets.length = 0 // Clear handTargets - tokens like Exploit/Aim/Stun/Shield can't go on hand cards
+      } else {
         gameState.players.forEach(p => {
           p.hand.forEach((card, index) => {
             const constraints = {
@@ -1007,66 +1039,36 @@ const AppInner = function AppInner() {
 
       if (abilityMode) {
         targetingAction = abilityMode
-      } else if (cursorStack) {
-        const targetType = cursorStack.targetType
-        targetingAction = {
-          type: 'ENTER_MODE',
-          mode: 'SELECT_TARGET',
-          sourceCoords: cursorStack.sourceCoords,
-          payload: {
-            filter: targetType ? ((card: Card) => card.types?.includes(targetType)) : undefined,
-            ...(cursorStack.maxDistanceFromSource !== undefined && { range: cursorStack.maxDistanceFromSource }),
-          },
-          originalOwnerId: cursorStack.originalOwnerId,
-        }
-      } else if (playMode) {
-        targetingAction = {
-          type: 'ENTER_MODE',
-          mode: 'SELECT_TARGET',
-        }
-      } else if (commandModalCard) {
-        targetingAction = {
-          type: 'ENTER_MODE',
-          mode: 'SELECT_TARGET',
-        }
+      } else if (cursorStack && actorId !== null) {
+        targetingAction = createTargetingActionFromCursorStack(cursorStack, gameState, actorId)
+      } else if (playMode && abilityMode) {
+        targetingAction = createTargetingActionFromAbilityMode(abilityMode)
+      } else if (commandModalCard && abilityMode) {
+        targetingAction = createTargetingActionFromAbilityMode(abilityMode)
       }
 
       if (targetingAction && actorId !== null) {
+        const targetingPlayerId = determineTargetingPlayerId(
+          commandModalCard,
+          abilityMode,
+          cursorStack,
+          gameState,
+          localPlayerId,
+          actorId,
+          boardSize
+        )
+
+        // Debug: log targeting mode setup (after targetingPlayerId is determined)
+        logger.info(`[App.tsx] Calling setTargetingMode`, {
+          mode: targetingAction.mode,
+          actionType: targetingAction.payload?.actionType,
+          hasFilter: !!targetingAction.payload?.filter,
+          targetingPlayerId,
+          boardTargetsCount: boardTargets.length,
+          handTargetsCount: handTargets.length,
+        })
+
         // Pass pre-calculated boardTargets to avoid recalculating (important for line modes)
-        // IMPORTANT: The visual highlight color should match the ACTIVE PLAYER (dummy's color when controlled by local player)
-        // Priority:
-        // 1. commandModalCard.ownerId (for command cards - the card that triggered the mode)
-        // 2. abilityMode.sourceCoords -> card.ownerId (for abilities on cards - the card with the ability)
-        // 3. cursorStack.sourceCard.ownerId (for token stacking - the source card)
-        // 4. gameState.activePlayerId (active player in game - IMPORTANT for dummy control)
-        // 5. localPlayerId (current player on this client - fallback)
-        // 6. actorId (last resort)
-        let targetingPlayerId: number | null = null
-
-        // Priority 1: commandModalCard.ownerId (for command cards)
-        if (commandModalCard?.ownerId !== undefined) {
-          targetingPlayerId = commandModalCard.ownerId
-        }
-
-        // Priority 2: abilityMode.sourceCoords -> card.ownerId (for abilities on cards)
-        if (targetingPlayerId === null && abilityMode?.sourceCoords) {
-          const { row, col } = abilityMode.sourceCoords
-          if (row >= 0 && row < boardSize && col >= 0 && col < gameState.board[row].length) {
-            const sourceCard = gameState.board[row][col]?.card
-            if (sourceCard?.ownerId !== undefined) {
-              targetingPlayerId = sourceCard.ownerId
-            }
-          }
-        }
-
-        // Priority 3: cursorStack.sourceCard.ownerId (for token stacking)
-        if (targetingPlayerId === null && cursorStack?.sourceCard?.ownerId !== undefined) {
-          targetingPlayerId = cursorStack.sourceCard.ownerId
-        }
-
-        // Fallbacks - prioritize activePlayerId (for dummy control) over localPlayerId
-        targetingPlayerId = targetingPlayerId ?? gameState.activePlayerId ?? localPlayerId ?? actorId
-
         setTargetingMode(targetingAction, targetingPlayerId, abilityMode?.sourceCoords || cursorStack?.sourceCoords, boardTargets, commandContext)
       }
     } else if (!hasActiveMode) {
@@ -1109,6 +1111,15 @@ const AppInner = function AppInner() {
     })
   }, [abilityMode, abilityMode?.mode, validHandTargets, gameState.activePlayerId, localPlayerId, syncValidTargets])
 
+  // Clear valid targets when cursorStack is cleared (all tokens used)
+  useEffect(() => {
+    if (!cursorStack && !abilityMode && !playMode) {
+      // No active mode - clear all target highlights
+      setValidTargets([])
+      setValidHandTargets([])
+    }
+  }, [cursorStack, abilityMode, playMode])
+
   useEffect(() => {
     if (latestHighlight) {
       setHighlight(latestHighlight)
@@ -1135,29 +1146,34 @@ const AppInner = function AppInner() {
   // Sync validTargets with gameState.targetingMode for WebRTC P2P mode
   // When gameState.targetingMode changes, update validTargets to show highlights
   useEffect(() => {
-    if (gameState.targetingMode?.boardTargets) {
+    if (gameState.targetingMode) {
       // Extract boardTargets from targetingMode and update local state
-      const boardTargets = gameState.targetingMode.boardTargets
+      const boardTargets = gameState.targetingMode.boardTargets || []
       setValidTargets(boardTargets)
 
       // Also sync handTargets if present
       if (gameState.targetingMode.handTargets) {
         setValidHandTargets(gameState.targetingMode.handTargets)
+      } else {
+        // Clear hand targets if targeting mode doesn't have any
+        setValidHandTargets([])
       }
 
-      // Mark that we now have targeting mode
+      // Mark that we now have targeting mode and whose it is
       prevHadTargetingModeRef.current = true
+      prevTargetingModePlayerIdRef.current = gameState.targetingMode.playerId
     } else if (!abilityMode && !cursorStack && !playMode) {
       // Clear validTargets ONLY when we had a targeting mode before and it was cleared
       // AND it was our targeting mode (not another player's)
-      if (prevHadTargetingModeRef.current && gameState.targetingMode?.playerId !== localPlayerId) {
-        // Don't clear - targeting mode belongs to another player
+      if (prevHadTargetingModeRef.current && prevTargetingModePlayerIdRef.current !== localPlayerId) {
+        // Don't clear - targeting mode belonged to another player
         return
       }
       if (prevHadTargetingModeRef.current) {
         setValidTargets([])
         setValidHandTargets([])
         prevHadTargetingModeRef.current = false
+        prevTargetingModePlayerIdRef.current = undefined
       }
     }
   }, [gameState.targetingMode, abilityMode, cursorStack, playMode, localPlayerId])
@@ -1498,6 +1514,29 @@ const AppInner = function AppInner() {
     }
     handleTriggerHighlight({ type: 'cell', row: boardCoords.row, col: boardCoords.col })
   }
+
+  // Cancels all active modes (abilityMode, cursorStack, playMode, targetingMode)
+  // Called by right-click on board or cards
+  const handleCancelAllModes = useCallback(() => {
+    // Clear ability mode
+    if (abilityMode) {
+      setAbilityMode(null)
+    }
+    // Clear cursor stack (token placement)
+    if (cursorStack) {
+      setCursorStack(null)
+    }
+    // Clear play mode
+    if (playMode) {
+      setPlayMode(null)
+    }
+    // Clear targeting mode for all players
+    clearTargetingMode()
+    // Clear valid hand targets
+    setValidHandTargets([])
+    // Clear valid board targets
+    setValidTargets([])
+  }, [abilityMode, cursorStack, playMode, clearTargetingMode])
 
   const handleDoubleClickHandCard = (player: Player, card: Card, cardIndex: number) => {
     if (abilityMode || cursorStack) {
@@ -2168,12 +2207,12 @@ const AppInner = function AppInner() {
           style={{ willChange: 'transform' }}
         >
           <div
-            className="w-12 h-12 rounded-full border-2 border-white flex items-center justify-center relative bg-gray-900"
+            className="w-12 h-12 rounded-full border-2 border-white flex items-center justify-center relative shadow-lg"
             style={{
-              backgroundImage: `url(${COUNTER_BG_URL})`,
-              backgroundSize: 'contain',
-              backgroundPosition: 'center',
-              backgroundRepeat: 'no-repeat',
+              // Use active player's color for background at 75% opacity
+              backgroundColor: playerColorMap.get(gameState.activePlayerId ?? localPlayerId ?? 1)
+                ? `rgba(${PLAYER_COLOR_RGB[playerColorMap.get(gameState.activePlayerId ?? localPlayerId ?? 1) || 'blue']?.r ?? 37}, ${PLAYER_COLOR_RGB[playerColorMap.get(gameState.activePlayerId ?? localPlayerId ?? 1) || 'blue']?.g ?? 99}, ${PLAYER_COLOR_RGB[playerColorMap.get(gameState.activePlayerId ?? localPlayerId ?? 1) || 'blue']?.b ?? 235}, 0.75)`
+                : 'rgba(107, 114, 128, 0.75)',
             }}
           >
             {STATUS_ICONS[cursorStack.type] ? (
@@ -2239,13 +2278,14 @@ const AppInner = function AppInner() {
               startingPlayerId={gameState.startingPlayerId}
               currentRound={gameState.currentRound}
               onDeckClick={handleDeckClick}
-              isDeckSelectable={abilityMode?.mode === 'SELECT_DECK'}
+              isDeckSelectable={abilityMode?.mode === 'SELECT_DECK' || gameState.targetingMode?.isDeckSelectable === true}
               hideDummyCards={hideDummyCards}
               deckSelections={latestDeckSelections}
               handCardSelections={latestHandCardSelections}
               cursorStack={cursorStack}
               remoteValidTargets={remoteValidTargets}
               highlightOwnerId={highlightOwnerId}
+              onCancelAllModes={handleCancelAllModes}
             />
           </div>
         )}
@@ -2274,6 +2314,7 @@ const AppInner = function AppInner() {
               onEmptyCellDoubleClick={handleDoubleClickEmptyCell}
               imageRefreshVersion={imageRefreshVersion}
               cursorStack={cursorStack}
+              setCursorStack={setCursorStack}
               currentPhase={gameState.currentPhase}
               activePlayerId={gameState.activePlayerId}
               onCardClick={handleBoardCardClick}
@@ -2287,6 +2328,7 @@ const AppInner = function AppInner() {
               abilitySourceCoords={abilityMode?.sourceCoords || null}
               abilityCheckKey={abilityCheckKey}
               targetSelectionEffects={targetSelectionEffects}
+              onCancelAllModes={handleCancelAllModes}
             />
           </div>
         </div>
@@ -2347,13 +2389,14 @@ const AppInner = function AppInner() {
                     startingPlayerId={gameState.startingPlayerId}
                     currentRound={gameState.currentRound}
                     onDeckClick={handleDeckClick}
-                    isDeckSelectable={abilityMode?.mode === 'SELECT_DECK'}
+                    isDeckSelectable={abilityMode?.mode === 'SELECT_DECK' || gameState.targetingMode?.isDeckSelectable === true}
                     hideDummyCards={hideDummyCards}
                     deckSelections={latestDeckSelections}
                     handCardSelections={latestHandCardSelections}
                     cursorStack={cursorStack}
                     remoteValidTargets={remoteValidTargets}
                     highlightOwnerId={highlightOwnerId}
+                    onCancelAllModes={handleCancelAllModes}
                   />
                 </div>
               ))}

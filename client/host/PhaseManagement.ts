@@ -7,6 +7,7 @@
 import type { GameState } from '../types'
 import { logger } from '../utils/logger'
 import { checkRoundEnd, endRound } from './RoundManagement'
+import { resetReadyStatusesForTurn } from '../utils/autoAbilities'
 
 /**
  * Phase indices
@@ -69,11 +70,16 @@ export function performPreparationPhase(gameState: GameState, activePlayerId: nu
   })
 
   // Transition to Setup phase
-  const newState: GameState = {
+  let newState: GameState = {
     ...gameState,
     players: newPlayers,
     currentPhase: 1  // Setup
   }
+
+  // Reset phase-specific ready statuses (readySetup, readyCommit) for the active player
+  // This happens during Preparation phase, before entering Setup phase
+  // IMPORTANT: This must be done AFTER creating newState so we can modify it
+  resetReadyStatusesForTurn(newState, activePlayerId)
 
   // Check for round end after entering Setup phase
   // This check happens after every preparation phase, so when first player's turn comes around
@@ -353,7 +359,8 @@ export function passTurnToNextPlayer(gameState: GameState): GameState {
     ...newState,
     activePlayerId: nextPlayerId,
     currentPhase: 0,  // Preparation phase
-    isScoringStep: false
+    isScoringStep: false,
+    targetingMode: null  // Clear targeting mode when passing turn
   }
 
   // Perform Preparation phase (draw card and transition to Setup)

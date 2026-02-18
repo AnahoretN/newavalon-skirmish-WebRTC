@@ -1,5 +1,32 @@
 import type { Card, GameState, AbilityAction } from '../types/types.js'
-import { READY_STATUS_DEPLOY, READY_STATUS_SETUP, READY_STATUS_COMMIT } from '../../shared/constants/readyStatuses.js'
+import {
+  checkAdj,
+  hasStatus,
+  hasReadyStatus,
+  addReadyStatus,
+  removeReadyStatus,
+  hasReadyStatusForPhase,
+  hasReadyAbilityInCurrentPhase,
+  READY_STATUS_DEPLOY,
+  READY_STATUS_SETUP,
+  READY_STATUS_COMMIT,
+  type AbilityActivationType
+} from '../../shared/abilities/index.js'
+
+// Re-export for backwards compatibility
+export type { AbilityActivationType }
+export {
+  checkAdj,
+  hasStatus,
+  hasReadyStatus,
+  addReadyStatus,
+  removeReadyStatus,
+  hasReadyStatusForPhase,
+  hasReadyAbilityInCurrentPhase,
+  READY_STATUS_DEPLOY,
+  READY_STATUS_SETUP,
+  READY_STATUS_COMMIT
+}
 
 // Use console.log instead of logger to avoid Node.js dependency issues
 // when this file is imported by client code via @server alias
@@ -9,62 +36,17 @@ const debugLog = (...args: unknown[]) => {
   }
 }
 
-// Ability activation type - when can this ability be used?
-export type AbilityActivationType = 'deploy' | 'setup' | 'commit'
-
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // Parameters with _ prefix are used in nested functions/reducers, disable warning
 //
 // READY STATUS SYSTEM
 // ============================================================================
+// Now imported from shared/abilities/readyStatus.ts
 //
 // Each card has hidden statuses that control ability availability:
 // - readyDeploy: Card can use Deploy ability (once per game, after entering battlefield)
 // - readySetup: Card can use Setup ability (reset each turn)
 // - readyCommit: Card can use Commit ability (reset each turn)
-//
-// Status behavior:
-// 1. When card enters battlefield -> gains ready statuses ONLY for abilities it has
-// 2. At start of owner's turn -> card regains readySetup, readyCommit (if it has those abilities)
-// 3. When ability is used, cancelled, or shows "no target" -> card loses that ready status
-//
-// This system allows abilities to be tried once per phase, and if they fail (no targets),
-// the card can move on to the next ability in sequence.
-
-// Helper functions
-const checkAdj = (r1: number, c1: number, r2: number, c2: number): boolean => {
-  return Math.abs(r1 - r2) + Math.abs(c1 - c2) === 1
-}
-
-const hasStatus = (card: Card, type: string, playerId?: number): boolean => {
-  if (!card.statuses) {
-    return false
-  }
-  return card.statuses.some(s => s.type === type && (playerId === undefined || s.addedByPlayerId === playerId))
-}
-
-const hasReadyStatus = (card: Card, statusType: string): boolean => {
-  if (!card.statuses) {
-    return false
-  }
-  return card.statuses.some(s => s.type === statusType)
-}
-
-export const addReadyStatus = (card: Card, statusType: string, ownerId: number): void => {
-  if (!card.statuses) {
-    card.statuses = []
-  }
-  if (!card.statuses.some(s => s.type === statusType)) {
-    card.statuses.push({ type: statusType, addedByPlayerId: ownerId })
-  }
-}
-
-export const removeReadyStatus = (card: Card, statusType: string): void => {
-  if (!card.statuses) {
-    return
-  }
-  card.statuses = card.statuses.filter(s => s.type !== statusType)
-}
 
 // ============================================================================
 // CARD ABILITY DEFINITIONS
@@ -199,23 +181,6 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
       tokenType: 'Exploit',
       count: 1
     })
-  },
-  {
-    baseId: 'threatAnalyst',
-    activationType: 'commit',
-    supportRequired: true,
-    getAction: (_card, gameState, ownerId, _coords) => {
-      let totalExploits = 0
-      gameState.board.forEach(row => {
-        row.forEach(cell => {
-          if (cell.card?.statuses) {
-            totalExploits += cell.card.statuses.filter(s => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
-          }
-        })
-      })
-      if (totalExploits === 0) return null
-      return { type: 'CREATE_STACK', tokenType: 'Revealed', count: totalExploits, onlyFaceDown: true }
-    }
   },
 
   {
@@ -1009,9 +974,8 @@ export const resetReadyStatusesForTurn = (gameState: GameState, playerId: number
 
 /**
  * Initializes ready statuses when a card enters the battlefield.
- * IMPORTANT: Only adds DEPLOY status. Phase-specific statuses (SETUP, COMMIT)
- * are managed by resetReadyStatusesForTurn() during Draw phase to ensure
- * they are available at the correct time each turn.
+ * Adds all ready statuses (deploy, setup, commit) so cards can use abilities immediately.
+ * Phase-specific statuses (SETUP, COMMIT) will be refreshed each turn by resetReadyStatusesForTurn().
  */
 export const initializeReadyStatuses = (card: Card, ownerId: number): void => {
   if (!card.statuses) {
@@ -1024,10 +988,11 @@ export const initializeReadyStatuses = (card: Card, ownerId: number): void => {
     let readyStatusType = ''
     if (ability.activationType === 'deploy') {
       readyStatusType = READY_STATUS_DEPLOY
+    } else if (ability.activationType === 'setup') {
+      readyStatusType = READY_STATUS_SETUP
+    } else if (ability.activationType === 'commit') {
+      readyStatusType = READY_STATUS_COMMIT
     }
-    // Note: setup and commit statuses are NOT added here
-    // They are added by resetReadyStatusesForTurn() during Draw phase
-    // This ensures phase-specific abilities are available each turn regardless of when card was played
 
     if (readyStatusType && !card.statuses.some(s => s.type === readyStatusType)) {
       card.statuses.push({ type: readyStatusType, addedByPlayerId: ownerId })

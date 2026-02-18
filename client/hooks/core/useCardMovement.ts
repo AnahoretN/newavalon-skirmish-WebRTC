@@ -104,12 +104,20 @@ export function useCardMovement(props: UseCardMovementProps) {
         // Use nullish coalescing (??) instead of logical OR (||) to respect empty arrays
         // Empty array means "no valid targets" (e.g., Resurrected token)
         const allowedTargets = counterDef?.allowedTargets ?? ['board', 'hand']
-        if (!allowedTargets.includes(target.target)) {
+
+        if (!allowedTargets.includes(target.target) && !allowedTargets.includes('board-facedown')) {
           return currentState
         }
         let targetCard: Card | null = null
         if (target.target === 'board' && target.boardCoords) {
           targetCard = newState.board[target.boardCoords.row][target.boardCoords.col].card
+          // Check board-facedown restriction
+          if (allowedTargets.includes('board-facedown')) {
+            if (targetCard && !targetCard.isFaceDown) {
+              // Card is face-up, not allowed for board-facedown tokens
+              return currentState
+            }
+          }
         } else if (target.playerId !== undefined) {
           const targetPlayer = newState.players.find(p => p.id === target.playerId)
           if (targetPlayer) {
@@ -131,6 +139,17 @@ export function useCardMovement(props: UseCardMovementProps) {
           }
         }
         if (targetCard) {
+          // RULE: Revealed tokens cannot be placed on own cards
+          if (item.statusType === 'Revealed') {
+            const localPlayerId = localPlayerIdRef.current
+            if (target.target === 'board' && targetCard.ownerId === localPlayerId) {
+              return currentState
+            }
+            if (target.target === 'hand' && target.playerId === localPlayerId) {
+              return currentState
+            }
+          }
+
           // Lucius Immunity Logic
           if (item.statusType === 'Stun') {
             if (targetCard.baseId === 'luciusTheImmortal') {
@@ -355,14 +374,15 @@ export function useCardMovement(props: UseCardMovementProps) {
 
       if (target.target === 'hand' && target.playerId !== undefined) {
 
-        // Don't allow moving actual tokens/counters to hand (they stay on board or return to their source)
-        // But DO allow moving cards that happen to have 'Tokens' as their origin deck
-        // CRITICAL FIX: Only block if it's BOTH from Tokens/counter deck AND has Token type
+        // Check if this is a token card
         const isToken = (cardToMove.deck === DeckType.Tokens || cardToMove.deck === 'counter') &&
                         (cardToMove.types?.includes('Token') || cardToMove.types?.includes('Token Unit'))
 
         if (isToken) {
-          return currentState
+          // Token cards are DESTROYED when moved to hand/discard/deck
+          // Remove from board and do NOT add to hand
+          newState.board[item.sourceBoardCoords!.row][item.sourceBoardCoords!.col].card = null
+          return newState
         }
 
         // Remove ready statuses when card leaves the battlefield
@@ -426,35 +446,46 @@ export function useCardMovement(props: UseCardMovementProps) {
           newState.board[target.boardCoords.row][target.boardCoords.col].card = cardToMove
         }
       } else if (target.target === 'discard' && target.playerId !== undefined) {
-        if (cardToMove.deck === DeckType.Tokens || cardToMove.deck === 'counter') {} else {
-          // Remove ready statuses when card leaves the battlefield
-          removeAllReadyStatuses(cardToMove)
-          // Remove Revealed status when card goes to discard
-          if (cardToMove.statuses) {
-            cardToMove.statuses = cardToMove.statuses.filter(s => s.type !== 'Revealed')
-          }
-          const player = newState.players.find(p => p.id === target.playerId)
-          if (player) {
-            if (cardToMove.ownerId === undefined) {
-              cardToMove.ownerId = target.playerId
-              cardToMove.ownerName = player.name
-            }
-            // Check if card already exists in discard to prevent duplicates
-            const alreadyInDiscard = player.discard.some(c => c.id === cardToMove.id)
-            if (!alreadyInDiscard) {
-              player.discard.push(cardToMove)
-            }
-          }
-        }
-      } else if (target.target === 'deck' && target.playerId !== undefined) {
-
-        // Don't allow moving actual tokens/counters to deck
-        // CRITICAL FIX: Only block if it's BOTH from Tokens/counter deck AND has Token type
+        // Check if this is a token card
         const isToken = (cardToMove.deck === DeckType.Tokens || cardToMove.deck === 'counter') &&
                         (cardToMove.types?.includes('Token') || cardToMove.types?.includes('Token Unit'))
 
         if (isToken) {
-          return currentState
+          // Token cards are DESTROYED when moved to hand/discard/deck
+          // Remove from board and do NOT add to discard
+          newState.board[item.sourceBoardCoords!.row][item.sourceBoardCoords!.col].card = null
+          return newState
+        }
+
+        // Remove ready statuses when card leaves the battlefield
+        removeAllReadyStatuses(cardToMove)
+        // Remove Revealed status when card goes to discard
+        if (cardToMove.statuses) {
+          cardToMove.statuses = cardToMove.statuses.filter(s => s.type !== 'Revealed')
+        }
+        const player = newState.players.find(p => p.id === target.playerId)
+        if (player) {
+          if (cardToMove.ownerId === undefined) {
+            cardToMove.ownerId = target.playerId
+            cardToMove.ownerName = player.name
+          }
+          // Check if card already exists in discard to prevent duplicates
+          const alreadyInDiscard = player.discard.some(c => c.id === cardToMove.id)
+          if (!alreadyInDiscard) {
+            player.discard.push(cardToMove)
+          }
+        }
+      } else if (target.target === 'deck' && target.playerId !== undefined) {
+
+        // Check if this is a token card
+        const isToken = (cardToMove.deck === DeckType.Tokens || cardToMove.deck === 'counter') &&
+                        (cardToMove.types?.includes('Token') || cardToMove.types?.includes('Token Unit'))
+
+        if (isToken) {
+          // Token cards are DESTROYED when moved to hand/discard/deck
+          // Remove from board and do NOT add to deck
+          newState.board[item.sourceBoardCoords!.row][item.sourceBoardCoords!.col].card = null
+          return newState
         }
 
         // Remove ready statuses when card leaves the battlefield

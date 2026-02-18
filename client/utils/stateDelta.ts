@@ -37,7 +37,9 @@ export function isDeltaEmpty(delta: StateDelta): boolean {
   return !delta.boardCells?.length &&
          !delta.playerDeltas &&
          !delta.phaseDelta &&
-         !delta.roundDelta
+         !delta.roundDelta &&
+         !delta.targetingMode &&
+         !delta.clearTargetingMode
 }
 
 /**

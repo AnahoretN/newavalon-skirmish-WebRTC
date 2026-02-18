@@ -381,4 +381,48 @@ export class HostStateManager {
     this.currentState = null
     this.localPlayerId = null
   }
+
+  /**
+   * Set targeting mode (from guest action)
+   * Updates internal state and broadcasts to all guests
+   */
+  setTargetingMode(targetingMode: any): void {
+    if (!this.currentState) {
+      logger.warn('[HostStateManager] No current state, ignoring targeting mode')
+      return
+    }
+
+    const oldState = this.currentState
+    const newState: GameState = {
+      ...oldState,
+      targetingMode
+    }
+
+    this.currentState = newState
+
+    // Broadcast full state to all guests
+    this.connectionManager.broadcastGameState(newState)
+    logger.info(`[HostStateManager] Targeting mode set by player ${targetingMode.playerId}, broadcasting to all guests`)
+  }
+
+  /**
+   * Clear targeting mode
+   */
+  clearTargetingMode(): void {
+    if (!this.currentState) {
+      return
+    }
+
+    const oldState = this.currentState
+    const newState: GameState = {
+      ...oldState,
+      targetingMode: null
+    }
+
+    this.currentState = newState
+
+    // Broadcast full state to all guests
+    this.connectionManager.broadcastGameState(newState)
+    logger.info('[HostStateManager] Targeting mode cleared, broadcasting to all guests')
+  }
 }

@@ -1,9 +1,9 @@
 import React, { memo, useMemo, useCallback, useState } from 'react'
-import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerColor, HighlightData, FloatingTextData, TargetingModeData, TargetSelectionEffect } from '@/types'
+import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerColor, HighlightData, FloatingTextData, TargetingModeData, TargetSelectionEffect, CursorStackState } from '@/types'
 import { TargetSelectionEffect as TargetSelectionEffectComponent } from './TargetSelectionEffect'
 import { Card } from './Card'
 import { PLAYER_COLORS, FLOATING_TEXT_COLORS, PLAYER_COLOR_RGB } from '@/constants'
-import { hasReadyAbilityInCurrentPhase } from '@/utils/autoAbilities'
+import { hasReadyAbilityInCurrentPhase, hasReadyStatusForPhase } from '@/utils/autoAbilities'
 import { calculateGlowColor, rgba, TIMING } from '@/utils/common'
 
 interface GameBoardProps {
@@ -36,6 +36,9 @@ interface GameBoardProps {
   abilityCheckKey?: number;
   targetingMode?: TargetingModeData | null; // Shared targeting mode from gameState
   targetSelectionEffects?: TargetSelectionEffect[];
+  // Mode cancellation props (right-click to cancel)
+  setCursorStack?: (value: CursorStackState | null) => void;
+  onCancelAllModes?: () => void;
 }
 
 const GridCell = memo<{
@@ -68,7 +71,10 @@ const GridCell = memo<{
   preserveDeployAbilities?: boolean;
   abilitySourceCoords?: { row: number, col: number } | null;
   abilityCheckKey?: number;
-}>(({
+  setCursorStack?: (value: CursorStackState | null) => void;
+  onCancelAllModes?: () => void;
+}>((props) => {
+  const {
       row, col, cell, isGameStarted, handleDrop, draggedItem, setDraggedItem,
       openContextMenu, playMode, setPlayMode, playerColorMap, localPlayerId,
       onCardDoubleClick, onEmptyCellDoubleClick, imageRefreshVersion, cursorStack,
@@ -76,9 +82,10 @@ const GridCell = memo<{
       isValidTarget, isTargetingModeValidTarget, targetingModePlayerId,
       targetingModeOriginalOwnerId,
       showNoTarget, disableActiveHighlights, preserveDeployAbilities,
-      abilitySourceCoords, abilityCheckKey,
-    }) => {
-      const [isOver, setIsOver] = useState(false)
+      abilitySourceCoords, abilityCheckKey, setCursorStack, onCancelAllModes,
+  } = props
+
+  const [isOver, setIsOver] = useState(false)
 
       const onDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault()
@@ -117,10 +124,14 @@ const GridCell = memo<{
       }, [])
 
       const handleContextMenu = useCallback((e: React.MouseEvent) => {
+        // Right-click cancels all targeting/ability modes for all players
+        if (onCancelAllModes) {
+          onCancelAllModes()
+        }
         if (!cell.card) {
           openContextMenu(e, 'emptyBoardCell', { boardCoords: { row, col } })
         }
-      }, [cell.card, openContextMenu, row, col])
+      }, [cell.card, openContextMenu, row, col, onCancelAllModes])
 
       const handleDoubleClick = useCallback(() => {
         if (!cell.card) {
@@ -145,10 +156,14 @@ const GridCell = memo<{
       }, [cell.card, setDraggedItem, row, col, cursorStack])
 
       const handleCardContextMenu = useCallback((e: React.MouseEvent) => {
+        // Right-click cancels all targeting/ability modes for all players
+        if (onCancelAllModes) {
+          onCancelAllModes()
+        }
         if (cell.card) {
           openContextMenu(e, 'boardItem', { card: cell.card, boardCoords: { row, col } })
         }
-      }, [cell.card, openContextMenu, row, col])
+      }, [cell.card, openContextMenu, row, col, onCancelAllModes])
 
       const handleCardDoubleClick = useCallback((e: React.MouseEvent) => {
         e.stopPropagation()
@@ -169,13 +184,18 @@ const GridCell = memo<{
       const canStack = isStackMode && isValidTarget
       // Interactive for click handling, but visual highlight comes from shared highlights
       const isInteractive = isValidTarget || canPlay || canStack
-      // Check if card has ready ability
+      // Check if card has ready ability (for activation) or ready status (for visual display)
       const hasReadyAbility = cell.card && hasReadyAbilityInCurrentPhase(
         cell.card,
         currentPhase ?? 0,
         activePlayerId
       )
-      const hasActiveEffect = isValidTarget || hasReadyAbility
+      // For visual display on other players' cards
+      const hasReadyStatusVisual = cell.card && hasReadyStatusForPhase(
+        cell.card,
+        currentPhase ?? 0
+      )
+      const hasActiveEffect = isValidTarget || hasReadyAbility || hasReadyStatusVisual
       // Card has active effects (highlight, selection, or ready ability) - should appear above other cards
 
       // Only add cursor pointer for interactive cells - visual highlight comes from shared highlights
@@ -210,7 +230,7 @@ const GridCell = memo<{
           {showNoTarget && (
             <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
               <img
-                src="https://res.cloudinary.com/dxxh6meej/image/upload/v1763978163/no_tarket_mic5sm.png"
+                src="https://res.cloudinary.com/dxxh6meej/image/upload/v1771365317/no_tarket_lndzoc.webp"
                 alt="No Target"
                 className="w-24 h-24 object-contain animate-fade-out drop-shadow-[0_0_5px_rgba(255,0,0,0.8)]"
               />
@@ -401,8 +421,12 @@ export const GameBoard = memo<GameBoardProps>(({
     const totalSize = board.length
     const offset = Math.floor((totalSize - activeGridSize) / 2)
     // Combine local validTargets with shared targetingMode boardTargets
-    const localTargetsSet = new Set(validTargets?.map((t: {row: number, col: number}) => `${t.row}-${t.col}`) || [])
-    const targetingModeTargetsSet = new Set(targetingMode?.boardTargets?.map((t: {row: number, col: number}) => `${t.row}-${t.col}`) || [])
+    // Ensure both are arrays before mapping
+    const validTargetsArray = Array.isArray(validTargets) ? validTargets : []
+    const localTargetsSet = new Set(validTargetsArray.map((t: {row: number, col: number}) => `${t.row}-${t.col}`))
+    // Ensure boardTargets is always an array
+    const boardTargetsArray = Array.isArray(targetingMode?.boardTargets) ? targetingMode.boardTargets : []
+    const targetingModeTargetsSet = new Set(boardTargetsArray.map((t: {row: number, col: number}) => `${t.row}-${t.col}`))
 
     // A cell is valid if it's in either local targets OR targeting mode targets
     const isValidTargetCell = (row: number, col: number) => {

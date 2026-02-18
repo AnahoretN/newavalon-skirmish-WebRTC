@@ -2,7 +2,7 @@
   "cardDatabase": {
     "ipDeptAgent": {
       "name": "IP Dept Agent",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253319/SYN_IP_DEPT_AGENT_mhwphu.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365235/SYN_IP_DEPT_AGENT_pbvh9e.webp",
       "fallbackImage": "/images/cards/SYN_IP_DEPT_AGENT.png",
       "power": 2,
       "ability": "Deploy: Place 2 Stun tokens on a card with your Threat.\nSetup (requires Support): Gain 2 Points for each of your Threat in a chosen line.",
@@ -13,7 +13,7 @@
     },
     "tacticalAgent": {
       "name": "Tactical Agent",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253342/SYN_TACTICAL_AGENT_xbb7i0.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365237/SYN_TACTICAL_AGENT_vquxfm.webp",
       "fallbackImage": "/images/cards/SYN_TACTICAL_AGENT.png",
       "power": 3,
       "ability": "Deploy: Place an Aim token on a card with your Threat.\nSetup: Destroy a card with your Aim token.",
@@ -24,7 +24,7 @@
     },
     "patrolAgent": {
       "name": "Patrol Agent",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253325/SYN_PATROL_AGENT_ioetlu.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365236/SYN_PATROL_AGENT_nlyneg.webp",
       "fallbackImage": "/images/cards/SYN_PATROL_AGENT.png",
       "power": 2,
       "ability": "Setup: Move to an empty cell in its line.\nCommit: Place a Stun token on an adjacent opponent card with your Threat.",
@@ -35,7 +35,7 @@
     },
     "riotAgent": {
       "name": "Riot Agent",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253337/SYN_RIOT_AGENT_jurf4t.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365236/SYN_RIOT_AGENT_i4lk5m.webp",
       "fallbackImage": "/images/cards/SYN_RIOT_AGENT.png",
       "power": 3,
       "ability": "Deploy: Push an adjacent opponent card 1 cell; you may move into its former cell.\nCommit: Place a Stun token on an adjacent opponent card with your Threat.",
@@ -46,7 +46,7 @@
     },
     "threatAnalyst": {
       "name": "Threat Analyst",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253338/SYN_THREAT_ANALYST_sqnpgw.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365237/SYN_THREAT_ANALYST_uqxbsp.webp",
       "fallbackImage": "/images/cards/SYN_THREAT_ANALYST.png",
       "power": 2,
       "ability": "Deploy: Place an Exploit token on any card.\nPass (requires Support): Your units can individually threaten opponent cards that have your Exploit counter.",
@@ -57,7 +57,7 @@
     },
     "mrPearlDoF": {
       "name": "Mr. Pearl, Director of BioSynch",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764678622/Mr._Pearl_Director_of_BioSynch_mo0cil.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367440/HERO_Mr._Pearl_Director_of_BioSynch_lsesol.webp",
       "fallbackImage": "/images/cards/SYN_IP_DEPT_AGENT.png",
       "power": 1,
       "ability": "Pass: Your other units in lines get +1 power.\nDeploy: Search your deck for a unit card, put it into your hand, then shuffle.",
@@ -69,7 +69,7 @@
 
     "recklessProvocateur": {
       "name": "Reckless Provocateur",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253315/HOO_RECKLESS_PROVOCATEUR_hi7a9z.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365268/HOO_RECKLESS_PROVOCATEUR_wvfdcr.webp",
       "fallbackImage": "/images/cards/HOO_RECKLESS_PROVOCATEUR.png",
       "power": 3,
       "ability": "Deploy: Swap places with an adjacent card.\nCommit: Move all tokens from a chosen allied card onto this card.",
@@ -80,7 +80,7 @@
     },
     "dataLiberator": {
       "name": "Data Liberator",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253317/HOO_DATA_LIBERATOR_lbtqa2.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365268/HOO_DATA_LIBERATOR_qeru3j.webp",
       "fallbackImage": "/images/cards/HOO_DATA_LIBERATOR.png",
       "power": 2,
       "ability": "Pass (requires Support): Cards with your Exploit tokens score Points for you.\nDeploy: Place an Exploit token on any card.",
@@ -91,7 +91,7 @@
     },
     "cautiousAvenger": {
       "name": "Cautious Avenger",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253309/HOO_CAUTIOUS_AVENGER_x4g4g3.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365268/HOO_CAUTIOUS_AVENGER_xzk6pd.webp",
       "fallbackImage": "/images/cards/HOO_CAUTIOUS_AVENGER.png",
       "power": 2,
       "ability": "Deploy: Place an Aim token on a card within 2 cells.\nSetup (requires Support): Destroy a card with your Aim token.",
@@ -102,7 +102,7 @@
     },
     "vigilantSpotter": {
       "name": "Vigilant Spotter",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253311/HOO_VIGILANT_SPOTTER_eiephm.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365268/HOO_VIGILANT_SPOTTER_xo8ig7.webp",
       "fallbackImage": "/images/cards/HOO_VIGILANT_SPOTTER.png",
       "power": 1,
       "ability": "Pass (requires Support): When a revealed card of the opponent enters the battlefield, gain 2 points.\nCommit: Reveal 1 card from an opponent's hand.",
@@ -113,7 +113,7 @@
     },
     "inventiveMaker": {
       "name": "Inventive Maker",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253313/HOO_INVENTIVE_MAKER_uzrbg1.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365268/HOO_INVENTIVE_MAKER_sicb73.webp",
       "fallbackImage": "/images/cards/HOO_INVENTIVE_MAKER.png",
       "power": 1,
       "ability": "Deploy: Create a Recon Drone token in an adjacent empty cell.\nSetup (requires Support): Return a Device card from your discard pile to your hand.",
@@ -124,7 +124,7 @@
     },
     "finnMW": {
       "name": "Finn, Most Wanted",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764637482/Finn_nehk0r.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367436/HERO_Finn_c8637x.webp",
       "fallbackImage": "/images/cards/HOO_RECKLESS_PROVOCATEUR.png",
       "power": 2,
       "ability": "Setup: Move any one of your cards 1 or 2 cells.\nCommit: Gain 1 point for each card that is revealed to you in opponents' hands or on the battlefield.",
@@ -136,7 +136,7 @@
 
     "faber": {
       "name": "Faber",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253324/OPT_FABER_d7uxew.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365251/OPT_FABER_cr804w.webp",
       "fallbackImage": "/images/cards/OPT_FABER.png",
       "power": 1,
       "ability": "Deploy: Discard 1 card from your hand ⇒ Create a Walking Turret token in an adjacent empty cell.",
@@ -147,7 +147,7 @@
     },
     "censor": {
       "name": "Censor",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253321/OPT_CENSOR_wtxtc2.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365250/OPT_CENSOR_w4qijk.webp",
       "fallbackImage": "/images/cards/OPT_CENSOR.png",
       "power": 2,
       "ability": "Deploy: Place an Exploit token on any card.\nCommit (requires Support): Replace your Exploit token on a card with a Stun token.",
@@ -158,7 +158,7 @@
     },
     "princeps": {
       "name": "Princeps",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253332/OPT_PRINCEPS_w3o5lq.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365252/OPT_PRINCEPS_aaqakx.webp",
       "fallbackImage": "/images/cards/OPT_PRINCEPS.png",
       "power": 3,
       "ability": "Deploy: Gain a Shield token. Place an Aim token on a card in its line.\nSetup: Destroy a card with your Aim token.",
@@ -169,7 +169,7 @@
     },
     "immunis": {
       "name": "Immunis",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253327/OPT_IMMUNIS_bjlncl.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365252/OPT_IMMUNIS_hvlxhi.webp",
       "fallbackImage": "/images/cards/OPT_IMMUNIS.png",
       "power": 1,
       "ability": "Deploy (requires Support): Return an Optimates card from your discard pile to an adjacent empty cell with a Resurrection token.\nAt the end of the phase, replace that Resurrection token with 2 Stun tokens.",
@@ -180,7 +180,7 @@
     },
     "centurion": {
       "name": "Centurion",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253330/OPT_CENTURION_aaushl.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365251/OPT_CENTURION_grztbi.webp",
       "fallbackImage": "/images/cards/OPT_CENTURION.png",
       "power": 2,
       "ability": "Commit: Sacrifice an allied unit ⇒ All allied cards in that unit's lines get +1 power.",
@@ -191,7 +191,7 @@
     },
     "luciusTheImmortal": {
       "name": "Lucius, The Immortal",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764678954/Lucius_The_Immortal_z0lemw.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367435/HERO_Lucius_The_Immortal_irhhaj.webp",
       "fallbackImage": "/images/cards/OPT_PRINCEPS.png",
       "power": 2,
       "ability": "Pass: Immunity to Stun. If exited from discard, gets +2 power.\nSetup: Discard a card ⇒ Find a command card in your deck. Put it into your hand and shuffle.",
@@ -203,7 +203,7 @@
 
     "codeKeeper": {
       "name": "Code Keeper",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253298/FUS_CODE_KEEPER_qotsym.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365286/FUS_CODE_KEEPER_yhowqj.webp",
       "fallbackImage": "/images/cards/FUS_CODE_KEEPER.png",
       "power": 2,
       "ability": "Deploy: Place 1 Exploit token on each opponent card in lines with any Threat.\nCommit (requires Support): Move an opponent card with your Exploit token 1 cell.",
@@ -214,7 +214,7 @@
     },
     "devoutSynthetic": {
       "name": "Devout Synthetic",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253305/FUS_DEVOUT_SYNTHETIC_bavg9k.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365286/FUS_DEVOUT_SYNTHETIC_nkr1tx.webp",
       "fallbackImage": "/images/cards/FUS_DEVOUT_SYNTHETIC.png",
       "power": 3,
       "ability": "Deploy: Push an adjacent opponent card 1 cell; you may move into its former cell.\nSetup: Destroy an adjacent opponent card with a Threat or Stun token.",
@@ -225,7 +225,7 @@
     },
     "unwaveringIntegrator": {
       "name": "Unwavering Integrator",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253303/FUS_UNWAVERING_INTEGRATOR_emret1.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365287/FUS_UNWAVERING_INTEGRATOR_g1cbag.webp",
       "fallbackImage": "/images/cards/FUS_UNWAVERING_INTEGRATOR.png",
       "power": 1,
       "ability": "Deploy: Place an Exploit token on any card.\nSetup (requires Support): Gain 1 point for each of your Exploit tokens in a chosen line.",
@@ -236,7 +236,7 @@
     },
     "signalProphet": {
       "name": "Signal Prophet",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253299/FUS_SIGNAL_PROPHET_nzd7w3.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365286/FUS_SIGNAL_PROPHET_rmk9me.webp",
       "fallbackImage": "/images/cards/FUS_SIGNAL_PROPHET.png",
       "power": 2,
       "ability": "Deploy: Place 1 Exploit token on each of your cards with Support in lines.\nCommit (requires Support): Move one of your cards with an Exploit token 1 cell.",
@@ -247,7 +247,7 @@
     },
     "zealousMissionary": {
       "name": "Zealous Missionary",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253301/FUS_ZEALOUS_MISSIONARY_mfv9xl.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365287/FUS_ZEALOUS_MISSIONARY_v7qjhw.webp",
       "fallbackImage": "/images/cards/FUS_ZEALOUS_MISSIONARY.png",
       "power": 1,
       "ability": "Deploy: Place an Exploit token on any card.\nCommit (requires Support): Give -1 power to a card with your Exploit token.",
@@ -258,7 +258,7 @@
     },
     "reverendOfTheChoir": {
       "name": "Reverend of The Choir",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764678937/Reverend_of_The_Choir_vts8im.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367438/HERO_Reverend_of_The_Choir_njrrih.webp",
       "fallbackImage": "/images/cards/FUS_SIGNAL_PROPHET.png",
       "power": 2,
       "ability": "Setup (requires Support): Gain 1 point for each of your Exploit tokens on the battlefield.\nDeploy: Double the number of Exploit tokens on any one card.",
@@ -270,7 +270,7 @@
     
     "overwatch": {
       "name": "Overwatch",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253291/CMD_OVERWATCH_hrba9x.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365196/CMD_OVERWATCH_djwlqo.webp",
       "fallbackImage": "/images/cards/CMD_OVERWATCH.png",
       "power": 0,
       "ability": "● Place 1 Aim token on any card. Reveal 1 card from an opponent's hand for each of your Aim tokens on the battlefield.\n● Place 1 Aim token on any card. Draw 1 card for each of your Aim tokens on the battlefield.",
@@ -280,7 +280,7 @@
     },
     "tacticalManeuver": {
       "name": "Tactical Maneuver",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253296/CMD_REPOSITIONING_m7k4kf.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365197/CMD_REPOSITIONING_uhwvrk.webp",
       "fallbackImage": "/images/cards/CMD_REPOSITIONING.png",
       "power": 0,
       "ability": "● Move one of your units to an empty cell in its line. Draw cards equal to that unit's power.\n● Move one of your units to an empty cell in its line. Gain points equal to that unit's power.",
@@ -290,7 +290,7 @@
     },
     "inspiration": {
       "name": "Inspiration",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763260942/CMD_INSPIRATION_nxifhu.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365197/CMD_INSPIRATION_v0bi3l.webp",
       "fallbackImage": "/images/cards/CMD_INSPIRATION.png",
       "power": 0,
       "ability": "● Remove any number of tokens from one of your units. Draw 1 card for each token removed.\n● Remove any number of tokens from one of your units. Gain 1 point for each token removed.",
@@ -300,7 +300,7 @@
     },
     "dataInterception": {
       "name": "Data Interception",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253290/CMD_DATA_INTERCEPTION_ks4lcv.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365197/CMD_DATA_INTERCEPTION_gen1qw.webp",
       "fallbackImage": "/images/cards/CMD_DATA_INTERCEPTION.png",
       "power": 0,
       "ability": "● Place 1 Exploit token on any card. Reveal 1 card from an opponent's hand for each of your Exploit tokens on the battlefield.\n● Place 1 Exploit token on any card. Move a unit with your Exploit token 1 or 2 cells.",
@@ -310,7 +310,7 @@
      },
     "falseOrders": {
       "name": "False Orders",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763640484/CMD_FALSE_ORDERS_ghi01y.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365197/CMD_FALSE_ORDERS_aatcmc.webp",
       "fallbackImage": "/images/cards/CMD_DATA_INTERCEPTION.png",
       "power": 0,
       "ability": "● Place 1 Exploit token on an opponent's card. Move that opponent unit with your Exploit token 1 or 2 cells. Reveal up to 2 cards from that opponent's hand.\n● Place 1 Exploit token on an opponent's card. Move that opponent unit with your Exploit token 1 or 2 cells. Place 2 Stun tokens on it.",
@@ -320,7 +320,7 @@
     },
     "experimentalStimulants": {
       "name": "Experimental Stimulants",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764507610/Experimental_Stimulants_x8ns1g.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367418/CMD_Experimental_Stimulants_plsnet.webp",
       "fallbackImage": "/images/cards/CMD_MOBILIZATION.png",
       "power": 0,
       "ability": "● A unit you control on the battlefield may activate its Deploy ability one additional time.\n● Move one of your units to an empty cell in its line.",
@@ -330,7 +330,7 @@
     },
     "logisticsChain": {
       "name": "Logistics Chain",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764507610/Logistics_Chain_d4irtq.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367415/CMD_Logistics_Chain_odmwxq.webp",
       "fallbackImage": "/images/cards/CMD_MOBILIZATION.png",
       "power": 0,
       "ability": "● Score points in a diagonal. Gain +1 point for each of your cards with Support in that diagonal.\n● Score points in a diagonal. Draw 1 card for each of your cards with Support in that diagonal.",
@@ -340,7 +340,7 @@
     },
     "quickResponseTeam": {
       "name": "Quick Response Team",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764507609/Quick_Response_Team_rw2cut.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367414/CMD_Quick_Response_Team_xff2yt.webp",
       "fallbackImage": "/images/cards/CMD_MOBILIZATION.png",
       "power": 0,
       "ability": "● Play a unit from your hand into an empty cell.\n● Search your deck for a unit card and put it into your hand. Then shuffle your deck.",
@@ -350,7 +350,7 @@
     },
     "temporaryShelter": {
       "name": "Temporary Shelter",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764507610/Temporary_Shelter_o0embx.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367411/CMD_Temporary_Shelter_podjbj.webp",
       "fallbackImage": "/images/cards/CMD_MOBILIZATION.png",
       "power": 0,
       "ability": "● Place 1 Shield token on one of your cards. Remove all Aim tokens from that card.\n● Place 1 Shield token on one of your cards. Move that card 1 or 2 cells.",
@@ -360,7 +360,7 @@
     },
     "enhancedInterrogation": {
       "name": "Enhanced Interrogation",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764507610/Enhanced_Interrogation_suzvxe.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367413/CMD_Enhanced_Interrogation_legiod.webp",
       "fallbackImage": "/images/cards/CMD_MOBILIZATION.png",
       "power": 0,
       "ability": "● Place 1 Aim token on any card. Reveal 1 card from an opponent's hand for each of your Aim tokens on the battlefield.\n● Place 1 Aim token on any card. Move any card with your Aim token 1 or 2 cells.",
@@ -381,7 +381,7 @@
 
     "abrGawain": {
       "name": "ABR \"Gawain\"",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764626980/Autonomous_Battle_Robot_Gawain_uoyjm5.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367446/N_Autonomous_Battle_Robot_Gawain_oni745.webp",
       "fallbackImage": "/images/cards/FUS_DEVOUT_SYNTHETIC.png",
       "power": 4,
       "ability": "Deploy: Gain a Shield token. Place an Aim token on a card in its line.\nSetup: Destroy a card with your Aim token.",
@@ -392,7 +392,7 @@
     },
     "reclaimedGawain": {
       "name": "Reclaimed \"Gawain\"",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764622845/Reclaimed_Gawain_sg6257.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367448/N_Reclaimed_Gawain_sjmlsp.webp",
       "fallbackImage": "/images/cards/FUS_DEVOUT_SYNTHETIC.png",
       "power": 4,
       "ability": "Deploy: Gain a Shield token. Push an adjacent opponent card 1 cell; you may move into its former cell.\nSetup: Destroy an adjacent opponent card with Threat or Stun.",
@@ -403,7 +403,7 @@
 	      },
     "secretInformant": {
       "name": "Secret Informant",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764767153/Secret_informant_eb0nkm.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367448/N_Secret_informant_w0w6g5.webp",
       "fallbackImage": "/images/cards/SYN_THREAT_ANALYST.png",
       "power": 1,
       "ability": "Deploy: Look at the top 3 cards of any deck. Put any number of them on the bottom of that deck. Draw 1 card.",
@@ -415,7 +415,7 @@
 
     "FalkPD": {
       "name": "Michael Falk, Private Detective",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764623710/Michael_Falk_wcxjnp.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367432/HERO_Michael_Falk_sv5i5c.webp",
       "fallbackImage": "/images/cards/HOO_VIGILANT_SPOTTER.png",
       "power": 3,
       "ability": "Deploy: Find any card in your deck. Put it into your hand and shuffle.\nCommit: Reveal 1 card from an opponent's hand.",
@@ -426,7 +426,7 @@
     },
     "edithByron": {
       "name": "Edith Byron, Extreme Engineer",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764623710/Edith_Byron_v6691r.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367434/HERO_Edith_Byron_ny23vb.webp",
       "fallbackImage": "/images/cards/HOO_INVENTIVE_MAKER.png",
       "power": 3,
       "ability": "Setup: Move to an empty cell in a line.\nDeploy: Gain a Shield token. Create a Recon Drone token in an adjacent empty cell.",
@@ -437,7 +437,7 @@
     },
     "pinkunonekoSV": {
       "name": "Pinkunoneko, Street Vigilante",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764622844/Pinkunoneko_nhmjfv.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367429/HERO_Pinkunoneko_cqhpuy.webp",
       "fallbackImage": "/images/cards/SYN_RIOT_AGENT.png",
       "power": 3,
       "ability": "Deploy: Place a Stun token on an adjacent opponent card.\nSetup: Destroy an adjacent opponent card with Threat or Stun.",
@@ -448,7 +448,7 @@
     },
     "EleftheriaMD": {
       "name": "Maria \"Eleftheria\" Damanaki",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764622845/Maria_Eleftheria_Damanaki_bmx6xv.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367431/HERO_Maria_Eleftheria_Damanaki_cpw12i.webp",
       "fallbackImage": "/images/cards/SYN_TACTICAL_AGENT.png",
       "power": 3,
       "ability": "Deploy: Place an Aim token on any card.\nSetup: Destroy a card with your Aim token.",
@@ -459,7 +459,7 @@
     },
     "ziusIJ": {
       "name": "Zius, Independent Journalist",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1764622844/Zius_cwd92f.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367428/HERO_Zius_xhuyxa.webp",
       "fallbackImage": "/images/cards/FUS_UNWAVERING_INTEGRATOR.png",
       "power": 2,
       "ability": "Deploy: Place an Exploit token on any card.\nSetup (requires Support): Place an Exploit token on any card. Gain 1 point for each of your Exploit tokens in that card's line.",
@@ -474,7 +474,7 @@
     "reconDrone": {
       "baseId": "reconDrone",
       "name": "Recon Drone",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253333/TKN_RECON_DRONE_esfknf.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365220/TKN_RECON_DRONE_w3elir.webp",
       "fallbackImage": "/images/cards/TKN_RECON_DRONE.png",
       "power": 1,
       "ability": "Setup: Move to any cell on the battlefield.\nCommit: Choose an opponent card in an adjacent cell. Reveal 1 card from that opponent's hand.",
@@ -486,7 +486,7 @@
     "walkingTurret": {
       "baseId": "walkingTurret",
       "name": "Walking Turret",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763253307/TKN_WALKING_TURRET_uq6owm.png",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365220/TKN_WALKING_TURRET_c0mttm.webp",
       "fallbackImage": "/images/cards/TKN_WALKING_TURRET.png",
       "power": 2,
       "ability": "Deploy: Place an Aim token on a card in its line.\nSetup: Give -1 power to a card with an Aim token.",
@@ -500,7 +500,7 @@
   "countersDatabase": {
     "Aim": {
         "name": "Aim",
-        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763478810/Aim_dcct45.png",
+        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365400/Aim_qzeaqn.webp",
         "description": "This counter has no effect on its own, but it can modify the abilities of cards.\nThis card is easier to destroy.",
         "sortOrder": 1,
         "allowedPanels": ["COUNTER_PANEL"],
@@ -508,7 +508,7 @@
     },
     "Exploit": {
         "name": "Exploit",
-        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763478810/Exploit_foomty.png",
+        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365398/Exploit_pf2zwf.webp",
         "description": "This counter has no effect on its own, but it can modify the abilities of cards.\nHacker and programmer cards will have a greater effect on this card.",
         "sortOrder": 2,
         "allowedPanels": ["COUNTER_PANEL"],
@@ -516,7 +516,7 @@
     },
     "LastPlayed": {
         "name": "LastPlayed",
-        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763478810/LastPlayed_bfkbwb.png",
+        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365397/LastPlayed_ge4gyh.webp",
         "description": "This card was last played by its owner.",
         "sortOrder": 99,
         "allowedPanels": [],
@@ -524,15 +524,15 @@
     },
     "Revealed": {
         "name": "Revealed",
-        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763478811/Revealed_w1gbe7.png",
-        "description": "This card's face is visible to the owner of the counter revealed. Can be placed on cards in hand.",
+        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365393/Revealed_lsan64.webp",
+        "description": "This card's face is visible to the owner of the counter revealed. Can be placed on cards in hand and face-down cards on board.",
         "sortOrder": 7,
         "allowedPanels": ["COUNTER_PANEL"],
-        "allowedTargets": ["board", "hand"]
+        "allowedTargets": ["board-facedown", "hand"]
     },
     "Stun": {
         "name": "Stun",
-        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763478811/Stun_cwqroz.png",
+        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365403/Stun_pbe7ex.webp",
         "description": "A stunned card cannot activate abilities or gain points. Its owner's effects cannot move it, but opponent effects can.\nRemove 1 stun counter from the card after the Scoring Phase.",
         "sortOrder": 4,
         "allowedPanels": ["COUNTER_PANEL"],
@@ -540,7 +540,7 @@
     },
     "Shield": {
         "name": "Shield",
-        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763478810/Shield_z9sjr1.png",
+        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365393/Shield_yilhdt.webp",
         "description": "If an effect attempts to destroy this card, remove 1 shield counter from it instead.",
         "sortOrder": 3,
         "allowedPanels": ["COUNTER_PANEL"],
@@ -548,7 +548,7 @@
     },
     "Support": {
         "name": "Support",
-        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763478809/Support_ui9qpl.png",
+        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365402/Support_hxzufw.webp",
         "description": "This counter has no effect on its own, but it can modify the abilities of cards.\nThis card is adjacent to its ally.",
         "sortOrder": 5,
         "allowedPanels": [],
@@ -556,7 +556,7 @@
     },
     "Threat": {
         "name": "Threat",
-        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763478809/Threat_i1pbko.png",
+        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771368527/Threat_dqnnsq.webp",
         "description": "This counter has no effect on its own, but it can modify the abilities of cards.\nThis card is surrounded and pinned to the edge of the battlefield by an opponent's cards.",
         "sortOrder": 6,
         "allowedPanels": [],
@@ -564,7 +564,7 @@
     },
     "Resurrected": {
         "name": "Resurrected",
-        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1768321040/Resurrected_tscgk9.png",
+        "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365394/Resurrected_awaucv.webp",
         "description": "This unit recently returned from the discard pile. It will become Stunned at the start of the next phase.",
         "sortOrder": 8,
         "allowedPanels": ["COUNTER_PANEL"],

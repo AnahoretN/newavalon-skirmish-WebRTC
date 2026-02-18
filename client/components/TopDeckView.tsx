@@ -3,6 +3,59 @@ import type { Card as CardType, PlayerColor, Player, ContextMenuItem, DragItem }
 import { Card } from './Card'
 import { ContextMenu } from './ContextMenu'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { isCloudinaryUrl, getThumbnailImageUrl, getFullImageUrl } from '@/utils/imageOptimization'
+
+/**
+ * TopDeckCard - Optimized card component for TopDeckView
+ * Uses progressive loading: thumbnail (100px) -> full quality
+ */
+const TopDeckCard: React.FC<{
+  card: CardType;
+  playerColorMap: Map<number, PlayerColor>;
+  localPlayerId: number | null;
+  imageRefreshVersion?: number;
+}> = memo(({ card, playerColorMap, localPlayerId, imageRefreshVersion }) => {
+  const [imageSrc, setImageSrc] = useState<string>(() => {
+    // Always start with thumbnail for instant display
+    if (!card.imageUrl || !isCloudinaryUrl(card.imageUrl)) {
+      return card.imageUrl
+    }
+    return getThumbnailImageUrl(card.imageUrl, 100)
+  })
+
+  useEffect(() => {
+    if (!card.imageUrl || !isCloudinaryUrl(card.imageUrl)) {
+      return
+    }
+
+    // Load full quality image after thumbnail is shown
+    const fullImage = getFullImageUrl(card.imageUrl)
+    const fullImg = new Image()
+    fullImg.onload = () => {
+      setImageSrc(fullImage)
+    }
+    // Small delay to let thumbnail render first
+    setTimeout(() => {
+      fullImg.src = fullImage
+    }, 50)
+  }, [card.imageUrl])
+
+  // Create a modified card with optimized image URL
+  const optimizedCard = useMemo(() => ({
+    ...card,
+    imageUrl: imageSrc,
+  }), [card, imageSrc])
+
+  return (
+    <Card
+      card={optimizedCard}
+      isFaceUp={true}
+      playerColorMap={playerColorMap}
+      localPlayerId={localPlayerId}
+      imageRefreshVersion={imageRefreshVersion}
+    />
+  )
+})
 
 interface TopDeckViewProps {
     isOpen: boolean;
@@ -253,29 +306,32 @@ const TopDeckView: React.FC<TopDeckViewProps> = memo(({
 
               return (
                 <div
-                  key={card.id || index}
+                  key={`${card.id || index}-${imageRefreshVersion}`}
                   draggable={true}
                   onDragStart={() => handleDragStart(card, originalIndex)}
                   onDragOver={(e) => handleDragOver(e, index)}
                   onDragEnd={handleDragEnd}
                   onDrop={(e) => handleDrop(e, index)}
                   onContextMenu={(e) => handleContextMenu(e, originalIndex)}
-                  className={`w-32 h-32 relative transition-all rounded-lg
-                    ${isDragging ? 'opacity-50 scale-95' : 'hover:scale-105 cursor-grab active:cursor-grabbing'}
-                    ${isDragTarget ? 'scale-105 z-10' : ''}
-                  `}
+                  className="w-32 h-32 relative rounded-lg flex items-center justify-center cursor-grab active:cursor-grabbing hover:scale-105 transition-transform"
+                  style={{
+                    opacity: isDragging ? 0.5 : 1,
+                    zIndex: isDragTarget ? 10 : 0,
+                    transform: isDragTarget ? 'scale(1.05)' : (isDragging ? 'scale(0.95)' : 'scale(1)'),
+                  }}
                 >
                   <div className="absolute -top-3 -left-2 z-20 bg-gray-900 text-gray-400 text-xs font-bold px-2 py-0.5 rounded-full border border-gray-600 shadow-md">
                                         #{index + 1}
                   </div>
 
-                  <Card
-                    card={card}
-                    isFaceUp={true}
-                    playerColorMap={playerColorMap}
-                    localPlayerId={localPlayerId}
-                    imageRefreshVersion={imageRefreshVersion}
-                  />
+                  <div className="w-full h-full flex items-center justify-center">
+                    <TopDeckCard
+                      card={card}
+                      playerColorMap={playerColorMap}
+                      localPlayerId={localPlayerId}
+                      imageRefreshVersion={imageRefreshVersion}
+                    />
+                  </div>
                 </div>
               )
             })

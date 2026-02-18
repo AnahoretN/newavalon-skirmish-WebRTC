@@ -24,14 +24,11 @@ import {
 } from '../utils/webrtcSerialization'
 // New WebRTC message handlers (handles CARD_STATE, ABILITY_EFFECT, SESSION_EVENT)
 import { handleCodecMessage } from '../utils/webrtcMessageHandlers'
-import { saveGuestData, saveWebrtcState, loadGuestData, loadHostData, loadWebrtcState, getRestorableSessionType, clearWebrtcData, broadcastHostPeerId, getHostPeerIdForGame } from '../host/WebrtcStatePersistence'
+import { saveGuestData, saveWebrtcState, loadGuestData, loadHostData, loadWebrtcState, getRestorableSessionType, clearWebrtcData, broadcastHostPeerId, clearHostPeerIdBroadcast, getHostPeerIdForGame } from '../host/WebrtcStatePersistence'
 // Storage functions extracted to gameStateStorage.ts
 import {
   syncGameStateImages,
-  saveGameState,
   loadGameState,
-  clearGameState,
-  RECONNECTION_DATA_KEY
 } from './core/gameStateStorage'
 // Game creator functions extracted to gameCreators.ts
 import {
@@ -39,8 +36,6 @@ import {
   createDeck,
   createInitialState
 } from './core/gameCreators'
-// WebSocket helpers extracted to websocketHelpers.ts
-import { getWebSocketURL } from './core/websocketHelpers'
 // Common types extracted to types.ts
 import type { ConnectionStatus, UseGameStateProps } from './core/types'
 // Visual effects extracted to useVisualEffects.ts
@@ -66,7 +61,7 @@ import { useBoardManipulation } from './core/useBoardManipulation'
 import { useCardMovement } from './core/useCardMovement'
 import { useTargetingMode } from './core/useTargetingMode'
 import { useWebRTC } from './core/useWebRTC'
-import { useGameLifecycle } from './core/useGameLifecycle'
+import { useServerConnection } from './core/useServerConnection'
 
 /**
  * Accumulates score change deltas for each player.
@@ -139,13 +134,12 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   const [reconnectProgress, setReconnectProgress] = useState<{ attempt: number; maxAttempts: number; timeRemaining: number } | null>(null)
   const recentlyRestoredFromStorageRef = useRef<boolean>(false)  // Track if we just restored from localStorage (to avoid overwriting with stale state)
 
-  const ws = useRef<WebSocket | null>(null)
-  const reconnectTimeoutRef = useRef<number | null>(null)
+  // WebSocket refs - shared between useServerConnection and parent
   const joiningGameIdRef = useRef<string | null>(null)
   const isManualExitRef = useRef<boolean>(false)
-  const isJoinAttemptRef = useRef<boolean>(false) // Track if user is trying to join via Join Game modal
-  const playerTokenRef = useRef<string | undefined>(undefined)
-  const receivedServerStateRef = useRef<boolean>(false) // Track if we've received server state after connection
+  const isJoinAttemptRef = useRef<boolean>(false)
+  const playerTokenRef = useRef<string | undefined>()
+  const receivedServerStateRef = useRef<boolean>(false)
 
   // WebRTC manager ref
   const webrtcManagerRef = useRef<ReturnType<typeof getWebrtcManager> | null>(null)
@@ -172,6 +166,39 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     requestDeckView,
     sendFullDeckToHost,
   } = webrtc
+
+  // WebSocket connection hook - handles server communication
+  const serverConnection = useServerConnection({
+    gameStateRef,
+    localPlayerIdRef,
+    setGameState,
+    setLocalPlayerId,
+    setConnectionStatus,
+    setGamesList,
+    setLatestHighlight,
+    setLatestNoTarget,
+    setLatestDeckSelections,
+    setLatestHandCardSelections,
+    setTargetSelectionEffects,
+    setLatestFloatingTexts,
+    setRemoteValidTargets,
+    isManualExitRef,
+    joiningGameIdRef,
+    playerTokenRef,
+    receivedServerStateRef,
+    isJoinAttemptRef,
+  })
+
+  // Destructure server connection functions
+  const {
+    ws,
+    reconnectTimeoutRef,
+    connectWebSocket,
+    forceReconnect,
+    joinGame,
+    joinAsInvite,
+    requestGamesList,
+  } = serverConnection
 
   // Update ref when function changes
   useEffect(() => {
@@ -1287,6 +1314,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
                 const newState = {
                   ...currentState,
+                  ...guestState,  // Spread guestState to get currentPhase, activePlayerId, etc.
                   players: mergedPlayers,
                   board: reconstructedBoard
                 }
@@ -2380,12 +2408,28 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               return newState
             })
           } else if (actionType === 'UPDATE_PLAYER_SCORE' && actionData?.playerId !== undefined && actionData?.delta !== undefined) {
-            setGameState(prev => ({
-              ...prev,
-              players: prev.players.map(p =>
-                p.id === actionData.playerId ? { ...p, score: Math.max(0, p.score + actionData.delta) } : p
-              ),
-            }))
+            // Guest changed score - update and broadcast to all guests
+            const playerId = actionData.playerId
+            const delta = actionData.delta
+            logger.info(`[ACTION] Guest changed score for player ${playerId} by ${delta}`)
+            setGameState(prev => {
+              const newState = {
+                ...prev,
+                players: prev.players.map(p =>
+                  p.id === playerId ? { ...p, score: Math.max(0, p.score + delta) } : p
+                ),
+              }
+              // Broadcast score change to all guests (exclude sender who already has the change)
+              if (webrtcManagerRef.current) {
+                webrtcManagerRef.current.broadcastToGuests({
+                  type: 'UPDATE_PLAYER_SCORE',
+                  senderId: webrtcManagerRef.current.getPeerId(),
+                  data: { playerId, delta },
+                  timestamp: Date.now()
+                })
+              }
+              return newState
+            })
           } else if (actionType === 'CHANGE_PLAYER_DECK' && actionData?.playerId !== undefined) {
             const playerId = actionData.playerId
             const deckType = actionData.deckType
@@ -3163,6 +3207,33 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
 
+      case 'UPDATE_PLAYER_SCORE':
+        // Player score update broadcast (host -> guests, or guest -> host -> guests)
+        logger.info('[UPDATE_PLAYER_SCORE] Received score update broadcast', message.data)
+        if (!message.data || message.data.playerId === undefined) {
+          break
+        }
+
+        {
+          const scorePlayerId = message.data.playerId
+          const delta = message.data.delta
+
+          // Skip if this is about the local player - they already have their correct score
+          if (scorePlayerId === localPlayerIdRef.current) {
+            logger.info(`[UPDATE_PLAYER_SCORE] Skipping update for local player ${scorePlayerId}`)
+            break
+          }
+
+          setGameState(prev => ({
+            ...prev,
+            players: prev.players.map(p =>
+              p.id === scorePlayerId ? { ...p, score: Math.max(0, p.score + delta) } : p
+            ),
+          }))
+          logger.info(`[UPDATE_PLAYER_SCORE] Updated score for player ${scorePlayerId} by ${delta}`)
+        }
+        break
+
       // Visual effects messages (for P2P mode)
       case 'TRIGGER_HIGHLIGHT':
         // Guest sent highlight trigger to host - host needs to apply locally AND broadcast to all guests
@@ -3387,15 +3458,19 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         // Targeting mode synchronization (P2P)
         if (message.data?.targetingMode) {
           const targetingMode = message.data.targetingMode
+          logger.info('[TargetingMode] Received SET_TARGETING_MODE via WebRTC', {
+            playerId: targetingMode.playerId,
+            mode: targetingMode.action.mode,
+            boardTargetsCount: targetingMode.boardTargets?.length || 0,
+            handTargetsCount: targetingMode.handTargets?.length || 0,
+            isDeckSelectable: targetingMode.isDeckSelectable || false,
+            timestamp: targetingMode.timestamp,
+          })
           setGameState(prev => ({
             ...prev,
             targetingMode: targetingMode,
           }))
           gameStateRef.current.targetingMode = targetingMode
-          logger.info('[TargetingMode] Received targeting mode via WebRTC', {
-            playerId: targetingMode.playerId,
-            mode: targetingMode.action.mode,
-          })
         }
         break
 
@@ -3855,6 +3930,31 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     })
   }, [webrtcEnabled, webrtcIsHost, broadcastWebrtcState])
 
+  // ==================== Game Lifecycle Functions ====================
+  // These wrap the server connection functions and handle updateState for createGame
+
+  /**
+   * Create a new game
+   * Wraps useServerConnection.createGame and calls updateState with the initial state
+   */
+  const createGame = useCallback(() => {
+    const { initialState } = serverConnection.createGame()
+    updateState(initialState)
+  }, [serverConnection, updateState])
+
+  /**
+   * Exit the current game
+   * Wraps useServerConnection.exitGame with WebRTC-specific cleanup
+   */
+  const exitGame = useCallback(() => {
+    serverConnection.exitGame(
+      isRestoringSessionRef,
+      webrtcIsHostRef,
+      clearHostPeerIdBroadcast,
+      clearWebrtcData,
+    )
+  }, [serverConnection, isRestoringSessionRef, webrtcIsHostRef, clearHostPeerIdBroadcast, clearWebrtcData])
+
   // Game settings hook - handles game configuration functions
   const gameSettings = useGameSettings({
     ws,
@@ -3965,435 +4065,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     resetGame,
   } = phaseManagement
 
-  // ... WebSocket logic (connectWebSocket, forceReconnect, joinGame, etc.) kept as is ...
-  const connectWebSocket = useCallback(() => {
-    // Skip WebSocket connection in WebRTC P2P mode
-    if (getWebRTCEnabled()) {
-      logger.info('WebRTC P2P mode enabled - skipping WebSocket connection')
-      setConnectionStatus('Connected') // Set as "connected" for UI purposes
-      return
-    }
-
-    if (isManualExitRef.current) {
-      return
-    }
-    if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
-      return
-    }
-
-    const WS_URL = getWebSocketURL()
-
-    // GUARD: If no URL is configured, stop trying to connect.
-    if (!WS_URL) {
-      logger.warn('No WebSocket URL configured in settings. Waiting for user input.')
-      setConnectionStatus('Disconnected')
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
-      }
-      return
-    }
-
-    try {
-      ws.current = new WebSocket(WS_URL)
-    } catch (error) {
-      logger.error('Failed to create WebSocket:', error)
-      setConnectionStatus('Disconnected')
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
-      }
-      reconnectTimeoutRef.current = window.setTimeout(connectWebSocket, TIMING.RECONNECT_DELAY)
-      return
-    }
-    setConnectionStatus('Connecting')
-
-    ws.current.onopen = () => {
-      // Reset the server state sync flag - we haven't received server state yet on this connection
-      receivedServerStateRef.current = false
-
-      logger.info('WebSocket connection established')
-      setConnectionStatus('Connected')
-
-      // Save the active WebSocket URL for link sharing
-      const customUrl = localStorage.getItem('custom_ws_url')
-      if (customUrl && customUrl.trim() !== '') {
-        localStorage.setItem('websocket_url', customUrl.trim())
-      }
-
-      const currentGameState = gameStateRef.current
-      logger.info('Current gameState on open:', currentGameState ? `gameId=${currentGameState.gameId}` : 'null')
-      logger.info('playerTokenRef.current on open:', playerTokenRef.current ? 'YES' : 'NO')
-
-      // Only send JOIN_GAME if we have an active game
-      // Don't send GET_GAMES_LIST on connect - it causes issues with tunnel connections (ngrok/cloudflared)
-      if (currentGameState && currentGameState.gameId && ws.current?.readyState === WebSocket.OPEN) {
-        let playerToken = playerTokenRef.current  // Use playerTokenRef first (restored from state)
-
-        // If no token in ref, try to find it from RECONNECTION_DATA_KEY or from gameState players
-        if (!playerToken) {
-          // Try RECONNECTION_DATA_KEY first
-          try {
-            const stored = localStorage.getItem(RECONNECTION_DATA_KEY)
-            if (stored) {
-              const data = JSON.parse(stored)
-              logger.info('RECONNECTION_DATA_KEY:', data?.gameId, currentGameState.gameId)
-              if (data?.playerToken) {
-                playerToken = data.playerToken
-                playerTokenRef.current = playerToken
-                logger.info('Using playerToken from RECONNECTION_DATA_KEY')
-              }
-            }
-          } catch (e) {
-            console.warn('Failed to parse reconnection data:', e instanceof Error ? e.message : String(e))
-          }
-
-          // If still no token, try to get it from the player in gameState
-          if (!playerToken && currentGameState.players && localPlayerIdRef.current) {
-            const localPlayer = currentGameState.players.find((p: Player) => p.id === localPlayerIdRef.current)
-            if (localPlayer?.playerToken) {
-              playerToken = localPlayer.playerToken
-              playerTokenRef.current = playerToken
-              logger.info('Using playerToken from gameState player')
-            }
-          }
-        }
-
-        logger.info('JoinGame: Sending reconnection with token:', playerToken ? 'YES' : 'NO', 'gameId:', currentGameState.gameId)
-        ws.current.send(JSON.stringify({
-          type: 'JOIN_GAME',
-          gameId: currentGameState.gameId,
-          playerToken: playerToken,
-        }))
-        // Note: Deck data will be sent after JOIN_SUCCESS confirmation if player is host
-      }
-      // If no active game, just wait - don't send any message (matches old working version)
-    }
-    ws.current.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        if (data.type === 'GAMES_LIST') {
-          setGamesList(data.games)
-        } else if (data.type === 'JOIN_SUCCESS') {
-          // Handle spectator mode
-          if (data.isSpectator) {
-            setLocalPlayerId(null)
-            logger.info('Joined as spectator:', data.message || 'Spectator mode')
-            joiningGameIdRef.current = null
-            return
-          }
-
-          // Regular player join
-          setLocalPlayerId(data.playerId)
-          const gameId = joiningGameIdRef.current || gameStateRef.current.gameId
-          if (gameId && data.playerId !== null && data.playerToken) {
-            // Save player token for reconnection
-            playerTokenRef.current = data.playerToken
-            // Always save both RECONNECTION_DATA_KEY and try to save full game state
-            localStorage.setItem(RECONNECTION_DATA_KEY, JSON.stringify({
-              gameId,
-              playerId: data.playerId,
-              playerToken: data.playerToken,
-              timestamp: Date.now(),
-            }))
-            // Save full game state if we have a matching game state
-            if (gameStateRef.current.gameId === gameId) {
-              saveGameState(gameStateRef.current, data.playerId, data.playerToken)
-            }
-          } else if (data.playerId === null) {
-            clearGameState()
-            playerTokenRef.current = undefined
-          }
-          joiningGameIdRef.current = null
-          if (data.playerId === 1) {
-            setTimeout(() => {
-              if (ws.current?.readyState === WebSocket.OPEN) {
-                ws.current.send(JSON.stringify({ type: 'UPDATE_DECK_DATA', deckData: rawJsonData }))
-              }
-            }, TIMING.DECK_SYNC_DELAY)
-          }
-        } else if (data.type === 'CONNECTION_ESTABLISHED') {
-          // Server acknowledging connection - no action needed
-          logger.info('Connection acknowledged by server')
-
-          // Check for pending invite join
-          const pendingInviteGame = sessionStorage.getItem('pending_invite_game')
-          const pendingInviteName = sessionStorage.getItem('pending_invite_name')
-          if (pendingInviteGame && ws.current) {
-            sessionStorage.removeItem('pending_invite_game')
-            sessionStorage.removeItem('pending_invite_name')
-            logger.info('Auto-joining invite game:', pendingInviteGame)
-            ws.current.send(JSON.stringify({
-              type: 'JOIN_AS_INVITE',
-              gameId: pendingInviteGame,
-              playerName: pendingInviteName || 'Player'
-            }))
-          }
-        } else if (data.type === 'DECK_DATA_UPDATED') {
-          // Deck data synced with server - no action needed
-          logger.info('Deck data synced with server')
-        } else if (data.type === 'ERROR') {
-          if (data.message.includes('not found') || data.message.includes('Dummy')) {
-            // Game not found - clear state and return to menu
-            logger.info('Game not found error - clearing state')
-            const newState = createInitialState()
-            setGameState(newState)
-            gameStateRef.current = newState
-            setLocalPlayerId(null)
-            clearGameState()
-            joiningGameIdRef.current = null
-          } else if (data.message.includes('already started') && isJoinAttemptRef.current) {
-            // Game already started - show alert ONLY when user tries to join via Join Game modal
-            // Skip this error for automatic reconnection (F5, reconnect, etc.)
-            logger.info('Game already started - showing alert and returning to menu')
-            alert('This game has already started.')
-            const newState = createInitialState()
-            setGameState(newState)
-            gameStateRef.current = newState
-            setLocalPlayerId(null)
-            clearGameState()
-            joiningGameIdRef.current = null
-            isJoinAttemptRef.current = false
-          } else {
-            console.warn('Server Error:', data.message)
-          }
-        } else if (data.type === 'HIGHLIGHT_TRIGGERED') {
-          setLatestHighlight(data.highlightData)
-        } else if (data.type === 'NO_TARGET_TRIGGERED') {
-          setLatestNoTarget({ coords: data.coords, timestamp: data.timestamp })
-        } else if (data.type === 'DECK_SELECTION_TRIGGERED') {
-          setLatestDeckSelections(prev => [...prev, data.deckSelectionData])
-          // Auto-remove after 1 second
-          setTimeout(() => {
-            setLatestDeckSelections(prev => prev.filter(ds => ds.timestamp !== data.deckSelectionData.timestamp))
-          }, 1000)
-        } else if (data.type === 'HAND_CARD_SELECTION_TRIGGERED') {
-          setLatestHandCardSelections(prev => [...prev, data.handCardSelectionData])
-          // Auto-remove after 1 second
-          setTimeout(() => {
-            setLatestHandCardSelections(prev => prev.filter(cs => cs.timestamp !== data.handCardSelectionData.timestamp))
-          }, 1000)
-        } else if (data.type === 'FLOATING_TEXT_TRIGGERED') {
-          // Add floating text to gameState for all players to see
-          setGameState(prev => ({
-            ...prev,
-            floatingTexts: [...prev.floatingTexts, data.floatingTextData].filter(t => Date.now() - t.timestamp < TIMING.FLOATING_TEXT_DURATION)
-          }))
-        } else if (data.type === 'FLOATING_TEXT_BATCH_TRIGGERED') {
-          // Add multiple floating texts to gameState
-          setGameState(prev => ({
-            ...prev,
-            floatingTexts: [...prev.floatingTexts, ...data.batch].filter(t => Date.now() - t.timestamp < TIMING.FLOATING_TEXT_DURATION)
-          }))
-        } else if (data.type === 'SYNC_VALID_TARGETS') {
-          // Receive valid targets from other players
-          // Ignore targets from ourselves to avoid overwriting our local state
-          if (data.playerId !== localPlayerIdRef.current) {
-            setRemoteValidTargets({
-              playerId: data.playerId,
-              validHandTargets: data.validHandTargets || [],
-              isDeckSelectable: data.isDeckSelectable || false,
-            })
-            // Auto-clear after 10 seconds to prevent stale data
-            setTimeout(() => {
-              setRemoteValidTargets(prev => prev?.playerId === data.playerId ? null : prev)
-            }, 10000)
-          }
-        } else if (data.type === 'TARGET_SELECTION_TRIGGERED') {
-          // Target selection effect (white ripple animation)
-          // Only apply if sent by another player (ignore echoes of our own messages)
-          if (data.effect && data.playerId !== localPlayerIdRef.current) {
-            setTargetSelectionEffects(prev => [...prev, data.effect])
-            // Auto-remove after 1 second
-            setTimeout(() => {
-              setTargetSelectionEffects(prev => prev.filter(e => e.timestamp !== data.effect.timestamp))
-            }, 1000)
-          }
-        } else if (data.type === 'TARGETING_MODE_SET') {
-          // Receive targeting mode from any player (including ourselves for confirmation)
-          const targetingMode = data.targetingMode
-          if (targetingMode) {
-            setGameState(prev => ({
-              ...prev,
-              targetingMode: targetingMode,
-            }))
-            gameStateRef.current.targetingMode = targetingMode
-            logger.info('[TargetingMode] Received targeting mode from server', {
-              playerId: targetingMode.playerId,
-              mode: targetingMode.action.mode,
-            })
-          }
-        } else if (data.type === 'TARGETING_MODE_CLEARED') {
-          // Clear targeting mode for all clients
-          setGameState(prev => ({
-            ...prev,
-            targetingMode: null,
-          }))
-          gameStateRef.current.targetingMode = null
-          logger.debug('[TargetingMode] Cleared targeting mode from server')
-        } else if (data.type === 'ABILITY_MODE_SET') {
-          // Host broadcasts ability mode to all clients
-          // All clients show the same visual effects for the ability
-          if (data.abilityMode) {
-            setGameState(prev => ({
-              ...prev,
-              abilityMode: data.abilityMode,
-            }))
-            logger.info('[AbilityMode] Received ability mode from host', {
-              playerId: data.abilityMode.playerId,
-              mode: data.abilityMode.mode,
-              sourceCard: data.abilityMode.sourceCardName,
-            })
-          }
-        } else if (data.type === 'ABILITY_TARGET_SELECTED') {
-          // Target selected notification
-          logger.info('[Ability] Target selected', data.data)
-        } else if (data.type === 'ABILITY_COMPLETED') {
-          // Ability completed - clear mode
-          setGameState(prev => ({
-            ...prev,
-            abilityMode: null,
-          }))
-          logger.info('[Ability] Ability completed', data.data)
-        } else if (data.type === 'ABILITY_CANCELLED') {
-          // Ability cancelled - clear mode
-          setGameState(prev => ({
-            ...prev,
-            abilityMode: null,
-          }))
-          logger.info('[Ability] Ability cancelled')
-        } else if (data.type === 'GAME_RESET') {
-          // Handle compact game reset message (much smaller than full gameState)
-          logger.info('[GameReset] Received GAME_RESET message from server')
-          setGameState(prev => {
-            // Create fresh board with correct grid size
-            const gridSize: number = (data.activeGridSize as unknown as number) || 8;
-            const newBoard: Board = []
-            for (let i = 0; i < gridSize; i++) {
-              const row: any[] = []
-              for (let j = 0; j < gridSize; j++) {
-                row.push({ card: null })
-              }
-              newBoard.push(row)
-            }
-
-            const resetState = {
-              ...prev,
-              players: data.players || [],
-              gameMode: data.gameMode,
-              isPrivate: data.isPrivate,
-              activeGridSize: data.activeGridSize,
-              dummyPlayerCount: data.dummyPlayerCount,
-              autoAbilitiesEnabled: data.autoAbilitiesEnabled,
-              isGameStarted: data.isGameStarted,
-              currentPhase: data.currentPhase,
-              currentRound: data.currentRound,
-              turnNumber: data.turnNumber,
-              activePlayerId: data.activePlayerId,
-              startingPlayerId: data.startingPlayerId,
-              roundWinners: data.roundWinners || {},
-              gameWinner: data.gameWinner,
-              isRoundEndModalOpen: data.isRoundEndModalOpen,
-              isReadyCheckActive: data.isReadyCheckActive,
-              // Use new board with correct grid size
-              board: newBoard,
-              // Clear other state
-              targetingMode: null,
-              floatingTexts: [],
-            }
-            gameStateRef.current = resetState
-            return resetState
-          })
-        } else if (!data.type && data.players && data.board) {
-          // Only update gameState if it's a valid game state (no type, but has required properties)
-          // Sync card images from database (important for tokens after reconnection)
-          const syncedData = syncGameStateImages(data)
-
-          // IMPORTANT: Prevent phase flicker by validating phase transitions
-          // Only ignore delayed updates if we're NOT in scoring step OR if this is a forced sync
-          const currentState = gameStateRef.current
-          if (!currentState.isScoringStep && syncedData.isScoringStep && syncedData.currentPhase !== 2) {
-            // Incoming scoring state but we're not in commit phase - likely old state
-            logger.debug('Ignoring delayed scoring state update')
-            return
-          }
-
-          // Clear isScoringStep when server broadcasts state with different phase or different active player
-          // This ensures that after turn passing (server-side), the client exits scoring mode
-          // Also clear if server has moved past Scoring phase (4) to Setup (1) or later
-          const shouldClearScoringStep = currentState.isScoringStep && (
-            syncedData.currentPhase !== currentState.currentPhase ||
-            syncedData.activePlayerId !== currentState.activePlayerId ||
-            syncedData.currentPhase !== 4  // Server has moved past Scoring phase
-          )
-          if (shouldClearScoringStep) {
-            syncedData.isScoringStep = false
-          }
-
-          setGameState(syncedData)
-          gameStateRef.current = syncedData
-
-          // Auto-save game state when receiving updates from server
-          if (localPlayerIdRef.current !== null && syncedData.gameId) {
-            // Get player token from reconnection_data or from the player in gameState
-            let playerToken = undefined
-            try {
-              const stored = localStorage.getItem(RECONNECTION_DATA_KEY)
-              if (stored) {
-                const parsed = JSON.parse(stored)
-                playerToken = parsed.playerToken
-              }
-            } catch (e) { /* ignore */ }
-
-            // Also try to get token from current player in gameState
-            if (!playerToken && syncedData.players) {
-              const localPlayer = syncedData.players.find((p: Player) => p.id === localPlayerIdRef.current)
-              if (localPlayer?.playerToken) {
-                playerToken = localPlayer.playerToken
-                // Update playerTokenRef if we found it in gameState
-                playerTokenRef.current = playerToken
-              }
-            }
-
-            saveGameState(syncedData, localPlayerIdRef.current, playerToken)
-          }
-        } else {
-          // Log the actual message type and all keys in data for debugging
-          console.warn('Unknown message type:', data.type, 'keys:', Object.keys(data), 'data:', data)
-        }
-      } catch (error) {
-        logger.error('Failed to parse message from server:', event.data, error)
-      }
-    }
-    ws.current.onclose = () => {
-      logger.info('WebSocket connection closed')
-      setConnectionStatus('Disconnected')
-
-      if (!isManualExitRef.current) {
-        if (reconnectTimeoutRef.current) {
-          clearTimeout(reconnectTimeoutRef.current)
-        }
-        reconnectTimeoutRef.current = window.setTimeout(connectWebSocket, TIMING.RECONNECT_DELAY)
-      }
-    }
-    ws.current.onerror = (event) => logger.error('WebSocket error event:', event)
-  }, [setGameState, createInitialState])
-
-  // Join as invite - automatically joins as new player or spectator
-  const joinAsInvite = useCallback((gameId: string, playerName: string = 'Player'): void => {
-    isManualExitRef.current = false
-    if (ws.current?.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify({
-        type: 'JOIN_AS_INVITE',
-        gameId,
-        playerName
-      }))
-    } else {
-      // Store for after connection
-      sessionStorage.setItem('pending_invite_game', gameId)
-      sessionStorage.setItem('pending_invite_name', playerName)
-      connectWebSocket()
-    }
-  }, [connectWebSocket])
-
+  // Initial connection and state restoration useEffect
   useEffect(() => {
     isManualExitRef.current = false
 
@@ -4676,6 +4348,22 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     triggerTargetSelection,
   } = visualEffects
 
+  // Targeting mode hook - handles targeting mode activation and clearing
+  // Must be initialized before scoring since scoring uses clearTargetingMode
+  const targetingMode = useTargetingMode({
+    ws,
+    webrtcManager: webrtcManagerRef,
+    gameStateRef,
+    webrtcIsHostRef,
+    setGameState,
+  })
+
+  // Destructure targeting mode functions for direct access
+  const {
+    setTargetingMode,
+    clearTargetingMode,
+  } = targetingMode
+
   // Scoring hook - handles scoring functions
   const scoring = useScoring({
     ws,
@@ -4683,6 +4371,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     updateState,
     updatePlayerScore,
     triggerFloatingText,
+    clearTargetingMode,
   })
 
   // Destructure scoring functions for direct access
@@ -4708,46 +4397,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   const {
     moveItem,
   } = cardMovement
-
-  // Targeting mode hook - handles targeting mode activation and clearing
-  const targetingMode = useTargetingMode({
-    ws,
-    webrtcManager: webrtcManagerRef,
-    gameStateRef,
-    webrtcIsHostRef,
-    setGameState,
-  })
-
-  // Game lifecycle hook - handles game creation/joining/exiting
-  const gameLifecycle = useGameLifecycle({
-    ws,
-    gameStateRef,
-    localPlayerIdRef,
-    isRestoringSessionRef,
-    isManualExitRef,
-    webrtcIsHostRef,
-    receivedServerStateRef,
-    joiningGameIdRef,
-    setGameState,
-    setLocalPlayerId,
-    connectWebSocket,
-    updateState,
-  })
-
-  // Destructure targeting mode functions for direct access
-  const {
-    setTargetingMode,
-    clearTargetingMode,
-  } = targetingMode
-
-  // Destructure game lifecycle functions for direct access
-  const {
-    createGame,
-    joinGame,
-    exitGame,
-    requestGamesList,
-    forceReconnect,
-  } = gameLifecycle
 
   return {
     gameState,

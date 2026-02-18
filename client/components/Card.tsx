@@ -3,8 +3,10 @@ import { DeckType } from '@/types'
 import type { Card as CardType, PlayerColor } from '@/types'
 import { DECK_THEMES, PLAYER_COLORS, STATUS_ICONS, PLAYER_COLOR_RGB } from '@/constants'
 import { Tooltip, CardTooltipContent } from './Tooltip'
-import { hasReadyAbilityInCurrentPhase } from '@/utils/autoAbilities'
+import { hasReadyAbilityInCurrentPhase, hasReadyStatusForPhase } from '@/utils/autoAbilities'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { getOptimizedImageUrl } from '@/utils/imageOptimization'
+import { globalImageLoader } from '@/utils/imageLoader'
 
 // Split props to prevent unnecessary rerenders when only display props change
 interface CardCoreProps {
@@ -45,14 +47,46 @@ const StatusIcon: React.FC<StatusIconProps> = memo(({ type, playerId, count, ref
   const statusColorName = playerColorMap.get(playerId)
   const statusBg = (statusColorName && PLAYER_COLORS[statusColorName]) ? PLAYER_COLORS[statusColorName].bg : 'bg-gray-500'
 
+  const [iconLoadState, setIconLoadState] = useState<'loading' | 'loaded' | 'failed'>('loading')
+  const [currentIconUrl, setCurrentIconUrl] = useState<string | null>(null)
+
   const iconUrl = useMemo(() => {
     let url = STATUS_ICONS[type]
     if (url) {
+      // Apply Cloudinary optimizations for status icons (small, fast loading)
+      url = getOptimizedImageUrl(url, { width: 64 })
       const separator = url.includes('?') ? '&' : '?'
       url = `${url}${separator}v=${refreshVersion}`
     }
     return url
   }, [type, refreshVersion])
+
+  // Reset loading state when icon URL changes
+  useEffect(() => {
+    setCurrentIconUrl(iconUrl)
+    setIconLoadState('loading')
+  }, [iconUrl])
+
+  const handleIconLoad = useCallback(() => {
+    setIconLoadState('loaded')
+  }, [])
+
+  const handleIconError = useCallback(() => {
+    const maxRetries = 2
+    const currentAttempts = globalImageLoader.incrementAttempts(currentIconUrl || '')
+
+    if (currentAttempts <= maxRetries) {
+      const delay = Math.min(500 * Math.pow(2, currentAttempts - 1), 2000)
+      setTimeout(() => {
+        if (currentIconUrl) {
+          const separator = currentIconUrl.includes('?') ? '&' : '?'
+          setCurrentIconUrl(`${currentIconUrl}${separator}retry=${Date.now()}`)
+        }
+      }, delay)
+    } else {
+      setIconLoadState('failed')
+    }
+  }, [currentIconUrl])
 
   const isSingleInstance = ['Support', 'Threat', 'Revealed', 'LastPlayed'].includes(type)
   const showCount = !isSingleInstance && count > 1
@@ -73,9 +107,11 @@ const StatusIcon: React.FC<StatusIconProps> = memo(({ type, playerId, count, ref
       className={`relative ${sizeClass} flex items-center justify-center ${statusBg} bg-opacity-80 rounded-sm shadow-md flex-shrink-0`}
       title={`${type} (Player ${playerId}) ${!isSingleInstance && count > 0 ? `x${count}` : ''}`}
     >
-      {iconUrl ? (
+      {currentIconUrl && iconLoadState !== 'failed' ? (
         <img
-          src={iconUrl}
+          src={currentIconUrl}
+          onLoad={handleIconLoad}
+          onError={handleIconError}
           alt={type}
           className={`object-contain w-full h-full transition-all duration-150 ${iconPaddingClass}`}
         />
@@ -123,6 +159,8 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   const tooltipTimeoutRef = useRef<number | null>(null)
 
   const [isShining, setIsShining] = useState(false)
+  const [imageLoadState, setImageLoadState] = useState<'loading' | 'loaded' | 'failed'>('loading')
+  const retryTimeoutRef = useRef<number | null>(null)
 
   const [highlightDismissed, setHighlightDismissed] = useState(false)
   const localized = card.baseId ? getCardTranslation(card.baseId) : undefined
@@ -140,6 +178,12 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
 
   const [currentImageSrc, setCurrentImageSrc] = useState(() => {
     let src = card.imageUrl
+
+    // Apply Cloudinary optimizations for faster loading
+    if (src) {
+      src = getOptimizedImageUrl(src)
+    }
+
     if (imageRefreshVersion && src) {
       const separator = src.includes('?') ? '&' : '?'
       src = `${src}${separator}v=${imageRefreshVersion}`
@@ -149,24 +193,72 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
 
   useEffect(() => {
     let src = card.imageUrl
+
+    // Apply Cloudinary optimizations for faster loading
+    if (src) {
+      src = getOptimizedImageUrl(src)
+    }
+
     if (imageRefreshVersion && src) {
       const separator = src.includes('?') ? '&' : '?'
       src = `${src}${separator}v=${imageRefreshVersion}`
     }
     setCurrentImageSrc(src)
+    // Reset loading state when image source changes
+    setImageLoadState('loading')
   }, [card.imageUrl, imageRefreshVersion])
 
-  const handleImageError = () => {
-    let fallback = card.fallbackImage
-    if (imageRefreshVersion && fallback) {
-      const separator = fallback.includes('?') ? '&' : '?'
-      fallback = `${fallback}${separator}v=${imageRefreshVersion}`
+  const handleImageLoad = useCallback(() => {
+    setImageLoadState('loaded')
+    // Mark as loaded in global loader
+    if (currentImageSrc) {
+      globalImageLoader.markLoaded(currentImageSrc)
     }
+  }, [currentImageSrc])
 
-    if (currentImageSrc !== fallback) {
-      setCurrentImageSrc(fallback ?? '')
+  const handleImageError = useCallback(() => {
+    const maxRetries = 3
+    const currentAttempts = globalImageLoader.incrementAttempts(currentImageSrc)
+
+    if (currentAttempts <= maxRetries) {
+      // Retry with exponential backoff
+      const delay = Math.min(1000 * Math.pow(2, currentAttempts - 1), 5000)
+
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current)
+      }
+
+      retryTimeoutRef.current = window.setTimeout(() => {
+        // Force reload by adding timestamp
+        const separator = currentImageSrc.includes('?') ? '&' : '?'
+        setCurrentImageSrc(`${currentImageSrc}${separator}retry=${Date.now()}`)
+      }, delay)
+    } else {
+      // Max retries reached, try fallback
+      let fallback = card.fallbackImage
+      if (imageRefreshVersion && fallback) {
+        const separator = fallback.includes('?') ? '&' : '?'
+        fallback = `${fallback}${separator}v=${imageRefreshVersion}`
+      }
+
+      if (currentImageSrc !== fallback && fallback) {
+        setCurrentImageSrc(fallback)
+        globalImageLoader.reset(fallback)
+      } else {
+        setImageLoadState('failed')
+        globalImageLoader.markFailed(currentImageSrc)
+      }
     }
-  }
+  }, [currentImageSrc, card.fallbackImage, imageRefreshVersion])
+
+  // Cleanup retry timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current)
+      }
+    }
+  }, [])
 
   const isHero = card.types?.includes('Hero')
 
@@ -258,6 +350,13 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     activePlayerId
   )
 
+  // For visual display of ready statuses on OTHER players' cards
+  // (so everyone can see what abilities are available)
+  const hasReadyStatusVisual = hasReadyStatusForPhase(
+    card,
+    activePhaseIndex ?? 0
+  )
+
   // Check if this card is currently executing an ability
   const isExecutingAbility = boardCoords && activeAbilitySourceCoords &&
     boardCoords.row === activeAbilitySourceCoords.row &&
@@ -265,10 +364,11 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
 
   // Highlight if:
   // 1. Has a ready ability usable in current phase and by active player
+  // OR has ready status for visual display (for other players' cards)
   // 2. NOT currently executing an ability
   // 3. Not dismissed and not disabled
   // 4. NOT in targeting mode (ready abilities hidden during targeting)
-  const shouldHighlight = !disableActiveHighlights && !highlightDismissed && hasReadyAbility && !isExecutingAbility && !targetingMode
+  const shouldHighlight = !disableActiveHighlights && !highlightDismissed && (hasReadyAbility || hasReadyStatusVisual) && !isExecutingAbility && !targetingMode
 
   const handleCardClick = useCallback((e: React.MouseEvent) => {
     // Stop propagation to prevent double-triggering from parent GameBoard cell
@@ -446,7 +546,28 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
             >
               {currentImageSrc ? (
                 <>
-                  <img src={currentImageSrc} onError={handleImageError} alt={displayCard.name} className="absolute inset-0 w-full h-full object-cover" />
+                  {imageLoadState === 'failed' ? (
+                    // Show fallback visual when image failed to load
+                    <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center p-2">
+                      <div className="text-center">
+                        <div className="text-xs text-gray-400 mb-1">{card.deck}</div>
+                        <span className="text-center text-sm font-bold text-white break-words">
+                          {displayCard.name}
+                        </span>
+                        {card.power > 0 && !hidePower && (
+                          <div className="text-lg font-bold text-white mt-1">{card.power}</div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <img
+                      src={currentImageSrc}
+                      onLoad={handleImageLoad}
+                      onError={handleImageError}
+                      alt={displayCard.name}
+                      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${imageLoadState === 'loading' ? 'opacity-0' : 'opacity-100'}`}
+                    />
+                  )}
                   {readyAbilityOverlay}
                   {isHero && <div className={`absolute inset-0 hero-foil-overlay ${isShining ? 'animating' : ''}`}></div>}
                 </>

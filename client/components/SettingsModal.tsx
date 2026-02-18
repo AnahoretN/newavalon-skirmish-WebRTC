@@ -5,6 +5,7 @@ import type { LanguageCode } from '@/locales/types'
 import type { ConnectionStatus } from '@/hooks/useGameState'
 import { generateInviteLink } from '@/utils/inviteLinks'
 import { logger } from '@/utils/logger'
+import { globalImageLoader } from '@/utils/imageLoader'
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -119,11 +120,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleClearCache = () => {
     setCacheClearing(true)
+
     // Clear all localStorage and sessionStorage
     localStorage.clear()
     sessionStorage.clear()
+
+    // Clear image cache from globalImageLoader
+    if (globalImageLoader && typeof globalImageLoader.clear === 'function') {
+      globalImageLoader.clear()
+    }
+
+    // Clear browser image cache by forcing reload with timestamp
+    // This will cause all images to be reloaded with new URLs
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        names.forEach(name => caches.delete(name))
+      })
+    }
+
     // Show feedback then reload
     setTimeout(() => {
+      // Force hard reload to bypass all caches
       window.location.reload()
     }, 1000)
   }
