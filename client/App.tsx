@@ -847,8 +847,13 @@ const AppInner = function AppInner() {
       return
     }
 
-    let effectiveAction: AbilityAction | null = abilityMode
-    if (cursorStack && !abilityMode) {
+    // PRIORITY: cursorStack overrides abilityMode for visual effects
+    // When tokens are active, abilityMode is suppressed
+    let effectiveAction: AbilityAction | null = null
+    if (cursorStack) {
+      // Token mode - create action from cursorStack
+      // abilityMode is NOT used (visually suppressed)
+      // But ability can modify cursorStack parameters via the cursorStack itself
       effectiveAction = {
         type: 'CREATE_STACK',
         tokenType: cursorStack.type,
@@ -867,6 +872,9 @@ const AppInner = function AppInner() {
         ...(cursorStack.maxOrthogonalDistance !== undefined && { maxOrthogonalDistance: cursorStack.maxOrthogonalDistance }),
         ...(cursorStack.sourceCoords && { sourceCoords: cursorStack.sourceCoords }),
       }
+    } else if (abilityMode && !cursorStack) {
+      // Pure ability mode - only when no tokens active
+      effectiveAction = abilityMode
     }
 
     // Effective actor logic for highlighting valid targets
@@ -890,7 +898,7 @@ const AppInner = function AppInner() {
       }
     }
 
-    const boardTargets = calculateValidTargets(effectiveAction, gameState, actorId ?? null, commandContext)
+    const boardTargets = effectiveAction ? calculateValidTargets(effectiveAction, gameState, actorId ?? null, commandContext) : []
     const handTargets: {playerId: number, cardIndex: number}[] = []
 
     // Handle playMode - highlight empty board cells for unit placement
@@ -952,7 +960,10 @@ const AppInner = function AppInner() {
       }
     }
 
-    if (abilityMode?.type === 'ENTER_MODE' && abilityMode.mode === 'SELECT_TARGET') {
+    // CRITICAL: abilityMode targets are ONLY calculated when cursorStack is NOT active
+    // When tokens are being placed (cursorStack), abilityMode is suppressed visually
+    // The ability may still modify cursorStack parameters, but doesn't add its own targets
+    if (abilityMode?.type === 'ENTER_MODE' && abilityMode.mode === 'SELECT_TARGET' && !cursorStack) {
       // Debug logging for targeting mode activation
       logger.info(`[App.tsx] ENTER_MODE SELECT_TARGET detected`, {
         actionType: abilityMode.payload?.actionType,
@@ -1014,7 +1025,8 @@ const AppInner = function AppInner() {
         })
       }
     }
-    if (abilityMode && (abilityMode.mode === 'SCORE_LAST_PLAYED_LINE' || abilityMode.mode === 'SELECT_LINE_END' || abilityMode.mode === 'INTEGRATOR_LINE_SELECT' || abilityMode.mode === 'ZIUS_LINE_SELECT')) {
+    // Line selection modes - only active when cursorStack is NOT active
+    if (abilityMode && !cursorStack && (abilityMode.mode === 'SCORE_LAST_PLAYED_LINE' || abilityMode.mode === 'SELECT_LINE_END' || abilityMode.mode === 'INTEGRATOR_LINE_SELECT' || abilityMode.mode === 'ZIUS_LINE_SELECT')) {
       const gridSize = boardSize
       if (abilityMode.sourceCoords) {
         // Highlight horizontal line (same row)
@@ -1039,19 +1051,36 @@ const AppInner = function AppInner() {
 
     // Use universal targeting mode system to sync targets to all players
     // This ensures all players see the same visual highlights
+    //
+    // PRIORITY RULES:
+    // 1. cursorStack (tokens) ALWAYS has priority over abilityMode for visual effects
+    //    - When tokens are active, only token targeting logic applies
+    //    - abilityMode is suppressed visually but can modify token behavior via cursorStack params
+    // 2. abilityMode (abilities) only when cursorStack is not active
+    //    - Pure ability targeting without tokens
+    // 3. playMode for unit placement
+    // 4. commandModal for command cards
+    //
     const hasPlayMode = playMode && playMode.card?.types?.includes('Unit')
     const hasCommandModal = !!commandModalCard
-    const hasActiveMode = abilityMode || cursorStack || hasPlayMode || hasCommandModal
+    const hasActiveMode = cursorStack || abilityMode || hasPlayMode || hasCommandModal
     const isDeckSelectableMode = abilityMode?.mode === 'SELECT_DECK'
 
     if (hasActiveMode && (boardTargets.length > 0 || handTargets.length > 0 || isDeckSelectableMode)) {
       // Determine the action to use for targeting mode
+      // CRITICAL: cursorStack has priority over abilityMode
       let targetingAction: AbilityAction | null = null
+      let sourceCoords: { row: number; col: number } | undefined = undefined
 
-      if (abilityMode) {
-        targetingAction = abilityMode
-      } else if (cursorStack && actorId !== null) {
+      if (cursorStack && actorId !== null) {
+        // Token mode - create action from cursorStack
+        // abilityMode is suppressed visually but can modify cursorStack parameters
         targetingAction = createTargetingActionFromCursorStack(cursorStack, gameState, actorId)
+        sourceCoords = cursorStack.sourceCoords
+      } else if (abilityMode) {
+        // Pure ability mode (no tokens active)
+        targetingAction = abilityMode
+        sourceCoords = abilityMode.sourceCoords
       } else if (playMode && abilityMode) {
         targetingAction = createTargetingActionFromAbilityMode(abilityMode)
       } else if (commandModalCard && abilityMode) {
@@ -1077,10 +1106,12 @@ const AppInner = function AppInner() {
           targetingPlayerId,
           boardTargetsCount: boardTargets.length,
           handTargetsCount: handTargets.length,
+          hasCursorStack: !!cursorStack,
+          hasAbilityMode: !!abilityMode,
         })
 
         // Pass pre-calculated boardTargets and handTargets to avoid recalculating (important for line modes and hand targeting)
-        setTargetingMode(targetingAction, targetingPlayerId, abilityMode?.sourceCoords || cursorStack?.sourceCoords, boardTargets, commandContext, handTargets)
+        setTargetingMode(targetingAction, targetingPlayerId, sourceCoords, boardTargets, commandContext, handTargets)
       }
     } else if (!hasActiveMode) {
       // Clear targeting mode ONLY if it belongs to the local player
