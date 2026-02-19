@@ -1285,7 +1285,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                       const reconstructedDeck = (guestPlayer.deckCards || []).map(reconstructCard)
                       const reconstructedDiscard = (guestPlayer.discardCards || []).map(reconstructCard)
 
-                      logger.info(`[STATE_UPDATE_COMPACT] Reconstructed guest ${guestPlayerId}: hand=${reconstructedHand.length}, deck=${reconstructedDeck.length}, discard=${reconstructedDiscard.length}`)
+                      logger.info(`[STATE_UPDATE_COMPACT] Reconstructed guest ${guestPlayerId}: hand=${reconstructedHand.length}, deck=${reconstructedDeck.length}, discard=${reconstructedDiscard.length}, score=${guestPlayer.score || 0}`)
 
                       return {
                         ...p,
@@ -1294,7 +1294,8 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                         discard: reconstructedDiscard,
                         handSize: reconstructedHand.length,
                         deckSize: reconstructedDeck.length,
-                        discardSize: reconstructedDiscard.length
+                        discardSize: reconstructedDiscard.length,
+                        score: guestPlayer.score || p.score  // CRITICAL: Preserve score from guest!
                       }
                     }
                   } else {
