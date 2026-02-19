@@ -102,6 +102,7 @@ export const ModalsRenderer = () => {
           canInteract={restData.canInteract ?? true}
           anchorEl={restData.anchorEl ?? null}
           imageRefreshVersion={restData.imageRefreshVersion}
+          localPlayerId={restData.localPlayerId ?? null}
         />
       )}
 
