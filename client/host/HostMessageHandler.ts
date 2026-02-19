@@ -245,30 +245,44 @@ export class HostMessageHandler {
     const mergedPlayers = guestState.players.map((guestPlayer: Player) => {
       const hostPlayer = this.gameState!.players.find(p => p.id === guestPlayer.id)
 
-      if (guestPlayer.id === guestPlayerId && (guestPlayer as any).handCards) {
-        // CRITICAL FIX: Reconstruct hand from handCards for the guest player
-        // Guest sends handCards (compact format with id, baseId, power, statuses)
-        // Host needs to reconstruct full hand from card database
-        const handCards = (guestPlayer as any).handCards
-        const reconstructedHand = handCards.map((hc: any) => {
-          const cardDef = getCardDefinition(hc.baseId)
-          if (!cardDef) {
-            return { id: hc.id, baseId: hc.baseId, name: 'Unknown', power: hc.power || 0, ability: '', types: [] }
-          }
-          return {
-            ...cardDef,
-            id: hc.id,
-            power: hc.power,
-            powerModifier: hc.powerModifier || 0,
-            isFaceDown: hc.isFaceDown,
-            statuses: hc.statuses || []
-          }
-        })
+      if (guestPlayer.id === guestPlayerId) {
+        // This is the guest who sent the update - preserve their score
+        if ((guestPlayer as any).handCards && hostPlayer) {
+          // CRITICAL FIX: Reconstruct hand from handCards for the guest player
+          // Guest sends handCards (compact format with id, baseId, power, statuses)
+          // Host needs to reconstruct full hand from card database
+          const handCards = (guestPlayer as any).handCards
+          const reconstructedHand = handCards.map((hc: any) => {
+            const cardDef = getCardDefinition(hc.baseId)
+            if (!cardDef) {
+              return { id: hc.id, baseId: hc.baseId, name: 'Unknown', power: hc.power || 0, ability: '', types: [] }
+            }
+            return {
+              ...cardDef,
+              id: hc.id,
+              power: hc.power,
+              powerModifier: hc.powerModifier || 0,
+              isFaceDown: hc.isFaceDown,
+              statuses: hc.statuses || []
+            }
+          })
 
+          // CRITICAL: Preserve deck/discard from host (for card privacy), but take score from guest
+          return {
+            ...guestPlayer,
+            hand: reconstructedHand,
+            handCards: undefined, // Remove temporary handCards
+            deck: hostPlayer.deck,
+            discard: hostPlayer.discard,
+          }
+        }
+
+        // Guest sent update without handCards (e.g., score change only)
+        // Preserve guest's score, use host's deck/discard
         return {
           ...guestPlayer,
-          hand: reconstructedHand,
-          handCards: undefined, // Remove temporary handCards
+          deck: hostPlayer?.deck,
+          discard: hostPlayer?.discard,
         }
       }
 
@@ -297,7 +311,7 @@ export class HostMessageHandler {
             hand: updatedHand,
             deck: hostPlayer.deck || guestPlayer.deck,
             discard: hostPlayer.discard || guestPlayer.discard,
-            score: hostPlayer.score,  // CRITICAL: Preserve host's score data
+            score: hostPlayer.score,  // For other players, preserve host's score
             color: hostPlayer.color,  // CRITICAL: Preserve host's player color data
             handSize: updatedHand.length,
             deckSize: hostPlayer.deckSize ?? guestPlayer.deckSize,
@@ -305,12 +319,14 @@ export class HostMessageHandler {
           }
         }
 
-        // No handCards from guest, preserve host's data
+        // No handCards from guest - preserve host's data for this player
         return {
           ...guestPlayer,
           deck: hostPlayer.deck || guestPlayer.deck,
           discard: hostPlayer.discard || guestPlayer.discard,
-          score: hostPlayer.score,  // CRITICAL: Preserve host's score data (guest may have stale data)
+          // CRITICAL: For non-guest players, use host's score (guest has stale data)
+          // For the guest player themselves (handled below), preserve their score
+          score: hostPlayer.score,
           color: hostPlayer.color,  // CRITICAL: Preserve host's player color data
           handSize: hostPlayer.handSize ?? guestPlayer.handSize,
           deckSize: hostPlayer.deckSize ?? guestPlayer.deckSize,
