@@ -405,9 +405,9 @@ export function useCardMovement(props: UseCardMovementProps) {
 
       if (target.target === 'hand' && target.playerId !== undefined) {
 
-        // Check if this is a token card
-        const isToken = (cardToMove.deck === DeckType.Tokens || cardToMove.deck === 'counter') &&
-                        (cardToMove.types?.includes('Token') || cardToMove.types?.includes('Token Unit'))
+        // Check if this is a token card - tokens are destroyed when moved to hand/discard/deck
+        // Token cards have deck === DeckType.Tokens (set when spawned via spawnToken)
+        const isToken = cardToMove.deck === DeckType.Tokens
 
         if (isToken) {
           // Token cards are DESTROYED when moved to hand/discard/deck
@@ -477,9 +477,8 @@ export function useCardMovement(props: UseCardMovementProps) {
           newState.board[target.boardCoords.row][target.boardCoords.col].card = cardToMove
         }
       } else if (target.target === 'discard' && target.playerId !== undefined) {
-        // Check if this is a token card
-        const isToken = (cardToMove.deck === DeckType.Tokens || cardToMove.deck === 'counter') &&
-                        (cardToMove.types?.includes('Token') || cardToMove.types?.includes('Token Unit'))
+        // Check if this is a token card - tokens are destroyed when moved to hand/discard/deck
+        const isToken = cardToMove.deck === DeckType.Tokens
 
         if (isToken) {
           // Token cards are DESTROYED when moved to hand/discard/deck
@@ -508,9 +507,8 @@ export function useCardMovement(props: UseCardMovementProps) {
         }
       } else if (target.target === 'deck' && target.playerId !== undefined) {
 
-        // Check if this is a token card
-        const isToken = (cardToMove.deck === DeckType.Tokens || cardToMove.deck === 'counter') &&
-                        (cardToMove.types?.includes('Token') || cardToMove.types?.includes('Token Unit'))
+        // Check if this is a token card - tokens are destroyed when moved to hand/discard/deck
+        const isToken = cardToMove.deck === DeckType.Tokens
 
         if (isToken) {
           // Token cards are DESTROYED when moved to hand/discard/deck

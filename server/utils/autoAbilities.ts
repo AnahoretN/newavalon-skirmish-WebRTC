@@ -567,12 +567,20 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
   {
     baseId: 'reconDrone',
     activationType: 'setup',
-    getAction: (_card, _gameState, _ownerId, coords) => ({
+    getAction: (_card, _gameState, ownerId, coords) => ({
       type: 'ENTER_MODE',
       mode: 'SELECT_CELL',
       sourceCard: _card,
       sourceCoords: coords,
-      payload: { allowSelf: false, range: 'global' }
+      payload: {
+        allowSelf: false,
+        range: 1, // Adjacent cells only
+        filter: (target: Card, r: number, c: number) => {
+          const isAdj = checkAdj(r, c, coords.row, coords.col)
+          const isOpponent = target.ownerId !== ownerId
+          return isAdj && isOpponent
+        }
+      }
     })
   },
   {
