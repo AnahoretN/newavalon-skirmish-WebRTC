@@ -218,8 +218,10 @@ const GridCell = memo<{
         const isRevealedToAll = card.revealedTo === 'all'
         const isRevealedToMeExplicitly = localPlayerId !== null && Array.isArray(card.revealedTo) && card.revealedTo.includes(localPlayerId)
         const isRevealedByRequest = localPlayerId !== null && card.statuses?.some(s => s.type === 'Revealed' && s.addedByPlayerId === localPlayerId)
+        // Card owner always sees their own card
+        const isMyCard = card.ownerId === localPlayerId
 
-        return !card.isFaceDown || isRevealedToAll || isRevealedToMeExplicitly || isRevealedByRequest || false
+        return !card.isFaceDown || isRevealedToAll || isRevealedToMeExplicitly || isRevealedByRequest || isMyCard || false
       }, [cell.card, localPlayerId])
 
       return (

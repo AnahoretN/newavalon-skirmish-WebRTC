@@ -574,6 +574,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
           const backColorClass = ownerColorData ? ownerColorData.bg : 'bg-card-back'
           const borderColorClass = ownerColorData ? ownerColorData.border : 'border-blue-300'
           const lastPlayedGroup = uniqueStatusGroups.find(g => g.type === 'LastPlayed')
+          const revealedGroups = uniqueStatusGroups.filter(g => g.type === 'Revealed')
 
           return (
             <div
@@ -583,6 +584,13 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
               onMouseDown={handleMouseDown}
               className={`relative w-full h-full ${backColorClass} rounded-md shadow-md border-2 ${borderColorClass} flex-shrink-0 transition-transform duration-300 ${shouldHighlight ? 'scale-[1.10] z-10' : ''}`}
             >
+              {revealedGroups.length > 0 && (
+                <div className="absolute top-[3px] left-[3px] flex flex-wrap gap-0.5 pointer-events-none">
+                  {revealedGroups.map(group => (
+                    <StatusIcon key={group.type + '_' + group.playerId} type={group.type} playerId={group.playerId} count={group.count} refreshVersion={imageRefreshVersion} playerColorMap={playerColorMap} smallStatusIcons={smallStatusIcons} />
+                  ))}
+                </div>
+              )}
               {lastPlayedGroup && (
                 <div className="absolute bottom-[3px] left-[3px] pointer-events-none">
                   <StatusIcon type={lastPlayedGroup.type} playerId={lastPlayedGroup.playerId} count={lastPlayedGroup.count} refreshVersion={imageRefreshVersion} playerColorMap={playerColorMap} smallStatusIcons={smallStatusIcons} />

@@ -300,47 +300,9 @@ export const useAppCounters = ({
 
                 const targetPlayer = gameState.players.find(p => p.id === targetCard.ownerId)
 
-                // Special handling for Revealed tokens on opponent's face-down board cards
-                if (cursorStack.type === 'Revealed' && !targetPlayer?.isDummy) {
-                  // RULE: Revealed tokens cannot be placed on own cards
-                  if (targetCard.ownerId === localPlayerId) {
-                    return
-                  }
-
-                  // RULE: Revealed tokens can only be placed on face-down cards
-                  if (!targetCard.isFaceDown) {
-                    return
-                  }
-
-                  // Check if card already has Revealed from this player (unique constraint)
-                  const alreadyHasRevealed = targetCard.statuses?.some(s => s.type === 'Revealed' && s.addedByPlayerId === effectiveActorId)
-                  if (alreadyHasRevealed) {
-                    // Card already revealed to this player - keep cursor stack active
-                    return
-                  }
-
-                  // Request card reveal from opponent
-                  if (localPlayerId !== null) {
-                    requestCardReveal({ source: 'board', ownerId: targetCard.ownerId, boardCoords: { row, col } }, localPlayerId)
-                  }
-
-                  if (cursorStack.sourceCoords && cursorStack.sourceCoords.row >= 0) {
-                    markAbilityUsed(cursorStack.sourceCoords, cursorStack.isDeployAbility)
-                  }
-                  if (cursorStack.count > 1) {
-                    setCursorStack(prev => prev ? ({ ...prev, count: prev.count - 1 }) : null)
-                  } else {
-                    if (cursorStack.chainedAction) {
-                      onAction(cursorStack.chainedAction, cursorStack.sourceCoords || { row: -1, col: -1 })
-                    }
-                    setCursorStack(null)
-                  }
-                  interactionLock.current = true
-                  setTimeout(() => {
-                    interactionLock.current = false
-                  }, 300)
-                  return
-                }
+                // For Revealed tokens on opponent's face-down board cards:
+                // Skip the old requestCardReveal system - use unified handleDrop instead
+                // The status will be added and card will be revealed to token owner
               }
 
               if (targetCard) {

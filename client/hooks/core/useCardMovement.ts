@@ -140,17 +140,6 @@ export function useCardMovement(props: UseCardMovementProps) {
           }
         }
         if (targetCard) {
-          // RULE: Revealed tokens cannot be placed on own cards
-          if (item.statusType === 'Revealed') {
-            const localPlayerId = localPlayerIdRef.current
-            if (target.target === 'board' && targetCard.ownerId === localPlayerId) {
-              return currentState
-            }
-            if (target.target === 'hand' && target.playerId === localPlayerId) {
-              return currentState
-            }
-          }
-
           // Lucius Immunity Logic
           if (item.statusType === 'Stun') {
             if (targetCard.baseId === 'luciusTheImmortal') {
@@ -176,6 +165,18 @@ export function useCardMovement(props: UseCardMovementProps) {
             const activePlayer = newState.players.find(p => p.id === newState.activePlayerId)
             effectiveActorId = (activePlayer?.isDummy) ? activePlayer.id : (localPlayerIdRef.current !== null ? localPlayerIdRef.current : 0)
           }
+
+          // RULE: Revealed tokens cannot be placed on own cards
+          // Check if token owner is placing on their own cards (using effectiveActorId)
+          if (item.statusType === 'Revealed') {
+            if (target.target === 'board' && targetCard.ownerId === effectiveActorId) {
+              return currentState
+            }
+            if (target.target === 'hand' && target.playerId === effectiveActorId) {
+              return currentState
+            }
+          }
+
           if (item.statusType === 'Power+') {
             if (targetCard.powerModifier === undefined) {
               targetCard.powerModifier = 0
@@ -188,10 +189,11 @@ export function useCardMovement(props: UseCardMovementProps) {
             targetCard.powerModifier -= (1 * count)
           } else {
             // SPECIAL HANDLING FOR REVEALED STATUS ON HAND CARDS
-            // When Revealed token is placed on a hand card, update revealedTo property
-            // instead of adding to statuses array (which only works for board cards)
+            // When Revealed token is placed on a hand card, update BOTH revealedTo AND statuses
+            // - revealedTo: controls card visibility for the player who placed the token
+            // - statuses: displays the Revealed icon on the card
             if (item.statusType === 'Revealed' && target.target === 'hand') {
-              // Add effectiveActorId to revealedTo array
+              // Add to revealedTo array for visibility
               if (!targetCard.revealedTo) {
                 targetCard.revealedTo = []
               }
@@ -201,6 +203,14 @@ export function useCardMovement(props: UseCardMovementProps) {
                   actorArray.push(effectiveActorId)
                 }
                 targetCard.revealedTo = actorArray
+              }
+              // ALSO add to statuses array for icon display
+              if (!targetCard.statuses) {
+                targetCard.statuses = []
+              }
+              const alreadyHasRevealed = targetCard.statuses.some(s => s.type === 'Revealed' && s.addedByPlayerId === effectiveActorId)
+              if (!alreadyHasRevealed) {
+                targetCard.statuses.push({ type: 'Revealed', addedByPlayerId: effectiveActorId })
               }
             } else {
               // Normal status handling for board cards and other statuses
@@ -489,10 +499,8 @@ export function useCardMovement(props: UseCardMovementProps) {
 
         // Remove ready statuses when card leaves the battlefield
         removeAllReadyStatuses(cardToMove)
-        // Remove Revealed status when card goes to discard
-        if (cardToMove.statuses) {
-          cardToMove.statuses = cardToMove.statuses.filter(s => s.type !== 'Revealed')
-        }
+        // NOTE: Revealed status now PERSISTS on cards in discard
+        // The token stays on the card to maintain the revealed state
         const player = newState.players.find(p => p.id === target.playerId)
         if (player) {
           if (cardToMove.ownerId === undefined) {
@@ -519,10 +527,8 @@ export function useCardMovement(props: UseCardMovementProps) {
 
         // Remove ready statuses when card leaves the battlefield
         removeAllReadyStatuses(cardToMove)
-        // Remove Revealed status when card goes to deck
-        if (cardToMove.statuses) {
-          cardToMove.statuses = cardToMove.statuses.filter(s => s.type !== 'Revealed')
-        }
+        // NOTE: Revealed status now PERSISTS on cards in deck
+        // The token stays on the card to maintain the revealed state
         const player = newState.players.find(p => p.id === target.playerId)
 
         if (!player) {
