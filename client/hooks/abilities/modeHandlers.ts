@@ -473,11 +473,13 @@ function handleSelectTargetActionType(
 
     // Execute the chained action (CREATE_STACK for Revealed token)
     // with targetOwnerId set to the selected card's owner
+    // IMPORTANT: Pass sourceCard to ensure correct token ownership
     if (abilityMode.chainedAction) {
       const chainedAction = {
         ...abilityMode.chainedAction,
         targetOwnerId: targetOpponentId,
         sourceCoords: sourceCoords || boardCoords,
+        sourceCard: abilityMode.sourceCard, // Pass the source card (Recon Drone) for token ownership
       }
       handleActionExecution(chainedAction, boardCoords)
     }
