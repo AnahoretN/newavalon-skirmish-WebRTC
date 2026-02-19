@@ -1,6 +1,7 @@
 import { useRef, useEffect, useLayoutEffect } from 'react'
 import type { CursorStackState, GameState, AbilityAction, DragItem, DropTarget, CommandContext } from '@/types'
 import { validateTarget } from '@shared/utils/targeting'
+import { createTokenCursorStack, getTokenTargetingRules } from '@/utils/tokenTargeting'
 
 interface UseAppCountersProps {
     gameState: GameState;
@@ -479,23 +480,9 @@ export const useAppCounters = ({
       ? gameState.activePlayerId
       : localPlayerId ?? 0
 
+    // Use universal token targeting system to create cursorStack
     setCursorStack(prev => {
-      if (prev?.type === type) {
-        return { type, count: prev.count + 1, isDragging: true, sourceCoords: prev.sourceCoords, originalOwnerId: tokenOwnerId }
-      }
-      // For Revealed tokens, exclude own cards from valid targets
-      const cursorState: CursorStackState = {
-        type,
-        count: 1,
-        isDragging: true,
-        originalOwnerId: tokenOwnerId
-      }
-      // Revealed tokens cannot be placed on own cards
-      if (type === 'Revealed') {
-        cursorState.excludeOwnerId = tokenOwnerId
-        cursorState.onlyFaceDown = true // Only target face-down cards
-      }
-      return cursorState
+      return createTokenCursorStack(type, tokenOwnerId, prev)
     })
   }
 

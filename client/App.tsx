@@ -42,6 +42,7 @@ import { countersDatabase, fetchContentDatabase } from './content'
 import { validateTarget, calculateValidTargets, checkActionHasTargets } from '@shared/utils/targeting'
 import { getCommandAction } from '@server/utils/commandLogic'
 import { createTargetingActionFromCursorStack, createTargetingActionFromAbilityMode, determineTargetingPlayerId } from './utils/targetingActionUtils'
+import { getTokenTargetingRules } from './utils/tokenTargeting'
 import { useLanguage } from './contexts/LanguageContext'
 import { TIMING } from './utils/common'
 import { shuffleDeck } from '@shared/utils/array'
@@ -981,12 +982,12 @@ const AppInner = function AppInner() {
     }
 
     // Handle cursorStack - process BEFORE setting validHandTargets
+    // Uses universal token targeting rules from countersDatabase
     if (cursorStack) {
-      const counterDef = countersDatabase[cursorStack.type]
-      const allowsHand = cursorStack.type === 'Revealed' || (counterDef?.allowedTargets?.includes('hand'))
+      const tokenRules = getTokenTargetingRules(cursorStack.type)
 
       // If cursorStack doesn't allow hand targets, clear any from abilityMode
-      if (!allowsHand) {
+      if (!tokenRules.allowHand) {
         handTargets.length = 0 // Clear handTargets - tokens like Exploit/Aim/Stun/Shield can't go on hand cards
       } else {
         gameState.players.forEach(p => {

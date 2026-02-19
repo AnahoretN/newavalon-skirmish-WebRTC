@@ -7,11 +7,11 @@
 
 import type { Card, GameState, AbilityAction, CursorStackState } from '@/types'
 import { countersDatabase } from '@/content'
+import { getTokenTargetingRules } from '@/utils/tokenTargeting'
 
 /**
  * Create a targeting action from cursorStack
- * Includes comprehensive filter for hand targets (Vigilant Spotter, etc.)
- * IMPORTANT: Respects allowedTargets - targeting tokens (Aim, Exploit, Stun, Shield) CANNOT target hand cards
+ * Uses universal token targeting rules from countersDatabase
  */
 export function createTargetingActionFromCursorStack(
   cursorStack: CursorStackState,
@@ -19,10 +19,7 @@ export function createTargetingActionFromCursorStack(
   actorId: number
 ): AbilityAction {
   const targetType = cursorStack.targetType
-
-  // Check if this token allows hand targets
-  const counterDef = countersDatabase[cursorStack.type]
-  const allowsHand = cursorStack.type === 'Revealed' || (counterDef?.allowedTargets?.includes('hand'))
+  const tokenRules = getTokenTargetingRules(cursorStack.type)
 
   return {
     type: 'ENTER_MODE',
@@ -30,23 +27,16 @@ export function createTargetingActionFromCursorStack(
     sourceCoords: cursorStack.sourceCoords,
     payload: {
       filter: (card: Card) => {
-        // CRITICAL: If token doesn't allow hand targets, exclude ALL hand cards
-        if (!allowsHand) {
-          // Card is in hand if it has no location or is not on board
-          // We can detect this by checking if it has no board position
-          // But here we're filtering cards from player.hand array, so they're all in hand
-          // We need to check the location context - but filter doesn't have location info
-          // So we rely on allowedTargets check
-          // For board targets, this filter is only used for VALIDATION, not for selection
-          // The actual hand targeting is controlled in useTargetingMode.ts by action.mode
-          return false // Don't allow hand targeting for tokens that don't support it
+        // Check if token allows hand targeting (universal rule)
+        if (!tokenRules.allowHand) {
+          return false
         }
 
         // Check targetType if specified
         if (targetType && !card.types?.includes(targetType)) {
           return false
         }
-        // Check excludeOwnerId (for Vigilant Spotter - exclude owner, target opponents)
+        // Check excludeOwnerId (e.g., Revealed token - exclude owner, target opponents)
         if (cursorStack.excludeOwnerId !== undefined && card.ownerId === cursorStack.excludeOwnerId) {
           return false
         }
