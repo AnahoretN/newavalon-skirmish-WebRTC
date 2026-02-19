@@ -456,7 +456,9 @@ export class HostConnectionManager {
       name: card.name, // Name needed for display
       isFaceDown: card.isFaceDown,
       hasRevealToken: card.hasRevealToken || false,
-      statuses: card.statuses || []
+      statuses: card.statuses || [],
+      ownerId: card.ownerId, // Include ownerId for correct card back color display
+      deck: card.deck // Include deck for card back theme
     }
   }
 

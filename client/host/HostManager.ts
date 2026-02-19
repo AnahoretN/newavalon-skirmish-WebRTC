@@ -431,12 +431,26 @@ export class HostManager {
         if (message.data?.targetingMode) {
           // Update host's internal state and broadcast to all guests
           this.stateManager.setTargetingMode(message.data.targetingMode)
+          // Also broadcast the SET_TARGETING_MODE message to all guests
+          this.connectionManager.broadcast({
+            type: 'SET_TARGETING_MODE',
+            senderId: this.connectionManager.getPeerId(),
+            data: { targetingMode: message.data.targetingMode },
+            timestamp: Date.now()
+          })
         }
         break
 
       case 'CLEAR_TARGETING_MODE':
         // Update host's internal state and broadcast to all guests
         this.stateManager.clearTargetingMode()
+        // Also broadcast the CLEAR_TARGETING_MODE message to all guests
+        this.connectionManager.broadcast({
+          type: 'CLEAR_TARGETING_MODE',
+          senderId: this.connectionManager.getPeerId(),
+          data: { timestamp: Date.now() },
+          timestamp: Date.now()
+        })
         break
 
       // Ability activation messages
@@ -601,7 +615,7 @@ export class HostManager {
     const newPlayer = {
       id: newPlayerId,
       name: `Player ${newPlayerId}`,
-      color: PLAYER_COLOR_NAMES[existingPlayerIds.length % PLAYER_COLOR_NAMES.length],
+      color: PLAYER_COLOR_NAMES[(newPlayerId - 1) % PLAYER_COLOR_NAMES.length],
       hand: [],
       deck: [],
       discard: [],

@@ -11,6 +11,7 @@ import { getWebrtcManager, type WebrtcEvent } from '../utils/webrtcManager'
 import { getWebRTCEnabled } from './useWebRTCEnabled'
 import type { WebrtcMessage } from '../host/types'
 import { toggleActivePlayer as toggleActivePlayerPhase, performPreparationPhase } from '../host/PhaseManagement'
+import { resetReadyStatusesForTurn } from '../utils/autoAbilities'
 import {
   applyStateDelta,
   createReconnectSnapshot
@@ -118,7 +119,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   const [latestNoTarget, setLatestNoTarget] = useState<{coords: {row: number, col: number}, timestamp: number} | null>(null)
   const [latestDeckSelections, setLatestDeckSelections] = useState<DeckSelectionData[]>([])
   const [latestHandCardSelections, setLatestHandCardSelections] = useState<HandCardSelectionData[]>([])
-  const [targetSelectionEffects, setTargetSelectionEffects] = useState<any[]>([])
+  const [clickWaves, setClickWaves] = useState<any[]>([])
   // Valid targets received from other players (for synchronized targeting UI)
   const [remoteValidTargets, setRemoteValidTargets] = useState<{
     playerId: number
@@ -181,7 +182,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     setLatestNoTarget,
     setLatestDeckSelections,
     setLatestHandCardSelections,
-    setTargetSelectionEffects,
+    setClickWaves,
     setLatestFloatingTexts,
     setRemoteValidTargets,
     isManualExitRef,
@@ -533,9 +534,19 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     setLatestNoTarget,
     setLatestDeckSelections,
     setLatestHandCardSelections,
-    setTargetSelectionEffects,
+    setClickWaves,
     setGameState,
   })
+
+  const {
+    triggerHighlight,
+    triggerFloatingText,
+    triggerNoTarget,
+    triggerDeckSelection,
+    triggerHandCardSelection,
+    syncValidTargets,
+    triggerClickWave,
+  } = visualEffects
 
   // Track if restoration is in progress to prevent exitGame from clearing data
   const isRestoringSessionRef = useRef(false)
@@ -761,7 +772,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       const newPlayer: Player = {
         id: newPlayerId,
         name: `Player ${newPlayerId}`,
-        color: PLAYER_COLOR_NAMES[existingPlayerIds.length % PLAYER_COLOR_NAMES.length],
+        color: PLAYER_COLOR_NAMES[(newPlayerId - 1) % PLAYER_COLOR_NAMES.length],
         hand: [],
         deck: [],
         discard: [],
@@ -2955,6 +2966,16 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
               // Transition to Setup phase
               newState.currentPhase = 1
+
+              // Reset ready statuses (readySetup, readyCommit) for the active player
+              // This ensures Commit abilities become available in the Commit phase
+              resetReadyStatusesForTurn(newState, newState.activePlayerId!)
+            }
+
+            // Also reset ready statuses when a different player becomes active
+            // This ensures all players have their abilities ready at turn start
+            if (newState.activePlayerId && newState.activePlayerId !== prev.activePlayerId) {
+              resetReadyStatusesForTurn(newState, newState.activePlayerId)
             }
 
             return newState
@@ -3413,37 +3434,37 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
 
-      case 'TRIGGER_TARGET_SELECTION':
-        // Guest sent target selection effect to host - host applies locally and broadcasts
+      case 'TRIGGER_CLICK_WAVE':
+        // Guest sent click wave effect to host - host applies locally and broadcasts
         if (message.data) {
-          const targetSelectionData = message.data
-          setTargetSelectionEffects(prev => [...prev, targetSelectionData])
-          // Auto-remove after 1 second
+          const clickWaveData = message.data
+          setClickWaves(prev => [...prev, clickWaveData])
+          // Auto-remove after 600ms (animation duration)
           setTimeout(() => {
-            setTargetSelectionEffects(prev => prev.filter(e => e.timestamp !== targetSelectionData.timestamp))
-          }, 1000)
+            setClickWaves(prev => prev.filter(w => w.timestamp !== clickWaveData.timestamp))
+          }, 600)
 
           // Host: broadcast to all other guests
           if (webrtcIsHostRef.current && webrtcManagerRef.current && message.senderId) {
             webrtcManagerRef.current.broadcastToGuests({
-              type: 'TARGET_SELECTION_TRIGGERED' as const,
+              type: 'CLICK_WAVE_TRIGGERED' as const,
               senderId: message.senderId,
-              data: targetSelectionData,
+              data: clickWaveData,
               timestamp: Date.now()
             }, message.senderId)
           }
         }
         break
 
-      case 'TARGET_SELECTION_TRIGGERED':
-        // Host broadcasted target selection effect to all guests
+      case 'CLICK_WAVE_TRIGGERED':
+        // Host broadcasted click wave effect to all guests
         // Ignore if we sent this message ourselves (to avoid duplicate)
         if (message.data && message.senderId !== webrtcManagerRef.current?.getPeerId()) {
-          setTargetSelectionEffects(prev => [...prev, message.data])
-          // Auto-remove after 1 second
+          setClickWaves(prev => [...prev, message.data])
+          // Auto-remove after 600ms (animation duration)
           setTimeout(() => {
-            setTargetSelectionEffects(prev => prev.filter(e => e.timestamp !== message.data.timestamp))
-          }, 1000)
+            setClickWaves(prev => prev.filter(w => w.timestamp !== message.data.timestamp))
+          }, 600)
         }
         break
 
@@ -3730,8 +3751,12 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             ...prev,
             players: prev.players.map(p => {
               if (p.id === guestPlayerId) {
-                // Update guest's deck with the full data
-                return { ...p, deck: [...deck], deckSize: deckSize }
+                // Update guest's deck with the full data, ensuring ownerId is set
+                const deckWithOwnerId = deck.map(card => ({
+                  ...card,
+                  ownerId: card.ownerId ?? guestPlayerId
+                }))
+                return { ...p, deck: deckWithOwnerId, deckSize: deckSize }
               }
               return p
             })
@@ -3750,6 +3775,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             const compactDeckData = localPlayer.deck.map(card => ({
               id: card.id,
               baseId: card.baseId,
+              ownerId: card.ownerId ?? localPlayerIdRef.current, // Include ownerId for correct card back color
               power: card.power,
               powerModifier: card.powerModifier || 0,
               isFaceDown: card.isFaceDown || false,
@@ -4354,17 +4380,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     }
   }, [setGameState, updateState])
 
-  // Visual effects functions from useVisualEffects hook
-  const {
-    triggerHighlight,
-    triggerFloatingText,
-    triggerNoTarget,
-    triggerDeckSelection,
-    triggerHandCardSelection,
-    syncValidTargets,
-    triggerTargetSelection,
-  } = visualEffects
-
   // Targeting mode hook - handles targeting mode activation and clearing
   // Must be initialized before scoring since scoring uses clearTargetingMode
   const targetingMode = useTargetingMode({
@@ -4473,9 +4488,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     triggerNoTarget,
     triggerDeckSelection,
     triggerHandCardSelection,
-    triggerTargetSelection,
+    triggerClickWave,
     // Visual effects state
-    targetSelectionEffects,
+    clickWaves,
     syncValidTargets,
     remoteValidTargets,
     setTargetingMode,

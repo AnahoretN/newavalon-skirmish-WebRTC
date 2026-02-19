@@ -12,6 +12,7 @@ import type { CardRegistry } from '../types/codec'
 import { CodecMessageType } from '../types/codec'
 import { logger } from './logger'
 import { cardDatabase } from '../content'
+import { PLAYER_COLOR_NAMES } from '../constants'
 
 // ============================================================================
 // CARD REGISTRY
@@ -356,10 +357,10 @@ function encodeCardRef(card: Card, registry: CardRegistry): Uint8Array {
 
 /**
  * Encode a hand card (for other players - minimal info)
- * Returns: [cardId: 4 bytes] [flags: 1 byte] [statusMask: 4 bytes] = 9 bytes
+ * Returns: [cardId: 4 bytes] [ownerId: 1 byte] [flags: 1 byte] [statusMask: 4 bytes] = 10 bytes
  */
-function encodeHandCard(card: Card, registry: CardRegistry): Uint8Array {
-  const buffer = new Uint8Array(9)
+function encodeHandCard(card: Card, registry: CardRegistry, playerId: number): Uint8Array {
+  const buffer = new Uint8Array(10)
   let offset = 0
 
   // cardId - use first 4 bytes of hash
@@ -368,6 +369,9 @@ function encodeHandCard(card: Card, registry: CardRegistry): Uint8Array {
   buffer[offset++] = (idHash >> 16) & 0xFF
   buffer[offset++] = (idHash >> 8) & 0xFF
   buffer[offset++] = idHash & 0xFF
+
+  // ownerId - needed for correct card back color
+  buffer[offset++] = (card.ownerId ?? playerId) & 0xFF
 
   // flags (face down, reveal status)
   buffer[offset++] = getCardFlags(card)
@@ -428,6 +432,11 @@ export function encodeCardState(
     // [playerId: 1 byte]
     dataParts.push(new Uint8Array([player.id & 0xFF]))
 
+    // [playerColor: 1 byte] - encoded as index (0-7) into PLAYER_COLOR_NAMES
+    // 0-7: blue, purple, red, green, yellow, orange, pink, brown
+    const colorIndex = PLAYER_COLOR_NAMES.indexOf(player.color as any)
+    dataParts.push(new Uint8Array([colorIndex >= 0 ? colorIndex : 0]))
+
     // Sizes: [deckSize: 1 byte] [handSize: 1 byte] [discardSize: 1 byte] [showcase: 1 byte]
     const deckSize = Math.min(player.deck.length, 255)
     const handSize = Math.min(player.hand.length, 255)
@@ -454,7 +463,7 @@ export function encodeCardState(
         dataParts.push(encodeCardRef(card, registry))
       } else {
         // Minimal data for other players (card back only)
-        dataParts.push(encodeHandCard(card, registry))
+        dataParts.push(encodeHandCard(card, registry, player.id))
       }
     }
 
@@ -570,6 +579,10 @@ export function decodeCardState(
   for (let i = 0; i < playerCount; i++) {
     const playerId = data[offset++]
 
+    // Player color [1 byte] - index into PLAYER_COLOR_NAMES
+    const colorIndex = data[offset++]
+    const playerColor = PLAYER_COLOR_NAMES[colorIndex] || 'blue'
+
     // Sizes
     const deckSize = data[offset++]
     data[offset++] // Skip handSize
@@ -591,6 +604,7 @@ export function decodeCardState(
       } else {
         // Card back only - create placeholder
         const idHash = (data[offset++] << 24) | (data[offset++] << 16) | (data[offset++] << 8) | data[offset++]
+        const ownerId = data[offset++]
         const flags = data[offset++]
         const statusMask = (data[offset++] << 24) | (data[offset++] << 16) | (data[offset++] << 8) | data[offset++]
 
@@ -601,6 +615,7 @@ export function decodeCardState(
           deck: 'Random' as any,
           power: 0,
           ability: '',
+          ownerId, // Include ownerId for correct card back color
           isFaceDown: (flags & 1) !== 0,
           revealedTo: (flags & 4) ? 'all' : undefined,
           statuses: bitmaskToStatuses(statusMask, playerId, registry),
@@ -621,6 +636,7 @@ export function decodeCardState(
         deck: 'Random' as any,
         power: 0,
         ability: '',
+        ownerId: playerId, // Include ownerId for correct card back color
         isPlaceholder: true
       } as Card)
     }
@@ -642,6 +658,7 @@ export function decodeCardState(
         deck: 'Random' as any,
         power: 0,
         ability: '',
+        ownerId: playerId, // Include ownerId for correct card back color
         isPlaceholder: true
       } as Card)
     }
@@ -655,7 +672,7 @@ export function decodeCardState(
       discard: discardCards,
       announcedCard,
       selectedDeck: 'Random' as any,
-      color: 'blue',
+      color: playerColor,
       boardHistory: []
     } as Player)
   }
@@ -778,7 +795,9 @@ export function mergeDecodedState(
         return {
           ...existing,
           ...player,
-          hand: isLocalPlayer ? existing.hand : player.hand
+          hand: isLocalPlayer ? existing.hand : player.hand,
+          // CRITICAL: Preserve player color from existing state to avoid stale data
+          color: existing.color
         }
       }
       return player

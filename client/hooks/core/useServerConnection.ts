@@ -46,8 +46,8 @@ export interface UseServerConnectionProps {
   setLatestDeckSelections: React.Dispatch<React.SetStateAction<DeckSelectionData[]>>
   /** Function to set the latest hand card selections */
   setLatestHandCardSelections: React.Dispatch<React.SetStateAction<HandCardSelectionData[]>>
-  /** Function to set the target selection effects */
-  setTargetSelectionEffects: React.Dispatch<React.SetStateAction<any[]>>
+  /** Function to set the click waves */
+  setClickWaves: React.Dispatch<React.SetStateAction<any[]>>
   /** Function to set the latest floating texts */
   setLatestFloatingTexts: React.Dispatch<React.SetStateAction<FloatingTextData[] | null>>
   /** Function to set the remote valid targets */
@@ -80,7 +80,7 @@ export function useServerConnection(props: UseServerConnectionProps) {
     setLatestNoTarget,
     setLatestDeckSelections,
     setLatestHandCardSelections,
-    setTargetSelectionEffects,
+    setClickWaves,
     setLatestFloatingTexts,
     setRemoteValidTargets,
     isManualExitRef,
@@ -323,15 +323,15 @@ export function useServerConnection(props: UseServerConnectionProps) {
             // This would need remoteValidTargets state - not included in this hook
             // The parent hook should handle this
           }
-        } else if (data.type === 'TARGET_SELECTION_TRIGGERED') {
-          // Target selection effect (white ripple animation)
+        } else if (data.type === 'CLICK_WAVE_TRIGGERED') {
+          // Click wave effect (colored ripple animation)
           // Only apply if sent by another player (ignore echoes of our own messages)
-          if (data.effect && data.playerId !== localPlayerIdRef.current) {
-            setTargetSelectionEffects(prev => [...prev, data.effect])
-            // Auto-remove after 1 second
+          if (data.wave && data.wave.clickedByPlayerId !== localPlayerIdRef.current) {
+            setClickWaves(prev => [...prev, data.wave])
+            // Auto-remove after 600ms (animation duration)
             setTimeout(() => {
-              setTargetSelectionEffects(prev => prev.filter(e => e.timestamp !== data.effect.timestamp))
-            }, 1000)
+              setClickWaves(prev => prev.filter(w => w.timestamp !== data.wave.timestamp))
+            }, 600)
           }
         } else if (data.type === 'TARGETING_MODE_SET') {
           // Receive targeting mode from any player (including ourselves for confirmation)
@@ -511,7 +511,7 @@ export function useServerConnection(props: UseServerConnectionProps) {
     setLatestNoTarget,
     setLatestDeckSelections,
     setLatestHandCardSelections,
-    setTargetSelectionEffects,
+    setClickWaves,
     setLatestFloatingTexts,
     setRemoteValidTargets,
     setLocalPlayerId,

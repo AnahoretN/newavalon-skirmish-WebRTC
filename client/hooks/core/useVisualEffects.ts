@@ -10,14 +10,14 @@
  * - triggerDeckSelection - выбор колоды
  * - triggerHandCardSelection - выбор карты из руки
  * - syncValidTargets - синхронизация валидных целей
- * - triggerTargetSelection - эффект выбора цели
+ * - triggerClickWave - эффект волны при клике
  * - setTargetingMode - режим прицеливания
  * - clearTargetingMode - очистка режима прицеливания
  */
 
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import { calculateValidTargets } from '@shared/utils/targeting'
-import type { HighlightData, FloatingTextData, TargetingModeData, AbilityAction, CommandContext, GameState } from '../../types'
+import type { HighlightData, FloatingTextData, TargetingModeData, AbilityAction, CommandContext, GameState, PlayerColor } from '../../types'
 
 interface UseVisualEffectsProps {
   // WebSocket connection
@@ -34,7 +34,7 @@ interface UseVisualEffectsProps {
   setLatestNoTarget: React.Dispatch<React.SetStateAction<{ coords: { row: number; col: number }; timestamp: number } | null>>
   setLatestDeckSelections: React.Dispatch<React.SetStateAction<Array<{ playerId: number; selectedByPlayerId: number; timestamp: number }>>>
   setLatestHandCardSelections: React.Dispatch<React.SetStateAction<Array<{ playerId: number; cardIndex: number; selectedByPlayerId: number; timestamp: number }>>>
-  setTargetSelectionEffects: React.Dispatch<React.SetStateAction<Array<any>>>
+  setClickWaves: React.Dispatch<React.SetStateAction<Array<any>>>
   setGameState: React.Dispatch<React.SetStateAction<any>>
 }
 
@@ -50,9 +50,13 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     setLatestNoTarget,
     setLatestDeckSelections,
     setLatestHandCardSelections,
-    setTargetSelectionEffects,
+    setClickWaves,
     setGameState,
   } = props
+
+  // Throttle click waves to once per 500ms per player
+  const lastClickTimeRef = useRef<Record<number, number>>({})
+  const CLICK_THROTTLE_MS = 500
 
   /**
    * Trigger highlight effect on a cell
@@ -276,10 +280,12 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
   }, [ws, webrtcManager, gameStateRef, webrtcIsHostRef, localPlayerIdRef])
 
   /**
-   * Trigger target selection effect (white ripple animation)
+   * Trigger click wave effect (colored ripple animation)
+   * Shows when any player clicks on a card or cell
+   * Throttled to once per 500ms per player
    */
-  const triggerTargetSelection = useCallback((
-    location: 'board' | 'hand' | 'deck',
+  const triggerClickWave = useCallback((
+    location: 'board' | 'hand' | 'emptyCell',
     boardCoords?: { row: number; col: number },
     handTarget?: { playerId: number; cardIndex: number }
   ) => {
@@ -287,49 +293,61 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
       return
     }
 
-    const effect = {
+    // Check throttle - don't allow more than one click wave per 500ms per player
+    const playerId = localPlayerIdRef.current
+    const now = Date.now()
+    const lastClickTime = lastClickTimeRef.current[playerId] || 0
+    if (now - lastClickTime < CLICK_THROTTLE_MS) {
+      return
+    }
+    lastClickTimeRef.current[playerId] = now
+
+    // Get player color from game state
+    const player = gameStateRef.current.players.find(p => p.id === playerId)
+    if (!player) return
+
+    const wave = {
       timestamp: Date.now(),
       location,
       boardCoords,
       handTarget,
-      selectedByPlayerId: localPlayerIdRef.current,
+      clickedByPlayerId: playerId,
+      playerColor: player.color,
     }
 
+    // Debug log
+    console.log('[triggerClickWave] Creating wave:', wave)
+
     // Immediately update local state
-    setTargetSelectionEffects(prev => [...prev, effect])
+    setClickWaves(prev => [...prev, wave])
 
     // Broadcast to other players
     if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
       ws.current.send(JSON.stringify({
-        type: 'TRIGGER_TARGET_SELECTION',
+        type: 'TRIGGER_CLICK_WAVE',
         gameId: gameStateRef.current.gameId,
-        effect,
+        wave,
       }))
     } else if (webrtcManager.current) {
+      const webrtcMessage = {
+        type: 'CLICK_WAVE_TRIGGERED' as const,
+        senderId: webrtcManager.current.getPeerId(),
+        data: wave,
+        timestamp: Date.now()
+      }
+
       if (webrtcIsHostRef.current) {
-        const webrtcMessage = {
-          type: 'TARGET_SELECTION_TRIGGERED' as const,
-          senderId: webrtcManager.current.getPeerId(),
-          data: effect,
-          timestamp: Date.now()
-        }
         webrtcManager.current.broadcastToGuests(webrtcMessage)
       } else {
-        const webrtcMessage = {
-          type: 'SET_TARGETING_MODE' as const,
-          senderId: webrtcManager.current.getPeerId(),
-          data: effect,
-          timestamp: Date.now()
-        }
         webrtcManager.current.sendMessageToHost(webrtcMessage)
       }
     }
 
-    // Auto-remove after 1 second
+    // Auto-remove after animation completes (600ms)
     setTimeout(() => {
-      setTargetSelectionEffects(prev => prev.filter(e => e.timestamp !== effect.timestamp))
-    }, 1000)
-  }, [ws, webrtcManager, gameStateRef, webrtcIsHostRef, localPlayerIdRef, setTargetSelectionEffects])
+      setClickWaves(prev => prev.filter(w => w.timestamp !== wave.timestamp))
+    }, 600)
+  }, [ws, webrtcManager, gameStateRef, webrtcIsHostRef, setClickWaves])
 
   /**
    * Set targeting mode for all clients
@@ -339,7 +357,8 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     playerId: number,
     sourceCoords?: { row: number; col: number },
     preCalculatedTargets?: { row: number, col: number }[],
-    commandContext?: CommandContext
+    commandContext?: CommandContext,
+    preCalculatedHandTargets?: { playerId: number, cardIndex: number }[]
   ) => {
     const currentGameState = gameStateRef.current
     if (!currentGameState || !currentGameState.board) {
@@ -362,6 +381,7 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
       sourceCoords,
       timestamp: Date.now(),
       boardTargets,
+      handTargets: preCalculatedHandTargets,
     }
 
     // Update local state immediately
@@ -434,7 +454,7 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     triggerDeckSelection,
     triggerHandCardSelection,
     syncValidTargets,
-    triggerTargetSelection,
+    triggerClickWave,
     setTargetingMode,
     clearTargetingMode,
   }

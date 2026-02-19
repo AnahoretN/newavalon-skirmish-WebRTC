@@ -598,3 +598,65 @@ export function handleSyncValidTargets(ws: ExtendedWebSocket, data: any) {
     logger.error('Failed to sync valid targets:', err);
   }
 }
+
+/**
+ * Handle TRIGGER_CLICK_WAVE message
+ * Broadcasts a click wave effect to all clients in the game
+ */
+export function handleTriggerClickWave(ws: ExtendedWebSocket, data: any) {
+  try {
+    // Security: Validate message size
+    if (!validateMessageSize(JSON.stringify(data))) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Message size exceeds limit'
+      }));
+      return;
+    }
+
+    // Input validation
+    if (!data || typeof data !== 'object') {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Invalid data format'
+      }));
+      return;
+    }
+
+    const { gameId, wave } = data;
+
+    if (!gameId || typeof gameId !== 'string') {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Invalid or missing gameId'
+      }));
+      return;
+    }
+
+    if (!wave || typeof wave !== 'object') {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Invalid or missing wave data'
+      }));
+      return;
+    }
+
+    // Security: Sanitize gameId
+    const sanitizedGameId = sanitizeString(gameId);
+
+    const gameState = getGameState(sanitizedGameId);
+    if (!gameState) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Game not found'
+      }));
+      return;
+    }
+
+    // Broadcast the click wave to all clients (including sender for confirmation)
+    broadcastVisualEffect(ws, sanitizedGameId, 'CLICK_WAVE_TRIGGERED', { wave });
+  } catch (err: any) {
+    logger.error('Failed to trigger click wave:', err);
+  }
+}
+

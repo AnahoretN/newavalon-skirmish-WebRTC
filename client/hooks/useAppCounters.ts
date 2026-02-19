@@ -14,7 +14,7 @@ interface UseAppCountersProps {
     cursorStack: CursorStackState | null;
     setCursorStack: React.Dispatch<React.SetStateAction<CursorStackState | null>>;
     setAbilityMode: React.Dispatch<React.SetStateAction<AbilityAction | null>>;
-    triggerTargetSelection: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number; cardIndex: number }) => void;
+    triggerClickWave: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number; cardIndex: number }) => void;
   clearTargetingMode: () => void;
 }
 
@@ -30,7 +30,7 @@ export const useAppCounters = ({
   cursorStack,
   setCursorStack,
   setAbilityMode,
-  triggerTargetSelection,
+  triggerClickWave,
   clearTargetingMode,
 }: UseAppCountersProps) => {
   const cursorFollowerRef = useRef<HTMLDivElement>(null)
@@ -158,6 +158,16 @@ export const useAppCounters = ({
                 return
               }
 
+              // CRITICAL: Clear targeting mode BEFORE handleDrop to ensure
+              // the state update doesn't include the stale targetingMode
+              // This fixes the issue where other players see persistent targeting highlights
+              if (cursorStack.count === 1) {
+                if (cursorStack.chainedAction) {
+                  onAction(cursorStack.chainedAction, cursorStack.sourceCoords || { row: -1, col: -1 })
+                }
+                clearTargetingMode()
+              }
+
               // Allow placing Revealed token on any player's hand card
               handleDrop({
                 card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
@@ -172,10 +182,6 @@ export const useAppCounters = ({
               if (cursorStack.count > 1) {
                 setCursorStack(prev => prev ? ({ ...prev, count: prev.count - 1 }) : null)
               } else {
-                if (cursorStack.chainedAction) {
-                  onAction(cursorStack.chainedAction, cursorStack.sourceCoords || { row: -1, col: -1 })
-                }
-                clearTargetingMode()
                 setCursorStack(null)
               }
               interactionLock.current = true
@@ -211,6 +217,16 @@ export const useAppCounters = ({
             // NOTE: Previous 'Request Reveal' check removed to allow immediate token drop.
             // Dropping the token via handleDrop will add the status, revealing the card.
 
+            if (cursorStack.count === 1) {
+              // CRITICAL: Clear targeting mode BEFORE handleDrop to ensure
+              // the state update doesn't include the stale targetingMode
+              // This fixes the issue where other players see persistent targeting highlights
+              if (cursorStack.chainedAction) {
+                onAction(cursorStack.chainedAction, cursorStack.sourceCoords || { row: -1, col: -1 })
+              }
+              clearTargetingMode()
+            }
+
             handleDrop({
               card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
               source: 'counter_panel',
@@ -225,9 +241,6 @@ export const useAppCounters = ({
             if (cursorStack.count > 1) {
               setCursorStack(prev => prev ? ({ ...prev, count: prev.count - 1 }) : null)
             } else {
-              if (cursorStack.chainedAction) {
-                onAction(cursorStack.chainedAction, cursorStack.sourceCoords || { row: -1, col: -1 })
-              }
               setCursorStack(null)
             }
             interactionLock.current = true
@@ -341,7 +354,7 @@ export const useAppCounters = ({
                   count: amountToDrop,
                 }, { target: 'board', boardCoords: { row, col } })
                 // Trigger target selection effect
-                triggerTargetSelection('board', { row, col })
+                triggerClickWave('board', { row, col })
 
                 if (cursorStack.recordContext) {
                   setCommandContext(prev => ({
@@ -437,7 +450,7 @@ export const useAppCounters = ({
     return () => {
       window.removeEventListener('mouseup', handleGlobalMouseUp)
     }
-  }, [cursorStack, handleDrop, gameState, localPlayerId, requestCardReveal, markAbilityUsed, interactionLock, setCommandContext, onAction, setCursorStack, setAbilityMode, triggerTargetSelection])
+  }, [cursorStack, handleDrop, gameState, localPlayerId, requestCardReveal, markAbilityUsed, interactionLock, setCommandContext, onAction, setCursorStack, setAbilityMode, triggerClickWave])
 
   // Handle right-click to cancel token placement mode
   useEffect(() => {
@@ -458,11 +471,19 @@ export const useAppCounters = ({
 
   const handleCounterMouseDown = (type: string, e: React.MouseEvent) => {
     mousePos.current = { x: e.clientX, y: e.clientY }
+
+    // Determine token owner: if active player is dummy, tokens belong to dummy
+    // Otherwise, tokens belong to local player
+    const activePlayer = gameState.players.find(p => p.id === gameState.activePlayerId)
+    const tokenOwnerId = (activePlayer?.isDummy && gameState.activePlayerId !== null)
+      ? gameState.activePlayerId
+      : localPlayerId ?? 0
+
     setCursorStack(prev => {
       if (prev?.type === type) {
-        return { type, count: prev.count + 1, isDragging: true, sourceCoords: prev.sourceCoords }
+        return { type, count: prev.count + 1, isDragging: true, sourceCoords: prev.sourceCoords, originalOwnerId: tokenOwnerId }
       }
-      return { type, count: 1, isDragging: true }
+      return { type, count: 1, isDragging: true, originalOwnerId: tokenOwnerId }
     })
   }
 

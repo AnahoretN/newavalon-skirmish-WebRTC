@@ -112,8 +112,8 @@ const AppInner = function AppInner() {
     triggerNoTarget,
     triggerDeckSelection,
     triggerHandCardSelection,
-    triggerTargetSelection,
-    targetSelectionEffects,
+    triggerClickWave,
+    clickWaves,
     syncValidTargets,
     remoteValidTargets,
     setTargetingMode,
@@ -374,7 +374,7 @@ const AppInner = function AppInner() {
     setCommandContext,
     setViewingDiscard,
     triggerNoTarget,
-    triggerTargetSelection,
+    triggerClickWave,
     playMode,
     setPlayMode,
     setCounterSelectionData,
@@ -451,7 +451,7 @@ const AppInner = function AppInner() {
     cursorStack,
     setCursorStack,
     setAbilityMode,
-    triggerTargetSelection,
+    triggerClickWave,
     clearTargetingMode,
   })
 
@@ -838,6 +838,12 @@ const AppInner = function AppInner() {
   }, [gameState])
 
   useEffect(() => {
+    // If another player has set targeting mode, don't override with local calculations
+    // This allows visual effects from remote players to display correctly
+    if (gameState.targetingMode && gameState.targetingMode.playerId !== localPlayerId) {
+      return
+    }
+
     let effectiveAction: AbilityAction | null = abilityMode
     if (cursorStack && !abilityMode) {
       effectiveAction = {
@@ -1033,8 +1039,9 @@ const AppInner = function AppInner() {
     const hasPlayMode = playMode && playMode.card?.types?.includes('Unit')
     const hasCommandModal = !!commandModalCard
     const hasActiveMode = abilityMode || cursorStack || hasPlayMode || hasCommandModal
+    const isDeckSelectableMode = abilityMode?.mode === 'SELECT_DECK'
 
-    if (hasActiveMode && boardTargets.length > 0) {
+    if (hasActiveMode && (boardTargets.length > 0 || handTargets.length > 0 || isDeckSelectableMode)) {
       // Determine the action to use for targeting mode
       let targetingAction: AbilityAction | null = null
 
@@ -1069,8 +1076,8 @@ const AppInner = function AppInner() {
           handTargetsCount: handTargets.length,
         })
 
-        // Pass pre-calculated boardTargets to avoid recalculating (important for line modes)
-        setTargetingMode(targetingAction, targetingPlayerId, abilityMode?.sourceCoords || cursorStack?.sourceCoords, boardTargets, commandContext)
+        // Pass pre-calculated boardTargets and handTargets to avoid recalculating (important for line modes and hand targeting)
+        setTargetingMode(targetingAction, targetingPlayerId, abilityMode?.sourceCoords || cursorStack?.sourceCoords, boardTargets, commandContext, handTargets)
       }
     } else if (!hasActiveMode) {
       // Clear targeting mode ONLY if it belongs to the local player
@@ -2207,15 +2214,25 @@ const AppInner = function AppInner() {
           className="fixed top-0 left-0 pointer-events-none z-[99999] flex items-center justify-center"
           style={{ willChange: 'transform' }}
         >
-          <div
-            className="w-12 h-12 rounded-full border-2 border-white flex items-center justify-center relative shadow-lg"
-            style={{
-              // Use active player's color for background at 75% opacity
-              backgroundColor: playerColorMap.get(gameState.activePlayerId ?? localPlayerId ?? 1)
-                ? `rgba(${PLAYER_COLOR_RGB[playerColorMap.get(gameState.activePlayerId ?? localPlayerId ?? 1) || 'blue']?.r ?? 37}, ${PLAYER_COLOR_RGB[playerColorMap.get(gameState.activePlayerId ?? localPlayerId ?? 1) || 'blue']?.g ?? 99}, ${PLAYER_COLOR_RGB[playerColorMap.get(gameState.activePlayerId ?? localPlayerId ?? 1) || 'blue']?.b ?? 235}, 0.75)`
-                : 'rgba(107, 114, 128, 0.75)',
-            }}
-          >
+          {(() => {
+            // Determine token owner color based on active player
+            // Rule: If active player is dummy, tokens belong to dummy
+            // Otherwise, tokens belong to local player
+            const activePlayer = gameState.players.find(p => p.id === gameState.activePlayerId)
+            const tokenOwnerId = (activePlayer?.isDummy && gameState.activePlayerId !== null)
+              ? gameState.activePlayerId
+              : localPlayerId ?? 1
+            const tokenOwnerColor = playerColorMap.get(tokenOwnerId)
+            const tokenColorRgb = tokenOwnerColor ? PLAYER_COLOR_RGB[tokenOwnerColor] : null
+            const bgColor = tokenColorRgb
+              ? `rgba(${tokenColorRgb.r}, ${tokenColorRgb.g}, ${tokenColorRgb.b}, 0.75)`
+              : 'rgba(107, 114, 128, 0.75)'
+
+            return (
+              <div
+                className="w-12 h-12 rounded-full border-2 border-white flex items-center justify-center relative shadow-lg"
+                style={{ backgroundColor: bgColor }}
+              >
             {STATUS_ICONS[cursorStack.type] ? (
               <img
                 src={`${STATUS_ICONS[cursorStack.type]}${imageRefreshVersion ? `?v=${imageRefreshVersion}` : ''}`}
@@ -2234,6 +2251,8 @@ const AppInner = function AppInner() {
               </div>
             )}
           </div>
+            )
+          })()}
         </div>
       )}
 
@@ -2287,6 +2306,8 @@ const AppInner = function AppInner() {
               remoteValidTargets={remoteValidTargets}
               highlightOwnerId={highlightOwnerId}
               onCancelAllModes={handleCancelAllModes}
+              clickWaves={clickWaves}
+              triggerClickWave={triggerClickWave}
             />
           </div>
         )}
@@ -2328,7 +2349,8 @@ const AppInner = function AppInner() {
               activeFloatingTexts={activeFloatingTexts}
               abilitySourceCoords={abilityMode?.sourceCoords || null}
               abilityCheckKey={abilityCheckKey}
-              targetSelectionEffects={targetSelectionEffects}
+              clickWaves={clickWaves}
+              triggerClickWave={triggerClickWave}
               onCancelAllModes={handleCancelAllModes}
             />
           </div>
@@ -2398,6 +2420,8 @@ const AppInner = function AppInner() {
                     remoteValidTargets={remoteValidTargets}
                     highlightOwnerId={highlightOwnerId}
                     onCancelAllModes={handleCancelAllModes}
+                    clickWaves={clickWaves}
+                    triggerClickWave={triggerClickWave}
                   />
                 </div>
               ))}

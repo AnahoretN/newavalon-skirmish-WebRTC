@@ -1,6 +1,6 @@
 import React, { memo, useMemo, useCallback, useState } from 'react'
-import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerColor, HighlightData, FloatingTextData, TargetingModeData, TargetSelectionEffect, CursorStackState } from '@/types'
-import { TargetSelectionEffect as TargetSelectionEffectComponent } from './TargetSelectionEffect'
+import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerColor, HighlightData, FloatingTextData, TargetingModeData, ClickWave, CursorStackState } from '@/types'
+import { ClickWave as ClickWaveComponent } from './ClickWave'
 import { Card } from './Card'
 import { PLAYER_COLORS, FLOATING_TEXT_COLORS, PLAYER_COLOR_RGB } from '@/constants'
 import { hasReadyAbilityInCurrentPhase, hasReadyStatusForPhase } from '@/utils/autoAbilities'
@@ -35,7 +35,8 @@ interface GameBoardProps {
   abilitySourceCoords?: { row: number, col: number } | null;
   abilityCheckKey?: number;
   targetingMode?: TargetingModeData | null; // Shared targeting mode from gameState
-  targetSelectionEffects?: TargetSelectionEffect[];
+  clickWaves?: ClickWave[];
+  triggerClickWave?: (location: 'board' | 'hand' | 'emptyCell', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
   // Mode cancellation props (right-click to cancel)
   setCursorStack?: (value: CursorStackState | null) => void;
   onCancelAllModes?: () => void;
@@ -73,6 +74,7 @@ const GridCell = memo<{
   abilityCheckKey?: number;
   setCursorStack?: (value: CursorStackState | null) => void;
   onCancelAllModes?: () => void;
+  triggerClickWave?: (location: 'board' | 'hand' | 'emptyCell', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
 }>((props) => {
   const {
       row, col, cell, isGameStarted, handleDrop, draggedItem, setDraggedItem,
@@ -83,6 +85,7 @@ const GridCell = memo<{
       targetingModeOriginalOwnerId,
       showNoTarget, disableActiveHighlights, preserveDeployAbilities,
       abilitySourceCoords, abilityCheckKey, setCursorStack, onCancelAllModes,
+      triggerClickWave,
   } = props
 
   const [isOver, setIsOver] = useState(false)
@@ -96,6 +99,10 @@ const GridCell = memo<{
       }, [draggedItem, handleDrop, row, col])
 
       const handleClick = useCallback(() => {
+        // Trigger click wave for empty cells
+        if (!cell.card && triggerClickWave && localPlayerId !== null) {
+          triggerClickWave('emptyCell', { row, col })
+        }
         if (playMode) {
           const itemToDrop: DragItem = {
             ...playMode.sourceItem,
@@ -109,7 +116,7 @@ const GridCell = memo<{
         } else if (!cell.card && onEmptyCellClick) {
           onEmptyCellClick({ row, col })
         }
-      }, [playMode, cell.card, onCardClick, onEmptyCellClick, handleDrop, setPlayMode, row, col])
+      }, [playMode, cell.card, onCardClick, onEmptyCellClick, handleDrop, setPlayMode, row, col, triggerClickWave, localPlayerId])
 
       const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault()
@@ -293,6 +300,7 @@ const GridCell = memo<{
                 abilityCheckKey={abilityCheckKey}
                 onCardClick={onCardClick}
                 targetingMode={!!targetingModePlayerId}
+                triggerClickWave={triggerClickWave}
               />
             </div>
           )}
@@ -355,7 +363,7 @@ export const GameBoard = memo<GameBoardProps>(({
   abilitySourceCoords = null,
   abilityCheckKey,
   targetingMode,
-  targetSelectionEffects,
+  clickWaves,
 }) => {
 
   const activeBoard = useMemo(() => {
@@ -452,11 +460,16 @@ export const GameBoard = memo<GameBoardProps>(({
           isTargetingModeValidTarget,
           isNoTarget: noTargetOverlay?.row === originalRowIndex && noTargetOverlay.col === originalColIndex,
           cellFloatingTexts: activeFloatingTexts?.filter(t => t.row === originalRowIndex && t.col === originalColIndex) || [],
-          cellTargetSelectionEffects: targetSelectionEffects?.filter(e => e.location === 'board' && e.boardCoords?.row === originalRowIndex && e.boardCoords?.col === originalColIndex) || [],
+          cellClickWaves: clickWaves?.filter(e => e.location === 'board' && e.boardCoords?.row === originalRowIndex && e.boardCoords?.col === originalColIndex) || [],
         }
       }),
     )
-  }, [activeBoard, board.length, activeGridSize, validTargets, targetingMode, noTargetOverlay, activeFloatingTexts, targetSelectionEffects])
+  }, [activeBoard, board.length, activeGridSize, validTargets, targetingMode, noTargetOverlay, activeFloatingTexts, clickWaves])
+
+  // Debug log for click waves
+  if (clickWaves && clickWaves.length > 0) {
+    console.log('[GameBoard] clickWaves:', clickWaves)
+  }
 
   return (
     <div className="relative p-2 bg-board-bg rounded-xl h-full aspect-square transition-all duration-300">
@@ -465,7 +478,7 @@ export const GameBoard = memo<GameBoardProps>(({
           rowCells.map(({
             cellKey, originalRowIndex, originalColIndex, cell, isValidTarget,
             isTargetingModeValidTarget, isNoTarget, cellFloatingTexts,
-            cellTargetSelectionEffects,
+            cellClickWaves,
           }) => (
             <div key={cellKey} className="relative w-full h-full">
               <GridCell
@@ -506,10 +519,11 @@ export const GameBoard = memo<GameBoardProps>(({
                   playerColorMap={playerColorMap}
                 />
               ))}
-              {cellTargetSelectionEffects.map(effect => (
-                <TargetSelectionEffectComponent
-                  key={effect.timestamp}
-                  effect={effect}
+              {cellClickWaves.map(wave => (
+                <ClickWaveComponent
+                  key={wave.timestamp}
+                  timestamp={wave.timestamp}
+                  playerColor={wave.playerColor}
                 />
               ))}
             </div>

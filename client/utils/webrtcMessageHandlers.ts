@@ -40,7 +40,9 @@ export function handleCardStateMessage(
           return {
             ...existing,
             ...player,
-            hand: isLocalPlayer ? existing.hand : player.hand
+            hand: isLocalPlayer ? existing.hand : player.hand,
+            // Preserve color from existing state to avoid stale data from guest
+            color: existing.color
           }
         }
         return player

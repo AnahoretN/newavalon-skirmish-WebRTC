@@ -20,6 +20,7 @@ interface CardCoreProps {
   hidePower?: boolean;
   loadPriority?: 'high' | 'low'; // Loading priority: high for visible cards, low for remote cards (default: high)
   disableImageTransition?: boolean; // Disable opacity transition for board cards (default: false)
+  playerColor?: PlayerColor; // Direct player color (used in PlayerPanel to avoid lookup issues)
 }
 
 interface CardInteractionProps {
@@ -34,6 +35,9 @@ interface CardInteractionProps {
   abilityCheckKey?: number; // Incremented to recheck ability readiness after ability completion
   onCardClick?: (card: CardType, boardCoords: { row: number, col: number }) => void; // Called when card is clicked
   targetingMode?: boolean; // Whether targeting mode is active (hides ready statuses)
+  triggerClickWave?: (location: 'board' | 'hand' | 'emptyCell', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void; // Trigger click wave effect
+  playerId?: number; // Player who owns this card (for wave triggering)
+  cardIndex?: number; // Card index in hand (for wave triggering)
 }
 
 // Extracted outside CardCore to preserve React.memo optimization
@@ -151,12 +155,16 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   hidePower = false,
   loadPriority = 'high', // Default to high priority for immediate loading
   disableImageTransition = false, // Disable opacity transition for board cards
+  playerColor, // Direct player color (used in PlayerPanel to avoid lookup issues)
   preserveDeployAbilities: _preserveDeployAbilities = false, // Used in arePropsEqual comparison
   activeAbilitySourceCoords = null,
   boardCoords = null,
   abilityCheckKey,
   onCardClick,
   targetingMode = false,
+  triggerClickWave,
+  playerId,
+  cardIndex,
 }) => {
   const { getCardTranslation } = useLanguage()
   const [tooltipVisible, setTooltipVisible] = useState(false)
@@ -468,6 +476,10 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     if (onCardClick || shouldHighlight) {
       e.stopPropagation()
     }
+    // Trigger click wave for board cards
+    if (triggerClickWave && boardCoords && localPlayerId !== null) {
+      triggerClickWave('board', boardCoords)
+    }
     // If card has a ready ability and user clicks it, dismiss highlight and trigger ability
     if (shouldHighlight && localPlayerId === card.ownerId) {
       setHighlightDismissed(true)
@@ -477,7 +489,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     if (onCardClick && boardCoords) {
       onCardClick(card, boardCoords)
     }
-  }, [shouldHighlight, localPlayerId, card, onCardClick, boardCoords])
+  }, [shouldHighlight, localPlayerId, card, onCardClick, boardCoords, triggerClickWave])
 
   // Aggregate statuses by TYPE and PLAYER ID to allow separate icons for different players.
   // Filter out readiness statuses (readyDeploy, readySetup, readyCommit) - they are always invisible to players
@@ -501,9 +513,18 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
 
   // Memoized values (must be called before any conditional returns)
   const ownerColorData = useMemo(() => {
+    // If playerColor is provided directly (from PlayerPanel), use it
+    // Otherwise look up from playerColorMap using card.ownerId
+    if (playerColor) {
+      return PLAYER_COLORS[playerColor] || null
+    }
     const ownerColorName = card.ownerId ? playerColorMap.get(card.ownerId) : null
+    if (card.ownerId && !ownerColorName) {
+      // Log when ownerId exists but color not found (shouldn't happen in normal operation)
+      console.warn(`[Card] Owner color not found for card ${card.id}, ownerId: ${card.ownerId}, playerColorMap size: ${playerColorMap.size}`)
+    }
     return (ownerColorName && PLAYER_COLORS[ownerColorName]) ? PLAYER_COLORS[ownerColorName] : null
-  }, [card.ownerId, playerColorMap])
+  }, [card.ownerId, playerColorMap, playerColor])
 
   const uniqueStatusGroups = useMemo(() => {
     return Object.values(statusGroups).sort((a, b) => {
@@ -573,9 +594,11 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
       ) : (
         // --- CARD FACE ---
         (() => {
+          // Theme color priority: owner's player color > card color > deck theme > gray
+          // ownerColorData is null if card.ownerId is missing or not found in playerColorMap
           const themeColor = ownerColorData
             ? ownerColorData.border
-            : DECK_THEMES[card.deck]?.color || 'border-gray-300'
+            : (card.color && card.color.border ? card.color.border : DECK_THEMES[card.deck]?.color || 'border-gray-300')
           const cardBg = card.deck === DeckType.Tokens ? card.color : 'bg-card-face'
           const textColor = card.deck === DeckType.Tokens ? 'text-black' : 'text-black'
 
@@ -841,6 +864,11 @@ const arePropsEqual = (prevProps: CardCoreProps & CardInteractionProps, nextProp
 
   // Check player color map changes if both have owners
   if (prevProps.card.ownerId && nextProps.card.ownerId && prevProps.playerColorMap.get(prevProps.card.ownerId) !== nextProps.playerColorMap.get(nextProps.card.ownerId)) {
+    return false
+  }
+
+  // Check direct playerColor prop (used in PlayerPanel)
+  if (prevProps.playerColor !== nextProps.playerColor) {
     return false
   }
 

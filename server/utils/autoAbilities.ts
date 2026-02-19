@@ -583,7 +583,14 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
       mode: 'REVEAL_ENEMY',
       sourceCard: _card,
       sourceCoords: coords,
-      payload: { filter: (target: Card, r: number, c: number) => checkAdj(r, c, coords.row, coords.col) && target.ownerId !== ownerId },
+      // RECON DRONE FIX: Exclude tokens from valid targets (tokens cannot be targeted)
+      payload: { filter: (target: Card, r: number, c: number) => {
+        const isAdj = checkAdj(r, c, coords.row, coords.col)
+        const isOpponent = target.ownerId !== ownerId
+        // Check if target is a token (deck === 'Tokens' or has 'Token' type)
+        const isToken = target.deck === 'Tokens' || target.types?.includes('Token')
+        return isAdj && isOpponent && !isToken
+      }},
     })
   },
 

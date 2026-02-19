@@ -427,15 +427,16 @@ export interface TargetingModeData {
 }
 
 /**
- * Target selection effect - visual feedback when a target is selected
- * Shows a white ripple animation at the target location
+ * Click wave effect - visual feedback when a player clicks on a card or cell
+ * Shows a colored ripple animation at the clicked location
  */
-export interface TargetSelectionEffect {
-    timestamp: number; // When the selection was made
-    location: 'board' | 'hand' | 'deck'; // Where the selection occurred
-    boardCoords?: { row: number; col: number }; // For board targets
-    handTarget?: { playerId: number; cardIndex: number }; // For hand targets
-    selectedByPlayerId: number; // The player who made the selection
+export interface ClickWave {
+    timestamp: number; // When the click occurred
+    location: 'board' | 'hand' | 'emptyCell'; // Where the click occurred
+    boardCoords?: { row: number; col: number }; // For board/cell targets
+    handTarget?: { playerId: number; cardIndex: number }; // For hand card targets
+    clickedByPlayerId: number; // The player who clicked
+    playerColor: PlayerColor; // The color of the clicking player
 }
 
 /**

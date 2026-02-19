@@ -34,6 +34,7 @@ interface UseTargetingModeProps {
  * @param sourceCoords - Optional source card coordinates
  * @param preCalculatedTargets - Optional pre-calculated board targets (for line modes, etc.)
  * @param commandContext - Optional command context for multi-step actions
+ * @param preCalculatedHandTargets - Optional pre-calculated hand targets (for token targeting)
  */
 export function useTargetingMode(props: UseTargetingModeProps) {
   const {
@@ -49,7 +50,8 @@ export function useTargetingMode(props: UseTargetingModeProps) {
     playerId: number,
     sourceCoords?: { row: number; col: number },
     preCalculatedTargets?: {row: number, col: number}[],
-    commandContext?: CommandContext
+    commandContext?: CommandContext,
+    preCalculatedHandTargets?: {playerId: number, cardIndex: number}[]
   ) => {
     const currentGameState = gameStateRef.current
 
@@ -67,42 +69,51 @@ export function useTargetingMode(props: UseTargetingModeProps) {
       boardTargets = calculateValidTargets(action, currentGameState, playerId, commandContext)
     }
 
-    // Check for hand targets (if applicable)
-    const handTargets: { playerId: number, cardIndex: number }[] = []
-    const isDeckSelectable = action.mode === 'SELECT_DECK'
-
-    // Calculate hand targets if action has a filter for hand cards
-    if (action.payload?.filter && action.mode === 'SELECT_TARGET') {
-      logger.info(`[TargetingMode] Calculating hand targets for action`, {
-        actionMode: action.mode,
-        filterType: typeof action.payload.filter,
-        hasActionType: !!action.payload.actionType,
-      })
-      // Check ALL players' hands for valid targets, not just the source card owner
-      // This allows abilities that target other players' hand cards
-      for (const player of currentGameState.players) {
-        if (player.hand) {
-          // Apply the filter to each card in hand to find valid targets
-          player.hand.forEach((card, index) => {
-            try {
-              if (action.payload.filter(card)) {
-                handTargets.push({ playerId: player.id, cardIndex: index })
-                logger.debug(`[TargetingMode] Found hand target: player ${player.id}, card ${index}, card ${card.name}`)
-              }
-            } catch (e) {
-              logger.warn(`[TargetingMode] Filter failed for card ${card.name}:`, e)
-              // Filter failed, skip this card
-            }
-          })
-        }
-      }
-      logger.info(`[TargetingMode] Hand targets calculated: ${handTargets.length} targets`)
+    // Use pre-calculated hand targets if provided, otherwise calculate them
+    let handTargets: { playerId: number, cardIndex: number }[] = []
+    if (preCalculatedHandTargets) {
+      handTargets = preCalculatedHandTargets
     } else {
-      logger.info(`[TargetingMode] No hand targets calculated - no filter or wrong mode`, {
-        hasFilter: !!action.payload?.filter,
-        mode: action.mode,
-      })
+      // Check for hand targets (if applicable)
+      handTargets = []
+
+      const isDeckSelectable = action.mode === 'SELECT_DECK'
+
+      // Calculate hand targets if action has a filter for hand cards
+      if (action.payload?.filter && action.mode === 'SELECT_TARGET') {
+        logger.info(`[TargetingMode] Calculating hand targets for action`, {
+          actionMode: action.mode,
+          filterType: typeof action.payload.filter,
+          hasActionType: !!action.payload.actionType,
+        })
+        // Check ALL players' hands for valid targets, not just the source card owner
+        // This allows abilities that target other players' hand cards
+        for (const player of currentGameState.players) {
+          if (player.hand) {
+            // Apply the filter to each card in hand to find valid targets
+            player.hand.forEach((card, index) => {
+              try {
+                if (action.payload.filter(card)) {
+                  handTargets.push({ playerId: player.id, cardIndex: index })
+                  logger.debug(`[TargetingMode] Found hand target: player ${player.id}, card ${index}, card ${card.name}`)
+                }
+              } catch (e) {
+                logger.warn(`[TargetingMode] Filter failed for card ${card.name}:`, e)
+                // Filter failed, skip this card
+              }
+            })
+          }
+        }
+        logger.info(`[TargetingMode] Hand targets calculated: ${handTargets.length} targets`)
+      } else {
+        logger.info(`[TargetingMode] No hand targets calculated - no filter or wrong mode`, {
+          hasFilter: !!action.payload?.filter,
+          mode: action.mode,
+        })
+      }
     }
+
+    const isDeckSelectable = action.mode === 'SELECT_DECK'
 
     // Build targeting mode data
     const targetingModeData: TargetingModeData = {

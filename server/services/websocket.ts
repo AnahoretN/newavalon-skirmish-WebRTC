@@ -52,6 +52,7 @@ import {
   handleTriggerFloatingTextBatch,
   handleTriggerDeckSelection,
   handleTriggerHandCardSelection,
+  handleTriggerClickWave,
   handleSetTargetingMode,
   handleClearTargetingMode,
   handleSyncValidTargets
@@ -195,6 +196,7 @@ function routeMessage(ws, data) {
     'TRIGGER_NO_TARGET': handleTriggerNoTarget,
     'TRIGGER_DECK_SELECTION': handleTriggerDeckSelection,
     'TRIGGER_HAND_CARD_SELECTION': handleTriggerHandCardSelection,
+    'TRIGGER_CLICK_WAVE': handleTriggerClickWave,
     'SET_TARGETING_MODE': handleSetTargetingMode,
     'CLEAR_TARGETING_MODE': handleClearTargetingMode,
     'SYNC_VALID_TARGETS': handleSyncValidTargets,

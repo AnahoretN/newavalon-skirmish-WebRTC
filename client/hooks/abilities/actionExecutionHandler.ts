@@ -28,7 +28,7 @@ export interface ActionHandlerProps {
   openContextMenu: (e: React.MouseEvent, type: string, data: any) => void
   markAbilityUsed: (coords: { row: number; col: number }, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void
   triggerNoTarget: (coords: { row: number; col: number }) => void
-  triggerTargetSelection: (target: string, coords?: { row: number; col: number }) => void
+  triggerClickWave: (target: string, coords?: { row: number; col: number }) => void
   handleActionExecution: (action: AbilityAction, sourceCoords: { row: number; col: number }) => void
   interactionLock: React.MutableRefObject<boolean>
   moveItem: (item: DragItem, target: any) => void
@@ -51,7 +51,7 @@ export interface ActionHandlerProps {
   onAbilityComplete?: () => void
   applyGlobalEffect: (source: any, targets: any[], type: string, pid: number, isDeploy: boolean) => void
   drawCardsBatch: (playerId: number, count: number) => void
-  setTargetingMode: (action: AbilityAction, playerId: number, sourceCoords?: { row: number; col: number }, preCalculatedTargets?: {row: number, col: number}[], commandContext?: CommandContext) => void
+  setTargetingMode: (action: AbilityAction, playerId: number, sourceCoords?: { row: number; col: number }, preCalculatedTargets?: {row: number, col: number}[], commandContext?: CommandContext, preCalculatedHandTargets?: {playerId: number, cardIndex: number}[]) => void
 }
 
 /**

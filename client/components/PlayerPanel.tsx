@@ -65,6 +65,7 @@ import { PLAYER_COLORS, GAME_ICONS } from '@/constants'
 import { deckFiles } from '@/content'
 import { Card as CardComponent } from './Card'
 import { CardTooltipContent } from './Tooltip'
+import { ClickWave as ClickWaveComponent } from './ClickWave'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { parseTextDeckFormat } from '@/utils/textDeckFormat'
 import { calculateGlowColor, rgba, getPlayerColorRgbOrDefault, TIMING } from '@/utils/common'
@@ -120,6 +121,8 @@ interface PlayerPanelProps {
   remoteValidTargets?: { playerId: number, validHandTargets: { playerId: number, cardIndex: number }[], isDeckSelectable: boolean } | null;
   highlightOwnerId?: number; // The owner of the current ability/mode (for correct highlight color)
   onCancelAllModes?: () => void; // Right-click to cancel all modes
+  clickWaves?: any[]; // Click wave effects to display
+  triggerClickWave?: (location: 'board' | 'hand' | 'emptyCell', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
 }
 
 const ColorPicker: React.FC<{ player: Player, canEditSettings: boolean, selectedColors: Set<PlayerColor>, onColorChange: (c: PlayerColor) => void, compact?: boolean }> = memo(({ player, canEditSettings, selectedColors, onColorChange, compact = false }) => {
@@ -393,6 +396,8 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   remoteValidTargets = null,
   highlightOwnerId,
   onCancelAllModes,
+  clickWaves = [],
+  triggerClickWave,
 }) => {
   const { t, resources } = useLanguage()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -659,6 +664,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       card={player.announcedCard}
                       isFaceUp={true}
                       playerColorMap={playerColorMap}
+                      playerColor={player.color}
                       imageRefreshVersion={imageRefreshVersion}
                       loadPriority={isLocalPlayer ? 'high' : 'low'}
                       activePhaseIndex={currentPhase}
@@ -728,6 +734,11 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   cs => cs.playerId === player.id && cs.cardIndex === index && (now - cs.timestamp) < 1000
                 )
 
+                // Find click waves for this specific hand card
+                const cardClickWaves = clickWaves?.filter(
+                  w => w.location === 'hand' && w.handTarget?.playerId === player.id && w.handTarget?.cardIndex === index
+                ) || []
+
                 // Card container style with highlight if target
                 const cardContainerStyle = isTarget ? {
                   boxShadow: `0 0 12px 2px ${rgba(calculateGlowColor(rgb), 0.5)}`,
@@ -762,7 +773,7 @@ key={`card-${card.id}`}
                       />
                     )}
                     <div
-                      className={`flex items-center bg-gray-900 border rounded p-2 ${isTarget ? 'border-transparent' : 'border-gray-700'}`}
+                      className={`flex items-center bg-gray-900 border rounded p-2 min-w-0 ${isTarget ? 'border-transparent' : 'border-gray-700'}`}
                       style={cardContainerStyle}
                       draggable={canDrag}
                       onDragStart={() => canDrag && setDraggedItem({
@@ -780,6 +791,10 @@ key={`card-${card.id}`}
                       })}
                       onDoubleClick={() => onHandCardDoubleClick(player, card, index)}
                       onClick={() => {
+                        // Trigger click wave for hand cards
+                        if (triggerClickWave && localPlayerId !== null) {
+                          triggerClickWave('hand', undefined, { playerId: player.id, cardIndex: index })
+                        }
                         onCardClick?.(player, card, index)
                       }}
                       data-hand-card={`${player.id},${index}`}
@@ -797,6 +812,7 @@ key={`card-${card.id}`}
                           disableTooltip={true}
                           disableActiveHighlights={disableActiveHighlights}
                           preserveDeployAbilities={preserveDeployAbilities}
+                          playerColor={player.color}
                         />
                       </div>
                       <div className="flex-grow min-w-0">
@@ -807,6 +823,14 @@ key={`card-${card.id}`}
                         />
                       </div>
                     </div>
+                    {/* Click waves for hand cards */}
+                    {cardClickWaves.map(wave => (
+                      <ClickWaveComponent
+                        key={wave.timestamp}
+                        timestamp={wave.timestamp}
+                        playerColor={wave.playerColor}
+                      />
+                    ))}
                   </div>
                 )
               })}
@@ -988,6 +1012,7 @@ key={`card-${card.id}`}
                         disableTooltip={false}
                         disableActiveHighlights={disableActiveHighlights}
                         preserveDeployAbilities={preserveDeployAbilities}
+                        playerColor={player.color}
                       />
                     </div>
                   ) : <span className="text-[9px] font-bold text-gray-500 select-none uppercase">SHOW</span>}
@@ -1041,6 +1066,11 @@ key={`card-${card.id}`}
                 cs => cs.playerId === player.id && cs.cardIndex === index && (now - cs.timestamp) < 1000
               )
 
+              // Find click waves for this specific hand card
+              const cardClickWaves = clickWaves?.filter(
+                w => w.location === 'hand' && w.handTarget?.playerId === player.id && w.handTarget?.cardIndex === index
+              ) || []
+
               // Card container style with highlight if target
               const cardHighlightStyle = isTarget ? {
                 boxShadow: `0 0 12px 2px ${rgba(calculateGlowColor(rgb), 0.5)}`,
@@ -1073,6 +1103,10 @@ key={`card-${card.id}`}
                   }}
                   onDoubleClick={() => onHandCardDoubleClick(player, card, index)}
                   onClick={() => {
+                    // Trigger click wave for hand cards
+                    if (triggerClickWave && localPlayerId !== null) {
+                      triggerClickWave('hand', undefined, { playerId: player.id, cardIndex: index })
+                    }
                     onCardClick?.(player, card, index)
                   }}
                   onDragOver={(e) => {
@@ -1129,8 +1163,17 @@ key={`card-${card.id}`}
                       disableActiveHighlights={disableActiveHighlights}
                       smallStatusIcons={true}
                       preserveDeployAbilities={preserveDeployAbilities}
+                      playerColor={player.color}
                     />
                   </div>
+                  {/* Click waves for hand cards */}
+                  {cardClickWaves.map(wave => (
+                    <ClickWaveComponent
+                      key={wave.timestamp}
+                      timestamp={wave.timestamp}
+                      playerColor={wave.playerColor}
+                    />
+                  ))}
                 </div>
               )
             })}

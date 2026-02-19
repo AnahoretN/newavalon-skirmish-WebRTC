@@ -27,7 +27,7 @@ interface UseAppAbilitiesProps {
     setCommandContext: React.Dispatch<React.SetStateAction<CommandContext>>;
     setViewingDiscard: React.Dispatch<React.SetStateAction<any>>;
     triggerNoTarget: (coords: { row: number; col: number }) => void;
-    triggerTargetSelection: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
+    triggerClickWave: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
     playMode: { card: Card; sourceItem: DragItem; faceDown?: boolean } | null;
     setPlayMode: React.Dispatch<React.SetStateAction<any>>;
     setCounterSelectionData: React.Dispatch<React.SetStateAction<CounterSelectionData | null>>;
@@ -84,7 +84,7 @@ export const useAppAbilities = ({
   setCommandContext,
   setViewingDiscard,
   triggerNoTarget,
-  triggerTargetSelection,
+  triggerClickWave,
   playMode,
   setPlayMode,
   setCounterSelectionData,
@@ -167,7 +167,7 @@ export const useAppAbilities = ({
       openContextMenu: () => {},
       markAbilityUsed,
       triggerNoTarget,
-      triggerTargetSelection,
+      triggerClickWave,
       handleActionExecution,
       interactionLock,
       moveItem,
@@ -358,7 +358,7 @@ export const useAppAbilities = ({
         openContextMenu: () => {},
         markAbilityUsed,
         triggerNoTarget,
-        triggerTargetSelection,
+        triggerClickWave,
         handleActionExecution,
         interactionLock,
         moveItem,
@@ -416,7 +416,7 @@ export const useAppAbilities = ({
     updatePlayerScore,
     triggerFloatingText,
     triggerNoTarget,
-    triggerTargetSelection,
+    triggerClickWave,
     validTargets,
     clearTargetingMode,
     activateAbility,

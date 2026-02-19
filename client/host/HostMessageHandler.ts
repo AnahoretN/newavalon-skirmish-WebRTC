@@ -134,7 +134,7 @@ export class HostMessageHandler {
     const newPlayer: Player = {
       id: newPlayerId,
       name: `Player ${newPlayerId}`,
-      color: PLAYER_COLOR_NAMES[existingPlayerIds.length % PLAYER_COLOR_NAMES.length],
+      color: PLAYER_COLOR_NAMES[(newPlayerId - 1) % PLAYER_COLOR_NAMES.length],
       hand: [],
       deck: [],
       discard: [],
@@ -242,12 +242,13 @@ export class HostMessageHandler {
     const mergedPlayers = guestState.players.map((guestPlayer: Player) => {
       const hostPlayer = this.gameState!.players.find(p => p.id === guestPlayer.id)
       if (hostPlayer && guestPlayer.id !== guestPlayerId) {
-        // This is another player (not guest, not local) - preserve deck, discard, AND score from host
+        // This is another player (not guest, not local) - preserve deck, discard, score, AND color from host
         return {
           ...guestPlayer,
           deck: hostPlayer.deck || guestPlayer.deck,
           discard: hostPlayer.discard || guestPlayer.discard,
           score: hostPlayer.score,  // CRITICAL: Preserve host's score data (guest may have stale data)
+          color: hostPlayer.color,  // CRITICAL: Preserve host's player color data
           handSize: hostPlayer.handSize ?? guestPlayer.handSize,
           deckSize: hostPlayer.deckSize ?? guestPlayer.deckSize,
           discardSize: hostPlayer.discardSize ?? guestPlayer.discardSize,

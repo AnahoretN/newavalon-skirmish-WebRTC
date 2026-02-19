@@ -837,7 +837,9 @@ export class WebrtcManager {
       name: card.name, // Name needed for display
       isFaceDown: card.isFaceDown,
       hasRevealToken: card.hasRevealToken || false,
-      statuses: card.statuses || []
+      statuses: card.statuses || [],
+      ownerId: card.ownerId, // Needed for card back color display
+      deck: card.deck // Needed for card back theme
     }
   }
 

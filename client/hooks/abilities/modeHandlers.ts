@@ -27,7 +27,7 @@ export interface ModeHandlersProps {
   openContextMenu: (e: React.MouseEvent, type: string, data: any) => void
   markAbilityUsed: (coords: { row: number; col: number }, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void
   triggerNoTarget: (coords: { row: number; col: number }) => void
-  triggerTargetSelection: (target: string, coords?: { row: number; col: number }) => void
+  triggerClickWave: (target: string, coords?: { row: number; col: number }) => void
   handleActionExecution: (action: AbilityAction, sourceCoords: { row: number; col: number }) => void
   interactionLock: React.MutableRefObject<boolean>
   moveItem: (item: DragItem, target: any) => void
@@ -86,7 +86,7 @@ export function handleModeCardClick(
     handleLineSelection,
     setAbilityMode,
     setCommandContext,
-    triggerTargetSelection,
+    triggerClickWave,
   } = props
 
   if (!abilityMode || abilityMode.type !== 'ENTER_MODE') {
@@ -243,7 +243,7 @@ function handleSelectTargetWithToken(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, triggerTargetSelection, moveItem, markAbilityUsed, setAbilityMode, setCommandContext, handleActionExecution, clearValidTargets } = props
+  const { abilityMode, triggerClickWave, moveItem, markAbilityUsed, setAbilityMode, setCommandContext, handleActionExecution, clearValidTargets } = props
   const { payload, sourceCoords, isDeployAbility, readyStatusToRemove } = abilityMode!
 
   if (payload.filter && !payload.filter(card, boardCoords.row, boardCoords.col)) {
@@ -257,7 +257,7 @@ function handleSelectTargetWithToken(
     count: payload.count || 1,
   }, { target: 'board', boardCoords })
 
-  triggerTargetSelection('board', boardCoords)
+  triggerClickWave('board', boardCoords)
 
   if (payload.recordContext) {
     setCommandContext({ lastMovedCardCoords: boardCoords, lastMovedCardId: card.id })
@@ -272,7 +272,7 @@ function handleSelectTargetWithToken(
       recordContext: true,
     }
     handleActionExecution(nextAction, boardCoords)
-    setTimeout(() => triggerTargetSelection('board', boardCoords), 100)
+    setTimeout(() => triggerClickWave('board', boardCoords), 100)
     if (nextAction.type !== 'ENTER_MODE') {
       setAbilityMode(null)
       clearValidTargets()
@@ -854,6 +854,13 @@ function handleRevealEnemy(
     return false
   }
 
+  // RECON DRONE FIX: Check if target is a token (tokens cannot be targeted by Recon Drone)
+  // Tokens have deck === 'Tokens' or types include 'Token'
+  const isToken = card.deck === 'Tokens' || card.types?.includes('Token')
+  if (isToken) {
+    return false
+  }
+
   const ownerId = card.ownerId
 
   // Create Revealed stack
@@ -870,6 +877,11 @@ function handleRevealEnemy(
   })
 
   markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+
+  // CRITICAL FIX: Clear abilityMode after creating cursorStack
+  // This prevents the targeting mode from persisting and allows the token placement to complete
+  setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+
   return true
 }
 

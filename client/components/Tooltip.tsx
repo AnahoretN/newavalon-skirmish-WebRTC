@@ -132,13 +132,13 @@ export const CardTooltipContent: React.FC<CardTooltipContentProps> = ({ card, st
   return (
     <div className={baseClasses}>
       {/* Header Section: Name & Type */}
-      {/* whitespace-nowrap ensures the Title forces the container width to expand if it's very long. */}
-      <div className="mb-1 pr-1 whitespace-nowrap relative">
-        <div className="font-bold text-white text-lg leading-tight mb-0.5">
+      {/* truncate ensures long names fit without causing horizontal scroll */}
+      <div className="mb-1 pr-1 relative min-w-0">
+        <div className="font-bold text-white text-lg leading-tight mb-0.5 truncate">
           {displayName}
         </div>
         {typeString && (
-          <div className="text-xs text-gray-400 font-semibold">
+          <div className="text-xs text-gray-400 font-semibold truncate">
             {typeString}
           </div>
         )}
