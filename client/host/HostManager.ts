@@ -371,6 +371,14 @@ export class HostManager {
         }
         break
 
+      case 'STATE_UPDATE_COMPACT':
+        // Guest sends compact state (with card IDs) for efficiency
+        // This is the main way guests sync their state changes (like score)
+        if (message.data?.gameState && guestPlayerId !== undefined) {
+          this.stateManager.updateFromGuest(guestPlayerId, message.data.gameState, fromPeerId)
+        }
+        break
+
       // Phase management messages
       case 'NEXT_PHASE':
         this.advancePhase()

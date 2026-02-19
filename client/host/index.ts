@@ -33,7 +33,7 @@ export type { TimerEvents } from './TimerSystem'
 
 // Classes
 export { HostConnectionManager, getHostConnectionManager, cleanupHostConnectionManager } from './HostConnectionManager'
-export { HostMessageHandler } from './HostMessageHandler'
+// export { HostMessageHandler } from './HostMessageHandler' // TODO: Not currently used, functionality integrated into HostManager
 export { HostStateManager } from './HostStateManager'
 export { GuestStateSync } from './GuestStateSync'
 export { VisualEffectsManager } from './VisualEffects'

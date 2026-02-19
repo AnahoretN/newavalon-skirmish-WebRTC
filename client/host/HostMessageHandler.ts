@@ -1,12 +1,16 @@
 /**
  * Host Message Handler
  * Processes incoming messages from guests and manages game state
+ *
+ * NOTE: This class is NOT currently used. All message handling is done in HostManager.
+ * This code is kept for reference but should be integrated into HostManager if needed.
  */
 
 import type { GameState, Player, DeckType } from '../types'
 import type { StateDelta } from '../types'
 import type { WebrtcMessage } from '../utils/webrtcManager'
 import type { HostConnectionManager } from './HostConnectionManager'
+// import type { HostStateManager } from './HostStateManager' // Not used, functionality in HostManager
 import { logger } from '../utils/logger'
 import { createDeltaFromStates, isDeltaEmpty, applyStateDelta } from '../utils/stateDelta'
 import { PLAYER_COLOR_NAMES } from '../constants'
@@ -19,15 +23,18 @@ export interface HostMessageHandlerConfig {
 
 export class HostMessageHandler {
   private connectionManager: HostConnectionManager
+  // private stateManager: HostStateManager // Not used, functionality in HostManager
   private gameState: GameState | null = null
   private localPlayerId: number | null = null
   private config: HostMessageHandlerConfig
 
   constructor(
     connectionManager: HostConnectionManager,
+    // stateManager: HostStateManager, // Not used, functionality in HostManager
     config: HostMessageHandlerConfig = {}
   ) {
     this.connectionManager = connectionManager
+    // this.stateManager = stateManager
     this.config = config
 
     // Subscribe to connection manager events
@@ -247,6 +254,8 @@ export class HostMessageHandler {
 
       if (guestPlayer.id === guestPlayerId) {
         // This is the guest who sent the update - preserve their score
+        logger.info(`[handleStateUpdateAction] Guest ${guestPlayerId} score: ${guestPlayer.score}, host score: ${hostPlayer?.score}`)
+
         if ((guestPlayer as any).handCards && hostPlayer) {
           // CRITICAL FIX: Reconstruct hand from handCards for the guest player
           // Guest sends handCards (compact format with id, baseId, power, statuses)
@@ -268,22 +277,26 @@ export class HostMessageHandler {
           })
 
           // CRITICAL: Preserve deck/discard from host (for card privacy), but take score from guest
-          return {
+          const merged = {
             ...guestPlayer,
             hand: reconstructedHand,
             handCards: undefined, // Remove temporary handCards
             deck: hostPlayer.deck,
             discard: hostPlayer.discard,
           }
+          logger.info(`[handleStateUpdateAction] Guest ${guestPlayerId} merged score: ${merged.score}`)
+          return merged
         }
 
         // Guest sent update without handCards (e.g., score change only)
         // Preserve guest's score, use host's deck/discard
-        return {
+        const merged = {
           ...guestPlayer,
           deck: hostPlayer?.deck,
           discard: hostPlayer?.discard,
         }
+        logger.info(`[handleStateUpdateAction] Guest ${guestPlayerId} (no handCards) merged score: ${merged.score}`)
+        return merged
       }
 
       if (hostPlayer && guestPlayer.id !== guestPlayerId) {

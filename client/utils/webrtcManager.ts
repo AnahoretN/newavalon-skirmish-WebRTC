@@ -783,7 +783,7 @@ export class WebrtcManager {
           const handCardsWithStatuses = p.hand.filter((c: any) => c.statuses && c.statuses.length > 0)
           const shouldSendHandCards = handCardsWithStatuses.length > 0
 
-          return {
+          const compactPlayer = {
             ...p,
             // Send only hand cards that have been modified (have statuses)
             ...(shouldSendHandCards && {
@@ -804,6 +804,13 @@ export class WebrtcManager {
             handSize: p.handSize ?? p.hand.length ?? 0,
             discardSize: p.discardSize ?? p.discard.length ?? 0
           }
+          // Log score for debugging
+          if (p.id === localPlayerId) {
+            logger.debug(`[createCompactStateForHost] Local player ${p.id} score: ${p.score}`)
+          } else {
+            logger.debug(`[createCompactStateForHost] Other player ${p.id} score: ${compactPlayer.score} (from original)`)
+          }
+          return compactPlayer
         }
       }),
       // Include minimal board state
