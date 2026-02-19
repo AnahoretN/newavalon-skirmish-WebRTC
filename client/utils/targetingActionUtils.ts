@@ -6,7 +6,6 @@
  */
 
 import type { Card, GameState, AbilityAction, CursorStackState } from '@/types'
-import { countersDatabase } from '@/content'
 import { getTokenTargetingRules } from '@/utils/tokenTargeting'
 
 /**
