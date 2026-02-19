@@ -100,10 +100,11 @@ export function createTargetingActionFromAbilityMode(abilityMode: AbilityAction)
  * Determine targeting player ID based on priority:
  * 1. commandModalCard.ownerId
  * 2. abilityMode.sourceCoords -> card.ownerId
- * 3. cursorStack.sourceCard.ownerId
- * 4. gameState.activePlayerId
- * 5. localPlayerId
- * 6. actorId
+ * 3. cursorStack.originalOwnerId (for token stacking - token owner, not card owner)
+ * 4. cursorStack.sourceCard.ownerId (fallback for legacy cursorStack)
+ * 5. gameState.activePlayerId
+ * 6. localPlayerId
+ * 7. actorId
  */
 export function determineTargetingPlayerId(
   commandModalCard: Card | null,
@@ -132,7 +133,13 @@ export function determineTargetingPlayerId(
     }
   }
 
-  // Priority 3: cursorStack.sourceCard.ownerId (for token stacking)
+  // Priority 3: cursorStack.originalOwnerId (for token stacking from counters)
+  // This ensures tokens like Revealed show the correct player's color (token owner)
+  if (targetingPlayerId === null && cursorStack?.originalOwnerId !== undefined && typeof cursorStack.originalOwnerId === 'number') {
+    targetingPlayerId = cursorStack.originalOwnerId
+  }
+
+  // Priority 4: cursorStack.sourceCard.ownerId (legacy fallback for abilities on cards)
   if (targetingPlayerId === null && cursorStack?.sourceCard?.ownerId !== undefined && typeof cursorStack.sourceCard.ownerId === 'number') {
     targetingPlayerId = cursorStack.sourceCard.ownerId
   }

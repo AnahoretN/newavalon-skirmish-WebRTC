@@ -237,12 +237,75 @@ export class HostMessageHandler {
 
     const guestState = actionData.gameState
 
+    // Import card database for reconstruction
+    const { getCardDefinition } = require('@/contentDatabase')
+
     // Merge players: preserve deck/discard AND score from host state for players that aren't the guest
     // This prevents guest's stale data from overwriting other players' scores
     const mergedPlayers = guestState.players.map((guestPlayer: Player) => {
       const hostPlayer = this.gameState!.players.find(p => p.id === guestPlayer.id)
+
+      if (guestPlayer.id === guestPlayerId && (guestPlayer as any).handCards) {
+        // CRITICAL FIX: Reconstruct hand from handCards for the guest player
+        // Guest sends handCards (compact format with id, baseId, power, statuses)
+        // Host needs to reconstruct full hand from card database
+        const handCards = (guestPlayer as any).handCards
+        const reconstructedHand = handCards.map((hc: any) => {
+          const cardDef = getCardDefinition(hc.baseId)
+          if (!cardDef) {
+            return { id: hc.id, baseId: hc.baseId, name: 'Unknown', power: hc.power || 0, ability: '', types: [] }
+          }
+          return {
+            ...cardDef,
+            id: hc.id,
+            power: hc.power,
+            powerModifier: hc.powerModifier || 0,
+            isFaceDown: hc.isFaceDown,
+            statuses: hc.statuses || []
+          }
+        })
+
+        return {
+          ...guestPlayer,
+          hand: reconstructedHand,
+          handCards: undefined, // Remove temporary handCards
+        }
+      }
+
       if (hostPlayer && guestPlayer.id !== guestPlayerId) {
-        // This is another player (not guest, not local) - preserve deck, discard, score, AND color from host
+        // This is another player (not guest) - check if guest sent handCards for them
+        // This happens when guest places Revealed tokens on other players' cards
+        if ((guestPlayer as any).handCards && hostPlayer.hand) {
+          // Apply status updates from guest's handCards to host's hand
+          const guestHandCards = (guestPlayer as any).handCards
+          const updatedHand = hostPlayer.hand.map(hostCard => {
+            // Find matching card in guest's handCards by id
+            const guestCard = guestHandCards.find((gc: any) => gc.id === hostCard.id)
+            if (guestCard && guestCard.statuses) {
+              // Apply the statuses from guest's version
+              return {
+                ...hostCard,
+                statuses: guestCard.statuses,
+                isFaceDown: guestCard.isFaceDown, // Also update face-down status (revealed cards)
+              }
+            }
+            return hostCard
+          })
+
+          return {
+            ...hostPlayer,
+            hand: updatedHand,
+            deck: hostPlayer.deck || guestPlayer.deck,
+            discard: hostPlayer.discard || guestPlayer.discard,
+            score: hostPlayer.score,  // CRITICAL: Preserve host's score data
+            color: hostPlayer.color,  // CRITICAL: Preserve host's player color data
+            handSize: updatedHand.length,
+            deckSize: hostPlayer.deckSize ?? guestPlayer.deckSize,
+            discardSize: hostPlayer.discardSize ?? guestPlayer.discardSize,
+          }
+        }
+
+        // No handCards from guest, preserve host's data
         return {
           ...guestPlayer,
           deck: hostPlayer.deck || guestPlayer.deck,
@@ -254,6 +317,7 @@ export class HostMessageHandler {
           discardSize: hostPlayer.discardSize ?? guestPlayer.discardSize,
         }
       }
+
       return guestPlayer
     })
 

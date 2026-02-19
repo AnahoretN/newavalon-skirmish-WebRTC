@@ -483,7 +483,19 @@ export const useAppCounters = ({
       if (prev?.type === type) {
         return { type, count: prev.count + 1, isDragging: true, sourceCoords: prev.sourceCoords, originalOwnerId: tokenOwnerId }
       }
-      return { type, count: 1, isDragging: true, originalOwnerId: tokenOwnerId }
+      // For Revealed tokens, exclude own cards from valid targets
+      const cursorState: CursorStackState = {
+        type,
+        count: 1,
+        isDragging: true,
+        originalOwnerId: tokenOwnerId
+      }
+      // Revealed tokens cannot be placed on own cards
+      if (type === 'Revealed') {
+        cursorState.excludeOwnerId = tokenOwnerId
+        cursorState.onlyFaceDown = true // Only target face-down cards
+      }
+      return cursorState
     })
   }
 

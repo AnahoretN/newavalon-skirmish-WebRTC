@@ -242,7 +242,7 @@ export interface GameState {
   deckSelections: DeckSelectionData[]; // Array of deck selection effects to display
   handCardSelections: HandCardSelectionData[]; // Array of hand card selection effects to display
   targetingMode: TargetingModeData | null; // Active targeting mode (shared across all clients)
-  abilityMode?: any; // Active ability mode (for P2P visual sync) - extends AbilityAction with sourceCard, sourceCoords, etc.
+  abilityMode?: AbilityAction; // Active ability mode (for P2P visual sync) - extends AbilityAction with sourceCard, sourceCoords, etc.
 
   // Server-side auto-draw tracking for Setup phase
   autoDrawnPlayers?: number[]; // Player IDs who have already auto-drawn this Setup phase
@@ -320,7 +320,7 @@ export type ContextMenuParams = {
   x: number;
   y: number;
   type: 'boardItem' | 'handCard' | 'discardCard' | 'deckPile' | 'discardPile' | 'token_panel_item' | 'deckCard' | 'announcedCard' | 'emptyBoardCell';
-  data: any; // Context-specific data (e.g. card, player, coordinates).
+  data: any; // Context-specific data (e.g. card, player, coordinates)
 }
 
 /**
@@ -390,7 +390,7 @@ export type AbilityAction = {
     excludeOwnerId?: number;
     targetType?: string; // Optional: Restrict target by card Type
     sourceCard?: Card;
-    sourceCoords?: { row: number, col: number };
+    sourceCoords?: { row: number; col: number };
     payload?: any;
     isDeployAbility?: boolean;
     recordContext?: boolean; // If true, the result of this action (e.g. move destination) is saved

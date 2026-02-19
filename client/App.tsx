@@ -543,11 +543,13 @@ const AppInner = function AppInner() {
   useEffect(() => {
     if (gameState.targetingMode?.handTargets) {
       setValidHandTargets(gameState.targetingMode.handTargets)
-    } else if (!abilityMode && !cursorStack) {
-      // Clear validHandTargets when targetingMode is cleared and no local mode is active
+    } else {
+      // Clear validHandTargets when targetingMode is cleared (no longer has handTargets)
+      // This ensures remote players see targeting highlights cleared when token is placed
+      // Note: Local cursorStack/abilityMode will re-populate validHandTargets in the next useEffect cycle
       setValidHandTargets([])
     }
-  }, [gameState.targetingMode?.handTargets, gameState.targetingMode?.timestamp, abilityMode, cursorStack])
+  }, [gameState.targetingMode?.handTargets, gameState.targetingMode?.timestamp])
 
   const handleTopDeckReorder = useCallback((playerId: number, newTopCards: Card[]) => {
     reorderTopDeck(playerId, newTopCards)

@@ -5,14 +5,14 @@
  * Extracted from useAppAbilities.ts
  */
 
-import type { Card, AbilityAction, CommandContext, DragItem, CursorStackState, CounterSelectionData } from '@/types'
+import type { Card, AbilityAction, CommandContext, DragItem, CursorStackState, CounterSelectionData, GameState, FloatingTextData, DropTarget } from '@/types'
 import { logger } from '@/utils/logger'
 import { TIMING } from '@/utils/common'
 
 /* eslint-disable @typescript-eslint/no-unused-vars -- props passed to functions but not all used in every function */
 
 export interface ModeHandlersProps {
-  gameState: any
+  gameState: GameState
   localPlayerId: number | null
   abilityMode: AbilityAction | null
   setAbilityMode: React.Dispatch<React.SetStateAction<AbilityAction | null>>
@@ -20,17 +20,17 @@ export interface ModeHandlersProps {
   setCursorStack: React.Dispatch<React.SetStateAction<CursorStackState | null>>
   commandContext: CommandContext
   setCommandContext: React.Dispatch<React.SetStateAction<CommandContext>>
-  playMode: any
-  setPlayMode: React.Dispatch<React.SetStateAction<any>>
+  playMode: { card: Card; sourceItem: DragItem; faceDown?: boolean } | null
+  setPlayMode: React.Dispatch<React.SetStateAction<{ card: Card; sourceItem: DragItem; faceDown?: boolean } | null>>
   draggedItem: DragItem | null
   setDraggedItem: React.Dispatch<React.SetStateAction<DragItem | null>>
-  openContextMenu: (e: React.MouseEvent, type: string, data: any) => void
+  openContextMenu: (e: React.MouseEvent, type: string, data: unknown) => void
   markAbilityUsed: (coords: { row: number; col: number }, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void
   triggerNoTarget: (coords: { row: number; col: number }) => void
-  triggerClickWave: (target: string, coords?: { row: number; col: number }) => void
+  triggerClickWave: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number; cardIndex: number }) => void
   handleActionExecution: (action: AbilityAction, sourceCoords: { row: number; col: number }) => void
   interactionLock: React.MutableRefObject<boolean>
-  moveItem: (item: DragItem, target: any) => void
+  moveItem: (item: DragItem, target: DropTarget) => void
   swapCards: (coords1: {row: number, col: number}, coords2: {row: number, col: number}) => void
   transferStatus: (fromCoords: {row: number, col: number}, toCoords: {row: number, col: number}, statusType: string) => void
   transferAllCounters: (fromCoords: {row: number, col: number}, toCoords: {row: number, col: number}) => void
@@ -42,7 +42,7 @@ export interface ModeHandlersProps {
   removeStatusByType: (coords: {row: number; col: number}, type: string) => void
   resetDeployStatus: (coords: {row: number; col: number }) => void
   updatePlayerScore: (playerId: number, delta: number) => void
-  triggerFloatingText: (data: any) => void
+  triggerFloatingText: (data: FloatingTextData) => void
   setCounterSelectionData: React.Dispatch<React.SetStateAction<CounterSelectionData | null>>
   setViewingDiscard: React.Dispatch<React.SetStateAction<boolean>>
   clearValidTargets: () => void
@@ -1375,9 +1375,9 @@ function handleSelectDeck(
 }
 
 // Helper function to check if two players are allies
-function isAlly(gameState: any, targetOwnerId: number, actorId: number): boolean {
-  const targetPlayer = gameState.players.find((p: any) => p.id === targetOwnerId)
-  const actorPlayer = gameState.players.find((p: any) => p.id === actorId)
+function isAlly(gameState: GameState, targetOwnerId: number, actorId: number): boolean {
+  const targetPlayer = gameState.players.find((p) => p.id === targetOwnerId)
+  const actorPlayer = gameState.players.find((p) => p.id === actorId)
   if (!targetPlayer || !actorPlayer) return false
   return targetPlayer.teamId !== undefined && actorPlayer.teamId !== undefined && targetPlayer.teamId === actorPlayer.teamId
 }

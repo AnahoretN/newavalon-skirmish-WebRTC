@@ -778,9 +778,24 @@ export class WebrtcManager {
             discardSize: p.discard.length
           }
         } else {
-          // Other players - send only minimal data
+          // Other players - send hand cards that have statuses (modified by guest)
+          // This is needed when guest places Revealed tokens on other players' cards
+          const handCardsWithStatuses = p.hand.filter((c: any) => c.statuses && c.statuses.length > 0)
+          const shouldSendHandCards = handCardsWithStatuses.length > 0
+
           return {
             ...p,
+            // Send only hand cards that have been modified (have statuses)
+            ...(shouldSendHandCards && {
+              handCards: p.hand.map((c: any) => ({
+                id: c.id,
+                baseId: c.baseId,
+                power: c.power,
+                powerModifier: c.powerModifier || 0,
+                isFaceDown: c.isFaceDown,
+                statuses: c.statuses || []
+              }))
+            }),
             hand: [],
             deck: [],
             discard: [],

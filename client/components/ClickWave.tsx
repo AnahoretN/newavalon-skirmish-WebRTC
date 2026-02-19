@@ -23,8 +23,6 @@ interface Wave {
 export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, onComplete }) => {
   const [elapsed, setElapsed] = useState(0)
 
-  console.log('[ClickWave] Rendering:', { timestamp, playerColor, elapsed })
-
   const colorRgb = PLAYER_COLOR_RGB[playerColor] || { r: 255, g: 255, b: 255 }
 
   useEffect(() => {

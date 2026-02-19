@@ -1304,6 +1304,31 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                         discardSize: reconstructedDiscard.length
                       }
                     }
+                  } else {
+                    // For non-guest players, check if guest sent handCards with status updates
+                    // This happens when guest places Revealed tokens on other players' cards
+                    const guestPlayer = guestState.players.find((gp: any) => gp.id === p.id)
+                    if (guestPlayer && (guestPlayer.handCards || []).length > 0 && p.hand) {
+                      // Apply status updates from guest's handCards to host's hand
+                      const guestHandCards = guestPlayer.handCards || []
+                      const updatedHand = p.hand.map(hostCard => {
+                        const guestCard = guestHandCards.find((gc: any) => gc.id === hostCard.id)
+                        if (guestCard && guestCard.statuses) {
+                          return {
+                            ...hostCard,
+                            statuses: guestCard.statuses,
+                            isFaceDown: guestCard.isFaceDown,
+                          }
+                        }
+                        return hostCard
+                      })
+
+                      return {
+                        ...p,
+                        hand: updatedHand,
+                        handSize: updatedHand.length,
+                      }
+                    }
                   }
                   return p
                 })
