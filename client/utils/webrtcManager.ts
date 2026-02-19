@@ -804,11 +804,11 @@ export class WebrtcManager {
             handSize: p.handSize ?? p.hand.length ?? 0,
             discardSize: p.discardSize ?? p.discard.length ?? 0
           }
-          // Log score for debugging
+          // Log score for debugging - CRITICAL for verifying score sync
           if (p.id === localPlayerId) {
-            logger.debug(`[createCompactStateForHost] Local player ${p.id} score: ${p.score}`)
+            logger.info(`[createCompactStateForHost] Local player ${p.id} score: ${p.score}`)
           } else {
-            logger.debug(`[createCompactStateForHost] Other player ${p.id} score: ${compactPlayer.score} (from original)`)
+            logger.info(`[createCompactStateForHost] Other player ${p.id} score: ${compactPlayer.score} (from original)`)
           }
           return compactPlayer
         }
@@ -1064,7 +1064,7 @@ export class WebrtcManager {
     // Log the sizes being sent
     const localPlayer = gameState.players.find((p: any) => p.id === localPlayerId)
     if (localPlayer) {
-      logger.info(`[sendStateToHost] Player ${localPlayerId} sending compact state: hand=${localPlayer.hand?.length ?? 0}, deck=${localPlayer.deck?.length ?? 0}`)
+      logger.info(`[sendStateToHost] Player ${localPlayerId} sending compact state: hand=${localPlayer.hand?.length ?? 0}, deck=${localPlayer.deck?.length ?? 0}, score=${localPlayer.score}`)
     }
 
     const message: WebrtcMessage = {

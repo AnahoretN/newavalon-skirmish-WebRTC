@@ -303,6 +303,10 @@ export class HostConnectionManager {
   broadcastGameState(gameState: GameState, excludePeerId?: string): void {
     let successCount = 0
 
+    // Log scores being broadcast for debugging
+    const scores = gameState.players.map(p => `P${p.id}:${p.score}`).join(', ')
+    logger.info(`[broadcastGameState] Broadcasting state with scores: ${scores}`)
+
     this.connections.forEach((conn, peerId) => {
       if (!conn.open || peerId === excludePeerId) {
         return

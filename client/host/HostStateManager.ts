@@ -85,6 +85,16 @@ export class HostStateManager {
       return
     }
 
+    // Log scores before merge for debugging
+    const guestPlayerData = guestState.players.find(p => p.id === guestPlayerId)
+    if (guestPlayerData) {
+      logger.info(`[HostStateManager] Guest ${guestPlayerId} score in guestState: ${guestPlayerData.score}`)
+    }
+    const hostPlayerData = this.currentState.players.find(p => p.id === guestPlayerId)
+    if (hostPlayerData) {
+      logger.info(`[HostStateManager] Guest ${guestPlayerId} score in hostState: ${hostPlayerData.score}`)
+    }
+
     // Merge guest state with host state
     // Preserve deck/discard for players that aren't the guest
     const mergedPlayers = this.currentState.players.map(hostPlayer => {
@@ -97,12 +107,14 @@ export class HostStateManager {
 
       if (guestPlayer.id === guestPlayerId) {
         // This is the guest who sent the update - use their state
-        return {
+        const merged = {
           ...guestPlayer,
           // But preserve deck/discard from host (for card privacy)
           deck: hostPlayer.deck,
           discard: hostPlayer.discard,
         }
+        logger.info(`[HostStateManager] Guest ${guestPlayerId} merged score: ${merged.score}`)
+        return merged
       }
 
       // For other players, prefer host state but take non-sensitive updates
