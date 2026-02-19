@@ -567,38 +567,41 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
   {
     baseId: 'reconDrone',
     activationType: 'setup',
-    getAction: (_card, _gameState, ownerId, coords) => ({
+    getAction: (_card, _gameState, _ownerId, coords) => ({
       type: 'ENTER_MODE',
       mode: 'SELECT_CELL',
       sourceCard: _card,
       sourceCoords: coords,
-      payload: {
-        allowSelf: false,
-        range: 1, // Adjacent cells only
-        filter: (target: Card, r: number, c: number) => {
-          const isAdj = checkAdj(r, c, coords.row, coords.col)
-          const isOpponent = target.ownerId !== ownerId
-          return isAdj && isOpponent
-        }
-      }
+      payload: { allowSelf: false, range: 'global' }
     })
   },
   {
     baseId: 'reconDrone',
     activationType: 'commit',
-    getAction: (_card, _gameState, ownerId, coords) => ({
+    getAction: (card, _gameState, ownerId, coords) => ({
       type: 'ENTER_MODE',
-      mode: 'REVEAL_ENEMY',
-      sourceCard: _card,
+      mode: 'SELECT_TARGET',
+      sourceCard: card,
       sourceCoords: coords,
-      // RECON DRONE FIX: Exclude tokens from valid targets (tokens cannot be targeted)
-      payload: { filter: (target: Card, r: number, c: number) => {
-        const isAdj = checkAdj(r, c, coords.row, coords.col)
-        const isOpponent = target.ownerId !== ownerId
-        // Check if target is a token (deck === 'Tokens' or has 'Token' type)
-        const isToken = target.deck === 'Tokens' || target.types?.includes('Token')
-        return isAdj && isOpponent && !isToken
-      }},
+      // RECON DRONE COMMIT: Choose adjacent opponent card (including tokens), then create Revealed stack for that opponent's hand
+      payload: {
+        actionType: 'REVEAL_ENEMY_CHAINED',
+        filter: (target: Card, r: number, c: number) => {
+          const isAdj = checkAdj(r, c, coords.row, coords.col)
+          const isOpponent = target.ownerId !== ownerId
+          return isAdj && isOpponent
+        },
+        // Store the selected opponent card's ownerId for the chained Revealed action
+        targetOwnerId: undefined, // Will be set when target is selected
+      },
+      // Chained action will create the Revealed token stack
+      chainedAction: {
+        type: 'CREATE_STACK',
+        tokenType: 'Revealed',
+        count: 1,
+        // The targetOwnerId will be set dynamically based on selected card
+        // This ensures Revealed tokens can only be placed in the selected opponent's hand
+      },
     })
   },
 

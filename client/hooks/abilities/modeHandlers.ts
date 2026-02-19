@@ -462,6 +462,31 @@ function handleSelectTargetActionType(
     return true
   }
 
+  // REVEAL_ENEMY_CHAINED (Recon Drone Commit)
+  if (payload.actionType === 'REVEAL_ENEMY_CHAINED') {
+    if (payload.filter && !payload.filter(card, boardCoords.row, boardCoords.col)) {
+      return false
+    }
+
+    // Get the target opponent's ID from the selected card
+    const targetOpponentId = card.ownerId
+
+    // Execute the chained action (CREATE_STACK for Revealed token)
+    // with targetOwnerId set to the selected card's owner
+    if (abilityMode.chainedAction) {
+      const chainedAction = {
+        ...abilityMode.chainedAction,
+        targetOwnerId: targetOpponentId,
+        sourceCoords: sourceCoords || boardCoords,
+      }
+      handleActionExecution(chainedAction, boardCoords)
+    }
+
+    markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
+    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+    return true
+  }
+
   return false
 }
 
