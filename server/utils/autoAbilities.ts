@@ -595,6 +595,8 @@ const CARD_ABILITIES: CardAbilityDefinition[] = [
         targetOwnerId: undefined, // Will be set when target is selected
       },
       // Chained action will create the Revealed token stack
+      // IMPORTANT: skipChainedActionOnNoTargets prevents executing chained action when no valid targets exist
+      skipChainedActionOnNoTargets: true,
       chainedAction: {
         type: 'CREATE_STACK',
         tokenType: 'Revealed',

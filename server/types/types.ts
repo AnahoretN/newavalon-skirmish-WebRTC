@@ -401,4 +401,5 @@ export type AbilityAction = {
     handOnly?: boolean; // If true, ONLY target cards in hand, not on board (e.g., IP Dept Agent Commit)
     replaceStatus?: boolean; // If true, replace the requiredTargetStatus with tokenType (e.g., Censor: Exploit -> Stun)
     originalOwnerId?: number; // The owner of the card that initiated this action (for multi-step commands like Data Interception)
+    skipChainedActionOnNoTargets?: boolean; // If true, chained action won't execute when no valid targets exist (e.g., Recon Drone Commit)
 };

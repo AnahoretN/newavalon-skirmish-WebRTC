@@ -113,7 +113,9 @@ export function handleActionExecution(
 
   if (!hasTargets) {
     triggerNoTarget(sourceCoords)
-    if (action.chainedAction) {
+    // Only execute chained action if skipChainedActionOnNoTargets is not set
+    // This prevents abilities like Recon Drone Commit from creating token stacks when no valid targets exist
+    if (action.chainedAction && !action.skipChainedActionOnNoTargets) {
       setTimeout(() => {
         execAction(action.chainedAction!, sourceCoords)
       }, 500)
