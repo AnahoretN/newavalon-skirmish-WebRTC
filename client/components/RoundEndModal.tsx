@@ -8,7 +8,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { APP_VERSION } from 'virtual:version'
 
 // Constants
-const ROUND_WIN_MEDAL_URL = 'https://res.cloudinary.com/dxxh6meej/image/upload/v1764252181/medal_rgbw8d.png'
+const ROUND_WIN_MEDAL_URL = 'https://res.cloudinary.com/dxxh6meej/image/upload/v1771365397/medal_tavarc.webp'
 
 interface RoundEndModalProps {
     gameState: GameState;
