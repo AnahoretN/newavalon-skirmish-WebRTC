@@ -14,9 +14,10 @@ interface TokensModalProps {
   canInteract: boolean;
   anchorEl: { top: number; left: number } | null;
   imageRefreshVersion?: number;
+  localPlayerId: number | null; // The player who is dragging the token (becomes token owner)
 }
 
-export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDraggedItem, openContextMenu, canInteract, anchorEl, imageRefreshVersion }) => {
+export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDraggedItem, openContextMenu, canInteract, anchorEl, imageRefreshVersion, localPlayerId }) => {
   const { t } = useLanguage()
   const [draggedTokenId, setDraggedTokenId] = useState<string | null>(null)
   const [droppedOutside, setDroppedOutside] = useState(false)
@@ -66,6 +67,7 @@ export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDr
       setDraggedItem({
         card: draggedTokenRef.current,
         source: 'token_panel',
+        ownerId: localPlayerId ?? undefined, // The player dragging the token becomes the owner
       })
 
       setDroppedOutside(true)

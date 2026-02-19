@@ -8,6 +8,7 @@
 import type { Card, AbilityAction, CommandContext, DragItem, CursorStackState, CounterSelectionData, GameState, FloatingTextData, DropTarget } from '@/types'
 import { logger } from '@/utils/logger'
 import { TIMING } from '@/utils/common'
+import { createTokenCursorStack } from '@/utils/tokenTargeting'
 
 /* eslint-disable @typescript-eslint/no-unused-vars -- props passed to functions but not all used in every function */
 
@@ -837,7 +838,7 @@ function handleRevealEnemy(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, setAbilityMode, setCursorStack, moveItem, markAbilityUsed, gameState } = props
+  const { abilityMode, setAbilityMode, setCursorStack, moveItem, markAbilityUsed, gameState, localPlayerId } = props
 
   if (!abilityMode || abilityMode.mode !== 'REVEAL_ENEMY') {
     return false
@@ -863,18 +864,26 @@ function handleRevealEnemy(
 
   const ownerId = card.ownerId
 
-  // Create Revealed stack
-  setCursorStack({
-    type: 'Revealed',
-    count: 1,
-    targetOwnerId: ownerId,
-    onlyFaceDown: true,
-    onlyOpponents: true,
+  // Use universal token targeting system to create cursorStack
+  // Modifications: targetOwnerId restricts to selected card's owner's hand
+  // onlyFaceDown: only target unrevealed cards
+  // onlyOpponents: implicit (targetOwnerId is opponent)
+  // tokenOwnerId: the player who activated Recon Drone (will own the Revealed status)
+  const activePlayer = gameState.players.find(p => p.id === gameState.activePlayerId)
+  const tokenOwnerId = (activePlayer?.isDummy && gameState.activePlayerId !== null)
+    ? gameState.activePlayerId
+    : (localPlayerId ?? 0)
+
+  const modifications: Partial<CursorStackState> = {
+    targetOwnerId: ownerId,  // Only reveal cards from the targeted opponent's hand
+    onlyFaceDown: true,       // Only unrevealed cards
     sourceCoords: boardCoords,
     sourceCard: card,
     isDeployAbility,
     readyStatusToRemove,
-  })
+  }
+
+  setCursorStack(createTokenCursorStack('Revealed', tokenOwnerId, null, modifications))
 
   markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
 

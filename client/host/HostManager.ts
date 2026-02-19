@@ -443,6 +443,7 @@ export class HostManager {
 
       case 'CLEAR_TARGETING_MODE':
         // Update host's internal state and broadcast to all guests
+        logger.info(`[HostManager] Processing CLEAR_TARGETING_MODE from ${fromPeerId} (player ${guestPlayerId})`)
         this.stateManager.clearTargetingMode()
         // Also broadcast the CLEAR_TARGETING_MODE message to all guests
         this.connectionManager.broadcast({
@@ -451,6 +452,7 @@ export class HostManager {
           data: { timestamp: Date.now() },
           timestamp: Date.now()
         })
+        logger.info(`[HostManager] Broadcasted CLEAR_TARGETING_MODE to all guests`)
         break
 
       // Ability activation messages

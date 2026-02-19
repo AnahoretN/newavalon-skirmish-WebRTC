@@ -120,12 +120,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   const [latestDeckSelections, setLatestDeckSelections] = useState<DeckSelectionData[]>([])
   const [latestHandCardSelections, setLatestHandCardSelections] = useState<HandCardSelectionData[]>([])
   const [clickWaves, setClickWaves] = useState<any[]>([])
-  // Valid targets received from other players (for synchronized targeting UI)
-  const [remoteValidTargets, setRemoteValidTargets] = useState<{
-    playerId: number
-    validHandTargets: { playerId: number, cardIndex: number }[]
-    isDeckSelectable: boolean
-  } | null>(null)
   const [contentLoaded, setContentLoaded] = useState(!!rawJsonData)
 
   // WebRTC P2P mode state
@@ -184,7 +178,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     setLatestHandCardSelections,
     setClickWaves,
     setLatestFloatingTexts,
-    setRemoteValidTargets,
     isManualExitRef,
     joiningGameIdRef,
     playerTokenRef,
@@ -3519,6 +3512,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       case 'SET_TARGETING_MODE':
         // Targeting mode synchronization (P2P)
+        // Both host and guests update their local state
         if (message.data?.targetingMode) {
           const targetingMode = message.data.targetingMode
           logger.info('[TargetingMode] Received SET_TARGETING_MODE via WebRTC', {
@@ -3528,37 +3522,51 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             handTargetsCount: targetingMode.handTargets?.length || 0,
             isDeckSelectable: targetingMode.isDeckSelectable || false,
             timestamp: targetingMode.timestamp,
+            isHost: webrtcIsHostRef.current,
           })
+          // Both host and guests update their local state
           setGameState(prev => ({
             ...prev,
             targetingMode: targetingMode,
           }))
           gameStateRef.current.targetingMode = targetingMode
+
+          // Host broadcasts to all guests (if using old WebrtcManager)
+          if (webrtcIsHostRef.current && webrtcManagerRef.current) {
+            webrtcManagerRef.current.broadcastToGuests({
+              type: 'SET_TARGETING_MODE',
+              senderId: webrtcManagerRef.current.getPeerId?.() ?? undefined,
+              data: { targetingMode },
+              timestamp: Date.now()
+            })
+            logger.info('[TargetingMode] Host broadcasted SET_TARGETING_MODE to guests')
+          }
         }
         break
 
       case 'CLEAR_TARGETING_MODE':
         // Clear targeting mode (P2P)
+        // Both host and guests update their local state
+        logger.info('[TargetingMode] Received CLEAR_TARGETING_MODE via WebRTC', {
+          isHost: webrtcIsHostRef.current,
+        })
         setGameState(prev => ({
           ...prev,
           targetingMode: null,
         }))
         gameStateRef.current.targetingMode = null
-        logger.debug('[TargetingMode] Cleared targeting mode via WebRTC')
-        break
 
-      case 'SYNC_VALID_TARGETS':
-        // Receive valid targets from other players (P2P)
-        if (message.data?.playerId !== localPlayerIdRef.current) {
-          setRemoteValidTargets({
-            playerId: message.data.playerId,
-            validHandTargets: message.data.validHandTargets || [],
-            isDeckSelectable: message.data.isDeckSelectable || false,
+        logger.info('[TargetingMode] Cleared targeting mode locally')
+
+        // Host broadcasts to all guests (if using old WebrtcManager)
+        if (webrtcIsHostRef.current && webrtcManagerRef.current) {
+          webrtcManagerRef.current.broadcastToGuests({
+            type: 'CLEAR_TARGETING_MODE',
+            senderId: webrtcManagerRef.current.getPeerId?.() ?? undefined,
+            data: { timestamp: Date.now() },
+            timestamp: Date.now()
           })
-          // Auto-clear after 10 seconds to prevent stale data
-          setTimeout(() => {
-            setRemoteValidTargets(prev => prev?.playerId === message.data.playerId ? null : prev)
-          }, 10000)
+          logger.info('[TargetingMode] Host broadcasted CLEAR_TARGETING_MODE to guests')
         }
         break
 
@@ -4517,7 +4525,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     // Visual effects state
     clickWaves,
     syncValidTargets,
-    remoteValidTargets,
     setTargetingMode,
     clearTargetingMode,
     nextPhase,

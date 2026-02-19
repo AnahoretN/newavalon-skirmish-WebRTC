@@ -187,35 +187,53 @@ export function useCardMovement(props: UseCardMovementProps) {
             }
             targetCard.powerModifier -= (1 * count)
           } else {
-            if (!targetCard.statuses) {
-              targetCard.statuses = []
-            }
-
-            // Handle status replacement (e.g., Censor: Exploit -> Stun)
-            if (item.replaceStatusType && item.statusType) {
-              for (let i = 0; i < count; i++) {
-                // Find the status to replace (owned by effectiveActorId)
-                const replaceIndex = targetCard.statuses.findIndex(
-                  s => s.type === item.replaceStatusType && s.addedByPlayerId === effectiveActorId
-                )
-                if (replaceIndex !== -1) {
-                  // Replace with new status
-                  targetCard.statuses[replaceIndex] = { type: item.statusType, addedByPlayerId: effectiveActorId }
-                } else {
-                  // If no status to replace found, just add the new status
-                  targetCard.statuses.push({ type: item.statusType, addedByPlayerId: effectiveActorId })
+            // SPECIAL HANDLING FOR REVEALED STATUS ON HAND CARDS
+            // When Revealed token is placed on a hand card, update revealedTo property
+            // instead of adding to statuses array (which only works for board cards)
+            if (item.statusType === 'Revealed' && target.target === 'hand') {
+              // Add effectiveActorId to revealedTo array
+              if (!targetCard.revealedTo) {
+                targetCard.revealedTo = []
+              }
+              if (targetCard.revealedTo !== 'all') {
+                const actorArray = Array.isArray(targetCard.revealedTo) ? targetCard.revealedTo : []
+                if (!actorArray.includes(effectiveActorId)) {
+                  actorArray.push(effectiveActorId)
                 }
+                targetCard.revealedTo = actorArray
               }
             } else {
-              // Normal status addition
-              for (let i = 0; i < count; i++) {
-                if (['Support', 'Threat', 'Revealed'].includes(item.statusType)) {
-                  const exists = targetCard.statuses.some(s => s.type === item.statusType && s.addedByPlayerId === effectiveActorId)
-                  if (!exists) {
+              // Normal status handling for board cards and other statuses
+              if (!targetCard.statuses) {
+                targetCard.statuses = []
+              }
+
+              // Handle status replacement (e.g., Censor: Exploit -> Stun)
+              if (item.replaceStatusType && item.statusType) {
+                for (let i = 0; i < count; i++) {
+                  // Find the status to replace (owned by effectiveActorId)
+                  const replaceIndex = targetCard.statuses.findIndex(
+                    s => s.type === item.replaceStatusType && s.addedByPlayerId === effectiveActorId
+                  )
+                  if (replaceIndex !== -1) {
+                    // Replace with new status
+                    targetCard.statuses[replaceIndex] = { type: item.statusType, addedByPlayerId: effectiveActorId }
+                  } else {
+                    // If no status to replace found, just add the new status
                     targetCard.statuses.push({ type: item.statusType, addedByPlayerId: effectiveActorId })
                   }
-                } else {
-                  targetCard.statuses.push({ type: item.statusType, addedByPlayerId: effectiveActorId })
+                }
+              } else {
+                // Normal status addition
+                for (let i = 0; i < count; i++) {
+                  if (['Support', 'Threat', 'Revealed'].includes(item.statusType)) {
+                    const exists = targetCard.statuses.some(s => s.type === item.statusType && s.addedByPlayerId === effectiveActorId)
+                    if (!exists) {
+                      targetCard.statuses.push({ type: item.statusType, addedByPlayerId: effectiveActorId })
+                    }
+                  } else {
+                    targetCard.statuses.push({ type: item.statusType, addedByPlayerId: effectiveActorId })
+                  }
                 }
               }
             }
@@ -344,14 +362,26 @@ export function useCardMovement(props: UseCardMovementProps) {
           // Initialize ready statuses for the new card (only for abilities it actually has)
           // Ready statuses belong to the card owner (even if it's a dummy player)
           // Token ownership rules:
-          // - Tokens from token_panel: owned by active player (even if it's a dummy)
+          // - Tokens from token_panel: owned by the player who dragged them (item.ownerId)
+          //   Exception: if active player is dummy, token belongs to dummy's owner
           // - Tokens from abilities (spawnToken): already have ownerId set correctly
           // - Cards from hand/deck/discard: owned by the player whose hand/deck/discard they came from
           let ownerId = cardToMove.ownerId
           if (ownerId === undefined) {
             if (item.source === 'token_panel') {
-              // Token from token panel gets active player as owner
-              ownerId = newState.activePlayerId ?? localPlayerIdRef.current ?? 0
+              // Token from token panel gets owner from DragItem.ownerId (the player who dragged it)
+              // Exception: if active player is a dummy, token belongs to the dummy owner's team
+              const activePlayer = newState.players.find(p => p.id === newState.activePlayerId)
+              if (activePlayer?.isDummy && localPlayerIdRef.current !== null) {
+                // Active player is dummy - token belongs to the controlling player
+                ownerId = localPlayerIdRef.current
+              } else if (item.ownerId !== undefined) {
+                // Use the ownerId from DragItem (set by TokensModal)
+                ownerId = item.ownerId
+              } else {
+                // Fallback to active player or local player
+                ownerId = newState.activePlayerId ?? localPlayerIdRef.current ?? 0
+              }
             } else if (item.playerId !== undefined) {
               // Card from a player's hand/deck/discard gets that player as owner
               ownerId = item.playerId

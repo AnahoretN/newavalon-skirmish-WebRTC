@@ -9,6 +9,7 @@ import type { AbilityAction, GameState, CommandContext, DragItem } from '@/types
 import { checkActionHasTargets } from '@shared/utils/targeting'
 import { logger } from '@/utils/logger'
 import { TIMING } from '@/utils/common'
+import { createTokenCursorStack } from '@/utils/tokenTargeting'
 
 /* eslint-disable @typescript-eslint/no-unused-vars -- props passed to functions but not all used in every function */
 
@@ -340,13 +341,14 @@ function handleGlobalAutoApply(
 
 /**
  * Handle CREATE_STACK action
+ * Uses universal token targeting system via createTokenCursorStack
  */
 function handleCreateStack(
   action: AbilityAction,
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
-  const { gameState, setAbilityMode, setCursorStack, triggerNoTarget } = props
+  const { gameState, setAbilityMode, setCursorStack, triggerNoTarget, localPlayerId } = props
 
   let count = action.count || 0
 
@@ -367,8 +369,19 @@ function handleCreateStack(
 
   if (count > 0) {
     setAbilityMode(null)
-    setCursorStack({
-      type: action.tokenType || 'Aim',
+
+    // Determine token owner: use sourceCard.ownerId, with fallback to localPlayerId
+    // Special handling for dummy player: if active player is dummy, use localPlayerId
+    const activePlayer = gameState.players.find(p => p.id === gameState.activePlayerId)
+    let tokenOwnerId = action.sourceCard?.ownerId ?? localPlayerId ?? 0
+
+    // If active player is dummy, tokens belong to the controlling player
+    if (activePlayer?.isDummy && localPlayerId !== null) {
+      tokenOwnerId = localPlayerId
+    }
+
+    // Use universal token targeting system to create cursorStack
+    const modifications: Partial<any> = {
       count: count,
       sourceCoords: action.sourceCoords || sourceCoords,
       sourceCard: action.sourceCard,
@@ -389,7 +402,9 @@ function handleCreateStack(
       replaceStatus: action.replaceStatus,
       chainedAction: action.chainedAction,
       recordContext: action.recordContext,
-    })
+    }
+
+    setCursorStack(createTokenCursorStack(action.tokenType || 'Aim', tokenOwnerId, null, modifications))
   } else {
     triggerNoTarget(sourceCoords)
   }

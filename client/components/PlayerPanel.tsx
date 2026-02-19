@@ -118,7 +118,8 @@ interface PlayerPanelProps {
   deckSelections?: { playerId: number; selectedByPlayerId: number; timestamp: number }[];
   handCardSelections?: { playerId: number; cardIndex: number; selectedByPlayerId: number; timestamp: number }[];
   cursorStack?: CursorStackState | null;
-  remoteValidTargets?: { playerId: number, validHandTargets: { playerId: number, cardIndex: number }[], isDeckSelectable: boolean } | null;
+  // Targeting mode from gameState (synchronized across all players)
+  targetingMode?: { playerId: number, handTargets?: { playerId: number, cardIndex: number }[], isDeckSelectable?: boolean } | null;
   highlightOwnerId?: number; // The owner of the current ability/mode (for correct highlight color)
   onCancelAllModes?: () => void; // Right-click to cancel all modes
   clickWaves?: any[]; // Click wave effects to display
@@ -393,7 +394,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   deckSelections = [],
   handCardSelections = [],
   cursorStack = null,
-  remoteValidTargets = null,
+  targetingMode = null,
   highlightOwnerId,
   onCancelAllModes,
   clickWaves = [],
@@ -562,14 +563,14 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
             {/* Deck */}
             <DropZone className="relative" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => handleContextMenuWithCancel(e, 'deckPile', { player })} isOverClassName="rounded ring-2 ring-white">
               {(() => {
-                // Check if deck is selectable (either from local player or from remote player)
+                // Check if deck is selectable (either from local player or from targetingMode)
                 const isLocalDeckSelectable = isDeckSelectable
-                const isRemoteDeckSelectable = remoteValidTargets?.isDeckSelectable ?? false
-                const isDeckSelectableActive = isLocalDeckSelectable || isRemoteDeckSelectable
+                const isTargetingModeDeckSelectable = targetingMode?.isDeckSelectable ?? false
+                const isDeckSelectableActive = isLocalDeckSelectable || isTargetingModeDeckSelectable
 
-                // Use active player's color for the selection effect (not the deck owner's color)
-                // For remote targets, use the remote player's color
-                const targetPlayerId = isRemoteDeckSelectable && remoteValidTargets ? remoteValidTargets.playerId : activePlayerId
+                // Use targeting player's color for the selection effect
+                // If targetingMode is active, use that player's color, otherwise use activePlayerId
+                const targetPlayerId = targetingMode?.playerId ?? activePlayerId
                 const activePlayerColorName = targetPlayerId !== null && targetPlayerId !== undefined ? playerColorMap.get(targetPlayerId) : null
                 const rgb = getPlayerColorRgbOrDefault(activePlayerColorName, { r: 37, g: 99, b: 235 })
                 const deckHighlightStyle = isDeckSelectableActive ? {
@@ -715,16 +716,14 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
           }} className="flex-grow bg-gray-800 rounded-lg p-2 overflow-y-scroll border border border-gray-700 custom-scrollbar">
             <div className="flex flex-col gap-[2px]">
               {player.hand.map((card, index) => {
-                // Check if this card is a valid target (either from local player or from remote player)
+                // Check if this card is a valid target (from local validHandTargets or targetingMode)
                 const isLocalTarget = validHandTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-                const isRemoteTarget = remoteValidTargets?.validHandTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-                const isTarget = isLocalTarget || isRemoteTarget
+                const isTargetingModeTarget = targetingMode?.handTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
+                const isTarget = isLocalTarget || isTargetingModeTarget
 
-                // Use highlightOwnerId for local targets (ability owner's color), fallback to activePlayerId
-                // For remote targets, use the remote player's color
-                const targetPlayerId = isRemoteTarget && remoteValidTargets
-                  ? remoteValidTargets.playerId
-                  : (highlightOwnerId ?? activePlayerId)
+                // Use targeting player's color for the highlight
+                // If targetingMode is active, use that player's color, otherwise use highlightOwnerId or activePlayerId
+                const targetPlayerId = targetingMode?.playerId ?? (highlightOwnerId ?? activePlayerId)
                 const activePlayerColorName = targetPlayerId !== null && targetPlayerId !== undefined ? playerColorMap.get(targetPlayerId) : null
                 const rgb = getPlayerColorRgbOrDefault(activePlayerColorName, { r: 37, g: 99, b: 235 })
 
@@ -906,14 +905,13 @@ key={`card-${card.id}`}
             <div className="aspect-square relative">
               <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => handleContextMenuWithCancel(e, 'deckPile', { player })} isOverClassName="rounded ring-2 ring-white">
                 {(() => {
-                  // Check if deck is selectable (either from local player or from remote player)
+                  // Check if deck is selectable (from local isDeckSelectable or targetingMode)
                   const isLocalDeckSelectable = isDeckSelectable
-                  const isRemoteDeckSelectable = remoteValidTargets?.isDeckSelectable ?? false
-                  const isDeckSelectableActive = isLocalDeckSelectable || isRemoteDeckSelectable
+                  const isTargetingModeDeckSelectable = targetingMode?.isDeckSelectable ?? false
+                  const isDeckSelectableActive = isLocalDeckSelectable || isTargetingModeDeckSelectable
 
-                  // Use active player's color for the selection effect (not the deck owner's color)
-                  // For remote targets, use the remote player's color
-                  const targetPlayerId = isRemoteDeckSelectable && remoteValidTargets ? remoteValidTargets.playerId : activePlayerId
+                  // Use targeting player's color for the selection effect
+                  const targetPlayerId = targetingMode?.playerId ?? activePlayerId
                   const activePlayerColorName = targetPlayerId !== null && targetPlayerId !== undefined ? playerColorMap.get(targetPlayerId) : null
                   const rgb = getPlayerColorRgbOrDefault(activePlayerColorName, { r: 37, g: 99, b: 235 })
                   const deckHighlightStyle = isDeckSelectableActive ? {
@@ -1047,16 +1045,13 @@ key={`card-${card.id}`}
             className="grid grid-cols-6 gap-1 overflow-y-scroll custom-scrollbar flex-grow content-start min-h-[30px]"
           >
             {player.hand.map((card, index) => {
-              // Check if this card is a valid target (either from local player or from remote player)
+              // Check if this card is a valid target (from local validHandTargets or targetingMode)
               const isLocalTarget = validHandTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-              const isRemoteTarget = remoteValidTargets?.validHandTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-              const isTarget = isLocalTarget || isRemoteTarget
+              const isTargetingModeTarget = targetingMode?.handTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
+              const isTarget = isLocalTarget || isTargetingModeTarget
 
-              // Use highlightOwnerId for local targets (ability owner's color), fallback to activePlayerId
-              // For remote targets, use the remote player's color
-              const targetPlayerId = isRemoteTarget && remoteValidTargets
-                ? remoteValidTargets.playerId
-                : (highlightOwnerId ?? activePlayerId)
+              // Use targeting player's color for the highlight
+              const targetPlayerId = targetingMode?.playerId ?? (highlightOwnerId ?? activePlayerId)
               const activePlayerColorName = targetPlayerId !== null && targetPlayerId !== undefined ? playerColorMap.get(targetPlayerId) : null
               const rgb = getPlayerColorRgbOrDefault(activePlayerColorName, { r: 37, g: 99, b: 235 })
 

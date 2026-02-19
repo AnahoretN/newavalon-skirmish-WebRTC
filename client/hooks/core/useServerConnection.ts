@@ -316,13 +316,6 @@ export function useServerConnection(props: UseServerConnectionProps) {
             ...prev,
             floatingTexts: [...prev.floatingTexts, ...data.batch].filter(t => Date.now() - t.timestamp < TIMING.FLOATING_TEXT_DURATION)
           }))
-        } else if (data.type === 'SYNC_VALID_TARGETS') {
-          // Receive valid targets from other players
-          // Ignore targets from ourselves to avoid overwriting our local state
-          if (data.playerId !== localPlayerIdRef.current) {
-            // This would need remoteValidTargets state - not included in this hook
-            // The parent hook should handle this
-          }
         } else if (data.type === 'CLICK_WAVE_TRIGGERED') {
           // Click wave effect (colored ripple animation)
           // Only apply if sent by another player (ignore echoes of our own messages)

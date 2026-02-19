@@ -248,36 +248,16 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
 
   /**
    * Sync valid targets to other players
+   * @deprecated Targeting mode is now synchronized via gameState.targetingMode (SET_TARGETING_MODE)
+   * This function is kept for backwards compatibility but does nothing
    */
-  const syncValidTargets = useCallback((validTargetsData: {
+  const syncValidTargets = useCallback((_validTargetsData: {
     validHandTargets: { playerId: number, cardIndex: number }[]
     isDeckSelectable: boolean
   }) => {
-    if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId) {
-      ws.current.send(JSON.stringify({
-        type: 'SYNC_VALID_TARGETS',
-        gameId: gameStateRef.current.gameId,
-        playerId: localPlayerIdRef.current,
-        ...validTargetsData,
-      }))
-    } else if (webrtcManager.current) {
-      const webrtcMessage = {
-        type: 'SYNC_VALID_TARGETS' as const,
-        senderId: webrtcManager.current.getPeerId(),
-        data: {
-          playerId: localPlayerIdRef.current,
-          ...validTargetsData,
-        },
-        timestamp: Date.now()
-      }
-
-      if (webrtcIsHostRef.current) {
-        webrtcManager.current.broadcastToGuests(webrtcMessage)
-      } else {
-        webrtcManager.current.sendMessageToHost(webrtcMessage)
-      }
-    }
-  }, [ws, webrtcManager, gameStateRef, webrtcIsHostRef, localPlayerIdRef])
+    // Targeting mode is now synchronized via SET_TARGETING_MODE / CLEAR_TARGETING_MODE
+    // This function is kept for backwards compatibility only
+  }, [])
 
   /**
    * Trigger click wave effect (colored ripple animation)

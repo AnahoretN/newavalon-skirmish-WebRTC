@@ -116,7 +116,6 @@ const AppInner = function AppInner() {
     triggerClickWave,
     clickWaves,
     syncValidTargets,
-    remoteValidTargets,
     setTargetingMode,
     clearTargetingMode,
     nextPhase,
@@ -535,22 +534,28 @@ const AppInner = function AppInner() {
 
       // Clear modes
       setAbilityMode(null)
-      // Note: targetingMode will be cleared when abilityMode is cleared (see useAppAbilities.ts useEffect)
+      // Also clear targetingMode explicitly for P2P mode (works for both WebSocket and WebRTC)
+      clearTargetingMode()
     }
-  }, [abilityMode, gameState.targetingMode, gameState.activePlayerId, localPlayerId, triggerDeckSelection])
+  }, [abilityMode, gameState.targetingMode, gameState.activePlayerId, localPlayerId, triggerDeckSelection, clearTargetingMode])
 
   // Sync validHandTargets when targetingMode.handTargets changes (for P2P mode)
   // When another player activates targeting mode with hand targets, we need to update our local state
   useEffect(() => {
-    if (gameState.targetingMode?.handTargets) {
+    // Only sync from remote targetingMode if we don't have our own active mode
+    // This prevents local abilityMode/cursorStack from being overridden by remote targetingMode
+    const hasLocalActiveMode = abilityMode || cursorStack || playMode || commandModalCard
+
+    if (gameState.targetingMode?.handTargets && !hasLocalActiveMode) {
       setValidHandTargets(gameState.targetingMode.handTargets)
-    } else {
+    } else if (!gameState.targetingMode?.handTargets && !hasLocalActiveMode) {
       // Clear validHandTargets when targetingMode is cleared (no longer has handTargets)
       // This ensures remote players see targeting highlights cleared when token is placed
       // Note: Local cursorStack/abilityMode will re-populate validHandTargets in the next useEffect cycle
       setValidHandTargets([])
     }
-  }, [gameState.targetingMode?.handTargets, gameState.targetingMode?.timestamp])
+    // If hasLocalActiveMode is true, we skip syncing - let the other useEffect handle it
+  }, [gameState.targetingMode?.handTargets, gameState.targetingMode?.timestamp, abilityMode, cursorStack, playMode, commandModalCard])
 
   const handleTopDeckReorder = useCallback((playerId: number, newTopCards: Card[]) => {
     reorderTopDeck(playerId, newTopCards)
@@ -2227,6 +2232,7 @@ const AppInner = function AppInner() {
         canInteract={!!localPlayerId && !isSpectator}
         anchorEl={modalAnchors.tokensModalAnchor}
         imageRefreshVersion={imageRefreshVersion}
+        localPlayerId={localPlayerId}
       />
 
       <CountersModal
@@ -2337,7 +2343,7 @@ const AppInner = function AppInner() {
               deckSelections={latestDeckSelections}
               handCardSelections={latestHandCardSelections}
               cursorStack={cursorStack}
-              remoteValidTargets={remoteValidTargets}
+              targetingMode={gameState.targetingMode}
               highlightOwnerId={highlightOwnerId}
               onCancelAllModes={handleCancelAllModes}
               clickWaves={clickWaves}
@@ -2451,7 +2457,7 @@ const AppInner = function AppInner() {
                     deckSelections={latestDeckSelections}
                     handCardSelections={latestHandCardSelections}
                     cursorStack={cursorStack}
-                    remoteValidTargets={remoteValidTargets}
+                    targetingMode={gameState.targetingMode}
                     highlightOwnerId={highlightOwnerId}
                     onCancelAllModes={handleCancelAllModes}
                     clickWaves={clickWaves}
