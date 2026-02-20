@@ -61,24 +61,42 @@ export function createCardBack(card: Card): any {
 /**
  * Create compact card data for transmission
  * Used when sender wants to minimize data (id + baseId + stats only)
+ *
+ * NOTE: Now includes name and imageUrl to preserve deck order and display properly
  */
 export interface CompactCardData {
   id: string
   baseId: string
+  name: string
+  imageUrl: string
   power: number
   powerModifier: number
   isFaceDown: boolean
   statuses: any[]
+  ownerId?: number
+  deck?: string
+  ability?: string
+  color?: string
+  types?: string[]
+  faction?: string
 }
 
 export function toCompactCardData(card: Card): CompactCardData {
   return {
     id: card.id,
     baseId: card.baseId || card.id, // Fallback to card.id if baseId is undefined
+    name: card.name, // Include name for display
+    imageUrl: card.imageUrl, // Include imageUrl for display
     power: card.power,
     powerModifier: card.powerModifier || 0,
     isFaceDown: card.isFaceDown ?? false,
-    statuses: card.statuses || []
+    statuses: card.statuses || [],
+    ownerId: card.ownerId,
+    deck: card.deck,
+    ability: card.ability,
+    color: card.color,
+    types: card.types,
+    faction: card.faction
   }
 }
 
@@ -86,7 +104,7 @@ export function toCompactCardData(card: Card): CompactCardData {
  * Create personalized game state for a specific player
  *
  * Rules:
- * - Own player: sees full hand/deck/discard (as compact card data)
+ * - Own player: sees full hand/deck/discard (as compact card data with name/imageUrl)
  * - Dummy players: full data visible (all players control them)
  * - Other players: only revealed cards visible, rest are card backs
  * - Board: visible to all with proper face up/down status

@@ -7,7 +7,8 @@ import { rawJsonData, getCardDefinition, getCardDefinitionByName, commandCardIds
 import { createInitialBoard, recalculateBoardStatuses } from '@shared/utils/boardUtils'
 import { logger } from '../utils/logger'
 import { deepCloneState, TIMING } from '../utils/common'
-import { getWebrtcManager, type WebrtcEvent } from '../utils/webrtcManager'
+import { getWebrtcManagerNew, type WebrtcManagerNew } from '../host/WebrtcManager'
+import type { WebrtcEvent } from '../host/types'
 import { getWebRTCEnabled } from './useWebRTCEnabled'
 import type { WebrtcMessage } from '../host/types'
 import { toggleActivePlayer as toggleActivePlayerPhase, performPreparationPhase } from '../host/PhaseManagement'
@@ -145,7 +146,12 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   const receivedServerStateRef = useRef<boolean>(false)
 
   // WebRTC manager ref
-  const webrtcManagerRef = useRef<ReturnType<typeof getWebrtcManager> | null>(null)
+  const webrtcManagerRef = useRef<WebrtcManagerNew | null>(null)
+
+  // Store full deck data from guests for deck view feature
+  // This preserves full card data (name, imageUrl, etc.) that guests send via DECK_DATA_UPDATE
+  // Map<playerId, fullDeckData[]>
+  const guestFullDecksRef = useRef<Map<number, any[]>>(new Map())
 
   // Ref for setGameStateWithDelta (used in callbacks)
   const setGameStateWithDeltaRef = useRef<(updater: React.SetStateAction<GameState>, sourcePlayerId?: number) => void>(() => {})
@@ -220,7 +226,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     setWebrtcEnabled(webrtcSetting)
 
     if (webrtcSetting) {
-      webrtcManagerRef.current = getWebrtcManager()
+      webrtcManagerRef.current = getWebrtcManagerNew()
       logger.info('WebRTC manager initialized')
 
       // Setup WebRTC event handlers
@@ -729,7 +735,10 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       case 'message_received':
         // Handle incoming WebRTC message
-        handleWebrtcMessage(event.data)
+        // GuestConnection sends: { type: 'message_received', data: message }
+        // HostConnectionManager sends: { type: 'message_received', data: { message, fromPeerId } }
+        const messageToHandle = event.data.message || event.data
+        handleWebrtcMessage(messageToHandle)
         break
 
       case 'error':
@@ -1562,36 +1571,64 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
                 let finalDeck: any[]
                 if (hostSendingDeckData) {
-                  // Host sent deck data - reconstruct from compact cards
-                  // This happens when recipientPlayerId matches this player (host sends full deck data)
-                  const reconstructCard = (compactCard: any) => {
-                    if (compactCard.baseId) {
-                      const cardDef = getCardDefinition(compactCard.baseId)
-                      if (cardDef) {
-                        return {
-                          ...cardDef,
-                          id: compactCard.id,
-                          baseId: compactCard.baseId,
-                          ownerId: remotePlayer.id,
-                          power: compactCard.power,
-                          powerModifier: compactCard.powerModifier,
-                          isFaceDown: compactCard.isFaceDown,
-                          statuses: compactCard.statuses || []
+                  // Host sent deck data - check if it's full data or compact (baseId only)
+                  const firstCard = remotePlayer.deckCards[0]
+                  const hasFullData = firstCard?.name && firstCard?.imageUrl
+
+                  if (hasFullData) {
+                    // Host sent full card data - use it directly to preserve order
+                    // This happens after DECK_VIEW_DATA or when host has full deck data
+                    finalDeck = remotePlayer.deckCards.map((card: any) => ({
+                      id: card.id,
+                      baseId: card.baseId || card.id,
+                      name: card.name,
+                      imageUrl: card.imageUrl,
+                      fallbackImage: card.fallbackImage || '',
+                      power: card.power,
+                      powerModifier: card.powerModifier || 0,
+                      isFaceDown: card.isFaceDown ?? false,
+                      statuses: card.statuses || [],
+                      deck: card.deck || 'SynchroTech',
+                      color: card.color || 'Red',
+                      ability: card.ability || '',
+                      bonusPower: card.bonusPower || 0,
+                      isPlaceholder: card.isPlaceholder || false,
+                      types: card.types || [],
+                      faction: card.faction || '',
+                      ownerId: remotePlayer.id
+                    }))
+                    logger.debug(`[STATE_UPDATE_COMPACT] Using full deck data for player ${remotePlayer.id}: ${finalDeck.length} cards`)
+                  } else {
+                    // Host sent compact data (baseId only) - reconstruct from contentDatabase
+                    const reconstructCard = (compactCard: any) => {
+                      if (compactCard.baseId) {
+                        const cardDef = getCardDefinition(compactCard.baseId)
+                        if (cardDef) {
+                          return {
+                            ...cardDef,
+                            id: compactCard.id,
+                            baseId: compactCard.baseId,
+                            ownerId: remotePlayer.id,
+                            power: compactCard.power,
+                            powerModifier: compactCard.powerModifier,
+                            isFaceDown: compactCard.isFaceDown,
+                            statuses: compactCard.statuses || []
+                          }
                         }
                       }
+                      return { id: compactCard.id, name: 'Unknown', power: 0 }
                     }
-                    return { id: compactCard.id, name: 'Unknown', power: 0 }
+                    finalDeck = remotePlayer.deckCards.map(reconstructCard)
+                    if (remotePlayer.id === 3) {
+                      const cardCounts: Record<string, number> = {}
+                      finalDeck.forEach(card => {
+                        const baseId = card.baseId || card.id
+                        cardCounts[baseId] = (cardCounts[baseId] || 0) + 1
+                      })
+                      logger.info(`[STATE_UPDATE_COMPACT] Reconstructed deck for Player 3 (dummy): ${finalDeck.length} cards`, cardCounts)
+                    }
+                    logger.debug(`[STATE_UPDATE_COMPACT] Reconstructed deck for player ${remotePlayer.id}: ${finalDeck.length} cards`)
                   }
-                  finalDeck = remotePlayer.deckCards.map(reconstructCard)
-                  if (remotePlayer.id === 3) {
-                    const cardCounts: Record<string, number> = {}
-                    finalDeck.forEach(card => {
-                      const baseId = card.baseId || card.id
-                      cardCounts[baseId] = (cardCounts[baseId] || 0) + 1
-                    })
-                    logger.info(`[STATE_UPDATE_COMPACT] Reconstructed deck for Player 3 (dummy): ${finalDeck.length} cards`, cardCounts)
-                  }
-                  logger.debug(`[STATE_UPDATE_COMPACT] Reconstructed deck for player ${remotePlayer.id}: ${finalDeck.length} cards`)
                 } else {
                   // Host is NOT sending deck data for this player
                   // Check if we have existing non-placeholder deck data from CHANGE_PLAYER_DECK
@@ -3763,43 +3800,59 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           // Find the target player
           const targetPlayer = gameState.players.find(p => p.id === targetPlayerId)
           if (targetPlayer && webrtcManagerRef.current) {
-            // Send COMPACT deck data (id + baseId) - requester can reconstruct full cards from their contentDatabase
-            // If target is the host or a dummy, we have the full deck
-            // If target is a guest, we need to use the deckCards (if available) or reconstruct from stored data
             let deckToSend: any[] = []
 
             if (targetPlayerId === localPlayerIdRef.current || targetPlayer.isDummy) {
-              // Host or dummy - we have full deck data
-              logger.info(`[REQUEST_DECK_VIEW] Host/dummy deck has ${targetPlayer.deck.length} cards, first card baseId: ${targetPlayer.deck[0]?.baseId}`)
+              // Host or dummy - we have full deck data in gameState
+              logger.info(`[REQUEST_DECK_VIEW] Host/dummy deck has ${targetPlayer.deck.length} cards, first card: ${targetPlayer.deck[0]?.name}`)
               deckToSend = targetPlayer.deck.map((c: any) => ({
                 id: c.id,
                 baseId: c.baseId,
-                deck: c.deck, // Include deck so guest can see correct card back
+                name: c.name,
+                imageUrl: c.imageUrl,
                 power: c.power,
-                powerModifier: c.powerModifier,
-                isFaceDown: c.isFaceDown,
-                statuses: c.statuses || []
+                powerModifier: c.powerModifier || 0,
+                isFaceDown: c.isFaceDown ?? false,
+                statuses: c.statuses || [],
+                ownerId: c.ownerId,
+                deck: c.deck,
+                ability: c.ability,
+                color: c.color,
+                types: c.types,
+                faction: c.faction
               }))
             } else {
-              // Guest player - use deckCards from compact state or send deck array
-              if ((targetPlayer as any).deckCards && (targetPlayer as any).deckCards.length > 0) {
-                deckToSend = (targetPlayer as any).deckCards
+              // Guest player - use stored full deck data from guestFullDecksRef
+              const storedFullDeck = guestFullDecksRef.current.get(targetPlayerId)
+              if (storedFullDeck && storedFullDeck.length > 0) {
+                // Use full deck data from DECK_DATA_UPDATE (preserves name, imageUrl, order)
+                logger.info(`[REQUEST_DECK_VIEW] Using stored full deck data for guest ${targetPlayerId}, ${storedFullDeck.length} cards, first card: ${storedFullDeck[0]?.name}`)
+                deckToSend = storedFullDeck
               } else {
-                // Fallback: send deck array (should have been reconstructed from compact data)
+                // Fallback: use deck array from gameState (might have been reconstructed)
+                logger.info(`[REQUEST_DECK_VIEW] No stored full deck for guest ${targetPlayerId}, using gameState deck, ${targetPlayer.deck.length} cards`)
                 deckToSend = targetPlayer.deck.map((c: any) => ({
                   id: c.id,
                   baseId: c.baseId,
+                  name: c.name,
+                  imageUrl: c.imageUrl,
                   power: c.power,
-                  powerModifier: c.powerModifier,
-                  isFaceDown: c.isFaceDown,
-                  statuses: c.statuses || []
+                  powerModifier: c.powerModifier || 0,
+                  isFaceDown: c.isFaceDown ?? false,
+                  statuses: c.statuses || [],
+                  ownerId: c.ownerId,
+                  deck: c.deck,
+                  ability: c.ability,
+                  color: c.color,
+                  types: c.types,
+                  faction: c.faction
                 }))
               }
             }
 
             const deckData = {
               targetPlayerId,
-              deckCards: deckToSend, // Send compact card data with baseId
+              deckCards: deckToSend,
               deckSize: deckToSend.length
             }
 
@@ -3813,69 +3866,99 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
             // Send to the specific guest
             webrtcManagerRef.current.sendToGuest(message.senderId || '', responseMessage)
-            logger.info(`[REQUEST_DECK_VIEW] Sent ${deckData.deckCards.length} cards for player ${targetPlayerId}`)
+            logger.info(`[REQUEST_DECK_VIEW] Sent ${deckData.deckCards.length} cards for player ${targetPlayerId}, first card: ${deckData.deckCards[0]?.name}`)
           }
         }
         break
 
       case 'DECK_VIEW_DATA':
-        // Host sends compact deck data for viewing
+        // Host sends deck data for viewing - now includes full card data with name and imageUrl
         if (message.data?.targetPlayerId !== undefined && message.data?.deckCards) {
           const targetPlayerId = message.data.targetPlayerId as number
           const deckCards = message.data.deckCards as any[]
 
           logger.info(`[DECK_VIEW_DATA] Received ${deckCards.length} deck cards for player ${targetPlayerId}`)
 
-          // Reconstruct full cards from baseId using contentDatabase
-          const reconstructDeckCard = (compactCard: any): Card => {
-            if (compactCard.baseId) {
-              const cardDef = getCardDefinition(compactCard.baseId)
-              if (cardDef) {
-                return {
-                  ...cardDef,
-                  id: compactCard.id,
-                  baseId: compactCard.baseId, // Preserve baseId from compact data
-                  deck: compactCard.deck || DeckType.SynchroTech, // Add deck property
-                  ownerId: targetPlayerId,
-                  power: compactCard.power,
-                  powerModifier: compactCard.powerModifier,
-                  isFaceDown: compactCard.isFaceDown,
-                  statuses: compactCard.statuses || []
+          // Check if received data has full card info (name, imageUrl) or needs reconstruction
+          const firstCard = deckCards[0]
+          const hasFullData = firstCard?.name && firstCard?.imageUrl
+
+          let processedDeck: Card[]
+
+          if (hasFullData) {
+            // Host now sends full card data - use it directly to preserve order
+            logger.info(`[DECK_VIEW_DATA] Received full card data, using directly. First card: ${firstCard.name}`)
+            processedDeck = deckCards.map(card => ({
+              id: card.id,
+              baseId: card.baseId || card.id,
+              name: card.name,
+              imageUrl: card.imageUrl,
+              fallbackImage: card.fallbackImage || '',
+              power: card.power,
+              powerModifier: card.powerModifier || 0,
+              isFaceDown: card.isFaceDown ?? false,
+              statuses: card.statuses || [],
+              deck: card.deck || DeckType.SynchroTech,
+              color: card.color || 'Red',
+              ability: card.ability || '',
+              bonusPower: card.bonusPower || 0,
+              isPlaceholder: card.isPlaceholder || false,
+              types: card.types || [],
+              faction: card.faction || '',
+              ownerId: card.ownerId || targetPlayerId
+            }))
+          } else {
+            // Fallback: reconstruct from baseId using contentDatabase
+            logger.info(`[DECK_VIEW_DATA] Received compact data, reconstructing from contentDatabase`)
+            const reconstructDeckCard = (compactCard: any): Card => {
+              if (compactCard.baseId) {
+                const cardDef = getCardDefinition(compactCard.baseId)
+                if (cardDef) {
+                  return {
+                    ...cardDef,
+                    id: compactCard.id,
+                    baseId: compactCard.baseId,
+                    deck: compactCard.deck || DeckType.SynchroTech,
+                    ownerId: targetPlayerId,
+                    power: compactCard.power,
+                    powerModifier: compactCard.powerModifier,
+                    isFaceDown: compactCard.isFaceDown,
+                    statuses: compactCard.statuses || []
+                  }
+                } else {
+                  logger.warn(`[DECK_VIEW_DATA] Card definition not found for baseId: ${compactCard.baseId}`)
                 }
               } else {
-                logger.warn(`[DECK_VIEW_DATA] Card definition not found for baseId: ${compactCard.baseId}`)
+                logger.warn(`[DECK_VIEW_DATA] Card missing baseId, id: ${compactCard.id}`)
               }
-            } else {
-              logger.warn(`[DECK_VIEW_DATA] Card missing baseId, id: ${compactCard.id}`)
+              // Fallback: create minimal card
+              const fallbackCard: Card = {
+                id: compactCard.id,
+                baseId: compactCard.baseId || compactCard.id,
+                name: 'Unknown',
+                imageUrl: '',
+                fallbackImage: '',
+                power: compactCard.power || 0,
+                powerModifier: 0,
+                isFaceDown: false,
+                statuses: [],
+                deck: DeckType.SynchroTech,
+                color: 'Red',
+                ability: '',
+                bonusPower: 0,
+                isPlaceholder: false
+              }
+              return fallbackCard
             }
-            // Fallback: create minimal card with all required properties
-            const fallbackCard: Card = {
-              id: compactCard.id,
-              baseId: compactCard.baseId || compactCard.id,
-              name: 'Unknown',
-              imageUrl: '',
-              fallbackImage: '',
-              power: compactCard.power || 0,
-              powerModifier: 0,
-              isFaceDown: false,
-              statuses: [],
-              deck: DeckType.SynchroTech,
-              color: 'Red',
-              ability: '',
-              bonusPower: 0,
-              isPlaceholder: false
-            }
-            return fallbackCard
+            processedDeck = deckCards.map(reconstructDeckCard)
           }
-
-          const reconstructedDeck: Card[] = deckCards.map(reconstructDeckCard)
 
           // Update the target player's deck in local state
           setGameState(prev => ({
             ...prev,
             players: prev.players.map(p => {
               if (p.id === targetPlayerId) {
-                return { ...p, deck: reconstructedDeck } // Replace with reconstructed deck
+                return { ...p, deck: processedDeck }
               }
               return p
             })
@@ -3885,23 +3968,27 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       case 'DECK_DATA_UPDATE':
         // Guest sends their full deck to host (for deck view feature)
-        // Host stores this deck and can provide it when someone requests deck view
+        // Host stores this deck in a separate ref to preserve full card data (name, imageUrl, etc.)
+        // This data is used when someone requests to view this guest's deck
         if (webrtcIsHostRef.current && message.playerId !== undefined && message.data?.deck) {
           const guestPlayerId = message.playerId
           const deck = message.data.deck as any[]
           const deckSize = message.data.deckSize as number
 
-          logger.info(`[DECK_DATA_UPDATE] Received ${deck.length} cards for guest ${guestPlayerId}, deckSize=${deckSize}`)
+          logger.info(`[DECK_DATA_UPDATE] Received ${deck.length} cards for guest ${guestPlayerId}, deckSize=${deckSize}, first card: ${deck[0]?.name}`)
 
+          // Store full deck data in ref (preserves name, imageUrl, order even when gameState is updated)
+          const deckWithOwnerId = deck.map(card => ({
+            ...card,
+            ownerId: card.ownerId ?? guestPlayerId
+          }))
+          guestFullDecksRef.current.set(guestPlayerId, deckWithOwnerId)
+
+          // Also update gameState for immediate use
           setGameState(prev => ({
             ...prev,
             players: prev.players.map(p => {
               if (p.id === guestPlayerId) {
-                // Update guest's deck with the full data, ensuring ownerId is set
-                const deckWithOwnerId = deck.map(card => ({
-                  ...card,
-                  ownerId: card.ownerId ?? guestPlayerId
-                }))
                 return { ...p, deck: deckWithOwnerId, deckSize: deckSize }
               }
               return p

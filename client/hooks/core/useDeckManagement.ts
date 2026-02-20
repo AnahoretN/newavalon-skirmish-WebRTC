@@ -22,11 +22,12 @@ import { shuffleDeck } from '@shared/utils/array'
 import { syncLastPlayed } from './gameStateStorage'
 import { DeckType } from '../../types'
 import type { GameState, Card, CustomDeckFile } from '../../types'
+import type { WebRTCManager } from './types'
 
 interface UseDeckManagementProps {
   webrtcIsHostRef: React.MutableRefObject<boolean>
   sendWebrtcAction?: ((actionType: string, actionData: any) => void) | null
-  webrtcManagerRef?: React.MutableRefObject<ReturnType<typeof import('../../utils/webrtcManager').getWebrtcManager> | null>
+  webrtcManagerRef?: React.MutableRefObject<WebRTCManager | null>
   localPlayerIdRef?: React.MutableRefObject<number | null>
   getCardDefinition: (cardId: string) => any
   commandCardIds: Set<string>

@@ -8,7 +8,7 @@
 
 import type { GameState, Player, DeckType } from '../types'
 import type { StateDelta } from '../types'
-import type { WebrtcMessage } from '../utils/webrtcManager'
+import type { WebrtcMessage } from './types'
 import type { HostConnectionManager } from './HostConnectionManager'
 // import type { HostStateManager } from './HostStateManager' // Not used, functionality in HostManager
 import { logger } from '../utils/logger'

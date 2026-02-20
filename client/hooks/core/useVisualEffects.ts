@@ -18,12 +18,13 @@
 import { useCallback, useRef } from 'react'
 import { calculateValidTargets } from '@shared/utils/targeting'
 import type { HighlightData, FloatingTextData, TargetingModeData, AbilityAction, CommandContext, GameState } from '../../types'
+import type { WebRTCManager } from './types'
 
 interface UseVisualEffectsProps {
   // WebSocket connection
   ws: React.MutableRefObject<WebSocket | null>
   // WebRTC manager
-  webrtcManager: React.MutableRefObject<ReturnType<typeof import('../../utils/webrtcManager').getWebrtcManager> | null>
+  webrtcManager: React.MutableRefObject<WebRTCManager | null>
   // Refs
   gameStateRef: React.MutableRefObject<GameState>
   localPlayerIdRef: React.MutableRefObject<number | null>

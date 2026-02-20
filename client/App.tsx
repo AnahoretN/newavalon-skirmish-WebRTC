@@ -143,9 +143,11 @@ const AppInner = function AppInner() {
     latestHandCardSelections,
     // WebRTC props
     webrtcHostId,
+    webrtcIsHost,
     initializeWebrtcHost,
     connectAsGuest,
     requestDeckView,
+    sendFullDeckToHost,
     // Reconnection props
     isReconnecting,
     reconnectProgress,
@@ -1665,6 +1667,16 @@ const AppInner = function AppInner() {
     const isWebRTCMode = getWebRTCEnabled()
     const isOtherPlayerDeck = player.id !== localPlayerId
 
+    // If we're a guest viewing any deck (own or other player's), send our full deck data to host
+    // This ensures host has complete card data for deck view synchronization
+    if (isWebRTCMode && !webrtcIsHost && localPlayerId !== null) {
+      const localPlayer = gameState.players.find(p => p.id === localPlayerId)
+      if (localPlayer && localPlayer.deck.length > 0) {
+        logger.info(`[handleViewDeck] Sending full deck data to host (${localPlayer.deck.length} cards)`)
+        sendFullDeckToHost(localPlayerId, localPlayer.deck, localPlayer.deck.length)
+      }
+    }
+
     if (isWebRTCMode && isOtherPlayerDeck && player.deck.length === 0) {
       // Request full deck data from host
       logger.info(`[handleViewDeck] Requesting deck data for player ${player.id}`)
@@ -1672,7 +1684,7 @@ const AppInner = function AppInner() {
     }
 
     setViewingDiscard({ player, isDeckView: true })
-  }, [localPlayerId, requestDeckView])
+  }, [localPlayerId, requestDeckView, sendFullDeckToHost, gameState.players, webrtcIsHost])
   const handleViewDiscard = useCallback((player: Player) => {
     setViewingDiscard({ player, isDeckView: false })
   }, [])

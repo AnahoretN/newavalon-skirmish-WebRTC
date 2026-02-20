@@ -11,12 +11,13 @@
 import { useCallback } from 'react'
 import { PlayerColor, GameState } from '../../types'
 import { logger } from '../../utils/logger'
+import type { WebRTCManager } from './types'
 
 interface UsePlayerActionsProps {
   updateState: (updater: (prevState: GameState) => GameState) => void
   sendWebrtcAction?: ((actionType: string, actionData: any) => void) | null
   webrtcIsHostRef?: React.MutableRefObject<boolean>
-  webrtcManagerRef?: React.MutableRefObject<ReturnType<typeof import('../../utils/webrtcManager').getWebrtcManager> | null>
+  webrtcManagerRef?: React.MutableRefObject<WebRTCManager | null>
 }
 
 export function usePlayerActions(props: UsePlayerActionsProps) {

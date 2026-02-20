@@ -1,6 +1,8 @@
 /**
- * Host Connection Manager (Full Implementation)
- * Handles WebRTC peer-to-peer connections for the host with proper connection storage
+ * Host Connection Manager
+ * Handles WebRTC peer-to-peer connections for the host
+ *
+ * This is the NEW unified WebRTC system that will replace WebrtcManager
  */
 
 import { Peer, DataConnection } from 'peerjs'
@@ -16,8 +18,12 @@ import type {
 import { logger } from '../utils/logger'
 import { serializeDeltaBase64, serializeGameState } from '../utils/webrtcSerialization'
 import { encodeAbilityEffect } from '../utils/abilityMessages'
+import { encodeSessionEvent } from '../utils/sessionMessages'
 import { AbilityEffectType } from '../types/codec'
-import { WebrtcManager } from '../utils/webrtcManager'
+import { createPersonalizedGameState } from './StatePersonalization'
+
+// Enable/disable optimized serialization
+const USE_OPTIMIZED_SERIALIZATION = true
 
 export class HostConnectionManager {
   private peer: Peer | null = null
@@ -122,11 +128,20 @@ export class HostConnectionManager {
 
     conn.on('close', () => {
       logger.info(`Guest disconnected: ${peerId}`)
+      const guest = this.guests.get(peerId)
+      const playerId = guest?.playerId
+
       this.connections.delete(peerId)
       this.guests.delete(peerId)
+
+      // Mark player as reconnecting if reconnection is enabled
+      if (playerId !== null && playerId !== undefined && this.config.enableReconnection) {
+        this.markPlayerReconnecting(playerId, peerId)
+      }
+
       this.emitEvent({
         type: 'guest_disconnected',
-        data: { peerId }
+        data: { peerId, playerId }
       })
     })
 
@@ -139,11 +154,10 @@ export class HostConnectionManager {
    * Handle incoming message from guest
    */
   private handleMessage(message: WebrtcMessage, fromPeerId: string): void {
-    // Detailed logging to track all incoming messages
     const guest = this.guests.get(fromPeerId)
     const playerId = guest?.playerId ?? message.playerId ?? 'unknown'
 
-    // Always log message reception for debugging targeting mode issues
+    // Log important messages for debugging
     if (message.type === 'SET_TARGETING_MODE' || message.type === 'CLEAR_TARGETING_MODE') {
       logger.info(`[HostConnectionManager] Received ${message.type} from peer ${fromPeerId} (player ${playerId})`, {
         hasData: !!message.data,
@@ -176,12 +190,35 @@ export class HostConnectionManager {
     }
 
     try {
+      logger.info(`[sendToGuest] Sending ${message.type} to ${peerId}`)
       conn.send(message)
+      logger.info(`[sendToGuest] Sent ${message.type} to ${peerId} successfully`)
       return true
     } catch (err) {
       logger.error(`[sendToGuest] Failed to send message to ${peerId}:`, err)
       return false
     }
+  }
+
+  /**
+   * Broadcast message to all connected guests
+   */
+  broadcast(message: WebrtcMessage, excludePeerId?: string): number {
+    let successCount = 0
+
+    this.connections.forEach((conn, peerId) => {
+      if (conn.open && peerId !== excludePeerId) {
+        try {
+          conn.send(message)
+          successCount++
+        } catch (err) {
+          logger.error(`Failed to send to guest ${peerId}:`, err)
+        }
+      }
+    })
+
+    logger.debug(`Broadcast to ${successCount}/${this.connections.size} guests`)
+    return successCount
   }
 
   /**
@@ -222,7 +259,7 @@ export class HostConnectionManager {
   }
 
   /**
-   * Accept guest and send full game state
+   * Accept guest and send current game state (binary optimized)
    */
   acceptGuest(peerId: string, gameState: GameState, playerId: number): boolean {
     const conn = this.connections.get(peerId)
@@ -240,17 +277,20 @@ export class HostConnectionManager {
       guest.playerId = playerId
     }
 
-    const message: WebrtcMessage = {
-      type: 'JOIN_ACCEPT',
-      senderId: this.peer?.id,
-      playerId: playerId,
-      data: { gameState },
-      timestamp: Date.now()
-    }
-
     try {
+      const stateData = serializeGameState(gameState, playerId)
+      const base64Data = btoa(String.fromCharCode(...stateData))
+
+      const message: WebrtcMessage = {
+        type: 'JOIN_ACCEPT_BINARY',
+        senderId: this.peer?.id,
+        playerId: playerId,
+        data: base64Data,
+        timestamp: Date.now()
+      }
+
       conn.send(message)
-      logger.info(`Accepted guest ${peerId} as player ${playerId}`)
+      logger.info(`[acceptGuest] Sent JOIN_ACCEPT_BINARY to ${peerId}, state size: ${base64Data.length} chars`)
       return true
     } catch (err) {
       logger.error(`[acceptGuest] Failed to send JOIN_ACCEPT to ${peerId}:`, err)
@@ -259,83 +299,80 @@ export class HostConnectionManager {
   }
 
   /**
-   * Broadcast message to all connected guests
-   */
-  broadcast(message: WebrtcMessage, excludePeerId?: string): number {
-    let successCount = 0
-
-    this.connections.forEach((conn, peerId) => {
-      if (conn.open && peerId !== excludePeerId) {
-        try {
-          conn.send(message)
-          successCount++
-        } catch (err) {
-          logger.error(`Failed to send to guest ${peerId}:`, err)
-        }
-      }
-    })
-
-    logger.debug(`Broadcast to ${successCount}/${this.connections.size} guests`)
-    return successCount
-  }
-
-  /**
-   * Broadcast state delta to all guests (optimized binary format as base64)
-   */
-  broadcastStateDelta(delta: StateDelta, excludePeerId?: string): void {
-    // Serialize delta to base64 string (PeerJS will serialize as JSON)
-    const base64Data = serializeDeltaBase64(delta)
-
-    const message: WebrtcMessage = {
-      type: 'STATE_DELTA_BINARY',
-      senderId: this.peer?.id,
-      data: base64Data,
-      timestamp: Date.now()
-    }
-    logger.info(`[broadcastStateDelta] Sending BINARY STATE_DELTA (base64): ${base64Data.length} chars, playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, boardCells=${delta.boardCells?.length || 0}`)
-    this.broadcast(message, excludePeerId)
-    logger.info(`[broadcastStateDelta] Sent STATE_DELTA from player ${delta.sourcePlayerId} to ${this.connections.size} guests`)
-  }
-
-  /**
-   * Broadcast game state to all guests
-   * OPTIMIZED: Sends personalized data to each player and removes heavy fields
+   * Broadcast game state to all guests (personalized)
    */
   broadcastGameState(gameState: GameState, excludePeerId?: string): void {
-    let successCount = 0
+    if (this.connections.size === 0) {
+      logger.debug('[broadcastGameState] No guests to broadcast to')
+      return
+    }
 
     // Log scores being broadcast for debugging
     const scores = gameState.players.map(p => `P${p.id}:${p.score}`).join(', ')
     logger.info(`[broadcastGameState] Broadcasting state with scores: ${scores}`)
 
+    let successCount = 0
+
     this.connections.forEach((conn, peerId) => {
-      if (!conn.open || peerId === excludePeerId) {
+      // Skip excluded peer or closed connections
+      if (!conn.open || (excludePeerId && peerId === excludePeerId)) {
         return
       }
 
-      // Get the player ID for this guest
+      // Get player ID for this guest
       const guest = this.guests.get(peerId)
-      const recipientPlayerId = guest?.playerId ?? null
-
-      // Create personalized optimized state for this player
-      const personalizedState = WebrtcManager.createPersonalizedGameState(gameState, recipientPlayerId)
-
-      const message: WebrtcMessage = {
-        type: 'STATE_UPDATE_COMPACT', // Use compact message type with card IDs
-        senderId: this.peer?.id,
-        data: { gameState: personalizedState },
-        timestamp: Date.now()
+      if (!guest) {
+        return
       }
 
       try {
+        // Create personalized state for this guest
+        const personalizedState = createPersonalizedGameState(gameState, guest.playerId)
+
+        const message: WebrtcMessage = {
+          type: 'STATE_UPDATE_COMPACT',
+          senderId: this.peer?.id,
+          data: { gameState: personalizedState },
+          timestamp: Date.now()
+        }
+
         conn.send(message)
         successCount++
       } catch (err) {
-        logger.error(`[broadcastGameState] Failed to send to guest ${peerId} (player ${recipientPlayerId}):`, err)
+        logger.error(`[broadcastGameState] Failed to send to guest ${peerId} (player ${guest.playerId}):`, err)
       }
     })
 
     logger.debug(`[broadcastGameState] Sent to ${successCount}/${this.connections.size} guests`)
+  }
+
+  /**
+   * Broadcast state delta to all guests (optimized binary format)
+   */
+  broadcastStateDelta(delta: StateDelta, excludePeerId?: string): void {
+    if (USE_OPTIMIZED_SERIALIZATION) {
+      const base64Data = serializeDeltaBase64(delta)
+
+      const message: WebrtcMessage = {
+        type: 'STATE_DELTA_BINARY',
+        senderId: this.peer?.id,
+        data: base64Data,
+        timestamp: Date.now()
+      }
+
+      logger.info(`[broadcastStateDelta] Sending BINARY STATE_DELTA (base64): ${base64Data.length} chars, playerDeltas=${Object.keys(delta.playerDeltas || {}).length}, boardCells=${delta.boardCells?.length || 0}`)
+      this.broadcast(message, excludePeerId)
+      logger.info(`[broadcastStateDelta] Sent STATE_DELTA from player ${delta.sourcePlayerId} to ${this.connections.size} guests`)
+    } else {
+      // Fallback to JSON format
+      const message: WebrtcMessage = {
+        type: 'STATE_DELTA',
+        senderId: this.peer?.id,
+        data: { delta },
+        timestamp: Date.now()
+      }
+      this.broadcast(message, excludePeerId)
+    }
   }
 
   // ==================== Codec Methods ====================
@@ -346,8 +383,6 @@ export class HostConnectionManager {
   broadcastCardState(gameState: GameState, localPlayerId: number | null, excludePeerId?: string): number {
     try {
       const stateData = serializeGameState(gameState, localPlayerId)
-
-      // Convert to base64 for PeerJS JSON serialization
       const base64Data = btoa(String.fromCharCode(...stateData))
 
       const message: WebrtcMessage = {
@@ -382,8 +417,6 @@ export class HostConnectionManager {
   ): number {
     try {
       const effectData = encodeAbilityEffect(effectType, data)
-
-      // Convert to base64 for PeerJS JSON serialization
       const base64Data = btoa(String.fromCharCode(...effectData))
 
       const message: WebrtcMessage = {
@@ -401,6 +434,45 @@ export class HostConnectionManager {
       return 0
     }
   }
+
+  /**
+   * Broadcast session event to all guests
+   */
+  broadcastSessionEvent(
+    eventType: number,
+    data: {
+      playerId?: number
+      playerName?: string
+      startingPlayerId?: number
+      roundNumber?: number
+      winners?: number[]
+      newPhase?: number
+      newActivePlayerId?: number
+      gameWinner?: number | null
+    },
+    excludePeerId?: string
+  ): number {
+    try {
+      const eventData = encodeSessionEvent(eventType, data)
+      const base64Data = btoa(String.fromCharCode(...eventData))
+
+      const message: WebrtcMessage = {
+        type: 'SESSION_EVENT',
+        senderId: this.peer?.id,
+        data: base64Data,
+        timestamp: Date.now()
+      }
+
+      const successCount = this.broadcast(message, excludePeerId)
+      logger.debug(`[broadcastSessionEvent] Sent event ${eventType} to ${successCount} guests`)
+      return successCount
+    } catch (err) {
+      logger.error('[broadcastSessionEvent] Failed to encode/broadcast event:', err)
+      return 0
+    }
+  }
+
+  // ==================== Convenience Methods ====================
 
   /**
    * Highlight cell convenience method
@@ -448,46 +520,6 @@ export class HostConnectionManager {
       {},
       excludePeerId
     )
-  }
-
-  /**
-   * Broadcast session event to all guests
-   */
-  broadcastSessionEvent(
-    eventType: number,
-    data: {
-      playerId?: number
-      playerName?: string
-      startingPlayerId?: number
-      roundNumber?: number
-      winners?: number[]
-      newPhase?: number
-      newActivePlayerId?: number
-      gameWinner?: number | null
-    },
-    excludePeerId?: string
-  ): number {
-    try {
-      const { encodeSessionEvent } = require('../utils/sessionMessages')
-      const eventData = encodeSessionEvent(eventType, data)
-
-      // Convert to base64 for PeerJS JSON serialization
-      const base64Data = btoa(String.fromCharCode(...eventData))
-
-      const message: WebrtcMessage = {
-        type: 'SESSION_EVENT',
-        senderId: this.peer?.id,
-        data: base64Data,
-        timestamp: Date.now()
-      }
-
-      const successCount = this.broadcast(message, excludePeerId)
-      logger.debug(`[broadcastSessionEvent] Sent event ${eventType} to ${successCount} guests`)
-      return successCount
-    } catch (err) {
-      logger.error('[broadcastSessionEvent] Failed to encode/broadcast event:', err)
-      return 0
-    }
   }
 
   /**
@@ -579,6 +611,22 @@ export class HostConnectionManager {
   }
 
   /**
+   * Send action to all guests (relayed from host)
+   */
+  sendAction(actionType: string, actionData: any): boolean {
+    const message: WebrtcMessage = {
+      type: 'ACTION' as any,
+      senderId: this.peer?.id,
+      data: { actionType, actionData },
+      timestamp: Date.now()
+    }
+
+    return this.broadcast(message) > 0
+  }
+
+  // ==================== Getters ====================
+
+  /**
    * Get connection info for all connected guests
    */
   getConnectionInfo(): WebrtcConnectionInfo[] {
@@ -642,45 +690,6 @@ export class HostConnectionManager {
     return Array.from(this.connections.values()).some(conn => conn.open)
   }
 
-  /**
-   * Subscribe to events
-   */
-  on(eventHandler: WebrtcEventHandler): () => void {
-    this.eventHandlers.add(eventHandler)
-    return () => this.eventHandlers.delete(eventHandler)
-  }
-
-  /**
-   * Emit event to all handlers
-   */
-  private emitEvent(event: WebrtcEvent): void {
-    this.eventHandlers.forEach(handler => {
-      try {
-        handler(event)
-      } catch (err) {
-        logger.error('Error in WebRTC event handler:', err)
-      }
-    })
-  }
-
-  /**
-   * Cleanup and disconnect all connections
-   */
-  cleanup(): void {
-    logger.info('Cleaning up HostConnectionManager...')
-
-    this.connections.forEach(conn => conn.close())
-    this.connections.clear()
-    this.guests.clear()
-    this.reconnectingPlayers.clear()
-
-    // Destroy peer
-    if (this.peer) {
-      this.peer.destroy()
-      this.peer = null
-    }
-  }
-
   // ==================== Reconnection Management ====================
 
   /**
@@ -709,9 +718,10 @@ export class HostConnectionManager {
    */
   isPlayerReconnecting(playerId: number): boolean {
     const data = this.reconnectingPlayers.get(playerId)
-    if (!data) {return false}
+    if (!data) {
+      return false
+    }
 
-    // Check if still within window
     const elapsed = Date.now() - data.disconnectedAt
     if (elapsed >= this.reconnectionTimeout) {
       this.reconnectingPlayers.delete(playerId)
@@ -726,7 +736,9 @@ export class HostConnectionManager {
    */
   getPlayerReconnectTimeRemaining(playerId: number): number {
     const data = this.reconnectingPlayers.get(playerId)
-    if (!data) {return 0}
+    if (!data) {
+      return 0
+    }
 
     const elapsed = Date.now() - data.disconnectedAt
     return Math.max(0, this.reconnectionTimeout - elapsed)
@@ -827,6 +839,52 @@ export class HostConnectionManager {
   cancelPlayerReconnection(playerId: number): void {
     this.reconnectingPlayers.delete(playerId)
     logger.info(`[Reconnection] Cancelled reconnection window for player ${playerId}`)
+  }
+
+  // ==================== Event Handling ====================
+
+  /**
+   * Subscribe to events
+   */
+  on(eventHandler: WebrtcEventHandler): () => void {
+    this.eventHandlers.add(eventHandler)
+    return () => this.eventHandlers.delete(eventHandler)
+  }
+
+  /**
+   * Emit event to all handlers
+   */
+  private emitEvent(event: WebrtcEvent): void {
+    this.eventHandlers.forEach(handler => {
+      try {
+        handler(event)
+      } catch (err) {
+        logger.error('Error in WebRTC event handler:', err)
+      }
+    })
+  }
+
+  /**
+   * Cleanup and disconnect all connections
+   */
+  cleanup(): void {
+    logger.info('Cleaning up HostConnectionManager...')
+
+    this.connections.forEach(conn => conn.close())
+    this.connections.clear()
+    this.guests.clear()
+    this.reconnectingPlayers.clear()
+
+    if (this.peer) {
+      try {
+        this.peer.destroy()
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+      this.peer = null
+    }
+
+    logger.info('HostConnectionManager cleaned up')
   }
 }
 

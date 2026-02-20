@@ -14,10 +14,11 @@ import { useCallback } from 'react'
 import { logger } from '../../utils/logger'
 import type { GameState } from '../../types'
 import { getWebRTCEnabled } from '../useWebRTCEnabled'
+import type { WebRTCManager } from './types'
 
 interface UseReadyCheckProps {
   ws: React.MutableRefObject<WebSocket | null>
-  webrtcManager: React.MutableRefObject<ReturnType<typeof import('../../utils/webrtcManager').getWebrtcManager> | null>
+  webrtcManager: React.MutableRefObject<WebRTCManager | null>
   gameStateRef: React.MutableRefObject<any>
   localPlayerIdRef: React.MutableRefObject<number | null>
   webrtcIsHostRef: React.MutableRefObject<boolean>

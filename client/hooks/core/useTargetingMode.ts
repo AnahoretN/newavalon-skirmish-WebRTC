@@ -12,12 +12,13 @@ import { useCallback } from 'react'
 import type { TargetingModeData, AbilityAction, CommandContext, GameState } from '../../types'
 import { calculateValidTargets } from '@shared/utils/targeting'
 import { logger } from '../../utils/logger'
+import type { WebRTCManager } from './types'
 
 interface UseTargetingModeProps {
   // WebSocket connection
   ws: React.MutableRefObject<WebSocket | null>
   // WebRTC manager
-  webrtcManager: React.MutableRefObject<ReturnType<typeof import('../../utils/webrtcManager').getWebrtcManager> | null>
+  webrtcManager: React.MutableRefObject<WebRTCManager | null>
   // Refs
   gameStateRef: React.MutableRefObject<GameState>
   webrtcIsHostRef: React.MutableRefObject<boolean>

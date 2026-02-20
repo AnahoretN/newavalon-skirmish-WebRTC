@@ -18,10 +18,11 @@ import type { GridSize, GameState } from '../../types'
 import { MAX_PLAYERS } from '../../constants'
 import { logger } from '../../utils/logger'
 import { createNewPlayer } from './gameCreators'
+import type { WebRTCManager } from './types'
 
 interface UseGameSettingsProps {
   ws: React.MutableRefObject<WebSocket | null>
-  webrtcManager: React.MutableRefObject<ReturnType<typeof import('../../utils/webrtcManager').getWebrtcManager> | null>
+  webrtcManager: React.MutableRefObject<WebRTCManager | null>
   gameStateRef: React.MutableRefObject<GameState>
   webrtcIsHostRef: React.MutableRefObject<boolean>
   setGameState: React.Dispatch<React.SetStateAction<GameState>>

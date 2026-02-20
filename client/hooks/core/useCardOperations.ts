@@ -16,10 +16,11 @@ import { shuffleDeck } from '@shared/utils/array'
 import { deepCloneState } from '../../utils/common'
 import { recalculateBoardStatuses } from '@shared/utils/boardUtils'
 import type { GameState, Player } from '../../types'
+import type { WebRTCManager } from './types'
 
 interface UseCardOperationsProps {
   ws: React.MutableRefObject<WebSocket | null>
-  webrtcManager: React.MutableRefObject<ReturnType<typeof import('../../utils/webrtcManager').getWebrtcManager> | null>
+  webrtcManager: React.MutableRefObject<WebRTCManager | null>
   gameStateRef: React.MutableRefObject<GameState>
   localPlayerIdRef: React.MutableRefObject<number | null>
   webrtcIsHostRef: React.MutableRefObject<boolean>

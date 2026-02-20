@@ -21,10 +21,11 @@ import { deepCloneState } from '../../utils/common'
 import { recalculateBoardStatuses } from '@shared/utils/boardUtils'
 import { toggleActivePlayer as toggleActivePlayerPhase, passTurnToNextPlayer, playerHasCardsOnBoard } from '../../host/PhaseManagement'
 import type { GameState, Board, DeckType } from '../../types'
+import type { WebRTCManager } from './types'
 
 interface UsePhaseManagementProps {
   ws: React.MutableRefObject<WebSocket | null>
-  webrtcManagerRef: React.MutableRefObject<ReturnType<typeof import('../../utils/webrtcManager').getWebrtcManager> | null>
+  webrtcManagerRef: React.MutableRefObject<WebRTCManager | null>
   webrtcIsHostRef: React.MutableRefObject<boolean>
   gameStateRef: React.MutableRefObject<GameState>
   scoreDeltaAccumulator: Map<number, { delta: number, timerId: ReturnType<typeof setTimeout> }>

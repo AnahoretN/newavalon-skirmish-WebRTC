@@ -77,3 +77,6 @@ export {
   playerHasCardsOnBoard,
   passTurnToNextPlayer
 } from './PhaseManagement'
+
+// Unified WebRTC Manager (NEW - replaces old WebrtcManager)
+export { WebrtcManagerNew, getWebrtcManagerNew, cleanupWebrtcManagerNew } from './WebrtcManager'
