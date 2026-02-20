@@ -3,7 +3,10 @@
  * Exports all host-related functionality
  *
  * Architecture:
- * - HostConnectionManager: Manages WebRTC connections
+ * - WebrtcPeer: Low-level PeerJS wrapper
+ * - StatePersonalization: Utilities for personalized game states
+ * - GuestConnection: Guest connection manager
+ * - HostConnectionManager: Manages WebRTC connections for host
  * - HostStateManager: Centralized state management for host
  * - GuestStateSync: Sends state changes from guest to host
  * - HostManager: Combines everything for easy use
@@ -31,15 +34,32 @@ export type { StateUpdateOptions } from './HostStateManager'
 export type { GameLogEntry, GameLoggerConfig } from './GameLogger'
 export type { TimerEvents } from './TimerSystem'
 
+// WebrtcPeer - Low-level PeerJS wrapper
+export { WebrtcPeer } from './WebrtcPeer'
+export type { WebrtcPeerEventHandler, WebrtcPeerEvent, WebrtcPeerEventType } from './WebrtcPeer'
+
+// StatePersonalization - Utilities for personalized game states
+export {
+  optimizeCard,
+  createCardBack,
+  toCompactCardData,
+  createPersonalizedGameState,
+  createCompactStateForHost
+} from './StatePersonalization'
+export type { CompactCardData } from './StatePersonalization'
+
+// GuestConnection - Guest connection manager
+export { GuestConnectionManager } from './GuestConnection'
+export type { GuestConnectionManagerConfig } from './GuestConnection'
+
 // Classes
-export { HostConnectionManager, getHostConnectionManager, cleanupHostConnectionManager } from './HostConnectionManager'
-// export { HostMessageHandler } from './HostMessageHandler' // TODO: Not currently used, functionality integrated into HostManager
+export { HostConnectionManager } from './HostConnectionManager'
 export { HostStateManager } from './HostStateManager'
 export { GuestStateSync } from './GuestStateSync'
 export { VisualEffectsManager } from './VisualEffects'
 export { TimerSystem, TIMER_CONFIG } from './TimerSystem'
 export { GameLogger } from './GameLogger'
-export { HostManager, getHostManager, cleanupHostManager } from './HostManager'
+export { HostManager } from './HostManager'
 export type { HostManagerConfig } from './HostManager'
 
 // Phase Management (utility functions)

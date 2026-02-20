@@ -6,10 +6,12 @@
 // Types are imported from other modules where needed
 
 // Message types for WebRTC communication
+// Unified type from both WebrtcManager and host/types.ts
 export type WebrtcMessageType =
   | 'JOIN_REQUEST'         // Guest requests to join
   | 'JOIN_ACCEPT'          // Host accepts guest, sends current state
   | 'JOIN_ACCEPT_MINIMAL'  // Host accepts guest with minimal info (to avoid size limit)
+  | 'JOIN_ACCEPT_BINARY'   // Host accepts guest with binary optimized state
   | 'STATE_UPDATE'         // Host broadcasts full state update
   | 'STATE_UPDATE_COMPACT' // Compact state with card IDs only (reduces size) - LEGACY
   | 'STATE_UPDATE_COMPACT_JSON' // Compact state with registry indices - NEW
@@ -24,6 +26,7 @@ export type WebrtcMessageType =
   | 'PLAYER_READY'         // Guest signals ready
   | 'HOST_READY'           // Host signals ready
   | 'GAME_START'           // Host starts the game
+  | 'GAME_RESET'           // Reset game to lobby state
   | 'ASSIGN_TEAMS'         // Host assigns teams
   | 'SET_GAME_MODE'        // Host sets game mode
   | 'SET_GAME_PRIVACY'     // Host sets game privacy
@@ -50,8 +53,8 @@ export type WebrtcMessageType =
   | 'SYNC_VALID_TARGETS'   // Sync valid targets for ability
   | 'TRIGGER_DECK_SELECTION' // Trigger deck selection
   | 'TRIGGER_HAND_CARD_SELECTION' // Trigger hand card selection
-  | 'TRIGGER_CLICK_WAVE' // Trigger click wave effect
-  | 'CLICK_WAVE_TRIGGERED' // Click wave was triggered
+  | 'TRIGGER_CLICK_WAVE'     // Trigger click wave effect
+  | 'CLICK_WAVE_TRIGGERED'   // Click wave was triggered
   // Ability activation messages
   | 'ABILITY_ACTIVATED'    // Player activated an ability (guest -> host)
   | 'ABILITY_MODE_SET'     // Host broadcasts ability mode to all
@@ -72,14 +75,16 @@ export type WebrtcMessageType =
   | 'FLOATING_TEXT_BATCH_TRIGGERED' // Batch floating text was triggered
   | 'NO_TARGET_TRIGGERED'  // No target overlay was triggered
   | 'DECK_SELECTION_TRIGGERED' // Deck selection was triggered
-  | 'REQUEST_DECK_VIEW'      // Request to view another player's deck (guest -> host)
-  | 'DECK_VIEW_DATA'         // Response with full deck data (host -> guest)
-  | 'DECK_DATA_UPDATE'        // Guest sends their full deck data to host (for deck view)
   | 'HAND_CARD_SELECTION_TRIGGERED' // Hand card selection was triggered
   | 'TARGET_SELECTION_TRIGGERED' // Target selection was triggered
   | 'HIGHLIGHTS_SYNC'      // Sync highlights
   | 'CLEAR_ALL_EFFECTS'    // Clear all effects
   | 'VALID_TARGETS_SYNC'   // Sync valid targets
+  // Deck view messages
+  | 'REQUEST_DECK_VIEW'    // Request to view another player's deck
+  | 'DECK_VIEW_DATA'       // Response with full deck data
+  | 'DECK_DATA_UPDATE'     // Guest sends their full deck data to host (for deck view)
+  | 'REQUEST_DECK_DATA'    // Host requests deck data from guests after F5 restore
   | 'GAME_LOGS'            // Game logs for debugging
   // New codec system messages (binary format)
   | 'CARD_REGISTRY'        // Card definitions registry (sent once per connection) - BINARY
