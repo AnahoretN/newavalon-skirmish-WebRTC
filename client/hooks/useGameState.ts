@@ -1305,11 +1305,53 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                       }
                     }
                   } else {
-                    // For non-guest players, check if guest sent handCards with status updates
-                    // This happens when guest places Revealed tokens on other players' cards
+                    // For non-guest players, check if guest sent card data updates
                     const guestPlayer = guestState.players.find((gp: any) => gp.id === p.id)
-                    if (guestPlayer && (guestPlayer.handCards || []).length > 0 && p.hand) {
-                      // Apply status updates from guest's handCards to host's hand
+                    if (!guestPlayer) {
+                      return p
+                    }
+
+                    // CRITICAL: Check if this is a dummy player - accept full state updates
+                    const isDummyPlayer = p.isDummy === true
+
+                    if (isDummyPlayer && ((guestPlayer.handCards && guestPlayer.handCards.length > 0) ||
+                                         (guestPlayer.deckCards && guestPlayer.deckCards.length > 0) ||
+                                         (guestPlayer.discardCards && guestPlayer.discardCards.length > 0))) {
+                      // Dummy player - reconstruct full state from guest's compact data
+                      const reconstructCard = (compactCard: any) => {
+                        const cardDef = getCardDefinition(compactCard.baseId)
+                        if (cardDef) {
+                          return {
+                            ...cardDef,
+                            id: compactCard.id,
+                            baseId: compactCard.baseId,
+                            ownerId: p.id,
+                            power: compactCard.power,
+                            powerModifier: compactCard.powerModifier || 0,
+                            isFaceDown: compactCard.isFaceDown || false,
+                            statuses: compactCard.statuses || []
+                          }
+                        }
+                        return { id: compactCard.id, baseId: compactCard.baseId, name: 'Unknown', power: 0 }
+                      }
+
+                      const reconstructedHand = (guestPlayer.handCards || []).map(reconstructCard)
+                      const reconstructedDeck = (guestPlayer.deckCards || []).map(reconstructCard)
+                      const reconstructedDiscard = (guestPlayer.discardCards || []).map(reconstructCard)
+
+                      logger.info(`[STATE_UPDATE_COMPACT] Host: Guest ${guestPlayerId} modified dummy player ${p.id}: hand=${reconstructedHand.length}, deck=${reconstructedDeck.length}, discard=${reconstructedDiscard.length}`)
+
+                      return {
+                        ...p,
+                        hand: reconstructedHand,
+                        deck: reconstructedDeck,
+                        discard: reconstructedDiscard,
+                        handSize: reconstructedHand.length,
+                        deckSize: reconstructedDeck.length,
+                        discardSize: reconstructedDiscard.length,
+                      }
+                    } else if (guestPlayer.handCards && guestPlayer.handCards.length > 0 && p.hand) {
+                      // Non-dummy player - apply status updates from guest's handCards only
                       const guestHandCards = guestPlayer.handCards || []
                       const updatedHand = p.hand.map(hostCard => {
                         const guestCard = guestHandCards.find((gc: any) => gc.id === hostCard.id)
@@ -1540,6 +1582,14 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                     return { id: compactCard.id, name: 'Unknown', power: 0 }
                   }
                   finalDeck = remotePlayer.deckCards.map(reconstructCard)
+                  if (remotePlayer.id === 3) {
+                    const cardCounts: Record<string, number> = {}
+                    finalDeck.forEach(card => {
+                      const baseId = card.baseId || card.id
+                      cardCounts[baseId] = (cardCounts[baseId] || 0) + 1
+                    })
+                    logger.info(`[STATE_UPDATE_COMPACT] Reconstructed deck for Player 3 (dummy): ${finalDeck.length} cards`, cardCounts)
+                  }
                   logger.debug(`[STATE_UPDATE_COMPACT] Reconstructed deck for player ${remotePlayer.id}: ${finalDeck.length} cards`)
                 } else {
                   // Host is NOT sending deck data for this player
@@ -1550,7 +1600,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                   if (hasRealDeckData) {
                     // Preserve real deck data from previous CHANGE_PLAYER_DECK message
                     // But adjust size to match remoteDeckSize (in case cards were drawn)
+                    const beforeSlice = localPlayer.deck.length
                     finalDeck = localPlayer.deck.slice(0, remoteDeckSize)
+                    if (remotePlayer.id === 3) { // Log for dummy player 3
+                      logger.info(`[STATE_UPDATE_COMPACT] Player 3 deck slice: before=${beforeSlice}, remoteDeckSize=${remoteDeckSize}, after=${finalDeck.length}`)
+                    }
                     logger.debug(`[STATE_UPDATE_COMPACT] Preserved deck for player ${remotePlayer.id}: ${finalDeck.length} cards`)
                   } else {
                     // Create placeholders - we don't have real data for this player's deck
@@ -1601,7 +1655,39 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
                 // Use remote hand if available (has card data), otherwise create placeholders
                 let finalHand: any[]
-                if (remotePlayer.hand && remotePlayer.hand.length > 0) {
+                // Check for handCards first (sent for dummy players), then fall back to hand
+                const hasHandCards = (remotePlayer as any).handCards && (remotePlayer as any).handCards.length > 0
+                const hasHandData = remotePlayer.hand && remotePlayer.hand.length > 0
+
+                if (hasHandCards) {
+                  // Dummy player - reconstruct from handCards (compact format)
+                  const handCards = (remotePlayer as any).handCards
+                  finalHand = handCards.map((hc: any) => {
+                    const cardDef = getCardDefinition(hc.baseId)
+                    if (cardDef) {
+                      return {
+                        ...cardDef,
+                        id: hc.id,
+                        baseId: hc.baseId,
+                        ownerId: remotePlayer.id,
+                        power: hc.power,
+                        powerModifier: hc.powerModifier || 0,
+                        isFaceDown: hc.isFaceDown || false,
+                        statuses: hc.statuses || []
+                      }
+                    }
+                    // Fallback if card not found
+                    return {
+                      id: hc.id,
+                      baseId: hc.baseId,
+                      name: 'Unknown',
+                      power: hc.power || 0,
+                      ownerId: remotePlayer.id,
+                      isPlaceholder: false
+                    }
+                  })
+                  logger.info(`[STATE_UPDATE_COMPACT] Reconstructed ${finalHand.length} hand cards from handCards for player ${remotePlayer.id}`)
+                } else if (hasHandData) {
                   // Remote has hand data - process each card
                   finalHand = remotePlayer.hand.map((card: any, i: number) => processHandCard(card, i))
                   const revealedCount = finalHand.filter((c: any) => !c.isPlaceholder).length
@@ -3087,6 +3173,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                     }
                   }
                   // Fallback for cards with baseId but no definition found
+                  logger.warn(`[CHANGE_PLAYER_DECK] Card definition not found for baseId: ${compactCard.baseId}, id: ${compactCard.id}`)
                   return {
                     id: compactCard.id,
                     baseId: compactCard.baseId,
@@ -3103,6 +3190,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                   }
                 }
                 // Fallback for cards without baseId
+                logger.warn(`[CHANGE_PLAYER_DECK] Card without baseId: ${compactCard.id}`)
                 return {
                   id: compactCard.id,
                   baseId: compactCard.id,
@@ -3118,7 +3206,21 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                   ability: ''
                 }
               })
-              logger.info(`[CHANGE_PLAYER_DECK] Reconstructed deck for player ${targetPlayerId} from host data: ${deckData.length} cards`)
+
+              // Debug: log reconstructed deck composition
+              if (deckType === 'Optimates' || deckType === 'Command') {
+                const cardCounts: Record<string, number> = {}
+                deckData.forEach(card => {
+                  const baseId = card.baseId || card.id
+                  cardCounts[baseId] = (cardCounts[baseId] || 0) + 1
+                })
+                logger.info(`[CHANGE_PLAYER_DECK] Reconstructed ${deckType} deck for player ${targetPlayerId}:`, {
+                  totalCards: deckData.length,
+                  cardCounts
+                })
+              } else {
+                logger.info(`[CHANGE_PLAYER_DECK] Reconstructed deck for player ${targetPlayerId} from host data: ${deckData.length} cards`)
+              }
             } else if (!isHost) {
               // Guest without deck data - this shouldn't happen with new system
               // but create locally as fallback

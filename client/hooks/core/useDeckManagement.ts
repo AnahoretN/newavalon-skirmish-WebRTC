@@ -148,6 +148,19 @@ export function useDeckManagement(props: UseDeckManagementProps) {
         statuses: card.statuses || []
       }))
 
+      // Debug: log compact deck data being sent
+      if (deckType === 'Optimates') {
+        const baseIdCounts: Record<string, number> = {}
+        compactDeckData.forEach(card => {
+          const baseId = card.baseId || card.id
+          baseIdCounts[baseId] = (baseIdCounts[baseId] || 0) + 1
+        })
+        logger.info(`[changePlayerDeck] Host sending Optimates deck data:`, {
+          totalCards: compactDeckData.length,
+          baseIdCounts
+        })
+      }
+
       if (webrtcManagerRef?.current) {
         webrtcManagerRef.current.broadcastToGuests({
           type: 'CHANGE_PLAYER_DECK',

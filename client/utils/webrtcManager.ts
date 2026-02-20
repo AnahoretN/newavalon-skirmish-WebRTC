@@ -630,6 +630,7 @@ export class WebrtcManager {
       ...gameState,
       players: gameState.players.map(p => {
         const isOwnHand = recipientPlayerId !== null && p.id === recipientPlayerId
+        const isDummyPlayer = p.isDummy === true
 
         if (isOwnHand) {
           // Send COMPACT CARD DATA (id + baseId) for own player's hand, deck, discard
@@ -677,8 +678,50 @@ export class WebrtcManager {
             discardSize: discardSize,
             handSize: handSize
           }
+        } else if (isDummyPlayer) {
+          // CRITICAL: Send full deck data for dummy players since all players can control them
+          // Guests need accurate deck state because they can't know which cards were drawn
+          const deckSize = p.deck.length ?? 0
+          const discardSize = p.discard.length ?? 0
+          const handSize = p.hand.length ?? 0
+          logger.info(`[createPersonalizedGameState] Player ${p.id} (dummy): sending ${handSize} hand, ${deckSize} deck, ${discardSize} discard`)
+          return {
+            ...p,
+            // Send compact card data with baseId for dummy player's hand, deck, discard
+            handCards: p.hand.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            })),
+            deckCards: p.deck.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            })),
+            discardCards: p.discard.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            })),
+            hand: [],
+            deck: [],
+            discard: [],
+            announcedCard: p.announcedCard ? WebrtcManager.optimizeCard(p.announcedCard) : null,
+            deckSize: deckSize,
+            discardSize: discardSize,
+            handSize: handSize
+          }
         } else {
-          // Send card data for other players
+          // Send card data for other players (non-dummy)
           // - Revealed cards (isFaceDown=false) are sent as compact data for viewing
           // - Face-down cards are sent as card backs
           const deckSize = p.deckSize ?? p.deck.length ?? 0
@@ -783,7 +826,11 @@ export class WebrtcManager {
           const handCardsWithStatuses = p.hand.filter((c: any) => c.statuses && c.statuses.length > 0)
           const shouldSendHandCards = handCardsWithStatuses.length > 0
 
-          const compactPlayer = {
+          // CRITICAL: Check if this is a dummy player - all players can control them
+          // so we need to send full deck/discard data for proper synchronization
+          const isDummyPlayer = p.isDummy === true
+
+          const compactPlayer: any = {
             ...p,
             // Send only hand cards that have been modified (have statuses)
             ...(shouldSendHandCards && {
@@ -804,11 +851,42 @@ export class WebrtcManager {
             handSize: p.handSize ?? p.hand.length ?? 0,
             discardSize: p.discardSize ?? p.discard.length ?? 0
           }
+
+          // For dummy players, always send full deck/discard data (not just sizes)
+          // This allows guests to draw cards, play cards, etc. for dummy players
+          if (isDummyPlayer) {
+            logger.info(`[createCompactStateForHost] Dummy player ${p.id}: sending ${p.hand.length} hand, ${p.deck.length} deck, ${p.discard.length} discard`)
+            compactPlayer.handCards = p.hand.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier || 0,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            }))
+            compactPlayer.deckCards = p.deck.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier || 0,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            }))
+            compactPlayer.discardCards = p.discard.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier || 0,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            }))
+          }
+
           // Log score for debugging - CRITICAL for verifying score sync
           if (p.id === localPlayerId) {
             logger.info(`[createCompactStateForHost] Local player ${p.id} score: ${p.score}`)
           } else {
-            logger.info(`[createCompactStateForHost] Other player ${p.id} score: ${compactPlayer.score} (from original)`)
+            logger.info(`[createCompactStateForHost] Other player ${p.id} (${isDummyPlayer ? 'dummy' : 'real'}) score: ${compactPlayer.score} (from original)`)
           }
           return compactPlayer
         }

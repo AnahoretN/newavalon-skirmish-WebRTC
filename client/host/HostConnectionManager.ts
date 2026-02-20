@@ -345,10 +345,14 @@ export class HostConnectionManager {
    * - Decks/discard are sent as card IDs for own player (size optimization)
    */
   private createPersonalizedGameState(gameState: GameState, recipientPlayerId: number | null): GameState {
+    logger.info(`[createPersonalizedGameState] recipientPlayerId=${recipientPlayerId}, players=${gameState.players.length}`)
     const result = {
       ...gameState,
       players: gameState.players.map(p => {
         const isOwnHand = recipientPlayerId !== null && p.id === recipientPlayerId
+        const isDummyPlayer = p.isDummy === true
+
+        logger.info(`[createPersonalizedGameState] Player ${p.id}: isDummy=${p.isDummy}, isOwnHand=${isOwnHand}, isDummyPlayer=${isDummyPlayer}`)
 
         if (isOwnHand) {
           // Send COMPACT CARD DATA (id + baseId) for own player's hand, deck, discard
@@ -395,8 +399,50 @@ export class HostConnectionManager {
             discardSize: discardSize,
             handSize: handSize
           }
+        } else if (isDummyPlayer) {
+          // CRITICAL: Send full deck data for dummy players since all players can control them
+          // Guests need accurate deck state because they can't know which cards were drawn
+          const deckSize = p.deck.length ?? 0
+          const discardSize = p.discard.length ?? 0
+          const handSize = p.hand.length ?? 0
+          logger.info(`[createPersonalizedGameState] Player ${p.id} (dummy): sending ${handSize} hand cards, ${deckSize} deck cards, ${discardSize} discard cards`)
+          return {
+            ...p,
+            // Send compact card data with baseId for dummy player's hand, deck, discard
+            handCards: p.hand.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            })),
+            deckCards: p.deck.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            })),
+            discardCards: p.discard.map((c: any) => ({
+              id: c.id,
+              baseId: c.baseId,
+              power: c.power,
+              powerModifier: c.powerModifier,
+              isFaceDown: c.isFaceDown,
+              statuses: c.statuses || []
+            })),
+            hand: [],
+            deck: [],
+            discard: [],
+            announcedCard: p.announcedCard ? this.optimizeCard(p.announcedCard) : null,
+            deckSize: deckSize,
+            discardSize: discardSize,
+            handSize: handSize
+          }
         } else {
-          // Send only card backs for other players' hands
+          // Send only card backs for other players' hands (non-dummy players)
           const deckSize = p.deckSize ?? p.deck.length ?? 0
           logger.debug(`[createPersonalizedGameState] Player ${p.id} (other): deckSize=${deckSize}, p.deckSize=${p.deckSize}, deck.length=${p.deck.length}`)
           return {

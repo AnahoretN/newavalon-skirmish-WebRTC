@@ -247,6 +247,10 @@ export class HostMessageHandler {
     // Import card database for reconstruction
     const { getCardDefinition } = require('@/contentDatabase')
 
+    // Log dummy player status for debugging
+    logger.info(`[handleStateUpdateAction] Guest ${guestPlayerId} sent state. Host players:`, this.gameState.players.map(p => ({id: p.id, isDummy: p.isDummy, deckSize: p.deck.length})))
+    logger.info(`[handleStateUpdateAction] Guest players:`, guestState.players.map((p: Player) => ({id: p.id, isDummy: p.isDummy, deckSize: (p as any).deckCards?.length ?? p.deck?.length ?? 0})))
+
     // Merge players: preserve deck/discard AND score from host state for players that aren't the guest
     // This prevents guest's stale data from overwriting other players' scores
     const mergedPlayers = guestState.players.map((guestPlayer: Player) => {
@@ -300,7 +304,94 @@ export class HostMessageHandler {
       }
 
       if (hostPlayer && guestPlayer.id !== guestPlayerId) {
-        // This is another player (not guest) - check if guest sent handCards for them
+        // Check if this is a dummy player - all players can control them
+        const isDummyPlayer = hostPlayer.isDummy === true
+
+        if (isDummyPlayer) {
+          // CRITICAL: For dummy players, accept deck/hand/discard changes from any player
+          // This allows guests to draw cards, play cards, etc. for dummy players
+          logger.info(`[handleStateUpdateAction] Guest ${guestPlayerId} modified dummy player ${guestPlayer.id}`)
+
+          // Check if guest sent compact card data (handCards, deckCards, discardCards)
+          if ((guestPlayer as any).handCards || (guestPlayer as any).deckCards || (guestPlayer as any).discardCards) {
+            // Import card database for reconstruction
+            const { getCardDefinition } = require('@/contentDatabase')
+
+            // Reconstruct hand from handCards
+            const reconstructedHand = ((guestPlayer as any).handCards || []).map((hc: any) => {
+              const cardDef = getCardDefinition(hc.baseId)
+              if (!cardDef) {
+                return { id: hc.id, baseId: hc.baseId, name: 'Unknown', power: hc.power || 0, ability: '', types: [] }
+              }
+              return {
+                ...cardDef,
+                id: hc.id,
+                power: hc.power,
+                powerModifier: hc.powerModifier || 0,
+                isFaceDown: hc.isFaceDown,
+                statuses: hc.statuses || []
+              }
+            })
+
+            // Reconstruct deck from deckCards
+            const reconstructedDeck = ((guestPlayer as any).deckCards || []).map((dc: any) => {
+              const cardDef = getCardDefinition(dc.baseId)
+              if (!cardDef) {
+                return { id: dc.id, baseId: dc.baseId, name: 'Unknown', power: dc.power || 0, ability: '', types: [] }
+              }
+              return {
+                ...cardDef,
+                id: dc.id,
+                power: dc.power,
+                powerModifier: dc.powerModifier || 0,
+                isFaceDown: dc.isFaceDown,
+                statuses: dc.statuses || []
+              }
+            })
+
+            // Reconstruct discard from discardCards
+            const reconstructedDiscard = ((guestPlayer as any).discardCards || []).map((dc: any) => {
+              const cardDef = getCardDefinition(dc.baseId)
+              if (!cardDef) {
+                return { id: dc.id, baseId: dc.baseId, name: 'Unknown', power: dc.power || 0, ability: '', types: [] }
+              }
+              return {
+                ...cardDef,
+                id: dc.id,
+                power: dc.power,
+                powerModifier: dc.powerModifier || 0,
+                isFaceDown: dc.isFaceDown,
+                statuses: dc.statuses || []
+              }
+            })
+
+            logger.info(`[handleStateUpdateAction] Dummy player ${guestPlayer.id}: reconstructed ${reconstructedHand.length} hand, ${reconstructedDeck.length} deck, ${reconstructedDiscard.length} discard`)
+
+            return {
+              ...hostPlayer,
+              hand: reconstructedHand,
+              deck: reconstructedDeck,
+              discard: reconstructedDiscard,
+              handSize: reconstructedHand.length,
+              deckSize: reconstructedDeck.length,
+              discardSize: reconstructedDiscard.length,
+            }
+          }
+
+          // No compact card data - use guest's data directly
+          logger.info(`[handleStateUpdateAction] Dummy player ${guestPlayer.id}: no compact data, using guest state`)
+          return {
+            ...hostPlayer,
+            hand: guestPlayer.hand || hostPlayer.hand,
+            deck: guestPlayer.deck || hostPlayer.deck,
+            discard: guestPlayer.discard || hostPlayer.discard,
+            handSize: guestPlayer.hand?.length ?? hostPlayer.hand?.length ?? 0,
+            deckSize: guestPlayer.deck?.length ?? hostPlayer.deck?.length ?? 0,
+            discardSize: guestPlayer.discard?.length ?? hostPlayer.discard?.length ?? 0,
+          }
+        }
+
+        // This is another non-dummy player - check if guest sent handCards for them
         // This happens when guest places Revealed tokens on other players' cards
         if ((guestPlayer as any).handCards && hostPlayer.hand) {
           // Apply status updates from guest's handCards to host's hand
@@ -497,6 +588,8 @@ export class HostMessageHandler {
 
     // Draw cards for host and dummy players only
     // Guests manage their own decks locally
+    logger.info('[HostMessageHandler] Before drawing - deck sizes:', finalState.players.map(p => ({id: p.id, deck: p.deck.length, hand: p.hand.length, isDummy: p.isDummy})))
+
     finalState.players = finalState.players.map(player => {
       // Only draw for host (local player) and dummies
       // Guests have their own local deck data
@@ -513,11 +606,14 @@ export class HostMessageHandler {
           newHand.push(drawnCard)
         }
 
-        logger.info(`[HostMessageHandler] Drew ${newHand.length} cards for player ${player.id}`)
+        logger.info(`[HostMessageHandler] Drew ${newHand.length} cards for player ${player.id}, deck now has ${newDeck.length} cards`)
         return { ...player, hand: newHand, deck: newDeck }
       }
       return player
     })
+
+    // Log deck sizes after drawing
+    logger.info('[HostMessageHandler] Deck sizes after drawing:', finalState.players.map(p => ({id: p.id, deck: p.deck.length, hand: p.hand.length})))
 
     // Use createDeltaFromStates to automatically detect all changes
     const initialDrawDelta = createDeltaFromStates(this.gameState, finalState, this.localPlayerId)
@@ -545,6 +641,9 @@ export class HostMessageHandler {
     }, 50)
 
     this.gameState = finalState
+
+    // CRITICAL: Log deck sizes after setting game state
+    logger.info('[HostMessageHandler] After startGame - deck sizes:', finalState.players.map(p => ({id: p.id, deck: p.deck.length, hand: p.hand.length, isDummy: p.isDummy})))
 
     // Notify callback
     if (this.config.onStateUpdate) {
