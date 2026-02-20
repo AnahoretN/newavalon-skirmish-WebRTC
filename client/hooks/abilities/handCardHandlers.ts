@@ -52,6 +52,7 @@ export function handleHandCardClick(
     triggerHandCardSelection,
     setCursorStack,
     clearTargetingMode,
+    clearValidTargets,
   } = props
 
   if (interactionLock.current) {
@@ -163,15 +164,30 @@ export function handleHandCardClick(
       // 1. Discard the selected card
       moveItem({ card, source: 'hand', playerId: player.id, cardIndex, bypassOwnershipCheck: true }, { target: 'discard', playerId: player.id })
 
-      // 2. Chain to SPAWN_TOKEN mode
-      setAbilityMode({
+      // 2. Clear old targeting mode (SELECT_TARGET) and valid targets (hand cards)
+      clearTargetingMode()
+      clearValidTargets?.()
+
+      // 3. Chain to SPAWN_TOKEN mode
+      const spawnTokenAction: AbilityAction = {
         type: 'ENTER_MODE',
         mode: 'SPAWN_TOKEN',
         sourceCard: sourceCard,
         sourceCoords: sourceCoords,
         isDeployAbility: isDeployAbility,
         payload: { tokenName: payload.tokenName },
-      })
+      }
+
+      setAbilityMode(spawnTokenAction)
+
+      // 4. Set new targeting mode for SPAWN_TOKEN to show valid empty cells
+      // This uses the same mechanism as other ENTER_MODE actions
+      if (sourceCoords && sourceCoords.row >= 0) {
+        // Call handleActionExecution to properly set targetingMode for SPAWN_TOKEN
+        setTimeout(() => {
+          handleActionExecution(spawnTokenAction, sourceCoords)
+        }, 0)
+      }
       return
     }
 

@@ -6,7 +6,7 @@
  */
 
 import type { Card, GameState } from '@/types'
-import { canActivateAbility as serverCanActivateAbility, getCardAbilityTypes } from '@server/utils/autoAbilities'
+import { canActivateAbility as serverCanActivateAbility, getCardAbilityTypes, CARD_ABILITIES } from '@server/utils/autoAbilities'
 import {
   hasReadyStatus,
   hasReadyAbilityInCurrentPhase as sharedHasReadyAbilityInCurrentPhase,
@@ -15,7 +15,7 @@ import {
   READY_STATUS_COMMIT
 } from '@shared/abilities/index.js'
 import { logger } from './logger'
-import { cardDatabase } from '../content'
+import type { AbilityActivationType } from '@server/utils/autoAbilities'
 
 // Re-export for backward compatibility
 export { READY_STATUS_DEPLOY, READY_STATUS_SETUP, READY_STATUS_COMMIT }
@@ -342,16 +342,18 @@ export const resetReadyStatusesForTurn = (gameState: GameState, playerId: number
 
 /**
  * Get list of card baseIds that have a specific ability type
+ * Uses server-side CARD_ABILITIES to ensure consistency
  */
-function getCardsWithAbilityType(abilityType: string): string[] {
+function getCardsWithAbilityType(abilityType: AbilityActivationType): string[] {
   const cardIds: string[] = []
-
-  for (const [baseId, cardDef] of Object.entries(cardDatabase)) {
-    const abilities = cardDef.abilities || []
-    if (abilities.some((a: any) => a.activationType === abilityType)) {
-      cardIds.push(baseId)
+  CARD_ABILITIES.forEach(ability => {
+    if (ability.activationType === abilityType) {
+      cardIds.push(ability.baseId)
+      if (ability.baseIdAlt) {
+        cardIds.push(...ability.baseIdAlt)
+      }
     }
-  }
-
-  return cardIds
+  })
+  // Remove duplicates
+  return [...new Set(cardIds)]
 }

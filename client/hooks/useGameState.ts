@@ -120,6 +120,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   const [latestDeckSelections, setLatestDeckSelections] = useState<DeckSelectionData[]>([])
   const [latestHandCardSelections, setLatestHandCardSelections] = useState<HandCardSelectionData[]>([])
   const [clickWaves, setClickWaves] = useState<any[]>([])
+  const [remoteValidTargets, setRemoteValidTargets] = useState<{
+    playerId: number
+    validHandTargets: { playerId: number, cardIndex: number }[]
+    isDeckSelectable: boolean
+  } | null>(null)
   const [contentLoaded, setContentLoaded] = useState(!!rawJsonData)
 
   // WebRTC P2P mode state
@@ -178,6 +183,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     setLatestHandCardSelections,
     setClickWaves,
     setLatestFloatingTexts,
+    setRemoteValidTargets,
     isManualExitRef,
     joiningGameIdRef,
     playerTokenRef,
@@ -3052,41 +3058,54 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           const deckType = message.data.deckType
           const receivedDeck = message.data.deck as any[] | undefined
 
-          // Skip if this is about the local player - they already have their correct deck
-          if (targetPlayerId === localPlayerIdRef.current) {
-            logger.info(`[CHANGE_PLAYER_DECK] Skipping update for local player ${targetPlayerId}`)
-            break
-          }
-
           setGameState(prev => {
             const player = prev.players.find(p => p.id === targetPlayerId)
             if (!player) {return prev}
 
+            // Get host status
+            const isHost = webrtcIsHostRef.current
+
             let deckData: Card[]
 
-          if (receivedDeck && receivedDeck.length > 0) {
-            // Reconstruct from baseId using local card database
-            deckData = receivedDeck.map((compactCard: any) => {
-              if (compactCard.baseId) {
-                const cardDef = getCardDefinition(compactCard.baseId)
-                if (cardDef) {
+            if (receivedDeck && receivedDeck.length > 0) {
+              // Reconstruct from baseId using local card database
+              deckData = receivedDeck.map((compactCard: any) => {
+                if (compactCard.baseId) {
+                  const cardDef = getCardDefinition(compactCard.baseId)
+                  if (cardDef) {
+                    return {
+                      ...cardDef,
+                      id: compactCard.id,
+                      baseId: compactCard.baseId,
+                      deck: deckType,
+                      ownerId: targetPlayerId,
+                      ownerName: player.name,
+                      power: compactCard.power,
+                      powerModifier: compactCard.powerModifier || 0,
+                      isFaceDown: compactCard.isFaceDown || false,
+                      statuses: compactCard.statuses || []
+                    }
+                  }
+                  // Fallback for cards with baseId but no definition found
                   return {
-                    ...cardDef,
                     id: compactCard.id,
                     baseId: compactCard.baseId,
+                    name: 'Unknown',
                     deck: deckType,
                     ownerId: targetPlayerId,
                     ownerName: player.name,
-                    power: compactCard.power,
-                    powerModifier: compactCard.powerModifier || 0,
-                    isFaceDown: compactCard.isFaceDown || false,
-                    statuses: compactCard.statuses || []
+                    power: compactCard.power || 0,
+                    powerModifier: 0,
+                    isFaceDown: false,
+                    statuses: [],
+                    imageUrl: '',
+                    ability: ''
                   }
                 }
-                // Fallback for cards with baseId but no definition found
+                // Fallback for cards without baseId
                 return {
                   id: compactCard.id,
-                  baseId: compactCard.baseId,
+                  baseId: compactCard.id,
                   name: 'Unknown',
                   deck: deckType,
                   ownerId: targetPlayerId,
@@ -3098,38 +3117,28 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                   imageUrl: '',
                   ability: ''
                 }
-              }
-              // Fallback for cards without baseId
-              return {
-                id: compactCard.id,
-                baseId: compactCard.id,
-                name: 'Unknown',
-                deck: deckType,
-                ownerId: targetPlayerId,
-                ownerName: player.name,
-                power: compactCard.power || 0,
-                powerModifier: 0,
-                isFaceDown: false,
-                statuses: [],
-                imageUrl: '',
-                ability: ''
-              }
-            })
-          } else {
-            // No deck data - create locally (shouldn't happen with new system)
-            deckData = createDeck(deckType, targetPlayerId, player.name)
-            logger.info(`[CHANGE_PLAYER_DECK] Creating deck locally for player ${targetPlayerId} from ${deckType}`)
-          }
+              })
+              logger.info(`[CHANGE_PLAYER_DECK] Reconstructed deck for player ${targetPlayerId} from host data: ${deckData.length} cards`)
+            } else if (!isHost) {
+              // Guest without deck data - this shouldn't happen with new system
+              // but create locally as fallback
+              deckData = createDeck(deckType, targetPlayerId, player.name)
+              logger.warn(`[CHANGE_PLAYER_DECK] No deck data from host, creating locally for player ${targetPlayerId} from ${deckType}`)
+            } else {
+              // Host without deck data - this is our own message, skip
+              logger.info(`[CHANGE_PLAYER_DECK] Host skipping own message without deck data for player ${targetPlayerId}`)
+              return prev
+            }
 
-          return {
-            ...prev,
-            players: prev.players.map(p =>
-              p.id === targetPlayerId
-                ? { ...p, selectedDeck: deckType, deck: deckData, hand: [], discard: [], announcedCard: null, boardHistory: [] }
-                : p
-            ),
-          }
-        })
+            return {
+              ...prev,
+              players: prev.players.map(p =>
+                p.id === targetPlayerId
+                  ? { ...p, selectedDeck: deckType, deck: deckData, hand: [], discard: [], announcedCard: null, boardHistory: [] }
+                  : p
+              ),
+            }
+          })
         }
         break
 
@@ -3225,7 +3234,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         // Ability completed - clear mode
         setGameState(prev => ({
           ...prev,
-          abilityMode: null,
+          abilityMode: undefined,
         }))
         logger.info('[Ability] Ability completed', message.data)
         break
@@ -3234,7 +3243,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         // Ability cancelled - clear mode
         setGameState(prev => ({
           ...prev,
-          abilityMode: null,
+          abilityMode: undefined,
         }))
         logger.info('[Ability] Ability cancelled')
         break

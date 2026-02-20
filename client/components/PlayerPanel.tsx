@@ -123,7 +123,7 @@ interface PlayerPanelProps {
   highlightOwnerId?: number; // The owner of the current ability/mode (for correct highlight color)
   onCancelAllModes?: () => void; // Right-click to cancel all modes
   clickWaves?: any[]; // Click wave effects to display
-  triggerClickWave?: (location: 'board' | 'hand' | 'emptyCell', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
+  triggerClickWave?: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
 }
 
 const ColorPicker: React.FC<{ player: Player, canEditSettings: boolean, selectedColors: Set<PlayerColor>, onColorChange: (c: PlayerColor) => void, compact?: boolean }> = memo(({ player, canEditSettings, selectedColors, onColorChange, compact = false }) => {
@@ -806,7 +806,6 @@ key={`card-${card.id}`}
                           playerColorMap={playerColorMap}
                           localPlayerId={localPlayerId}
                           imageRefreshVersion={imageRefreshVersion}
-                          previewSize={isLocalPlayer ? 100 : 50}
                           loadPriority={isLocalPlayer ? 'high' : 'low'}
                           disableTooltip={true}
                           disableActiveHighlights={disableActiveHighlights}
@@ -1005,7 +1004,6 @@ key={`card-${card.id}`}
                         isFaceUp={true}
                         playerColorMap={playerColorMap}
                         imageRefreshVersion={imageRefreshVersion}
-                        previewSize={isLocalPlayer ? 100 : 50}
                         loadPriority={isLocalPlayer ? 'high' : 'low'}
                         disableTooltip={false}
                         disableActiveHighlights={disableActiveHighlights}

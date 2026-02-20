@@ -68,7 +68,7 @@ interface CardAbilityDefinition {
   getAction: (card: Card, gameState: GameState, ownerId: number, coords: { row: number, col: number }) => AbilityAction | null
 }
 
-const CARD_ABILITIES: CardAbilityDefinition[] = [
+export const CARD_ABILITIES: CardAbilityDefinition[] = [
   // ============================================================================
   // SYNCHROTECH
   // ============================================================================

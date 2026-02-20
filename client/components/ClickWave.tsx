@@ -63,7 +63,6 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
     return { opacity, scale, borderWidth }
   }
 
-  const borderColor = `rgb(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b})`
   const borderColorAlpha = `rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}`
 
   return (

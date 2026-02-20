@@ -210,9 +210,9 @@ export class HostManager {
     const state = this.stateManager.getState()
     if (!state) {return}
 
-    // Convert player to dummy
+    // Convert player to dummy - dummy players are always ready
     const updatedPlayers = state.players.map(p =>
-      p.id === playerId ? { ...p, isDummy: true, isDisconnected: true } : p
+      p.id === playerId ? { ...p, isDummy: true, isDisconnected: true, isReady: true } : p
     )
 
     const newState: GameState = {

@@ -48,28 +48,74 @@ export function useDeckManagement(props: UseDeckManagementProps) {
 
   /**
    * Change player's deck to a predefined deck type
+   *
+   * IMPORTANT: For dummy players, only the HOST should create and manage the deck.
+   * Non-host clients should only send the deck change request and let the host create the deck.
    */
   const changePlayerDeck = useCallback((playerId: number, deckType: DeckType) => {
     const isWebRTCMode = getWebRTCEnabled()
+    let playerIsDummy = false
 
-    // Save deck preference for WebRTC guest join
-    // When guest joins a host, this preference will be sent with JOIN_REQUEST
-    if (isWebRTCMode && !webrtcIsHostRef.current) {
-      try {
-        localStorage.setItem('webrtc_preferred_deck', deckType)
-        logger.info(`[changePlayerDeck] Saved deck preference: ${deckType}`)
-      } catch (e) {
-        logger.warn('[changePlayerDeck] Failed to save deck preference:', e)
-      }
-    }
-
-    // Create the new deck first so we can send it to host
-    const newDeck = createDeck(deckType, playerId, 'Player ' + playerId)
-
+    // First, read current state to check if player is dummy
     updateState(currentState => {
-      if (currentState.isGameStarted) {
+      const targetPlayer = currentState.players.find(p => p.id === playerId)
+      if (!targetPlayer) {
         return currentState
       }
+      playerIsDummy = targetPlayer.isDummy || false
+
+      // For dummy players in WebRTC mode:
+      // - Host: creates deck locally and broadcasts to guests
+      // - Guest: only updates selectedDeck locally, sends request to host, and waits for deck data
+      const isDummy = playerIsDummy
+      const isHost = webrtcIsHostRef.current
+      const shouldCreateDeckLocally = !isDummy || isHost // Host creates deck for dummy, guests create deck for themselves
+
+      // Save deck preference for WebRTC guest join
+      if (isWebRTCMode && !isHost) {
+        try {
+          localStorage.setItem('webrtc_preferred_deck', deckType)
+          logger.info(`[changePlayerDeck] Guest saved deck preference: ${deckType}`)
+        } catch (e) {
+          logger.warn('[changePlayerDeck] Failed to save deck preference:', e)
+        }
+      }
+
+      // Create the new deck (only for non-dummy or host)
+      const newDeck = shouldCreateDeckLocally ? createDeck(deckType, playerId, targetPlayer.name) : []
+
+      // Log what we're doing
+      if (isDummy) {
+        logger.info(`[changePlayerDeck] Dummy player deck change: playerId=${playerId}, deckType=${deckType}, isHost=${isHost}, willCreateDeck=${shouldCreateDeckLocally}`)
+      }
+
+      if (!isWebRTCMode) {
+        // Non-WebRTC mode: create deck locally
+        return {
+          ...currentState,
+          players: currentState.players.map(p =>
+            p.id === playerId
+              ? { ...p, deck: newDeck, selectedDeck: deckType, hand: [], discard: [], announcedCard: null, boardHistory: [] }
+              : p,
+          ),
+        }
+      }
+
+      // WebRTC mode
+      if (!isHost) {
+        // Guest mode: only update selectedDeck locally for now, don't update deck yet
+        // We'll receive the full deck data from host via CHANGE_PLAYER_DECK message
+        return {
+          ...currentState,
+          players: currentState.players.map(p =>
+            p.id === playerId
+              ? { ...p, selectedDeck: deckType } // Only update selectedDeck, deck will come from host
+              : p,
+          ),
+        }
+      }
+
+      // Host mode: create deck and broadcast
       return {
         ...currentState,
         players: currentState.players.map(p =>
@@ -88,18 +134,20 @@ export function useDeckManagement(props: UseDeckManagementProps) {
       return
     }
 
-    // Create deck data with baseId for reconstruction by clients
-    const compactDeckData = newDeck.map(card => ({
-      id: card.id,
-      baseId: card.baseId,
-      power: card.power,
-      powerModifier: card.powerModifier || 0,
-      isFaceDown: card.isFaceDown || false,
-      statuses: card.statuses || []
-    }))
+    const isHost = webrtcIsHostRef.current
 
-    if (webrtcIsHostRef.current) {
-      // Host: broadcast directly to all guests via webrtcManager
+    if (isHost) {
+      // Host: create deck data and broadcast to all guests
+      const newDeck = createDeck(deckType, playerId, 'Player ' + playerId)
+      const compactDeckData = newDeck.map(card => ({
+        id: card.id,
+        baseId: card.baseId,
+        power: card.power,
+        powerModifier: card.powerModifier || 0,
+        isFaceDown: card.isFaceDown || false,
+        statuses: card.statuses || []
+      }))
+
       if (webrtcManagerRef?.current) {
         webrtcManagerRef.current.broadcastToGuests({
           type: 'CHANGE_PLAYER_DECK',
@@ -112,20 +160,22 @@ export function useDeckManagement(props: UseDeckManagementProps) {
             deckSize: compactDeckData.length
           }
         })
-        logger.info(`[changePlayerDeck] Host broadcasting deck data to all guests: player ${playerId}, deck ${deckType}, ${compactDeckData.length} cards`)
+        logger.info(`[changePlayerDeck] Host broadcasting deck data to all guests: player ${playerId}, deck ${deckType}, ${compactDeckData.length} cards, isDummy=${playerIsDummy}`)
       } else {
         logger.warn(`[changePlayerDeck] Host mode but no webrtcManagerRef available`)
       }
     } else {
-      // Guest: send deck data to host via sendWebrtcAction
+      // Guest: send only the request (deckType) to host
+      // Host will create the deck and send back the full data
       if (sendWebrtcAction) {
         sendWebrtcAction('CHANGE_PLAYER_DECK', {
           playerId,
           deckType,
-          deck: compactDeckData,
-          deckSize: compactDeckData.length
+          // Don't send deck data - let host create it
+          deck: undefined,
+          deckSize: 0
         })
-        logger.info(`[changePlayerDeck] Guest sending deck data to host: player ${playerId}, deck ${deckType}, ${compactDeckData.length} cards`)
+        logger.info(`[changePlayerDeck] Guest sending deck change request to host: player ${playerId}, deck ${deckType}, isDummy=${playerIsDummy}`)
       } else {
         logger.warn(`[changePlayerDeck] Guest mode but no sendWebrtcAction available`)
       }

@@ -134,6 +134,7 @@ export async function fetchContentDatabase(): Promise<void> {
  */
 function buildDecksData(): Record<string, Card[]> {
   const builtDecks: Record<string, Card[]> = {}
+  const commandDeckList: Card[] = [] // Collect all command cards separately
 
   for (const deckFile of _deckFiles) {
     const deckCardList: Card[] = []
@@ -155,7 +156,8 @@ function buildDecksData(): Record<string, Card[]> {
         const cardKey = safeCardId.toUpperCase()
 
         if (isCommandCard) {
-          deckCardList.push({
+          // Add to Command deck, NOT to the faction deck
+          commandDeckList.push({
             ...cardDef,
             deck: DeckType.Command,
             id: `CMD_${cardKey}_${i + 1}`,
@@ -163,6 +165,7 @@ function buildDecksData(): Record<string, Card[]> {
             faction: cardDef.faction || 'Command',
           })
         } else {
+          // Only add non-command cards to the faction deck
           deckCardList.push({
             ...cardDef,
             deck: deckFile.id,
@@ -175,7 +178,46 @@ function buildDecksData(): Record<string, Card[]> {
     }
 
     builtDecks[deckFile.id] = deckCardList
+
+    // Debug: log all card counts for Optimates (not just command cards)
+    if (deckFile.id === 'Optimates') {
+      const cardCounts: Record<string, number> = {}
+      const idSet = new Set<string>()
+      let hasDuplicateIds = false
+      deckCardList.forEach(card => {
+        // Check for duplicate IDs
+        if (idSet.has(card.id)) {
+          console.error(`[buildDecksData] DUPLICATE ID in Optimates: ${card.id}`)
+          hasDuplicateIds = true
+        }
+        idSet.add(card.id)
+
+        // Count all cards by baseId
+        const baseId = card.baseId || card.id
+        cardCounts[baseId] = (cardCounts[baseId] || 0) + 1
+      })
+      console.log('[buildDecksData] Optimates deck:', {
+        totalCards: deckCardList.length,
+        cardCounts,
+        hasDuplicateIds
+      })
+    }
   }
+
+  // Create the Command deck from all collected command cards
+  // Command cards are collected from all faction decks but stored in a separate Command deck
+  builtDecks[DeckType.Command] = commandDeckList
+
+  // Debug: log Command deck composition
+  const commandCardCounts: Record<string, number> = {}
+  commandDeckList.forEach(card => {
+    const baseId = card.baseId || card.id
+    commandCardCounts[baseId] = (commandCardCounts[baseId] || 0) + 1
+  })
+  console.log('[buildDecksData] Command deck:', {
+    totalCards: commandDeckList.length,
+    cardCounts: commandCardCounts
+  })
 
   // Add the special "Tokens" deck, which is built from the token database.
   // Tokens use their defined types, with an empty array fallback (not hardcoded).

@@ -51,8 +51,8 @@ export function handleBoardCardDoubleClick(
     draggedItem,
     setDraggedItem,
     openContextMenu,
-    markAbilityUsed,
-    triggerNoTarget,
+    markAbilityUsed: _markAbilityUsed,
+    triggerNoTarget: _triggerNoTarget,
     interactionLock
   } = props
 
@@ -118,13 +118,13 @@ export function handleTargetingModeCardClick(
   props: BoardCardClickProps
 ): boolean {
   const {
-    gameState,
+    gameState: _gameState,
     localPlayerId,
     abilityMode,
-    commandContext,
-    markAbilityUsed,
-    triggerNoTarget,
-    handleActionExecution,
+    commandContext: _commandContext,
+    markAbilityUsed: _markAbilityUsed,
+    triggerNoTarget: _triggerNoTarget,
+    handleActionExecution: _handleActionExecution,
     triggerDeckSelection
   } = props
 
@@ -172,6 +172,7 @@ export function handleTargetingModeCardClick(
       sourceCoords,
       isDeployAbility,
       readyStatusToRemove: typeof readyStatusToRemove === 'string' ? [readyStatusToRemove] : readyStatusToRemove,
+      callbackAction: 'SCORE_REMOVED', // Default callback action
     })
     return true
   }

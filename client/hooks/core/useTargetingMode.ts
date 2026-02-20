@@ -77,8 +77,6 @@ export function useTargetingMode(props: UseTargetingModeProps) {
       // Check for hand targets (if applicable)
       handTargets = []
 
-      const isDeckSelectable = action.mode === 'SELECT_DECK'
-
       // Calculate hand targets if action has a filter for hand cards
       if (action.payload?.filter && action.mode === 'SELECT_TARGET') {
         logger.info(`[TargetingMode] Calculating hand targets for action`, {

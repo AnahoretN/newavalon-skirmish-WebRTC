@@ -35,7 +35,7 @@ interface CardInteractionProps {
   abilityCheckKey?: number; // Incremented to recheck ability readiness after ability completion
   onCardClick?: (card: CardType, boardCoords: { row: number, col: number }) => void; // Called when card is clicked
   targetingMode?: boolean; // Whether targeting mode is active (hides ready statuses)
-  triggerClickWave?: (location: 'board' | 'hand' | 'emptyCell', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void; // Trigger click wave effect
+  triggerClickWave?: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void; // Trigger click wave effect
   playerId?: number; // Player who owns this card (for wave triggering)
   cardIndex?: number; // Card index in hand (for wave triggering)
 }
@@ -163,8 +163,6 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   onCardClick,
   targetingMode = false,
   triggerClickWave,
-  playerId,
-  cardIndex,
 }) => {
   const { getCardTranslation } = useLanguage()
   const [tooltipVisible, setTooltipVisible] = useState(false)
@@ -606,8 +604,8 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
           // ownerColorData is null if card.ownerId is missing or not found in playerColorMap
           const themeColor = ownerColorData
             ? ownerColorData.border
-            : (card.color && card.color.border ? card.color.border : DECK_THEMES[card.deck]?.color || 'border-gray-300')
-          const cardBg = card.deck === DeckType.Tokens ? card.color : 'bg-card-face'
+            : DECK_THEMES[card.deck]?.color || 'border-gray-300'
+          const cardBg = card.deck === DeckType.Tokens ? (typeof card.color === 'string' ? card.color : 'bg-gray-500') : 'bg-card-face'
           const textColor = card.deck === DeckType.Tokens ? 'text-black' : 'text-black'
 
           const positiveStatusTypesList = ['Support', 'Shield']

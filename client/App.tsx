@@ -37,7 +37,7 @@ import type {
   AbilityAction,
 } from './types'
 import { DeckType } from './types'
-import { STATUS_ICONS, STATUS_DESCRIPTIONS, PLAYER_COLORS, PLAYER_COLOR_RGB } from './constants'
+import { STATUS_ICONS, STATUS_DESCRIPTIONS, PLAYER_COLOR_RGB } from './constants'
 import { countersDatabase, fetchContentDatabase } from './content'
 import { validateTarget, calculateValidTargets, checkActionHasTargets } from '@shared/utils/targeting'
 import { getCommandAction } from '@server/utils/commandLogic'
@@ -497,6 +497,45 @@ const AppInner = function AppInner() {
     gameState?.players?.forEach(p => map.set(p.id, p.color))
     return map
   }, [gameState?.players])
+
+  // Sort players by turn order relative to local player
+  // The panel shows: player after local player, then next, etc., with player before local player last
+  const sortedPlayers = useMemo(() => {
+    if (!gameState?.players || !localPlayerId) return gameState?.players || []
+
+    const localPlayerIndex = gameState.players.findIndex(p => p.id === localPlayerId)
+    if (localPlayerIndex === -1) return gameState.players
+
+    // Before game starts, show players in ID order (no turn order yet)
+    const gameStarted = !!gameState.isGameStarted && gameState.startingPlayerId !== undefined
+    if (!gameStarted) {
+      return [...gameState.players].sort((a, b) => a.id - b.id)
+    }
+
+    // After game starts, use turn order relative to local player
+    // Create array of players in their original order (by id)
+    const players = [...gameState.players].sort((a, b) => a.id - b.id)
+
+    // Turn order starts from startingPlayerId
+    const startingId = gameState.startingPlayerId!
+    const startingIndex = players.findIndex(p => p.id === startingId)
+
+    // Reorder players to start from startingPlayerId
+    const turnOrderPlayers = [
+      ...players.slice(startingIndex),
+      ...players.slice(0, startingIndex)
+    ]
+
+    // Find local player in turn order
+    const localIndexInTurnOrder = turnOrderPlayers.findIndex(p => p.id === localPlayerId)
+
+    // Rotate so local player is first, then remove local player from the list
+    // Panel shows: next player after local, then next, etc., with player before local last
+    const afterLocal = turnOrderPlayers.slice(localIndexInTurnOrder + 1)
+    const beforeLocal = turnOrderPlayers.slice(0, localIndexInTurnOrder)
+
+    return [...afterLocal, ...beforeLocal]
+  }, [gameState?.players, localPlayerId, gameState?.isGameStarted, gameState?.startingPlayerId])
 
   const isTargetingMode = useMemo(
     () => !!abilityMode || !!cursorStack,
@@ -1267,8 +1306,8 @@ const AppInner = function AppInner() {
           })
         } else {
           // No LastPlayed card found (e.g. destroyed), skip scoring.
-          // Prevent race condition: Only Active Player (or Host for Dummy) triggers the phase change.
-          if (activePlayerId === localPlayerId || (activePlayer?.isDummy && localPlayerId === 1)) {
+          // Any player can trigger phase change for dummy active player
+          if (activePlayerId === localPlayerId || activePlayer?.isDummy) {
             nextPhase()
           }
         }
@@ -2191,7 +2230,7 @@ const AppInner = function AppInner() {
           ownerPlayer={viewingCard.player}
           onClose={() => setViewingCard(null)}
           statusDescriptions={STATUS_DESCRIPTIONS}
-          allPlayers={gameState.players}
+          allPlayers={sortedPlayers}
           imageRefreshVersion={imageRefreshVersion}
         />
       )}
@@ -2233,6 +2272,8 @@ const AppInner = function AppInner() {
         anchorEl={modalAnchors.tokensModalAnchor}
         imageRefreshVersion={imageRefreshVersion}
         localPlayerId={localPlayerId}
+        activePlayerId={gameState.activePlayerId}
+        players={gameState.players}
       />
 
       <CountersModal
@@ -2322,7 +2363,7 @@ const AppInner = function AppInner() {
               openContextMenu={openContextMenu}
               onHandCardDoubleClick={handleDoubleClickHandCard}
               playerColorMap={playerColorMap}
-              allPlayers={gameState.players}
+              allPlayers={sortedPlayers}
               localPlayerTeamId={localPlayer?.teamId}
               activePlayerId={gameState.activePlayerId}
               onToggleActivePlayer={toggleActivePlayer}
@@ -2401,21 +2442,8 @@ const AppInner = function AppInner() {
           style={{ width: sidePanelWidth }}
         >
           <div className="flex flex-col h-full w-full">
-            {gameState.players
+            {sortedPlayers
               .filter(p => p.id !== localPlayerId)
-              .sort((a, b) => {
-                // Sort players in clockwise order relative to local player
-                // Players after local player come first, then players before
-                const localPos = localPlayer?.position ?? 0
-                const aPos = a.position ?? 0
-                const bPos = b.position ?? 0
-
-                // Calculate relative positions (0 = next player, higher = later)
-                const aRelative = (aPos - localPos + gameState.players.length) % gameState.players.length
-                const bRelative = (bPos - localPos + gameState.players.length) % gameState.players.length
-
-                return aRelative - bRelative
-              })
               .map(player => (
                 <div key={player.id} className="w-full flex-1 min-h-0 flex flex-col">
                   <PlayerPanel
@@ -2436,7 +2464,7 @@ const AppInner = function AppInner() {
                     openContextMenu={openContextMenu}
                     onHandCardDoubleClick={handleDoubleClickHandCard}
                     playerColorMap={playerColorMap}
-                    allPlayers={gameState.players}
+                    allPlayers={sortedPlayers}
                     localPlayerTeamId={localPlayer?.teamId}
                     activePlayerId={gameState.activePlayerId}
                     onToggleActivePlayer={toggleActivePlayer}

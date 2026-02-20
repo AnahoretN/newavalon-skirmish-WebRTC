@@ -16,7 +16,7 @@ import { countersDatabase } from '@/content'
 /**
  * Allowed target locations from countersDatabase
  */
-export type TokenTargetLocation = 'board' | 'board-facedown' | 'hand' | 'deck' | 'discard'
+export type TokenTargetLocation = 'board' | 'board-facedown' | 'hand' | 'deck' | 'discard' | 'announced'
 
 /**
  * Token targeting rules derived from countersDatabase
@@ -62,8 +62,6 @@ export function createTokenCursorStack(
   existingStack?: CursorStackState | null,
   modifications?: Partial<CursorStackState>
 ): CursorStackState {
-  const rules = getTokenTargetingRules(tokenType)
-
   // Base cursorStack state
   const baseState: CursorStackState = {
     type: tokenType,

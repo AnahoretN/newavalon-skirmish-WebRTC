@@ -86,11 +86,11 @@ export function handleLineSelection(
       return true
     }
 
-    const hasActiveLiberator = gameState.board.some(row =>
-      row.some(cell =>
+    const hasActiveLiberator = gameState.board.some((row: any[]) =>
+      row.some((cell: any) =>
         cell.card?.ownerId === playerId &&
         cell.card.name.toLowerCase().includes('data liberator') &&
-        cell.card.statuses?.some(s => s.type === 'Support'),
+        cell.card.statuses?.some((s: any) => s.type === 'Support'),
       ),
     )
 
@@ -101,9 +101,9 @@ export function handleLineSelection(
       for (let c = cStart; c <= cEnd; c++) {
         const cell = gameState.board[r][c]
         const card = cell.card
-        if (card && !card.statuses?.some(s => s.type === 'Stun')) {
+        if (card && !card.statuses?.some((s: any) => s.type === 'Stun')) {
           const isOwner = card.ownerId === playerId
-          const hasExploit = card.statuses?.some(s => s.type === 'Exploit' && s.addedByPlayerId === playerId)
+          const hasExploit = card.statuses?.some((s: any) => s.type === 'Exploit' && s.addedByPlayerId === playerId)
           if (isOwner || (hasActiveLiberator && hasExploit && card.ownerId !== playerId)) {
             const points = Math.max(0, card.power + (card.powerModifier || 0) + (card.bonusPower || 0))
             if (points > 0) {
@@ -160,7 +160,7 @@ export function handleLineSelection(
     }
     const actionType = payload.actionType
 
-    const actorId = sourceCard?.ownerId ?? (gameState.players.find(p => p.id === gameState.activePlayerId)?.isDummy ? gameState.activePlayerId : (localPlayerId || gameState.activePlayerId))
+    const actorId = sourceCard?.ownerId ?? (gameState.players.find((p: any) => p.id === gameState.activePlayerId)?.isDummy ? gameState.activePlayerId : (localPlayerId || gameState.activePlayerId))
 
     // ZIUS_SCORING
     if (actionType === 'ZIUS_SCORING') {
@@ -195,7 +195,7 @@ export function handleLineSelection(
         for (let c = startC; c <= endC; c++) {
           const cell = gameState.board[r][c]
           if (cell.card) {
-            exploitCount += cell.card.statuses?.filter(s => s.type === 'Exploit' && s.addedByPlayerId === actorId).length || 0
+            exploitCount += cell.card.statuses?.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === actorId).length || 0
           }
         }
       }
@@ -231,8 +231,8 @@ export function handleLineSelection(
           if (targetCard) {
             const isSelf = targetCard.id === sourceCard.id
             const isOwner = targetCard.ownerId === actorId
-            const activePlayer = gameState.players.find(p => p.id === actorId)
-            const targetPlayer = gameState.players.find(p => p.id === targetCard.ownerId)
+            const activePlayer = gameState.players.find((p: any) => p.id === actorId)
+            const targetPlayer = gameState.players.find((p: any) => p.id === targetCard.ownerId)
             const isTeammate = activePlayer?.teamId !== undefined && targetPlayer?.teamId !== undefined && activePlayer.teamId === targetPlayer.teamId
             if (!isSelf && (isOwner || isTeammate)) {
               modifyBoardCardPower({ row: r, col: c }, 1)
@@ -256,7 +256,7 @@ export function handleLineSelection(
 
   // SELECT_DIAGONAL
   if (mode === 'SELECT_DIAGONAL' && payload.actionType === 'SCORE_DIAGONAL') {
-    const actorId = sourceCard?.ownerId ?? (gameState.players.find(p => p.id === gameState.activePlayerId)?.isDummy ? gameState.activePlayerId : (localPlayerId || gameState.activePlayerId))
+    const actorId = sourceCard?.ownerId ?? (gameState.players.find((p: any) => p.id === gameState.activePlayerId)?.isDummy ? gameState.activePlayerId : (localPlayerId || gameState.activePlayerId))
     if (!payload.firstCoords) {
       setAbilityMode({ ...abilityMode, payload: { ...payload, firstCoords: coords } })
       return true

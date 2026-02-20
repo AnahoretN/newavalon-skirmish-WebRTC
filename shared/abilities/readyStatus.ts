@@ -181,7 +181,7 @@ export const resetReadyStatusesForTurn = (
  * @returns The next ability type to use, or null if none available
  */
 export const getNextAbilityType = (
-  hasDeployAbility: boolean,
+  _hasDeployAbility: boolean,
   hasSetupAbility: boolean,
   hasCommitAbility: boolean
 ): 'deploy' | 'setup' | 'commit' | null => {

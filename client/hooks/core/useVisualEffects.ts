@@ -17,7 +17,7 @@
 
 import { useCallback, useRef } from 'react'
 import { calculateValidTargets } from '@shared/utils/targeting'
-import type { HighlightData, FloatingTextData, TargetingModeData, AbilityAction, CommandContext, GameState, PlayerColor } from '../../types'
+import type { HighlightData, FloatingTextData, TargetingModeData, AbilityAction, CommandContext, GameState } from '../../types'
 
 interface UseVisualEffectsProps {
   // WebSocket connection
@@ -265,7 +265,7 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
    * Throttled to once per 500ms per player
    */
   const triggerClickWave = useCallback((
-    location: 'board' | 'hand' | 'emptyCell',
+    location: 'board' | 'hand' | 'deck',
     boardCoords?: { row: number; col: number },
     handTarget?: { playerId: number; cardIndex: number }
   ) => {

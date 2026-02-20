@@ -44,8 +44,8 @@ export function activateAbility(
   }
 
   const owner = gameState.players.find(p => p.id === card.ownerId)
-  // Only the host (player 1) can control dummy players' cards
-  const canControl = localPlayerId === card.ownerId || (owner?.isDummy && localPlayerId === 1)
+  // Any player can control dummy players' cards
+  const canControl = localPlayerId === card.ownerId || owner?.isDummy
 
   if (gameState.activePlayerId !== card.ownerId) {
     return null

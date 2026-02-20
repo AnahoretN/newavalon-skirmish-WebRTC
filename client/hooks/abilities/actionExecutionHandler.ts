@@ -372,13 +372,13 @@ function handleCreateStack(
   if (count > 0) {
     setAbilityMode(null)
 
-    // Determine token owner: use sourceCard.ownerId, with fallback to localPlayerId
-    // Special handling for dummy player: if active player is dummy, use localPlayerId
-    const activePlayer = gameState.players.find(p => p.id === gameState.activePlayerId)
+    // Determine token owner: tokens always belong to the card owner (even if it's a dummy player)
+    // This ensures dummy player's tokens belong to the dummy, not the controlling player
     let tokenOwnerId = action.sourceCard?.ownerId ?? localPlayerId ?? 0
 
-    // If active player is dummy, tokens belong to the controlling player
-    if (activePlayer?.isDummy && localPlayerId !== null) {
+    // Only fall back to localPlayerId if sourceCard.ownerId is not defined
+    // DO NOT override tokenOwnerId when sourceCard belongs to a dummy player
+    if (!action.sourceCard?.ownerId && localPlayerId !== null) {
       tokenOwnerId = localPlayerId
     }
 

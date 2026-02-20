@@ -18,7 +18,7 @@ import { TIMING } from '../../utils/common'
 import { rawJsonData } from '../../content'
 import { getWebRTCEnabled } from '../useWebRTCEnabled'
 import { getWebSocketURL } from './websocketHelpers'
-import { syncGameStateImages, saveGameState, loadGameState, clearGameState, RECONNECTION_DATA_KEY } from './gameStateStorage'
+import { syncGameStateImages, saveGameState, clearGameState, RECONNECTION_DATA_KEY } from './gameStateStorage'
 import { createInitialState, generateGameId, createNewPlayer } from './gameCreators'
 import type { ConnectionStatus } from './types'
 
@@ -369,14 +369,14 @@ export function useServerConnection(props: UseServerConnectionProps) {
           // Ability completed - clear mode
           setGameState(prev => ({
             ...prev,
-            abilityMode: null,
+            abilityMode: undefined,
           }))
           logger.info('[Ability] Ability completed', data.data)
         } else if (data.type === 'ABILITY_CANCELLED') {
           // Ability cancelled - clear mode
           setGameState(prev => ({
             ...prev,
-            abilityMode: null,
+            abilityMode: undefined,
           }))
           logger.info('[Ability] Ability cancelled')
         } else if (data.type === 'GAME_RESET') {

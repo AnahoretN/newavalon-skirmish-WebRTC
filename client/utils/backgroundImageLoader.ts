@@ -19,7 +19,6 @@ class BackgroundImageLoader {
   private queue: LoadTask[] = []
   private loading: Set<string> = new Set()
   private loaded: Set<string> = new Set()
-  private maxConcurrent = 1 // Only load 1 image at a time in background
   private minDelayBetweenLoads = 1000 // 1 second between loads to respect rate limit
   private lastLoadTime = 0
   private isProcessing = false

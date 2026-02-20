@@ -36,7 +36,7 @@ interface GameBoardProps {
   abilityCheckKey?: number;
   targetingMode?: TargetingModeData | null; // Shared targeting mode from gameState
   clickWaves?: ClickWave[];
-  triggerClickWave?: (location: 'board' | 'hand' | 'emptyCell', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
+  triggerClickWave?: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
   // Mode cancellation props (right-click to cancel)
   setCursorStack?: (value: CursorStackState | null) => void;
   onCancelAllModes?: () => void;
@@ -74,7 +74,7 @@ const GridCell = memo<{
   abilityCheckKey?: number;
   setCursorStack?: (value: CursorStackState | null) => void;
   onCancelAllModes?: () => void;
-  triggerClickWave?: (location: 'board' | 'hand' | 'emptyCell', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
+  triggerClickWave?: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
 }>((props) => {
   const {
       row, col, cell, isGameStarted, handleDrop, draggedItem, setDraggedItem,
@@ -84,7 +84,7 @@ const GridCell = memo<{
       isValidTarget, isTargetingModeValidTarget, targetingModePlayerId,
       targetingModeOriginalOwnerId,
       showNoTarget, disableActiveHighlights, preserveDeployAbilities,
-      abilitySourceCoords, abilityCheckKey, setCursorStack, onCancelAllModes,
+      abilitySourceCoords, abilityCheckKey, setCursorStack: _setCursorStack, onCancelAllModes,
       triggerClickWave,
   } = props
 
@@ -101,7 +101,7 @@ const GridCell = memo<{
       const handleClick = useCallback(() => {
         // Trigger click wave for empty cells
         if (!cell.card && triggerClickWave && localPlayerId !== null) {
-          triggerClickWave('emptyCell', { row, col })
+          triggerClickWave('board', { row, col })
         }
         if (playMode) {
           const itemToDrop: DragItem = {

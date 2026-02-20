@@ -6,7 +6,6 @@
 
 import type { AbilityAction, CursorStackState, CommandContext, Card } from '@/types'
 import { validateTarget } from '@shared/utils/targeting'
-import { logger } from '@/utils/logger'
 import { TIMING } from '@/utils/common'
 
 export interface EmptyCellClickProps {
@@ -56,16 +55,12 @@ export function handleEmptyCellClick(
     handleActionExecution,
     handleDrop,
     moveItem,
-    setCursorStack,
-    triggerNoTarget,
     markAbilityUsed,
     spawnToken,
     resurrectDiscardedCard,
     updatePlayerScore,
     triggerFloatingText,
     handleLineSelection,
-    openContextMenu,
-    triggerDeckSelection
   } = props
 
   // Ignore if interaction is locked
@@ -496,7 +491,7 @@ export function handleEmptyCellClick(
   }
 
   // === ABILITY MODE - LINE SELECTION MODES ===
-  if (abilityMode && ['SCORE_LAST_PLAYED_LINE', 'SELECT_LINE_END', 'SELECT_LINE_START', 'SELECT_DIAGONAL'].includes(abilityMode.mode)) {
+  if (abilityMode?.mode && ['SCORE_LAST_PLAYED_LINE', 'SELECT_LINE_END', 'SELECT_LINE_START', 'SELECT_DIAGONAL'].includes(abilityMode.mode)) {
     handleLineSelection(boardCoords)
     return true
   }
@@ -524,7 +519,7 @@ export function handleEmptyCellContextMenu(
   boardCoords: { row: number; col: number },
   props: EmptyCellClickProps
 ): void {
-  const { gameState, localPlayerId, abilityMode, openContextMenu } = props
+  const { gameState, abilityMode, openContextMenu } = props
 
   // Don't show context menu if in targeting mode
   if (abilityMode) {

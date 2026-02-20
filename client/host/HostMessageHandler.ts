@@ -554,14 +554,106 @@ export class HostMessageHandler {
 
   /**
    * Handle player deck change
+   *
+   * IMPORTANT RULE: Host is the single source of truth for dummy player decks.
+   * - For dummy players: Host ALWAYS creates the deck, regardless of what guest sends
+   * - For real players: Host uses the deck data provided by guest
    */
   private handleChangePlayerDeck(message: WebrtcMessage, _fromPeerId: string): void {
     if (!this.gameState || !message.data) {return}
 
-    const { playerId, deckType } = message.data
+    const { playerId, deckType, deck: receivedDeck } = message.data
+    const targetPlayer = this.gameState.players.find(p => p.id === playerId)
+    if (!targetPlayer) {
+      logger.warn(`[handleChangePlayerDeck] Player ${playerId} not found`)
+      return
+    }
 
+    const isDummy = targetPlayer.isDummy || false
+    let finalDeck: any[] = []
+    let compactDeckForBroadcast: any[] = []
+
+    // For dummy players, ALWAYS create deck on host (ignore guest's deck data)
+    // For real players, use deck data from guest if provided
+    if (isDummy || !receivedDeck || !Array.isArray(receivedDeck) || receivedDeck.length === 0) {
+      // Create deck locally on host
+      const { createDeck } = require('../../hooks/core/gameCreators')
+      finalDeck = createDeck(deckType, playerId, targetPlayer.name)
+
+      // Create compact version for broadcast
+      compactDeckForBroadcast = finalDeck.map(card => ({
+        id: card.id,
+        baseId: card.baseId,
+        power: card.power,
+        powerModifier: card.powerModifier || 0,
+        isFaceDown: card.isFaceDown || false,
+        statuses: card.statuses || []
+      }))
+
+      logger.info(`[handleChangePlayerDeck] Host created deck for ${isDummy ? 'dummy' : 'real'} player ${playerId}: ${deckType}, ${finalDeck.length} cards`)
+    } else {
+      // Use deck data from guest (real player with custom deck data)
+      const { getCardDefinition } = require('../../contentDatabase')
+
+      const reconstructedDeck = receivedDeck.map((compactCard: any) => {
+        if (compactCard.baseId) {
+          const cardDef = getCardDefinition(compactCard.baseId)
+          if (cardDef) {
+            return {
+              ...cardDef,
+              id: compactCard.id,
+              baseId: compactCard.baseId,
+              deck: deckType,
+              ownerId: playerId,
+              ownerName: targetPlayer.name,
+              power: compactCard.power,
+              powerModifier: compactCard.powerModifier || 0,
+              isFaceDown: compactCard.isFaceDown || false,
+              statuses: compactCard.statuses || []
+            }
+          }
+          return {
+            id: compactCard.id,
+            baseId: compactCard.baseId,
+            name: 'Unknown',
+            deck: deckType,
+            ownerId: playerId,
+            ownerName: targetPlayer.name,
+            power: compactCard.power || 0,
+            powerModifier: 0,
+            isFaceDown: false,
+            statuses: [],
+            imageUrl: '',
+            ability: ''
+          }
+        }
+        return {
+          id: compactCard.id,
+          baseId: compactCard.id,
+          name: 'Unknown',
+          deck: deckType,
+          ownerId: playerId,
+          ownerName: targetPlayer.name,
+          power: compactCard.power || 0,
+          powerModifier: 0,
+          isFaceDown: false,
+          statuses: [],
+          imageUrl: '',
+          ability: ''
+        }
+      })
+
+      finalDeck = reconstructedDeck
+      compactDeckForBroadcast = receivedDeck
+
+      logger.info(`[handleChangePlayerDeck] Host used guest's deck data for real player ${playerId}: ${deckType}, ${finalDeck.length} cards`)
+    }
+
+    // Update the player's deck
     const updatedPlayers = this.gameState.players.map(p =>
-      p.id === playerId ? { ...p, selectedDeck: deckType } : p
+      p.id === playerId
+        ? { ...p, selectedDeck: deckType, deck: finalDeck, hand: [], discard: [], announcedCard: null, boardHistory: [] }
+        : p
     )
 
     this.gameState = {
@@ -569,16 +661,19 @@ export class HostMessageHandler {
       players: updatedPlayers
     }
 
-    // Broadcast deck selection to all guests
+    // Broadcast full deck data to ALL guests (including original sender for confirmation)
     this.connectionManager.broadcast({
-      type: 'SYNC_DECK_SELECTIONS',
+      type: 'CHANGE_PLAYER_DECK',
       senderId: this.connectionManager.getPeerId(),
+      playerId,
       data: {
         playerId,
-        selectedDeck: deckType
+        deckType,
+        deck: compactDeckForBroadcast,
+        deckSize: compactDeckForBroadcast.length
       },
       timestamp: Date.now()
-    })
+    }) // Don't exclude sender - everyone gets the same deck data from host
 
     // Notify callback
     if (this.config.onStateUpdate) {

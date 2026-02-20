@@ -300,7 +300,7 @@ const TopDeckView: React.FC<TopDeckViewProps> = memo(({
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[250] backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[250] backdrop-blur-sm">
       <div
         ref={modalRef}
         onDragLeave={handleDragLeave}

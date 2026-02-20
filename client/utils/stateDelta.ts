@@ -38,8 +38,8 @@ export function isDeltaEmpty(delta: StateDelta): boolean {
          !delta.playerDeltas &&
          !delta.phaseDelta &&
          !delta.roundDelta &&
-         !delta.targetingMode &&
-         !delta.clearTargetingMode
+         !delta.targetingModeDelta &&
+         !delta.abilityModeDelta
 }
 
 /**

@@ -53,6 +53,17 @@ export function createDeck(deckType: DeckType, playerId: number, playerName: str
     logger.error(`Deck data for ${actualDeckType} not loaded! Returning empty deck. Available decks:`, Object.keys(currentDecksData))
     return []
   }
+
+  // Debug: log deck contents for Optimates to help track down card duplication issues
+  if (actualDeckType === 'Optimates') {
+    const cardCounts: Record<string, number> = {}
+    deck.forEach(card => {
+      const baseId = card.baseId || card.id
+      cardCounts[baseId] = (cardCounts[baseId] || 0) + 1
+    })
+    logger.info(`[createDeck] Optimates deck for player ${playerName} (${playerId}):`, cardCounts)
+  }
+
   const deckWithOwner = [...deck].map(card => ({ ...card, ownerId: playerId, ownerName: playerName }))
   return shuffleDeck(deckWithOwner)
 }
@@ -78,7 +89,7 @@ export function createNewPlayer(id: number, isDummy = false): Player {
       selectedDeck: 'Damanaki' as DeckType,
       color: PLAYER_COLOR_NAMES[id - 1] || 'blue',
       isDummy,
-      isReady: false,
+      isReady: isDummy, // Dummy players are always ready
       boardHistory: [],
       autoDrawEnabled: true,
     }
@@ -96,7 +107,7 @@ export function createNewPlayer(id: number, isDummy = false): Player {
     selectedDeck: initialDeckType,
     color: PLAYER_COLOR_NAMES[id - 1] || 'blue',
     isDummy,
-    isReady: false,
+    isReady: isDummy, // Dummy players are always ready
     boardHistory: [],
     autoDrawEnabled: true, // Auto-draw is enabled by default for all players
   }

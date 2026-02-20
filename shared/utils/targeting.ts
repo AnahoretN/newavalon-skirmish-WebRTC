@@ -331,6 +331,52 @@ export const calculateValidTargets = (
       }
     })
   }
+  // 3b. SHIELD_SELF_THEN_RIOT_PUSH (Reclaimed Gawain - same as RIOT_PUSH but includes self as valid target)
+  else if (mode === 'SHIELD_SELF_THEN_RIOT_PUSH' && sourceCoords) {
+    // Include self as valid target (clicking self just adds Shield)
+    if (sourceCoords) {
+      targets.push(sourceCoords)
+    }
+
+    const neighbors = [
+      { r: sourceCoords.row - 1, c: sourceCoords.col },
+      { r: sourceCoords.row + 1, c: sourceCoords.col },
+      { r: sourceCoords.row, c: sourceCoords.col - 1 },
+      { r: sourceCoords.row, c: sourceCoords.col + 1 },
+    ]
+
+    // Helper to check if coords are in active bounds
+    const isInActiveBounds = (r: number, c: number) => r >= minBound && r <= maxBound && c >= minBound && c <= maxBound
+
+    neighbors.forEach(nb => {
+      // Check bounds (using visible grid bounds)
+      if (isInActiveBounds(nb.r, nb.c)) {
+        const targetCard = board[nb.r][nb.c].card
+
+        // Check if opponent (Not Self AND Not Teammate)
+        if (targetCard && targetCard.ownerId !== actorId) {
+          const actorPlayer = currentGameState.players.find(p => p.id === actorId)
+          const targetPlayer = currentGameState.players.find(p => p.id === targetCard.ownerId)
+          const isTeammate = actorPlayer?.teamId !== undefined && targetPlayer?.teamId !== undefined && actorPlayer.teamId === targetPlayer.teamId
+
+          if (!isTeammate) {
+            // Calculate push destination
+            const dRow = nb.r - sourceCoords.row
+            const dCol = nb.c - sourceCoords.col
+            const pushRow = nb.r + dRow
+            const pushCol = nb.c + dCol
+
+            // Check dest bounds and emptiness against VISIBLE grid
+            if (isInActiveBounds(pushRow, pushCol)) {
+              if (!board[pushRow][pushCol].card) {
+                targets.push({ row: nb.r, col: nb.c })
+              }
+            }
+          }
+        }
+      }
+    })
+  }
   // 4. Riot Move (Specifically vacated cell)
   else if (mode === 'RIOT_MOVE' && payload.vacatedCoords) {
     targets.push(payload.vacatedCoords)

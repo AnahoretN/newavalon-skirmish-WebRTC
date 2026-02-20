@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { Card, GameState, AbilityAction, CommandContext, DragItem, Player, CounterSelectionData, CursorStackState, FloatingTextData } from '@/types'
 import { validateTarget } from '@shared/utils/targeting'
-import { TIMING } from '@/utils/common'
-import { logger } from '@/utils/logger'
 import { hasReadyAbilityInCurrentPhase } from '@/utils/autoAbilities'
 
 // Import extracted handler modules

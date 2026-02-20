@@ -6,7 +6,6 @@
  */
 
 import type { Card, AbilityAction, CommandContext, DragItem, CursorStackState, CounterSelectionData, GameState, FloatingTextData, DropTarget } from '@/types'
-import { logger } from '@/utils/logger'
 import { TIMING } from '@/utils/common'
 import { createTokenCursorStack } from '@/utils/tokenTargeting'
 
@@ -29,6 +28,7 @@ export interface ModeHandlersProps {
   markAbilityUsed: (coords: { row: number; col: number }, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void
   triggerNoTarget: (coords: { row: number; col: number }) => void
   triggerClickWave: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number; cardIndex: number }) => void
+  triggerDeckSelection: (playerId: number) => void
   handleActionExecution: (action: AbilityAction, sourceCoords: { row: number; col: number }) => void
   interactionLock: React.MutableRefObject<boolean>
   moveItem: (item: DragItem, target: DropTarget) => void
@@ -64,30 +64,8 @@ export function handleModeCardClick(
     gameState,
     localPlayerId,
     abilityMode,
-    commandContext,
-    markAbilityUsed,
-    triggerNoTarget,
-    handleActionExecution,
     interactionLock,
-    moveItem,
-    swapCards,
-    transferStatus,
-    transferAllCounters,
-    spawnToken,
-    modifyBoardCardPower,
-    addBoardCardStatus,
-    removeBoardCardStatus,
-    removeBoardCardStatusByOwner,
-    removeStatusByType,
-    resetDeployStatus,
-    updatePlayerScore,
-    triggerFloatingText,
-    setCounterSelectionData,
-    validTargets,
     handleLineSelection,
-    setAbilityMode,
-    setCommandContext,
-    triggerClickWave,
   } = props
 
   if (!abilityMode || abilityMode.type !== 'ENTER_MODE') {
@@ -108,20 +86,19 @@ export function handleModeCardClick(
       abilityMode.mode !== 'SELECT_TARGET' &&
       abilityMode.mode !== 'RIOT_PUSH' &&
       abilityMode.mode !== 'RIOT_MOVE' &&
-      abilityMode.mode !== 'REVEREND_DOUBLE_EXPLOIT'
+      abilityMode.mode !== 'REVEREND_DOUBLE_EXPLOIT' &&
+      abilityMode.mode !== 'SHIELD_SELF_THEN_RIOT_PUSH'
   ) {
     return false
   }
 
-  const { mode, payload, sourceCard, sourceCoords, isDeployAbility, readyStatusToRemove, recordContext } = abilityMode
+  const { mode, payload, sourceCard } = abilityMode
 
   // Line selection modes
   if (mode === 'SELECT_LINE_START' || mode === 'SELECT_LINE_END') {
     handleLineSelection(boardCoords)
     return true
   }
-
-  const actorId = sourceCard?.ownerId ?? (gameState.players.find(p => p.id === gameState.activePlayerId)?.isDummy ? gameState.activePlayerId : (localPlayerId || gameState.activePlayerId))
 
   // SELECT_TARGET with tokenType (CREATE_STACK)
   if (mode === 'SELECT_TARGET' && payload.tokenType) {
@@ -136,6 +113,11 @@ export function handleModeCardClick(
   // RIOT_PUSH
   if (mode === 'RIOT_PUSH') {
     return handleRiotPush(card, boardCoords, props)
+  }
+
+  // SHIELD_SELF_THEN_RIOT_PUSH (Reclaimed Gawain Deploy)
+  if (mode === 'SHIELD_SELF_THEN_RIOT_PUSH') {
+    return handleShieldSelfThenRiotPush(card, boardCoords, props)
   }
 
   // RIOT_MOVE
@@ -299,10 +281,10 @@ function handleSelectTargetActionType(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, markAbilityUsed, setAbilityMode, moveItem, modifyBoardCardPower, addBoardCardStatus, removeBoardCardStatus, removeBoardCardStatusByOwner, removeStatusByType, resetDeployStatus, updatePlayerScore, triggerFloatingText, setCounterSelectionData, handleActionExecution, gameState } = props
-  const { mode, payload, sourceCoords, isDeployAbility, readyStatusToRemove } = abilityMode!
+  const { abilityMode, markAbilityUsed, setAbilityMode, moveItem, modifyBoardCardPower, addBoardCardStatus, removeBoardCardStatus, removeBoardCardStatusByOwner, removeStatusByType, resetDeployStatus, setCounterSelectionData, handleActionExecution, gameState } = props
+  const { payload, sourceCoords, isDeployAbility, readyStatusToRemove } = abilityMode!
 
-  const actorId = abilityMode.sourceCard?.ownerId ?? (gameState.players.find(p => p.id === gameState.activePlayerId)?.isDummy ? gameState.activePlayerId : props.localPlayerId || gameState.activePlayerId)
+  const actorId = abilityMode!.sourceCard?.ownerId ?? (gameState.players.find(p => p.id === gameState.activePlayerId)?.isDummy ? gameState.activePlayerId : props.localPlayerId || gameState.activePlayerId)
 
   // OPEN_COUNTER_MODAL
   if (payload.actionType === 'OPEN_COUNTER_MODAL') {
@@ -323,6 +305,9 @@ function handleSelectTargetActionType(
       return false
     }
 
+    // Get the owner of Centurion (the card performing the ability)
+    const centurionOwnerId = abilityMode.sourceCard?.ownerId ?? actorId
+
     // Sacrifice
     moveItem({
       card,
@@ -335,23 +320,26 @@ function handleSelectTargetActionType(
     })
 
     // Buff allies in row and column
+    // "Allied" here means cards owned by the same player as Centurion
     const gridSize = gameState.board.length
     const { row: r1, col: c1 } = boardCoords
 
+    // Buff all cards in the same row (except the sacrificed card)
     for (let c = 0; c < gridSize; c++) {
       if (c === c1) continue
       const cell = gameState.board[r1][c]
       const targetCard = cell.card
-      if (targetCard && isAlly(gameState, targetCard.ownerId, actorId)) {
+      if (targetCard && targetCard.ownerId === centurionOwnerId) {
         modifyBoardCardPower({ row: r1, col: c }, 1)
       }
     }
 
+    // Buff all cards in the same column (except the sacrificed card)
     for (let r = 0; r < gridSize; r++) {
       if (r === r1) continue
       const cell = gameState.board[r][c1]
       const targetCard = cell.card
-      if (targetCard && isAlly(gameState, targetCard.ownerId, actorId)) {
+      if (targetCard && targetCard.ownerId === centurionOwnerId) {
         modifyBoardCardPower({ row: r, col: c1 }, 1)
       }
     }
@@ -474,12 +462,12 @@ function handleSelectTargetActionType(
     // Execute the chained action (CREATE_STACK for Revealed token)
     // with targetOwnerId set to the selected card's owner
     // IMPORTANT: Pass sourceCard to ensure correct token ownership
-    if (abilityMode.chainedAction) {
+    if (abilityMode!.chainedAction) {
       const chainedAction = {
-        ...abilityMode.chainedAction,
+        ...abilityMode!.chainedAction,
         targetOwnerId: targetOpponentId,
         sourceCoords: sourceCoords || boardCoords,
-        sourceCard: abilityMode.sourceCard, // Pass the source card (Recon Drone) for token ownership
+        sourceCard: abilityMode!.sourceCard, // Pass the source card (Recon Drone) for token ownership
       }
       handleActionExecution(chainedAction, boardCoords)
     }
@@ -563,7 +551,7 @@ function handleRiotPush(
  * Handle RIOT_MOVE mode (after push)
  */
 function handleRiotMove(
-  card: Card,
+  _card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
@@ -590,6 +578,56 @@ function handleRiotMove(
   // If clicked elsewhere, cancel
   markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
   setAbilityMode(null)
+  return true
+}
+
+/**
+ * Handle SHIELD_SELF_THEN_RIOT_PUSH (Reclaimed Gawain Deploy)
+ * 1. Add Shield status to self
+ * 2. Transition to RIOT_PUSH mode
+ */
+function handleShieldSelfThenRiotPush(
+  card: Card,
+  boardCoords: { row: number; col: number },
+  props: ModeHandlersProps
+): boolean {
+  const { abilityMode, setAbilityMode, addBoardCardStatus, markAbilityUsed, interactionLock } = props
+
+  if (interactionLock.current) {
+    return false
+  }
+
+  const { sourceCoords, isDeployAbility, readyStatusToRemove, sourceCard } = abilityMode!
+
+  if (!sourceCoords || sourceCoords.row < 0 || !sourceCard) {
+    return false
+  }
+
+  const ownerId = sourceCard.ownerId!
+
+  // Allow self-click to skip/finish
+  if (boardCoords.row === sourceCoords.row && boardCoords.col === sourceCoords.col) {
+    // Just add Shield and finish
+    addBoardCardStatus(sourceCoords, 'Shield', ownerId)
+    markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+    return true
+  }
+
+  // First step: Add Shield to self
+  addBoardCardStatus(sourceCoords, 'Shield', ownerId)
+
+  // Second step: Transition to RIOT_PUSH mode
+  setAbilityMode({
+    type: 'ENTER_MODE',
+    mode: 'RIOT_PUSH',
+    sourceCard,
+    sourceCoords,
+    isDeployAbility,
+    readyStatusToRemove,
+    payload: {}
+  })
+
   return true
 }
 
@@ -724,12 +762,13 @@ function handleReverendDoubleExploit(
     for (let i = 0; i < exploitCount; i++) {
       addBoardCardStatus(boardCoords, 'Exploit', ownerId)
     }
-    triggerFloatingText([{
+    triggerFloatingText({
       row: boardCoords.row,
       col: boardCoords.col,
       text: `+${exploitCount}`,
       playerId: ownerId,
-    }])
+      timestamp: Date.now(),
+    })
   }
 
   markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
@@ -783,7 +822,7 @@ function handleSelectUnitForMove(
  * Handle PATROL_MOVE (Patrol Agent Setup, Edith Byron Setup)
  */
 function handlePatrolMove(
-  card: Card,
+  _card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
@@ -829,7 +868,7 @@ function handlePatrolMove(
  * Handle SPAWN_TOKEN (Inventive Maker Deploy, Edith Byron Deploy)
  */
 function handleSpawnToken(
-  card: Card,
+  _card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
@@ -925,7 +964,7 @@ function handleRevealEnemy(
  * Handle SELECT_CELL (Recon Drone Setup, Finn Setup, etc.)
  */
 function handleSelectCell(
-  card: Card,
+  _card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
@@ -946,7 +985,7 @@ function handleSelectCell(
       card: payload.selectedCard,
       source: 'hand',
     }, { target: 'board', boardCoords })
-  } else if (sourceCoords && sourceCoords.row >= 0) {
+  } else if (sourceCoords && sourceCoords.row >= 0 && sourceCard) {
     moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
   }
 
@@ -1011,8 +1050,8 @@ function handleIntegratorLineSelect(
   const ownerId = sourceCard?.ownerId || 0
 
   // Check if selected same row or column as source
-  const sameRow = boardCoords.row === sourceCoords.row
-  const sameCol = boardCoords.col === sourceCoords.col
+  const sameRow = sourceCoords !== undefined && boardCoords.row === sourceCoords.row
+  const sameCol = sourceCoords !== undefined && boardCoords.col === sourceCoords.col
 
   if (!sameRow && !sameCol) {
     return false
@@ -1021,14 +1060,14 @@ function handleIntegratorLineSelect(
   // Count Exploit in selected line
   let exploitCount = 0
 
-  if (sameRow) {
+  if (sameRow && sourceCoords) {
     for (let c = 0; c < gameState.board.length; c++) {
       const card = gameState.board[boardCoords.row][c].card
       if (card?.statuses) {
         exploitCount += card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
       }
     }
-  } else {
+  } else if (sourceCoords) {
     for (let r = 0; r < gameState.board.length; r++) {
       const card = gameState.board[r][boardCoords.col].card
       if (r === sourceCoords.row) continue
@@ -1045,6 +1084,7 @@ function handleIntegratorLineSelect(
       col: sourceCoords.col,
       text: `+${exploitCount}`,
       playerId: ownerId,
+      timestamp: Date.now(),
     })
   }
 
@@ -1069,6 +1109,10 @@ function handleIpAgentThreatScoring(
 
   const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
   const ownerId = sourceCard?.ownerId || 0
+
+  if (!sourceCoords) {
+    return false
+  }
 
   // Check if selected same row or column
   const sameRow = boardCoords.row === sourceCoords.row
@@ -1106,6 +1150,7 @@ function handleIpAgentThreatScoring(
       col: sourceCoords.col,
       text: `+${points}`,
       playerId: ownerId,
+      timestamp: Date.now(),
     })
   }
 
@@ -1133,6 +1178,10 @@ function handleZiusLineSelect(
 
   // Use the card that just got Exploit from commandContext
   const contextCoords = commandContext.lastMovedCardCoords || sourceCoords
+
+  if (!contextCoords) {
+    return false
+  }
 
   // Check if selected same row or column as context card
   const sameRow = boardCoords.row === contextCoords.row
@@ -1181,6 +1230,7 @@ function handleZiusLineSelect(
         col: coords.col,
         text: '+1',
         playerId: ownerId,
+        timestamp: Date.now(),
       })
     })
   }
@@ -1198,13 +1248,13 @@ function handleSelectDiagonal(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, gameState, moveItem, markAbilityUsed, updatePlayerScore, triggerFloatingText, setAbilityMode, payload } = props
+  const { abilityMode, gameState, moveItem, markAbilityUsed, updatePlayerScore, triggerFloatingText, setAbilityMode } = props
 
   if (!abilityMode || abilityMode.mode !== 'SELECT_DIAGONAL') {
     return false
   }
 
-  const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
+  const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove, payload } = abilityMode
   const ownerId = sourceCard?.ownerId || 0
 
   // Check if selected on diagonal
@@ -1276,6 +1326,7 @@ function handleSelectDiagonal(
       col: sourceCoords?.col || boardCoords.col,
       text: `+${exploitCount}`,
       playerId: ownerId,
+      timestamp: Date.now(),
     })
   }
 
@@ -1331,6 +1382,7 @@ function handleScoreLastPlayedLine(
       col: lastPlayedCoords.col,
       text: `+${power}`,
       playerId: ownerId,
+      timestamp: Date.now(),
     })
   } else if (payload?.rewardType === 'DRAW') {
     // Draw cards equal to power
@@ -1404,16 +1456,8 @@ function handleSelectDeck(
 
   const { sourceCoords, isDeployAbility, readyStatusToRemove } = abilityMode
 
-  triggerDeckSelection(card.ownerId)
+  triggerDeckSelection(card.ownerId ?? 0)
   markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
   setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
   return true
-}
-
-// Helper function to check if two players are allies
-function isAlly(gameState: GameState, targetOwnerId: number, actorId: number): boolean {
-  const targetPlayer = gameState.players.find((p) => p.id === targetOwnerId)
-  const actorPlayer = gameState.players.find((p) => p.id === actorId)
-  if (!targetPlayer || !actorPlayer) return false
-  return targetPlayer.teamId !== undefined && actorPlayer.teamId !== undefined && targetPlayer.teamId === actorPlayer.teamId
 }

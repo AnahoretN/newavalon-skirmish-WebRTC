@@ -50,6 +50,8 @@ export type WebrtcMessageType =
   | 'SYNC_VALID_TARGETS'   // Sync valid targets for ability
   | 'TRIGGER_DECK_SELECTION' // Trigger deck selection
   | 'TRIGGER_HAND_CARD_SELECTION' // Trigger hand card selection
+  | 'TRIGGER_CLICK_WAVE' // Trigger click wave effect
+  | 'CLICK_WAVE_TRIGGERED' // Click wave was triggered
   // Ability activation messages
   | 'ABILITY_ACTIVATED'    // Player activated an ability (guest -> host)
   | 'ABILITY_MODE_SET'     // Host broadcasts ability mode to all

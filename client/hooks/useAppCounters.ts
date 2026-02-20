@@ -1,7 +1,7 @@
 import { useRef, useEffect, useLayoutEffect } from 'react'
 import type { CursorStackState, GameState, AbilityAction, DragItem, DropTarget, CommandContext } from '@/types'
 import { validateTarget } from '@shared/utils/targeting'
-import { createTokenCursorStack, getTokenTargetingRules } from '@/utils/tokenTargeting'
+import { createTokenCursorStack } from '@/utils/tokenTargeting'
 
 interface UseAppCountersProps {
     gameState: GameState;

@@ -384,7 +384,7 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
           deck: createDeck(deckType as any, p.id, p.name),
           discard: [],
           score: 0,
-          isReady: false,
+          isReady: p.isDummy || false, // Dummy players are always ready, real players are not ready after reset
           announcedCard: null,
           boardHistory: [],
         }

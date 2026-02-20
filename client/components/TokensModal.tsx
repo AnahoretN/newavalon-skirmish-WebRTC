@@ -15,9 +15,11 @@ interface TokensModalProps {
   anchorEl: { top: number; left: number } | null;
   imageRefreshVersion?: number;
   localPlayerId: number | null; // The player who is dragging the token (becomes token owner)
+  activePlayerId?: number | null; // The active player (may be dummy)
+  players?: any[]; // All players to check if active is dummy
 }
 
-export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDraggedItem, openContextMenu, canInteract, anchorEl, imageRefreshVersion, localPlayerId }) => {
+export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDraggedItem, openContextMenu, canInteract, anchorEl, imageRefreshVersion, localPlayerId, activePlayerId, players }) => {
   const { t } = useLanguage()
   const [draggedTokenId, setDraggedTokenId] = useState<string | null>(null)
   const [droppedOutside, setDroppedOutside] = useState(false)
@@ -64,10 +66,17 @@ export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDr
 
     // If cursor is outside modal bounds, set up draggedItem and close modal
     if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      // Determine token owner: tokens belong to the active player (even if it's a dummy)
+      // This ensures dummy player's tokens belong to the dummy, not the controlling player
+      const activePlayer = players?.find(p => p.id === activePlayerId)
+      const tokenOwnerId = (activePlayer?.isDummy && activePlayerId !== null)
+        ? activePlayerId
+        : (localPlayerId ?? undefined)
+
       setDraggedItem({
         card: draggedTokenRef.current,
         source: 'token_panel',
-        ownerId: localPlayerId ?? undefined, // The player dragging the token becomes the owner
+        ownerId: tokenOwnerId, // The active player owns the token (even if dummy)
       })
 
       setDroppedOutside(true)

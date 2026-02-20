@@ -373,23 +373,18 @@ export function useCardMovement(props: UseCardMovementProps) {
           // Ready statuses belong to the card owner (even if it's a dummy player)
           // Token ownership rules:
           // - Tokens from token_panel: owned by the player who dragged them (item.ownerId)
-          //   Exception: if active player is dummy, token belongs to dummy's owner
-          // - Tokens from abilities (spawnToken): already have ownerId set correctly
+          //   Tokens from abilities (spawnToken): already have ownerId set correctly
           // - Cards from hand/deck/discard: owned by the player whose hand/deck/discard they came from
           let ownerId = cardToMove.ownerId
           if (ownerId === undefined) {
             if (item.source === 'token_panel') {
               // Token from token panel gets owner from DragItem.ownerId (the player who dragged it)
-              // Exception: if active player is a dummy, token belongs to the dummy owner's team
-              const activePlayer = newState.players.find(p => p.id === newState.activePlayerId)
-              if (activePlayer?.isDummy && localPlayerIdRef.current !== null) {
-                // Active player is dummy - token belongs to the controlling player
-                ownerId = localPlayerIdRef.current
-              } else if (item.ownerId !== undefined) {
+              // DragItem.ownerId is set by TokensModal and correctly handles dummy players
+              if (item.ownerId !== undefined) {
                 // Use the ownerId from DragItem (set by TokensModal)
                 ownerId = item.ownerId
               } else {
-                // Fallback to active player or local player
+                // Fallback to active player (may be dummy) or local player
                 ownerId = newState.activePlayerId ?? localPlayerIdRef.current ?? 0
               }
             } else if (item.playerId !== undefined) {
@@ -422,7 +417,7 @@ export function useCardMovement(props: UseCardMovementProps) {
         if (isToken) {
           // Token cards are DESTROYED when moved to hand/discard/deck
           // Remove from board and do NOT add to hand
-          newState.board[item.sourceBoardCoords!.row][item.sourceBoardCoords!.col].card = null
+          newState.board[item.boardCoords!.row][item.boardCoords!.col].card = null
           return newState
         }
 
@@ -493,7 +488,7 @@ export function useCardMovement(props: UseCardMovementProps) {
         if (isToken) {
           // Token cards are DESTROYED when moved to hand/discard/deck
           // Remove from board and do NOT add to discard
-          newState.board[item.sourceBoardCoords!.row][item.sourceBoardCoords!.col].card = null
+          newState.board[item.boardCoords!.row][item.boardCoords!.col].card = null
           return newState
         }
 
@@ -521,7 +516,7 @@ export function useCardMovement(props: UseCardMovementProps) {
         if (isToken) {
           // Token cards are DESTROYED when moved to hand/discard/deck
           // Remove from board and do NOT add to deck
-          newState.board[item.sourceBoardCoords!.row][item.sourceBoardCoords!.col].card = null
+          newState.board[item.boardCoords!.row][item.boardCoords!.col].card = null
           return newState
         }
 
