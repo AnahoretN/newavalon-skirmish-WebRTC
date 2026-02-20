@@ -62,41 +62,26 @@ export function createCardBack(card: Card): any {
  * Create compact card data for transmission
  * Used when sender wants to minimize data (id + baseId + stats only)
  *
- * NOTE: Now includes name and imageUrl to preserve deck order and display properly
+ * NOTE: Uses baseId for reconstruction - name, imageUrl come from contentDatabase
+ * This keeps messages small while preserving functionality
  */
 export interface CompactCardData {
   id: string
   baseId: string
-  name: string
-  imageUrl: string
   power: number
   powerModifier: number
   isFaceDown: boolean
   statuses: any[]
-  ownerId?: number
-  deck?: string
-  ability?: string
-  color?: string
-  types?: string[]
-  faction?: string
 }
 
 export function toCompactCardData(card: Card): CompactCardData {
   return {
     id: card.id,
     baseId: card.baseId || card.id, // Fallback to card.id if baseId is undefined
-    name: card.name, // Include name for display
-    imageUrl: card.imageUrl, // Include imageUrl for display
     power: card.power,
     powerModifier: card.powerModifier || 0,
     isFaceDown: card.isFaceDown ?? false,
-    statuses: card.statuses || [],
-    ownerId: card.ownerId,
-    deck: card.deck,
-    ability: card.ability,
-    color: card.color,
-    types: card.types,
-    faction: card.faction
+    statuses: card.statuses || []
   }
 }
 
@@ -116,7 +101,7 @@ export function createPersonalizedGameState(
   gameState: GameState,
   recipientPlayerId: number | null
 ): GameState {
-  return {
+  const personalized = {
     ...gameState,
     players: gameState.players.map(p => {
       const isOwnHand = recipientPlayerId !== null && p.id === recipientPlayerId
@@ -217,6 +202,10 @@ export function createPersonalizedGameState(
       }))
     ) as any
   }
+
+  logger.debug(`[createPersonalizedGameState] Created personalized state for recipient=${recipientPlayerId}, currentPhase=${personalized.currentPhase}, activePlayerId=${personalized.activePlayerId}`)
+
+  return personalized
 }
 
 /**

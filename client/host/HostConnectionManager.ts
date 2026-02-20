@@ -309,7 +309,7 @@ export class HostConnectionManager {
 
     // Log scores being broadcast for debugging
     const scores = gameState.players.map(p => `P${p.id}:${p.score}`).join(', ')
-    logger.info(`[broadcastGameState] Broadcasting state with scores: ${scores}`)
+    logger.info(`[broadcastGameState] Broadcasting state with scores: ${scores}, currentPhase=${gameState.currentPhase}, activePlayerId=${gameState.activePlayerId}`)
 
     let successCount = 0
 

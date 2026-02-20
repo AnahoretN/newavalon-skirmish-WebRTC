@@ -1442,20 +1442,22 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         } else if (!webrtcIsHostRef.current && message.data?.gameState) {
           // Guest receives compact state - reconstruct full cards
           const recipientPlayerId = message.data.recipientPlayerId ?? null
-          logger.info(`[STATE_UPDATE_COMPACT] Received compact state for player ${recipientPlayerId}`)
           const remoteState = message.data.gameState
+          logger.info(`[STATE_UPDATE_COMPACT] Received compact state for player ${recipientPlayerId}, currentPhase=${remoteState.currentPhase}, activePlayerId=${remoteState.activePlayerId}`)
 
           // Skip if we recently restored from localStorage (has more complete data)
           if (recentlyRestoredFromStorageRef.current) {
-            logger.info('[STATE_UPDATE_COMPACT] Skipping - recently restored from localStorage')
-            setGameState(currentState => ({
-              ...currentState,
-              currentPhase: remoteState.currentPhase,
-              activePlayerId: remoteState.activePlayerId,
-              startingPlayerId: remoteState.startingPlayerId,
-              isReadyCheckActive: remoteState.isReadyCheckActive,
-              isGameStarted: remoteState.isGameStarted,
-            }))
+            setGameState((currentState) => {
+              logger.info(`[STATE_UPDATE_COMPACT] Skipping - recently restored from localStorage, updating phase from ${currentState.currentPhase} to ${remoteState.currentPhase}`)
+              return {
+                ...currentState,
+                currentPhase: remoteState.currentPhase,
+                activePlayerId: remoteState.activePlayerId,
+                startingPlayerId: remoteState.startingPlayerId,
+                isReadyCheckActive: remoteState.isReadyCheckActive,
+                isGameStarted: remoteState.isGameStarted,
+              }
+            })
             return
           }
 
@@ -1794,11 +1796,14 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               board: reconstructedBoard
             })
 
-            return {
+            const mergedState = {
               ...remoteState,
               players: mergedPlayers,
               board: recalculatedBoard
             }
+            logger.info(`[STATE_UPDATE_COMPACT] Merged state: currentPhase=${mergedState.currentPhase}, activePlayerId=${mergedState.activePlayerId}, startingPlayerId=${mergedState.startingPlayerId}`)
+
+            return mergedState
           })
         }
         break
@@ -2893,23 +2898,29 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                   data: {
                     startingPlayerId,
                     activePlayerId: startingPlayerId,
+                    currentPhase: finalState.currentPhase,  // Send current phase (should be 1 = Setup after Preparation)
                     isGameStarted: true,
                     isReadyCheckActive: false
                   },
                   timestamp: Date.now()
                 })
 
-                // Then broadcast game state
-                // For real players: only send sizes (privacy), guests will draw their own cards
-                // For dummy players: send actual card data (all players see dummy cards)
+                // Send ACTIVE_PLAYER_CHANGED to sync phase and active player
+                // This is a small message with only phase info, not full gameState
                 setTimeout(() => {
-                  logger.info('[PLAYER_READY] About to broadcast state after game start')
-                  // Don't pre-empty the arrays - let createOptimizedStateForBroadcast handle it
-                  // It will send optimized data for dummy players and sizes for real players
-                  logger.info(`[PLAYER_READY] Broadcasting state, player sizes: P1 deck=${finalState.players[0]?.deck.length}, hand=${finalState.players[0]?.hand.length}`)
-                  logger.info(`[PLAYER_READY] Broadcasting state with currentPhase=${finalState.currentPhase}`)
-                  broadcastWebrtcState(finalState)
-                  logger.info('[PLAYER_READY] Broadcasted state after game start')
+                  logger.info(`[PLAYER_READY] Sending ACTIVE_PLAYER_CHANGED after game start: activePlayerId=${startingPlayerId}, currentPhase=${finalState.currentPhase}`)
+                  if (webrtcManagerRef.current) {
+                    webrtcManagerRef.current.broadcastToGuests({
+                      type: 'ACTIVE_PLAYER_CHANGED',
+                      senderId: webrtcManagerRef.current.getPeerId(),
+                      data: {
+                        activePlayerId: finalState.activePlayerId,
+                        currentPhase: finalState.currentPhase,
+                        turnNumber: finalState.turnNumber
+                      },
+                      timestamp: Date.now()
+                    })
+                  }
                 }, 100)
               }
 
@@ -3010,6 +3021,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         // Mark that we've received state from host (enables sending our own deltas)
         receivedServerStateRef.current = true
         logger.info('[handleWebrtcMessage] Game starting!', message.data)
+        logger.info(`[GAME_START] Received data: startingPlayerId=${message.data?.startingPlayerId}, activePlayerId=${message.data?.activePlayerId}, currentPhase=${message.data?.currentPhase}, isGameStarted=${message.data?.isGameStarted}`)
         // Log current deck/hand sizes before applying GAME_START
         if (gameStateRef.current) {
           logger.info(`[GAME_START] Current phase before: ${gameStateRef.current.currentPhase}`)
@@ -3032,9 +3044,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               isReadyCheckActive: false,
               startingPlayerId: startingPlayerId,
               activePlayerId: message.data.activePlayerId,
-              // IMPORTANT: Don't set phase here! Let the host's STATE_UPDATE set the correct phase.
-              // The host will have already executed Preparation phase and will send currentPhase=1 (Setup)
-              currentPhase: prev.currentPhase  // Keep current phase until STATE_UPDATE arrives
+              // IMPORTANT: Use phase from host if provided, otherwise keep current phase
+              // Host sends currentPhase=1 (Setup) after executing Preparation phase
+              currentPhase: message.data.currentPhase ?? prev.currentPhase
             }
 
             // Draw initial hand (6 cards) for the local player only
