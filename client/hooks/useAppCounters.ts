@@ -298,7 +298,7 @@ export const useAppCounters = ({
                   return
                 }
 
-                const targetPlayer = gameState.players.find(p => p.id === targetCard.ownerId)
+                // const targetPlayer = gameState.players.find(p => p.id === targetCard.ownerId) // @ts-ignore - Unused but kept for future use
 
                 // For Revealed tokens on opponent's face-down board cards:
                 // Skip the old requestCardReveal system - use unified handleDrop instead

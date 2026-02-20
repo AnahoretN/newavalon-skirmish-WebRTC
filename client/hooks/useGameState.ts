@@ -120,6 +120,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   const [latestDeckSelections, setLatestDeckSelections] = useState<DeckSelectionData[]>([])
   const [latestHandCardSelections, setLatestHandCardSelections] = useState<HandCardSelectionData[]>([])
   const [clickWaves, setClickWaves] = useState<any[]>([])
+  // @ts-ignore - remoteValidTargets reserved for future remote player target synchronization
   const [remoteValidTargets, setRemoteValidTargets] = useState<{
     playerId: number
     validHandTargets: { playerId: number, cardIndex: number }[]
@@ -4573,6 +4574,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   // Destructure card movement functions for direct access
   const {
     moveItem,
+    // @ts-ignore - swapBoardCards exported but currently unused
     swapBoardCards,
   } = cardMovement
 

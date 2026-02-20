@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useRef } from 'react'
-import type { GameState, Player, GridSize, HighlightData, FloatingTextData, DeckSelectionData, HandCardSelectionData, Board } from '../../types'
+import type { GameState, Player, HighlightData, FloatingTextData, DeckSelectionData, HandCardSelectionData, Board } from '../../types'
 import { logger } from '../../utils/logger'
 import { TIMING } from '../../utils/common'
 import { rawJsonData } from '../../content'

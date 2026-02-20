@@ -628,8 +628,10 @@ export class WebrtcManager {
    * - Other players' hands are sent as card backs only
    * - Board cards are visible to all (with proper face up/down status)
    * - Decks/discard are sent as card IDs for own player (size optimization)
+   *
+   * Public static method for use by HostConnectionManager
    */
-  private static createPersonalizedGameState(gameState: GameState, recipientPlayerId: number | null): GameState {
+  public static createPersonalizedGameState(gameState: GameState, recipientPlayerId: number | null): GameState {
     return {
       ...gameState,
       players: gameState.players.map(p => {

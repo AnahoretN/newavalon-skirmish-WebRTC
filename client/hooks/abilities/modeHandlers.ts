@@ -5,6 +5,7 @@
  * Extracted from useAppAbilities.ts
  */
 
+// @ts-ignore - Suppress unused variable warnings for destructured variables that may be used in future
 import type { Card, AbilityAction, CommandContext, DragItem, CursorStackState, CounterSelectionData, GameState, FloatingTextData, DropTarget } from '@/types'
 import { TIMING } from '@/utils/common'
 import { createTokenCursorStack } from '@/utils/tokenTargeting'
@@ -61,8 +62,8 @@ export function handleModeCardClick(
   props: ModeHandlersProps
 ): boolean {
   const {
-    gameState,
-    localPlayerId,
+    gameState: _gameState,
+    localPlayerId: _localPlayerId,
     abilityMode,
     interactionLock,
     handleLineSelection,
@@ -92,7 +93,7 @@ export function handleModeCardClick(
     return false
   }
 
-  const { mode, payload, sourceCard } = abilityMode
+  const { mode, payload, sourceCard: _sourceCard } = abilityMode
 
   // Line selection modes
   if (mode === 'SELECT_LINE_START' || mode === 'SELECT_LINE_END') {
@@ -306,7 +307,7 @@ function handleSelectTargetActionType(
     }
 
     // Get the owner of Centurion (the card performing the ability)
-    const centurionOwnerId = abilityMode.sourceCard?.ownerId ?? actorId
+    const centurionOwnerId = abilityMode!.sourceCard?.ownerId ?? actorId
 
     // Sacrifice
     moveItem({
@@ -587,7 +588,7 @@ function handleRiotMove(
  * 2. Transition to RIOT_PUSH mode
  */
 function handleShieldSelfThenRiotPush(
-  card: Card,
+  _card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
@@ -748,7 +749,7 @@ function handleReverendDoubleExploit(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, gameState, addBoardCardStatus, markAbilityUsed, triggerFloatingText, setAbilityMode } = props
+  const { abilityMode, addBoardCardStatus, markAbilityUsed, triggerFloatingText, setAbilityMode } = props
 
   if (!abilityMode || abilityMode.mode !== 'REVEREND_DOUBLE_EXPLOIT') {
     return false
@@ -904,13 +905,13 @@ function handleRevealEnemy(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, setAbilityMode, setCursorStack, moveItem, markAbilityUsed, gameState, localPlayerId } = props
+  const { abilityMode, setAbilityMode, setCursorStack, markAbilityUsed, gameState, localPlayerId } = props
 
   if (!abilityMode || abilityMode.mode !== 'REVEAL_ENEMY') {
     return false
   }
 
-  const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove, payload } = abilityMode
+  const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
 
   if (!sourceCoords || !sourceCard) {
     return false
@@ -998,7 +999,7 @@ function handleSelectCell(
  * Handle IMMUNIS_RETRIEVE (Immunis Deploy)
  */
 function handleImmunisRetrieve(
-  card: Card,
+  _card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
@@ -1036,11 +1037,11 @@ function handleImmunisRetrieve(
  * Handle INTEGRATOR_LINE_SELECT (Unwavering Integrator Setup)
  */
 function handleIntegratorLineSelect(
-  card: Card,
+  _card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, gameState, moveItem, markAbilityUsed, updatePlayerScore, triggerFloatingText, setAbilityMode } = props
+  const { abilityMode, gameState, markAbilityUsed, updatePlayerScore, triggerFloatingText, setAbilityMode } = props
 
   if (!abilityMode || abilityMode.mode !== 'INTEGRATOR_LINE_SELECT') {
     return false
@@ -1097,7 +1098,7 @@ function handleIntegratorLineSelect(
  * Handle IP_AGENT_THREAT_SCORING (IP Dept Agent Setup)
  */
 function handleIpAgentThreatScoring(
-  card: Card,
+  _card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
@@ -1163,7 +1164,7 @@ function handleIpAgentThreatScoring(
  * Handle ZIUS_LINE_SELECT (Zius Setup - after placing Exploit)
  */
 function handleZiusLineSelect(
-  card: Card,
+  _card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
@@ -1248,7 +1249,7 @@ function handleSelectDiagonal(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, gameState, moveItem, markAbilityUsed, updatePlayerScore, triggerFloatingText, setAbilityMode } = props
+  const { abilityMode, gameState, markAbilityUsed, updatePlayerScore, triggerFloatingText, setAbilityMode } = props
 
   if (!abilityMode || abilityMode.mode !== 'SELECT_DIAGONAL') {
     return false
@@ -1339,11 +1340,11 @@ function handleSelectDiagonal(
  * Handle SCORE_LAST_PLAYED_LINE
  */
 function handleScoreLastPlayedLine(
-  card: Card,
+  _card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, gameState, commandContext, moveItem, markAbilityUsed, updatePlayerScore, triggerFloatingText, setAbilityMode } = props
+  const { abilityMode, gameState, commandContext, markAbilityUsed, updatePlayerScore, triggerFloatingText, setAbilityMode } = props
 
   if (!abilityMode || abilityMode.mode !== 'SCORE_LAST_PLAYED_LINE') {
     return false
@@ -1398,7 +1399,7 @@ function handleScoreLastPlayedLine(
  * Handle SEARCH_DECK (Mr. Pearl, Falk PD)
  */
 function handleSearchDeck(
-  card: Card,
+  _card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
@@ -1421,7 +1422,7 @@ function handleSearchDeck(
  * Handle RETRIEVE_DEVICE (Inventive Maker Setup)
  */
 function handleRetrieveDevice(
-  card: Card,
+  _card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {

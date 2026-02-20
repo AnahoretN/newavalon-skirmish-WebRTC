@@ -130,11 +130,9 @@ export const hasReadyAbilityInCurrentPhase = (
   // - hasReadyAbilityInCurrentPhase(card, gameState)
   // - hasReadyAbilityInCurrentPhase(card, phaseIndex, activePlayerId)
   let phaseIndex: number
-  let gameState: GameState | undefined
   if (typeof phaseOrGameState === 'object') {
     phaseIndex = phaseOrGameState.currentPhase
     activePlayerId = phaseOrGameState.activePlayerId ?? undefined
-    gameState = phaseOrGameState
   } else {
     phaseIndex = phaseOrGameState
   }

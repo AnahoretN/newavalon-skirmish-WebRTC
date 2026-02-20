@@ -17,6 +17,7 @@ import { logger } from '../utils/logger'
 import { serializeDeltaBase64, serializeGameState } from '../utils/webrtcSerialization'
 import { encodeAbilityEffect } from '../utils/abilityMessages'
 import { AbilityEffectType } from '../types/codec'
+import { WebrtcManager } from '../utils/webrtcManager'
 
 export class HostConnectionManager {
   private peer: Peer | null = null
@@ -317,7 +318,7 @@ export class HostConnectionManager {
       const recipientPlayerId = guest?.playerId ?? null
 
       // Create personalized optimized state for this player
-      const personalizedState = this.createPersonalizedGameState(gameState, recipientPlayerId)
+      const personalizedState = WebrtcManager.createPersonalizedGameState(gameState, recipientPlayerId)
 
       const message: WebrtcMessage = {
         type: 'STATE_UPDATE_COMPACT', // Use compact message type with card IDs
@@ -335,181 +336,6 @@ export class HostConnectionManager {
     })
 
     logger.debug(`[broadcastGameState] Sent to ${successCount}/${this.connections.size} guests`)
-  }
-
-  /**
-   * Create personalized game state for a specific player
-   * - Player sees their own full hand (as card IDs only for size)
-   * - Other players' hands are sent as card backs only
-   * - Board cards are visible to all (with proper face up/down status)
-   * - Decks/discard are sent as card IDs for own player (size optimization)
-   */
-  private createPersonalizedGameState(gameState: GameState, recipientPlayerId: number | null): GameState {
-    logger.info(`[createPersonalizedGameState] recipientPlayerId=${recipientPlayerId}, players=${gameState.players.length}`)
-    const result = {
-      ...gameState,
-      players: gameState.players.map(p => {
-        const isOwnHand = recipientPlayerId !== null && p.id === recipientPlayerId
-        const isDummyPlayer = p.isDummy === true
-
-        logger.info(`[createPersonalizedGameState] Player ${p.id}: isDummy=${p.isDummy}, isOwnHand=${isOwnHand}, isDummyPlayer=${isDummyPlayer}`)
-
-        if (isOwnHand) {
-          // Send COMPACT CARD DATA (id + baseId) for own player's hand, deck, discard
-          // This allows the guest to reconstruct full cards from their local contentDatabase
-          const deckSize = p.deck.length ?? 0
-          const discardSize = p.discard.length ?? 0
-          const handSize = p.hand.length ?? 0
-          logger.debug(`[createPersonalizedGameState] Player ${p.id} (own): sending ${handSize} hand cards, ${deckSize} deck cards, ${discardSize} discard cards`)
-          return {
-            ...p,
-            // Send compact card data with baseId - client can reconstruct using getCardDefinition(baseId)
-            handCards: p.hand.map((c: any) => ({
-              id: c.id,
-              baseId: c.baseId,
-              power: c.power,
-              powerModifier: c.powerModifier,
-              isFaceDown: c.isFaceDown,
-              statuses: c.statuses || []
-            })),
-            deckCards: p.deck.map((c: any) => ({
-              id: c.id,
-              baseId: c.baseId,
-              power: c.power,
-              powerModifier: c.powerModifier,
-              isFaceDown: c.isFaceDown,
-              statuses: c.statuses || []
-            })),
-            discardCards: p.discard.map((c: any) => ({
-              id: c.id,
-              baseId: c.baseId,
-              power: c.power,
-              powerModifier: c.powerModifier,
-              isFaceDown: c.isFaceDown,
-              statuses: c.statuses || []
-            })),
-            // Don't send full arrays to avoid size limit
-            hand: [],
-            deck: [],
-            discard: [],
-            // Include minimal announced card info
-            announcedCard: p.announcedCard ? this.optimizeCard(p.announcedCard) : null,
-            // Always use actual array lengths for own player
-            deckSize: deckSize,
-            discardSize: discardSize,
-            handSize: handSize
-          }
-        } else if (isDummyPlayer) {
-          // CRITICAL: Send full deck data for dummy players since all players can control them
-          // Guests need accurate deck state because they can't know which cards were drawn
-          const deckSize = p.deck.length ?? 0
-          const discardSize = p.discard.length ?? 0
-          const handSize = p.hand.length ?? 0
-          logger.info(`[createPersonalizedGameState] Player ${p.id} (dummy): sending ${handSize} hand cards, ${deckSize} deck cards, ${discardSize} discard cards`)
-          return {
-            ...p,
-            // Send compact card data with baseId for dummy player's hand, deck, discard
-            handCards: p.hand.map((c: any) => ({
-              id: c.id,
-              baseId: c.baseId,
-              power: c.power,
-              powerModifier: c.powerModifier,
-              isFaceDown: c.isFaceDown,
-              statuses: c.statuses || []
-            })),
-            deckCards: p.deck.map((c: any) => ({
-              id: c.id,
-              baseId: c.baseId,
-              power: c.power,
-              powerModifier: c.powerModifier,
-              isFaceDown: c.isFaceDown,
-              statuses: c.statuses || []
-            })),
-            discardCards: p.discard.map((c: any) => ({
-              id: c.id,
-              baseId: c.baseId,
-              power: c.power,
-              powerModifier: c.powerModifier,
-              isFaceDown: c.isFaceDown,
-              statuses: c.statuses || []
-            })),
-            hand: [],
-            deck: [],
-            discard: [],
-            announcedCard: p.announcedCard ? this.optimizeCard(p.announcedCard) : null,
-            deckSize: deckSize,
-            discardSize: discardSize,
-            handSize: handSize
-          }
-        } else {
-          // Send only card backs for other players' hands (non-dummy players)
-          const deckSize = p.deckSize ?? p.deck.length ?? 0
-          logger.debug(`[createPersonalizedGameState] Player ${p.id} (other): deckSize=${deckSize}, p.deckSize=${p.deckSize}, deck.length=${p.deck.length}`)
-          return {
-            ...p,
-            hand: p.hand.map((card: any) => this.createCardBack(card)),
-            deck: [],
-            discard: [],
-            announcedCard: p.announcedCard ? this.createCardBack(p.announcedCard) : null,
-            // Keep size information for UI display (use stored size if available, fallback to array length)
-            deckSize: deckSize,
-            handSize: p.handSize ?? p.hand.length ?? 0,
-            discardSize: p.discardSize ?? p.discard.length ?? 0
-          }
-        }
-      }),
-      // Optimize board cards - remove heavy fields but keep all gameplay data
-      board: gameState.board.map(row =>
-        row.map(cell => ({
-          ...cell,
-          card: cell.card ? this.optimizeCard(cell.card) : null
-        }))
-      ) as any
-    }
-    return result
-  }
-
-  /**
-   * Optimize a single card by removing heavy fields
-   * Keeps all gameplay-relevant data
-   */
-  private optimizeCard(card: any): any {
-    return {
-      id: card.id,
-      baseId: card.baseId,
-      name: card.name,
-      power: card.power,
-      powerModifier: card.powerModifier,
-      ability: card.ability,
-      ownerId: card.ownerId,
-      color: card.color,
-      deck: card.deck,
-      isFaceDown: card.isFaceDown,
-      types: card.types,
-      faction: card.faction,
-      statuses: card.statuses || [],
-      // Preserve reveal-related status
-      hasRevealToken: card.hasRevealToken || false,
-      // Include imageUrl for board cards so they display with images
-      imageUrl: card.imageUrl
-    }
-  }
-
-  /**
-   * Create a card-back representation for other players' hands
-   * Only includes visibility-related info, not card content
-   */
-  private createCardBack(card: any): any {
-    return {
-      id: card.id,
-      baseId: card.baseId,
-      name: card.name, // Name needed for display
-      isFaceDown: card.isFaceDown,
-      hasRevealToken: card.hasRevealToken || false,
-      statuses: card.statuses || [],
-      ownerId: card.ownerId, // Include ownerId for correct card back color display
-      deck: card.deck // Include deck for card back theme
-    }
   }
 
   // ==================== Codec Methods ====================

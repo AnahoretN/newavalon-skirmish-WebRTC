@@ -88,9 +88,9 @@ export const useAppAbilities = ({
   setCounterSelectionData,
   interactionLock,
   onAbilityComplete,
-  updateState,
+  // updateState, // @ts-ignore - Unused but kept for future use
   moveItem,
-  drawCard,
+  // drawCard, // @ts-ignore - Unused but kept for future use
   drawCardsBatch,
   updatePlayerScore,
   markAbilityUsed,
@@ -357,6 +357,7 @@ export const useAppAbilities = ({
         markAbilityUsed,
         triggerNoTarget,
         triggerClickWave,
+        triggerDeckSelection: () => {},
         handleActionExecution,
         interactionLock,
         moveItem,
@@ -425,7 +426,7 @@ export const useAppAbilities = ({
    */
   const handleEmptyCellClick = useCallback((boardCoords: { row: number; col: number }) => {
     // Use modular handler
-    const handled = handleEmptyCellClickModule(boardCoords, {
+    handleEmptyCellClickModule(boardCoords, {
       gameState,
       localPlayerId,
       abilityMode,
@@ -509,9 +510,20 @@ export const useAppAbilities = ({
    */
   const handleAnnouncedCardDoubleClickCallback = useCallback((player: Player, card: Card) => {
     handleAnnouncedCardDoubleClick(player, card, {
+      gameState,
+      localPlayerId,
       abilityMode,
       cursorStack,
-      gameState,
+      interactionLock,
+      setCommandContext,
+      setAbilityMode,
+      setCursorStack,
+      moveItem,
+      markAbilityUsed,
+      handleActionExecution,
+      triggerHandCardSelection,
+      clearTargetingMode,
+      clearValidTargets,
       activateAbility: (c, coords) => activateAbilityModule(c, coords, {
         gameState,
         localPlayerId,
@@ -521,7 +533,7 @@ export const useAppAbilities = ({
         markAbilityUsed,
       }),
     })
-  }, [abilityMode, cursorStack, gameState, localPlayerId, handleActionExecution, markAbilityUsed])
+  }, [abilityMode, cursorStack, gameState, localPlayerId, handleActionExecution, markAbilityUsed, setAbilityMode, setCommandContext, triggerHandCardSelection, moveItem, setCursorStack, clearTargetingMode, clearValidTargets, interactionLock])
 
   return {
     activateAbility,

@@ -29,7 +29,7 @@ export interface ActionHandlerProps {
   openContextMenu: (e: React.MouseEvent, type: string, data: any) => void
   markAbilityUsed: (coords: { row: number; col: number }, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void
   triggerNoTarget: (coords: { row: number; col: number }) => void
-  triggerClickWave: (target: string, coords?: { row: number; col: number }) => void
+  triggerClickWave: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number; cardIndex: number }) => void
   handleActionExecution: (action: AbilityAction, sourceCoords: { row: number; col: number }) => void
   interactionLock: React.MutableRefObject<boolean>
   moveItem: (item: DragItem, target: any) => void
