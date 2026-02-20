@@ -284,7 +284,7 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
 
     // Get player color from game state
     const player = gameStateRef.current.players.find(p => p.id === playerId)
-    if (!player) return
+    if (!player) {return}
 
     const wave = {
       timestamp: Date.now(),

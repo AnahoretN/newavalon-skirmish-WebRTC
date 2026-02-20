@@ -472,7 +472,7 @@ export function handleUpdateState(ws, data) {
         }
 
         const removeCardsFromList = (list: any[], isDiscardPile = false) => {
-          if (!list) return;
+          if (!list) {return;}
           // Filter out cards that are on the board or in announced slot
           for (let i = list.length - 1; i >= 0; i--) {
             const card = list[i];

@@ -38,7 +38,9 @@ export function handleReverendSetupScore(
   sourceCoords: { row: number; col: number },
   props: ActionCompletionProps
 ): boolean {
-  if (action.type !== 'REVEREND_SETUP_SCORE') return false
+  if (action.type !== 'REVEREND_SETUP_SCORE') {
+    return false
+  }
 
   const { gameState, updatePlayerScore, triggerFloatingText, markAbilityUsed } = props
   const ownerId = action.sourceCard?.ownerId ?? 0
@@ -83,7 +85,9 @@ export function handleFinnScoring(
   sourceCoords: { row: number; col: number },
   props: ActionCompletionProps
 ): boolean {
-  if (action.payload?.customAction !== 'FINN_SCORING') return false
+  if (action.payload?.customAction !== 'FINN_SCORING') {
+    return false
+  }
 
   const { gameState, updatePlayerScore, triggerFloatingText, markAbilityUsed } = props
   let revealedCount = 0
@@ -140,7 +144,9 @@ export function handleRemoveAllAimFromContext(
   sourceCoords: { row: number; col: number },
   props: ActionCompletionProps
 ): boolean {
-  if (action.payload?.customAction !== 'REMOVE_ALL_AIM_FROM_CONTEXT') return false
+  if (action.payload?.customAction !== 'REMOVE_ALL_AIM_FROM_CONTEXT') {
+    return false
+  }
 
   const { removeStatusByType, commandContext } = props
 

@@ -169,7 +169,9 @@ export function handleEmptyCellClick(
       if (sourceCoords && sourceCoords.row >= 0) {
         return sourceCoords
       }
-      if (!sourceCard) return null
+      if (!sourceCard) {
+        return null
+      }
       for (let r = 0; r < gameState.board.length; r++) {
         for (let c = 0; c < gameState.board.length; c++) {
           if (gameState.board[r][c].card?.id === sourceCard.id) {
@@ -180,7 +182,9 @@ export function handleEmptyCellClick(
       return null
     })()
 
-    if (!currentCardCoords || !sourceCard) return false
+    if (!currentCardCoords || !sourceCard) {
+      return false
+    }
 
     let isValidMove = false
 
@@ -202,12 +206,18 @@ export function handleEmptyCellClick(
           { r: (r1 + r2) / 2, c: (c1 + c2) / 2 },
         ]
         isValidMove = inters.some(i => {
-          if (!Number.isInteger(i.r) || !Number.isInteger(i.c)) return false
+          if (!Number.isInteger(i.r) || !Number.isInteger(i.c)) {
+            return false
+          }
           const offset = Math.floor((gameState.board.length - gameState.activeGridSize) / 2)
           const minBound = offset
           const maxBound = offset + gameState.activeGridSize - 1
-          if (i.r < minBound || i.r > maxBound || i.c < minBound || i.c > maxBound) return false
-          if (Math.abs(i.r - r1) + Math.abs(i.c - c1) !== 1) return false
+          if (i.r < minBound || i.r > maxBound || i.c < minBound || i.c > maxBound) {
+            return false
+          }
+          if (Math.abs(i.r - r1) + Math.abs(i.c - c1) !== 1) {
+            return false
+          }
           return !gameState.board[i.r][i.c].card
         })
       }
@@ -219,7 +229,9 @@ export function handleEmptyCellClick(
       isValidMove = Math.abs(boardCoords.row - currentCardCoords.row) + Math.abs(boardCoords.col - currentCardCoords.col) === 1
     }
 
-    if (!isValidMove) return false
+    if (!isValidMove) {
+      return false
+    }
 
     // Handle moveFromHand case
     if (payload?.moveFromHand && commandContext.selectedHandCard) {
@@ -257,7 +269,9 @@ export function handleEmptyCellClick(
         nextAction.targetOwnerId = sourceCard.ownerId
       }
       if (payload.recordContext) {
-        if (!nextAction.payload) nextAction.payload = {}
+        if (!nextAction.payload) {
+          nextAction.payload = {}
+        }
         nextAction.payload._tempContextId = sourceCard.id
       }
       setAbilityMode(null)
@@ -275,7 +289,7 @@ export function handleEmptyCellClick(
   if (abilityMode && abilityMode.mode === 'PATROL_MOVE') {
     const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
 
-    if (!sourceCoords || !sourceCard) return false
+    if (!sourceCoords || !sourceCard) {return false}
 
     // Same cell = cancel
     if (boardCoords.row === sourceCoords.row && boardCoords.col === sourceCoords.col) {
@@ -288,10 +302,10 @@ export function handleEmptyCellClick(
     const sameRow = boardCoords.row === sourceCoords.row
     const sameCol = boardCoords.col === sourceCoords.col
 
-    if (!sameRow && !sameCol) return false
+    if (!sameRow && !sameCol) {return false}
 
     // Check if cell is empty
-    if (gameState.board[boardCoords.row][boardCoords.col].card !== null) return false
+    if (gameState.board[boardCoords.row][boardCoords.col].card !== null) {return false}
 
     moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
     markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
@@ -303,7 +317,7 @@ export function handleEmptyCellClick(
   if (abilityMode && abilityMode.mode === 'RIOT_MOVE') {
     const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove, payload } = abilityMode
 
-    if (!sourceCoords || !sourceCard || !payload?.vacatedCoords) return false
+    if (!sourceCoords || !sourceCard || !payload?.vacatedCoords) {return false}
 
     if (boardCoords.row === payload.vacatedCoords.row && boardCoords.col === payload.vacatedCoords.col) {
       moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
@@ -322,10 +336,10 @@ export function handleEmptyCellClick(
   if (abilityMode && abilityMode.mode === 'IMMUNIS_RETRIEVE') {
     const { sourceCoords, payload, isDeployAbility, readyStatusToRemove, sourceCard } = abilityMode
 
-    if (!sourceCoords) return false
+    if (!sourceCoords) {return false}
 
     const isAdj = Math.abs(boardCoords.row - sourceCoords.row) + Math.abs(boardCoords.col - sourceCoords.col) === 1
-    if (!isAdj) return false
+    if (!isAdj) {return false}
 
     if (payload?.selectedCardIndex !== undefined) {
       const ownerId = sourceCard?.ownerId || 0
@@ -342,12 +356,12 @@ export function handleEmptyCellClick(
   if (abilityMode && abilityMode.mode === 'INTEGRATOR_LINE_SELECT') {
     const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
 
-    if (!sourceCoords || sourceCoords.row < 0) return false
+    if (!sourceCoords || sourceCoords.row < 0) {return false}
 
     const sameRow = boardCoords.row === sourceCoords.row
     const sameCol = boardCoords.col === sourceCoords.col
 
-    if (!sameRow && !sameCol) return false
+    if (!sameRow && !sameCol) {return false}
 
     const ownerId = sourceCard?.ownerId || 0
     let exploitCount = 0
@@ -362,7 +376,7 @@ export function handleEmptyCellClick(
     } else {
       for (let r = 0; r < gridSize; r++) {
         const card = gameState.board[r][boardCoords.col].card
-        if (r === sourceCoords.row) continue
+        if (r === sourceCoords.row) {continue}
         if (card?.statuses) {
           exploitCount += card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
         }
@@ -388,12 +402,12 @@ export function handleEmptyCellClick(
   if (abilityMode && abilityMode.mode === 'IP_AGENT_THREAT_SCORING') {
     const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
 
-    if (!sourceCoords) return false
+    if (!sourceCoords) {return false}
 
     const sameRow = boardCoords.row === sourceCoords.row
     const sameCol = boardCoords.col === sourceCoords.col
 
-    if (!sameRow && !sameCol) return false
+    if (!sameRow && !sameCol) {return false}
 
     const ownerId = sourceCard?.ownerId || 0
     let threatCount = 0
@@ -408,7 +422,7 @@ export function handleEmptyCellClick(
     } else {
       for (let r = 0; r < gridSize; r++) {
         const card = gameState.board[r][boardCoords.col].card
-        if (r === sourceCoords.row) continue
+        if (r === sourceCoords.row) {continue}
         if (card?.statuses) {
           threatCount += card.statuses.filter((s: any) => s.type === 'Threat' && s.addedByPlayerId === ownerId).length
         }
@@ -436,12 +450,12 @@ export function handleEmptyCellClick(
     const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
 
     const contextCoords = commandContext.lastMovedCardCoords || sourceCoords
-    if (!contextCoords) return false
+    if (!contextCoords) {return false}
 
     const sameRow = boardCoords.row === contextCoords.row
     const sameCol = boardCoords.col === contextCoords.col
 
-    if (!sameRow && !sameCol) return false
+    if (!sameRow && !sameCol) {return false}
 
     const ownerId = sourceCard?.ownerId || 0
     let exploitCount = 0
@@ -461,7 +475,7 @@ export function handleEmptyCellClick(
     } else {
       for (let r = 0; r < gridSize; r++) {
         const card = gameState.board[r][boardCoords.col].card
-        if (r === contextCoords.row) continue
+        if (r === contextCoords.row) {continue}
         if (card?.statuses) {
           const exploits = card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId)
           exploitCount += exploits.length

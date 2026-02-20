@@ -501,10 +501,14 @@ const AppInner = function AppInner() {
   // Sort players by turn order relative to local player
   // The panel shows: player after local player, then next, etc., with player before local player last
   const sortedPlayers = useMemo(() => {
-    if (!gameState?.players || !localPlayerId) return gameState?.players || []
+    if (!gameState?.players || !localPlayerId) {
+      return gameState?.players || []
+    }
 
     const localPlayerIndex = gameState.players.findIndex(p => p.id === localPlayerId)
-    if (localPlayerIndex === -1) return gameState.players
+    if (localPlayerIndex === -1) {
+      return gameState.players
+    }
 
     // Before game starts, show players in ID order (no turn order yet)
     const gameStarted = !!gameState.isGameStarted && gameState.startingPlayerId !== undefined
@@ -1121,14 +1125,14 @@ const AppInner = function AppInner() {
         // abilityMode is suppressed visually but can modify cursorStack parameters
         targetingAction = createTargetingActionFromCursorStack(cursorStack, gameState, actorId)
         sourceCoords = cursorStack.sourceCoords
-      } else if (abilityMode) {
-        // Pure ability mode (no tokens active)
-        targetingAction = abilityMode
-        sourceCoords = abilityMode.sourceCoords
       } else if (playMode && abilityMode) {
         targetingAction = createTargetingActionFromAbilityMode(abilityMode)
       } else if (commandModalCard && abilityMode) {
         targetingAction = createTargetingActionFromAbilityMode(abilityMode)
+      } else if (abilityMode) {
+        // Pure ability mode (no tokens active)
+        targetingAction = abilityMode
+        sourceCoords = abilityMode.sourceCoords
       }
 
       if (targetingAction && actorId !== null) {

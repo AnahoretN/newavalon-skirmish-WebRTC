@@ -38,7 +38,7 @@ async function ensureLogsDir() {
  * Adds a timestamped message to a game's log
  */
 export function logToGame(gameId: string, message: string, gameLogs: Map<string, string[]>) {
-  if (!gameId) return;
+  if (!gameId) {return;}
   if (!gameLogs.has(gameId)) {
     gameLogs.set(gameId, []);
   }
@@ -53,7 +53,7 @@ export function logToGame(gameId: string, message: string, gameLogs: Map<string,
  */
 export function transferHost(gameId: string, currentHostId: number, gameLogs: Map<string, string[]>) {
   const gameState = getGameState(gameId);
-  if (!gameState) return null;
+  if (!gameState) {return null;}
 
   const players = gameState.players || [];
   const hostPlayer = players.find((p: any) => p.id === currentHostId);
@@ -92,10 +92,10 @@ export function removePlayerFromGame(
   broadcastGamesListFn: () => void
 ) {
   const gameState = getGameState(gameId);
-  if (!gameState) return;
+  if (!gameState) {return;}
 
   const player = gameState.players.find((p: any) => p.id === playerId);
-  if (!player) return;
+  if (!player) {return;}
 
   logToGame(gameId, `Player ${playerId} (${player.name}) removed from game after 5min disconnect timeout.`, gameLogs);
 
@@ -130,7 +130,7 @@ export function markPlayerDisconnected(
   broadcastState: (gameId: string, gameState: any) => void
 ) {
   const gameState = getGameState(gameId);
-  if (!gameState) return;
+  if (!gameState) {return;}
 
   const player = gameState.players.find((p: any) => p.id === playerId);
   if (player && !player.isDisconnected) {
@@ -232,7 +232,7 @@ export function resetInactivityTimer(
   gameLogs: Map<string, string[]>,
   wss: any
 ) {
-  if (!gameId) return;
+  if (!gameId) {return;}
 
   // Clear existing timer
   if (gameInactivityTimers.has(gameId)) {
@@ -261,7 +261,7 @@ export function convertPlayerToDummy(
   broadcastState: (gameId: string, gameState: any) => void
 ) {
   const gameState = getGameState(gameId);
-  if (!gameState) return;
+  if (!gameState) {return;}
 
   const player = gameState.players.find((p: any) => p.id === playerId);
   if (player && player.isDisconnected) {
@@ -287,7 +287,7 @@ export function scheduleGameTermination(
   gameLogs: Map<string, string[]>,
   wss: any
 ) {
-  if (gameTerminationTimers.has(gameId)) return; // Timer already scheduled
+  if (gameTerminationTimers.has(gameId)) {return;} // Timer already scheduled
 
   logToGame(gameId, 'Last real player disconnected. Starting 1-minute shutdown timer.', gameLogs);
 
@@ -348,13 +348,13 @@ export function handlePlayerLeave(
   broadcastState: (gameId: string, gameState: any) => void,
   broadcastGamesListFn: () => void
 ) {
-  if (!gameId || playerId === null || playerId === undefined) return;
+  if (!gameId || playerId === null || playerId === undefined) {return;}
 
   const gameState = getGameState(gameId);
-  if (!gameState) return;
+  if (!gameState) {return;}
 
   const player = gameState.players.find((p: any) => p.id === playerId);
-  if (!player) return;
+  if (!player) {return;}
 
   // Clear existing timers for this player
   cancelPlayerDisconnectTimer(gameId, playerId);

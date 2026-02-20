@@ -4,8 +4,10 @@
  * Shared helper functions for ability system
  */
 
+/* eslint-disable @typescript-eslint/no-unused-vars -- Type definitions may have params used only in implementations */
+
 // Use any for Card to avoid type conflicts between client/server Card types
-//eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 export type Card = any
 
 /**
@@ -28,7 +30,7 @@ export interface CardAbilityDefinition {
   baseIdAlt?: string[]
   activationType: AbilityActivationType
   supportRequired?: boolean
-  getAction: (card: Card, gameState: any, ownerId: number, coords: { row: number; col: number }) => any | null
+  getAction: (_card: Card, _gameState: any, _ownerId: number, _coords: { row: number; col: number }) => any | null
 }
 
 /**
@@ -49,6 +51,7 @@ export const createHandTargetFilter = (
   gameState: any,
   actorId: number,
   constraints: HandTargetFilter
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 ): ((card: Card) => boolean) => {
   return (card: Card) => {
     // Check targetType if specified

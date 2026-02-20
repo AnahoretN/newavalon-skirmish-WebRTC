@@ -274,7 +274,7 @@ export const CARD_ABILITIES: CardAbilityDefinition[] = [
       sourceCoords: coords,
       payload: {
         filter: (target: Card) => {
-          if (target.id === _card.id) return false
+          if (target.id === _card.id) {return false}
           return target.ownerId === _ownerId
         },
       },

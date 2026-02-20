@@ -37,8 +37,12 @@ export const ClickWaveWrapper: React.FC<ClickWaveWrapperProps> = ({
 }) => {
   // Find active click wave for this specific location
   const activeWave = clickWaves.find(w => {
-    if (w.clickedByPlayerId !== playerId) return false
-    if (w.location !== location) return false
+    if (w.clickedByPlayerId !== playerId) {
+      return false
+    }
+    if (w.location !== location) {
+      return false
+    }
     if (location === 'board' && boardCoords) {
       return w.boardCoords?.row === boardCoords.row && w.boardCoords?.col === boardCoords.col
     }

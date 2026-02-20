@@ -55,7 +55,7 @@ export async function openGameLog(gameId: string, gameInfo?: Record<string, unkn
  */
 export async function closeGameLog(gameId: string): Promise<void> {
   const logData = gameLogStreams.get(gameId);
-  if (!logData) return;
+  if (!logData) {return;}
 
   try {
     // Write session end
@@ -82,7 +82,7 @@ export async function closeGameLog(gameId: string): Promise<void> {
  */
 async function writeLogEntry(gameId: string, entry: Record<string, unknown>): Promise<void> {
   const logData = gameLogStreams.get(gameId);
-  if (!logData) return;
+  if (!logData) {return;}
 
   try {
     const logLine = JSON.stringify(entry) + '\n';

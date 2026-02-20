@@ -106,7 +106,7 @@ export function handleAssignTeams(ws, data) {
     for (const teamId in assignments) {
       const playerIds = assignments[teamId];
       const teamCaptain = playerMap.get(playerIds[0]) as any;
-      if (!teamCaptain) continue;
+      if (!teamCaptain) {continue;}
 
       playerIds.forEach((playerId: number) => {
         const player = playerMap.get(playerId) as any;

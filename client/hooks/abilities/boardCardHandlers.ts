@@ -8,8 +8,6 @@ import type { Card, AbilityAction, CursorStackState, CommandContext, DragItem } 
 import { calculateValidTargets } from '@shared/utils/targeting'
 import type { CounterSelectionData } from '@/types'
 
-/* eslint-disable @typescript-eslint/no-unused-vars -- props passed to functions but not all used in every function */
-
 export interface BoardCardClickProps {
   gameState: any
   localPlayerId: number | null

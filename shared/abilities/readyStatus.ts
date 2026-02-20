@@ -13,7 +13,7 @@
  */
 
 // Use any for Card to avoid type conflicts between client/server Card types
-//eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export type Card = any
 
 // Ready status types

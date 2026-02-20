@@ -139,7 +139,7 @@ export function getThumbnailImageUrl(url: string, size: number = 200): string {
  * Prefetch an image (load it in background)
  */
 export function prefetchImage(url: string): void {
-  if (!url) return
+  if (!url) {return}
 
   const img = new Image()
   img.src = url
@@ -152,7 +152,7 @@ export function prefetchImages(urls: string[], maxConcurrent: number = 3): void 
   let index = 0
 
   function loadNext() {
-    if (index >= urls.length) return
+    if (index >= urls.length) {return}
 
     const url = urls[index++]
     const img = new Image()

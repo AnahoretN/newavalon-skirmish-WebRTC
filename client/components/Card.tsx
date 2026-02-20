@@ -267,9 +267,13 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     // Only update if current URL is not already target or preview
     setDisplayUrl(prev => {
       // If we already have the target URL, keep it
-      if (prev === targetWithVersion) return prev
+      if (prev === targetWithVersion) {
+        return prev
+      }
       // If we already have the preview URL, keep it
-      if (prev === previewWithVersion) return prev
+      if (prev === previewWithVersion) {
+        return prev
+      }
       // Otherwise show preview
       return previewWithVersion
     })

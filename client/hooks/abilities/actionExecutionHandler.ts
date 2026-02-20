@@ -11,8 +11,6 @@ import { logger } from '@/utils/logger'
 import { TIMING } from '@/utils/common'
 import { createTokenCursorStack } from '@/utils/tokenTargeting'
 
-/* eslint-disable @typescript-eslint/no-unused-vars -- props passed to functions but not all used in every function */
-
 export interface ActionHandlerProps {
   gameState: GameState
   localPlayerId: number | null
@@ -633,7 +631,9 @@ function handleContextReward(
   const rewardType = action.payload?.contextReward
   const coords = commandContext.lastMovedCardCoords || sourceCoords
 
-  if (!coords || coords.row < 0) return
+  if (!coords || coords.row < 0) {
+    return
+  }
 
   // Find the card at coords
   let card = gameState.board[coords.row][coords.col].card
@@ -648,7 +648,9 @@ function handleContextReward(
           break
         }
       }
-      if (card) break
+      if (card) {
+        break
+      }
     }
   }
 

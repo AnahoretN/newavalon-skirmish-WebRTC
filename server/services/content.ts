@@ -55,7 +55,7 @@ export async function initializeContent() {
 
     // Process ability text to convert literal \n to actual newlines
     const processAbilityText = (text: string): string => {
-      if (typeof text !== 'string') return text;
+      if (typeof text !== 'string') {return text;}
       return text.replace(/\\n/g, '\n');
     };
 
@@ -120,7 +120,7 @@ export async function updateContent(newContent: any) {
   try {
     // Process ability text to convert literal \n to actual newlines
     const processAbilityText = (text: string): string => {
-      if (typeof text !== 'string') return text;
+      if (typeof text !== 'string') {return text;}
       return text.replace(/\\n/g, '\n');
     };
 

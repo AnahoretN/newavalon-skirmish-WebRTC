@@ -379,7 +379,7 @@ export const useAppAbilities = ({
         validTargets,
         handleLineSelection,
       })
-      if (handled) return
+      if (handled) {return}
     }
 
     // 5. Default: activate ability if no mode

@@ -47,7 +47,7 @@ class BackgroundImageLoader {
     this.queue.sort((a, b) => {
       const priorityOrder = { high: 0, normal: 1, low: 2 }
       const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority]
-      if (priorityDiff !== 0) return priorityDiff
+      if (priorityDiff !== 0) {return priorityDiff}
       return a.timestamp - b.timestamp
     })
 
@@ -204,7 +204,7 @@ export function extractCardUrls(players: any[], localPlayerId: number | null): s
  * These are high priority since user is likely to click
  */
 export function preloadCardDetailImages(card: any): void {
-  if (!card) return
+  if (!card) {return}
 
   const urls: string[] = []
 

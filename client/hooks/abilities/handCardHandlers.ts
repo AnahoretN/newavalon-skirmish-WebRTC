@@ -9,7 +9,7 @@ import { TIMING } from '@/utils/common'
 import { validateTarget } from '@shared/utils/targeting'
 import { canActivateAbility } from '@shared/abilities'
 
-/* eslint-disable @typescript-eslint/no-unused-vars -- props passed to functions but not all used in every function */
+ 
 
 export interface HandCardClickProps {
   gameState: any

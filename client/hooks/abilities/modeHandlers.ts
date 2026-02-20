@@ -10,7 +10,7 @@ import type { Card, AbilityAction, CommandContext, DragItem, CursorStackState, C
 import { TIMING } from '@/utils/common'
 import { createTokenCursorStack } from '@/utils/tokenTargeting'
 
-/* eslint-disable @typescript-eslint/no-unused-vars -- props passed to functions but not all used in every function */
+ 
 
 export interface ModeHandlersProps {
   gameState: GameState
@@ -327,7 +327,7 @@ function handleSelectTargetActionType(
 
     // Buff all cards in the same row (except the sacrificed card)
     for (let c = 0; c < gridSize; c++) {
-      if (c === c1) continue
+      if (c === c1) {continue}
       const cell = gameState.board[r1][c]
       const targetCard = cell.card
       if (targetCard && targetCard.ownerId === centurionOwnerId) {
@@ -337,7 +337,7 @@ function handleSelectTargetActionType(
 
     // Buff all cards in the same column (except the sacrificed card)
     for (let r = 0; r < gridSize; r++) {
-      if (r === r1) continue
+      if (r === r1) {continue}
       const cell = gameState.board[r][c1]
       const targetCard = cell.card
       if (targetCard && targetCard.ownerId === centurionOwnerId) {
@@ -1071,7 +1071,7 @@ function handleIntegratorLineSelect(
   } else if (sourceCoords) {
     for (let r = 0; r < gameState.board.length; r++) {
       const card = gameState.board[r][boardCoords.col].card
-      if (r === sourceCoords.row) continue
+      if (r === sourceCoords.row) {continue}
       if (card?.statuses) {
         exploitCount += card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
       }
@@ -1136,7 +1136,7 @@ function handleIpAgentThreatScoring(
   } else {
     for (let r = 0; r < gameState.board.length; r++) {
       const card = gameState.board[r][boardCoords.col].card
-      if (r === sourceCoords.row) continue
+      if (r === sourceCoords.row) {continue}
       if (card?.statuses) {
         threatCount += card.statuses.filter((s: any) => s.type === 'Threat' && s.addedByPlayerId === ownerId).length
       }
@@ -1210,7 +1210,7 @@ function handleZiusLineSelect(
   } else {
     for (let r = 0; r < gameState.board.length; r++) {
       const card = gameState.board[r][boardCoords.col].card
-      if (r === contextCoords.row) continue
+      if (r === contextCoords.row) {continue}
       if (card?.statuses) {
         const exploits = card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId)
         exploitCount += exploits.length

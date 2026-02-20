@@ -52,7 +52,9 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
 
   const getWaveStyle = (wave: Wave) => {
     const waveElapsed = elapsed - wave.startTime
-    if (waveElapsed < 0) return null
+    if (waveElapsed < 0) {
+      return null
+    }
 
     const duration = 300
     const progress = Math.min(waveElapsed / duration, 1)
@@ -80,7 +82,9 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
     >
       {waves.map((wave) => {
         const style = getWaveStyle(wave)
-        if (!style) return null
+        if (!style) {
+          return null
+        }
 
         return (
           <div

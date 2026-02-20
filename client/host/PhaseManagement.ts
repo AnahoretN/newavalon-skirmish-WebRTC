@@ -70,7 +70,7 @@ export function performPreparationPhase(gameState: GameState, activePlayerId: nu
   })
 
   // Transition to Setup phase
-  let newState: GameState = {
+  const newState: GameState = {
     ...gameState,
     players: newPlayers,
     currentPhase: 1  // Setup

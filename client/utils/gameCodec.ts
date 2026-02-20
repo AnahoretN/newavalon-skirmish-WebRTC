@@ -585,8 +585,8 @@ export function decodeCardState(
 
     // Sizes
     const deckSize = data[offset++]
-    data[offset++] // Skip handSize
-    data[offset++] // Skip discardSize
+    data[offset++] // Skip handSize // eslint-disable-line @typescript-eslint/no-unused-expressions
+    data[offset++] // Skip discardSize // eslint-disable-line @typescript-eslint/no-unused-expressions
     const hasShowcase = data[offset++] === 1
 
     const score = data[offset++]

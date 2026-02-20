@@ -87,7 +87,7 @@ export function handleAbilityEffectMessage(
     const { effectType, timestamp, data: effectData } = decodeAbilityEffect(data)
     logger.debug(`[WebRTCCodec] Received ability effect: ${effectType}`)
 
-    let updatedState = currentState
+    const updatedState = currentState
 
     switch (effectType) {
       case 0x01: // HIGHLIGHT_CELL

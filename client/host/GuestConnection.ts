@@ -217,7 +217,7 @@ export class GuestConnectionManager {
    * Check if connected to host
    */
   isConnected(): boolean {
-    if (!this.hostPeerId) return false
+    if (!this.hostPeerId) {return false}
     const conn = this.webrtcPeer.getConnection(this.hostPeerId)
     return conn?.open ?? false
   }

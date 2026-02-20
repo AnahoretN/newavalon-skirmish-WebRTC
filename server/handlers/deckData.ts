@@ -131,7 +131,7 @@ export function handleUpdateDeckData(ws: WebSocket & { playerId?: number }, data
     const sanitizedDeckFiles = Array.isArray(deckData.deckFiles)
       ? deckData.deckFiles.filter(deck => {
           const deckObj = deck as any;
-          if (!deck || typeof deck !== 'object') return false;
+          if (!deck || typeof deck !== 'object') {return false;}
           return deckObj.id && deckObj.name && typeof deckObj.id === 'string' && typeof deckObj.name === 'string';
         }).map(deck => {
           const deckObj = deck as any;

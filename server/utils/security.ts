@@ -239,7 +239,7 @@ export function validateMessageAgainstSchema(
  * Removes HTML special characters and control characters
  */
 export function sanitizeString(input: unknown, maxLength = CONFIG.MAX_STRING_LENGTH): string {
-  if (typeof input !== 'string') return '';
+  if (typeof input !== 'string') {return '';}
 
   return input
     .replace(/[<>"'&]/g, '') // Remove HTML special chars
