@@ -2,7 +2,8 @@
  * WebRTC Manager - Handles peer-to-peer connections using PeerJS
  *
  * Architecture:
- * - Host: Creates Peer, accepts connections, broadcasts game state to all guests
+ * - Uses WebrtcPeer for low-level PeerJS operations
+ * - Host: Accepts connections, broadcasts game state to all guests
  * - Guest: Connects to host, sends actions, receives game state updates
  *
  * Data flow:
@@ -28,7 +29,9 @@ import {
 } from './webrtcSerialization'
 import { encodeAbilityEffect, type AbilityEffectType } from './abilityMessages'
 import { encodeSessionEvent } from './sessionMessages'
-// Import state personalization utilities from host module
+// Import WebRTC modules from host module
+import { WebrtcPeer } from '../host/WebrtcPeer'
+import type { WebrtcPeerEvent } from '../host/WebrtcPeer'
 import {
   createPersonalizedGameState,
   optimizeCard,
@@ -161,7 +164,7 @@ export interface WebrtcEvent {
 export type WebrtcEventHandler = (event: WebrtcEvent) => void
 
 export class WebrtcManager {
-  private peer: Peer | null = null
+  private webrtcPeer: WebrtcPeer
   private connections: Map<string, DataConnection> = new Map()
   private isHost: boolean = false
   private hostConnection: DataConnection | null = null
@@ -169,11 +172,19 @@ export class WebrtcManager {
   public isReconnecting: boolean = false
   // Track which player ID each guest connection belongs to (for personalized state)
   private guestPlayerIds: Map<string, number> = new Map()
-  // Reserved for future reconnection logic
-  // private reconnectAttempts: number = 0
-  // private maxReconnectAttempts: number = 5
+
+  // Expose peer property for backward compatibility
+  public get peer(): Peer | null {
+    return this.webrtcPeer.getPeer()
+  }
 
   constructor() {
+    // Create WebrtcPeer instance
+    this.webrtcPeer = new WebrtcPeer()
+
+    // Subscribe to peer events
+    this.webrtcPeer.on((event: WebrtcPeerEvent) => this.handlePeerEvent(event))
+
     // Check localStorage for WebRTC preference
     const webrtcEnabled = localStorage.getItem('webrtc_enabled') === 'true'
     if (!webrtcEnabled) {
@@ -182,44 +193,55 @@ export class WebrtcManager {
   }
 
   /**
+   * Handle events from WebrtcPeer
+   */
+  private handlePeerEvent(event: WebrtcPeerEvent): void {
+    switch (event.type) {
+      case 'peer_open':
+        this.emitEvent({ type: 'peer_open', data: { peerId: event.data.peerId } })
+        break
+      case 'connection_open':
+        if (this.isHost) {
+          logger.info(`Guest connection request from: ${event.data.peerId}`)
+          const conn = this.webrtcPeer.getConnection(event.data.peerId)
+          if (conn) {
+            this.handleGuestConnection(conn)
+          }
+        }
+        break
+      case 'connection_closed':
+        if (this.isHost) {
+          logger.info(`Guest disconnected: ${event.data.peerId}`)
+          this.connections.delete(event.data.peerId)
+          this.guestPlayerIds.delete(event.data.peerId)
+          this.emitEvent({
+            type: 'guest_disconnected',
+            data: { peerId: event.data.peerId }
+          })
+        }
+        break
+      case 'connection_data':
+        // Data is handled at connection level
+        break
+      case 'error':
+        this.emitEvent({ type: 'error', data: event.data })
+        break
+    }
+  }
+
+  /**
    * Initialize as Host - creates Peer and waits for connections
    * @param existingPeerId - If provided, try to reuse this peerId (for F5 restore)
    */
   async initializeAsHost(existingPeerId?: string): Promise<string> {
-    if (this.peer) {
+    if (this.isHost) {
       this.cleanup()
     }
 
     this.isHost = true
     logger.info('Initializing WebRTC as Host...' + (existingPeerId ? ` with existing peerId: ${existingPeerId}` : ''))
 
-    return new Promise((resolve, reject) => {
-      // Create Peer with default PeerJS cloud server
-      // If existingPeerId is provided, try to reuse it (for F5 restore)
-      this.peer = existingPeerId ? new Peer(existingPeerId) : new Peer()
-
-      this.peer.on('open', (peerId) => {
-        logger.info(`WebRTC Host initialized with peerId: ${peerId}`)
-        this.emitEvent({ type: 'peer_open', data: { peerId } })
-        resolve(peerId)
-      })
-
-      this.peer.on('connection', (conn) => {
-        logger.info(`Guest connection request from: ${conn.peer}`)
-        this.handleGuestConnection(conn)
-      })
-
-      this.peer.on('error', (err) => {
-        logger.error(`WebRTC Peer error:`, err)
-        this.emitEvent({ type: 'error', data: err })
-        reject(err)
-      })
-
-      this.peer.on('close', () => {
-        logger.warn('WebRTC Peer closed')
-        this.emitEvent({ type: 'peer_closed' })
-      })
-    })
+    return this.webrtcPeer.initializeAsHost(existingPeerId)
   }
 
   /**
@@ -233,62 +255,64 @@ export class WebrtcManager {
     this.isHost = false
     logger.info(`Initializing WebRTC as Guest, connecting to host: ${hostPeerId}`)
 
+    // Initialize guest peer
+    await this.webrtcPeer.initializeAsGuest()
+
+    const peerId = this.webrtcPeer.getPeerId()
+    if (!peerId) {
+      throw new Error('Failed to initialize guest peer')
+    }
+
+    // Connect to host
+    const conn = this.webrtcPeer.connectTo(hostPeerId)
+    if (!conn) {
+      throw new Error('Failed to create connection to host')
+    }
+
+    this.setupHostConnection(conn)
+
+    // Wait for connection to open
     return new Promise((resolve, reject) => {
-      // Create Peer for guest
-      this.peer = new Peer()
+      const timeout = setTimeout(() => {
+        reject(new Error('Connection timeout'))
+      }, 10000)
 
-      this.peer.on('open', (peerId) => {
-        logger.info(`WebRTC Guest initialized with peerId: ${peerId}`)
+      conn.on('open', () => {
+        clearTimeout(timeout)
+        logger.info(`Connected to host: ${hostPeerId}`)
+        this.hostConnection = conn
+        this.emitEvent({ type: 'connected_to_host', data: { hostPeerId } })
 
-        // Connect to host
-        const conn = this.peer!.connect(hostPeerId, {
-          reliable: true,
-          serialization: 'json'
-        })
-
-        this.setupHostConnection(conn)
-
-        conn.on('open', () => {
-          logger.info(`Connected to host: ${hostPeerId}`)
-          this.hostConnection = conn
-          this.emitEvent({ type: 'connected_to_host', data: { hostPeerId } })
-
-          // Send join request with deck preference
-          // Try to get deck preference from localStorage (stored when player selects deck)
-          let preferredDeck: string | null = null
-          try {
-            const deckPreference = localStorage.getItem('webrtc_preferred_deck')
-            if (deckPreference) {
-              preferredDeck = deckPreference
-              logger.info(`[initializeAsGuest] Found deck preference in localStorage: ${preferredDeck}`)
-              // Clear after use so it doesn't persist incorrectly
-              localStorage.removeItem('webrtc_preferred_deck')
-            }
-          } catch (e) {
-            logger.warn('[initializeAsGuest] Failed to read deck preference:', e)
+        // Send join request with deck preference
+        // Try to get deck preference from localStorage (stored when player selects deck)
+        let preferredDeck: string | null = null
+        try {
+          const deckPreference = localStorage.getItem('webrtc_preferred_deck')
+          if (deckPreference) {
+            preferredDeck = deckPreference
+            logger.info(`[initializeAsGuest] Found deck preference in localStorage: ${preferredDeck}`)
+            // Clear after use so it doesn't persist incorrectly
+            localStorage.removeItem('webrtc_preferred_deck')
           }
+        } catch (e) {
+          logger.warn('[initializeAsGuest] Failed to read deck preference:', e)
+        }
 
-          this.sendMessageToHost({
-            type: 'JOIN_REQUEST',
-            senderId: peerId,
-            data: {
-              preferredDeck: preferredDeck || undefined
-            },
-            timestamp: Date.now()
-          })
-
-          resolve()
+        this.sendMessageToHost({
+          type: 'JOIN_REQUEST',
+          senderId: peerId,
+          data: {
+            preferredDeck: preferredDeck || undefined
+          },
+          timestamp: Date.now()
         })
 
-        conn.on('error', (err) => {
-          logger.error('Host connection error:', err)
-          this.emitEvent({ type: 'error', data: err })
-          reject(err)
-        })
+        resolve()
       })
 
-      this.peer.on('error', (err) => {
-        logger.error(`WebRTC Peer error:`, err)
+      conn.on('error', (err) => {
+        clearTimeout(timeout)
+        logger.error('Host connection error:', err)
         this.emitEvent({ type: 'error', data: err })
         reject(err)
       })
@@ -299,7 +323,7 @@ export class WebrtcManager {
    * Initialize as Guest after page reload - connects to host with reconnection message
    */
   async initializeAsReconnectingGuest(hostPeerId: string, playerId: number): Promise<void> {
-    if (this.peer) {
+    if (this.isHost) {
       this.cleanup()
     }
 
@@ -307,50 +331,54 @@ export class WebrtcManager {
     this.isReconnecting = true
     logger.info(`Initializing WebRTC as Reconnecting Guest, connecting to host: ${hostPeerId}, playerId: ${playerId}`)
 
+    // Initialize guest peer
+    await this.webrtcPeer.initializeAsGuest()
+
+    const peerId = this.webrtcPeer.getPeerId()
+    if (!peerId) {
+      this.isReconnecting = false
+      throw new Error('Failed to initialize guest peer')
+    }
+
+    // Connect to host
+    const conn = this.webrtcPeer.connectTo(hostPeerId)
+    if (!conn) {
+      this.isReconnecting = false
+      throw new Error('Failed to create connection to host')
+    }
+
+    this.setupHostConnection(conn)
+
+    // Wait for connection to open
     return new Promise((resolve, reject) => {
-      // Create Peer for guest
-      this.peer = new Peer()
+      const timeout = setTimeout(() => {
+        this.isReconnecting = false
+        reject(new Error('Connection timeout'))
+      }, 10000)
 
-      this.peer.on('open', (peerId) => {
-        logger.info(`WebRTC Reconnecting Guest initialized with peerId: ${peerId}`)
+      conn.on('open', () => {
+        clearTimeout(timeout)
+        logger.info(`Connected to host for reconnection: ${hostPeerId}`)
+        this.hostConnection = conn
+        this.emitEvent({ type: 'connected_to_host', data: { hostPeerId } })
 
-        // Connect to host
-        const conn = this.peer!.connect(hostPeerId, {
-          reliable: true,
-          serialization: 'json'
+        // Send PLAYER_RECONNECT instead of JOIN_REQUEST
+        this.sendMessageToHost({
+          type: 'PLAYER_RECONNECT',
+          senderId: peerId,
+          playerId: playerId,
+          timestamp: Date.now()
         })
 
-        this.setupHostConnection(conn)
-
-        conn.on('open', () => {
-          logger.info(`Connected to host for reconnection: ${hostPeerId}`)
-          this.hostConnection = conn
-          this.emitEvent({ type: 'connected_to_host', data: { hostPeerId } })
-
-          // Send PLAYER_RECONNECT instead of JOIN_REQUEST
-          this.sendMessageToHost({
-            type: 'PLAYER_RECONNECT',
-            senderId: peerId,
-            playerId: playerId,
-            timestamp: Date.now()
-          })
-
-          this.isReconnecting = false
-          resolve()
-        })
-
-        conn.on('error', (err) => {
-          logger.error('Host connection error:', err)
-          this.emitEvent({ type: 'error', data: err })
-          this.isReconnecting = false
-          reject(err)
-        })
+        this.isReconnecting = false
+        resolve()
       })
 
-      this.peer.on('error', (err) => {
-        logger.error(`WebRTC Peer error:`, err)
-        this.emitEvent({ type: 'error', data: err })
+      conn.on('error', (err) => {
+        clearTimeout(timeout)
         this.isReconnecting = false
+        logger.error('Host connection error:', err)
+        this.emitEvent({ type: 'error', data: err })
         reject(err)
       })
     })
@@ -461,18 +489,7 @@ export class WebrtcManager {
       return 0
     }
 
-    let successCount = 0
-    this.connections.forEach((conn, peerId) => {
-      if (conn.open && peerId !== excludePeerId) {
-        try {
-          conn.send(message)
-          successCount++
-        } catch (err) {
-          logger.error(`Failed to send to guest ${peerId}:`, err)
-        }
-      }
-    })
-
+    const successCount = this.webrtcPeer.broadcast(message, excludePeerId)
     logger.debug(`Broadcast to ${successCount}/${this.connections.size} guests`)
     return successCount
   }
@@ -486,24 +503,7 @@ export class WebrtcManager {
       return false
     }
 
-    const conn = this.connections.get(peerId)
-    if (!conn) {
-      logger.error(`[sendToGuest] No connection found for guest ${peerId}. Available connections: ${Array.from(this.connections.keys()).join(', ')}`)
-      return false
-    }
-    if (!conn.open) {
-      logger.error(`[sendToGuest] Connection for guest ${peerId} is not open`)
-      return false
-    }
-
-    try {
-      conn.send(message)
-      logger.debug(`Sent message to guest ${peerId}`)
-      return true
-    } catch (err) {
-      logger.error(`[sendToGuest] Failed to send message to ${peerId}:`, err)
-      return false
-    }
+    return this.webrtcPeer.sendTo(peerId, message)
   }
 
   /**
@@ -949,7 +949,7 @@ export class WebrtcManager {
    * Get current Peer ID
    */
   getPeerId(): string | null {
-    return this.peer?.id || null
+    return this.webrtcPeer.getPeerId()
   }
 
   /**
@@ -957,7 +957,7 @@ export class WebrtcManager {
    */
   getHostPeerId(): string | null {
     if (this.isHost) {
-      return this.peer?.id || null
+      return this.webrtcPeer.getPeerId()
     }
     return this.hostConnection?.peer || null
   }
@@ -967,7 +967,7 @@ export class WebrtcManager {
    */
   isConnected(): boolean {
     if (this.isHost) {
-      return this.peer !== null && this.connections.size > 0
+      return this.webrtcPeer.getPeerId() !== null && this.connections.size > 0
     }
     return this.hostConnection !== null && this.hostConnection.open
   }
@@ -1019,6 +1019,7 @@ export class WebrtcManager {
     // Close all guest connections
     this.connections.forEach(conn => conn.close())
     this.connections.clear()
+    this.guestPlayerIds.clear()
 
     // Close host connection
     if (this.hostConnection) {
@@ -1026,11 +1027,8 @@ export class WebrtcManager {
       this.hostConnection = null
     }
 
-    // Destroy peer
-    if (this.peer) {
-      this.peer.destroy()
-      this.peer = null
-    }
+    // Cleanup WebrtcPeer (destroys the underlying Peer)
+    this.webrtcPeer.cleanup()
 
     this.isHost = false
   }

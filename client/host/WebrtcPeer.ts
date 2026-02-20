@@ -293,4 +293,11 @@ export class WebrtcPeer {
 
     logger.info('WebrtcPeer cleaned up')
   }
+
+  /**
+   * Get the underlying Peer instance (for backward compatibility)
+   */
+  getPeer(): Peer | null {
+    return this.peer
+  }
 }
