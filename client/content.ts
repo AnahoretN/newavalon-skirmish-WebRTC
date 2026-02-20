@@ -6,6 +6,7 @@
 
 import { DeckType } from './types'
 import type { Card, CounterDefinition } from './types'
+import { logger } from './utils/logger'
 
 // Import embedded content database for static builds (GitHub Pages)
 import embeddedDatabase from '../server/content/contentDatabase.json'
@@ -184,7 +185,7 @@ function buildDecksData(): Record<string, Card[]> {
       deckCardList.forEach(card => {
         // Check for duplicate IDs
         if (idSet.has(card.id)) {
-          console.error(`[buildDecksData] DUPLICATE ID in Optimates: ${card.id}`)
+          logger.error(`[buildDecksData] DUPLICATE ID in Optimates: ${card.id}`)
           hasDuplicateIds = true
         }
         idSet.add(card.id)
@@ -193,11 +194,10 @@ function buildDecksData(): Record<string, Card[]> {
         const baseId = card.baseId || card.id
         cardCounts[baseId] = (cardCounts[baseId] || 0) + 1
       })
-      console.log('[buildDecksData] Optimates deck:', {
-        totalCards: deckCardList.length,
-        cardCounts,
-        hasDuplicateIds
-      })
+
+      if (hasDuplicateIds) {
+        logger.warn('[buildDecksData] Optimates deck has duplicate IDs!')
+      }
     }
   }
 

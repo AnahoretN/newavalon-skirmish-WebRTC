@@ -295,9 +295,6 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
       playerColor: player.color,
     }
 
-    // Debug log
-    console.log('[triggerClickWave] Creating wave:', wave)
-
     // Immediately update local state
     setClickWaves(prev => [...prev, wave])
 
