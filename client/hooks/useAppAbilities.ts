@@ -35,6 +35,7 @@ interface UseAppAbilitiesProps {
     // Actions from useGameState
     updateState: (stateOrFn: GameState | ((prevState: GameState) => GameState)) => void;
     moveItem: (item: DragItem, target: any) => void;
+    destroyCard: (card: Card, boardCoords: { row: number; col: number }) => void;
     drawCard: (playerId: number) => void;
     drawCardsBatch: (playerId: number, count: number) => void;
     updatePlayerScore: (playerId: number, delta: number) => void;
@@ -91,6 +92,7 @@ export const useAppAbilities = ({
   onAbilityComplete,
   // updateState, // @ts-ignore - Unused but kept for future use
   moveItem,
+  destroyCard,
   // drawCard, // @ts-ignore - Unused but kept for future use
   drawCardsBatch,
   updatePlayerScore,
@@ -99,6 +101,7 @@ export const useAppAbilities = ({
   swapCards,
   transferStatus,
   transferAllCounters,
+  transferAllStatusesWithoutException,
   resurrectDiscardedCard,
   spawnToken,
   scoreLine,
@@ -174,6 +177,7 @@ export const useAppAbilities = ({
       transferStatus,
       transferAllCounters,
       transferAllStatusesWithoutException,
+      destroyCard,
       spawnToken,
       modifyBoardCardPower,
       addBoardCardStatus,
@@ -208,9 +212,11 @@ export const useAppAbilities = ({
     // It's stable due to useCallback and will have the correct reference when called recursively
     interactionLock,
     moveItem,
+    destroyCard,
     swapCards,
     transferStatus,
     transferAllCounters,
+    transferAllStatusesWithoutException,
     spawnToken,
     modifyBoardCardPower,
     addBoardCardStatus,
@@ -369,7 +375,8 @@ export const useAppAbilities = ({
         swapCards,
         transferStatus,
         transferAllCounters,
-      transferAllStatusesWithoutException,
+        transferAllStatusesWithoutException,
+        destroyCard,
         spawnToken,
         modifyBoardCardPower,
         addBoardCardStatus,
@@ -401,6 +408,7 @@ export const useAppAbilities = ({
     abilityMode,
     handleLineSelection,
     moveItem,
+    destroyCard,
     markAbilityUsed,
     setCursorStack,
     handleActionExecution,

@@ -68,10 +68,11 @@ export function useCardMovement(props: UseCardMovementProps) {
         }
       }
 
-      // Store the actual current card state for board-to-board moves
-      // This ensures we preserve all statuses (including ready statuses) when moving
+      // Store the actual current card state for board moves
+      // This ensures we use the current state from the board (with all status updates)
+      // instead of the stale item.card from closure
       let actualCardState: Card | null = null
-      if (item.source === 'board' && target.target === 'board' && item.boardCoords) {
+      if (item.source === 'board' && item.boardCoords) {
         // Get the actual card state from newState (after cloning)
         // This must be done AFTER newState is created
         const cell = newState.board[item.boardCoords.row][item.boardCoords.col]
@@ -79,22 +80,24 @@ export function useCardMovement(props: UseCardMovementProps) {
           actualCardState = cell.card
         }
 
-        // Also check stun status from currentState for the early return
-        const currentCell = currentState.board[item.boardCoords.row][item.boardCoords.col]
-        const currentCardState = currentCell.card || actualCardState
-        if (currentCardState) {
-          const isStunned = currentCardState.statuses?.some(s => s.type === 'Stun')
+        // Also check stun status from currentState for the early return (only for board-to-board)
+        if (target.target === 'board') {
+          const currentCell = currentState.board[item.boardCoords.row][item.boardCoords.col]
+          const currentCardState = currentCell.card || actualCardState
+          if (currentCardState) {
+            const isStunned = currentCardState.statuses?.some(s => s.type === 'Stun')
 
-          if (isStunned) {
-            const moverId = localPlayerIdRef.current
-            const ownerId = currentCardState.ownerId
-            const moverPlayer = currentState.players.find(p => p.id === moverId)
-            const ownerPlayer = currentState.players.find(p => p.id === ownerId)
-            const isOwner = moverId === ownerId
-            const isTeammate = moverPlayer?.teamId !== undefined && ownerPlayer?.teamId !== undefined && moverPlayer.teamId === ownerPlayer.teamId
+            if (isStunned) {
+              const moverId = localPlayerIdRef.current
+              const ownerId = currentCardState.ownerId
+              const moverPlayer = currentState.players.find(p => p.id === moverId)
+              const ownerPlayer = currentState.players.find(p => p.id === ownerId)
+              const isOwner = moverId === ownerId
+              const isTeammate = moverPlayer?.teamId !== undefined && ownerPlayer?.teamId !== undefined && moverPlayer.teamId === ownerPlayer.teamId
 
-            if ((isOwner || isTeammate) && !item.isManual) {
-              return currentState
+              if ((isOwner || isTeammate) && !item.isManual) {
+                return currentState
+              }
             }
           }
         }
@@ -661,8 +664,58 @@ export function useCardMovement(props: UseCardMovementProps) {
     })
   }, [updateState])
 
+  /**
+   * Destroy a card - remove it from board and send to owner's discard
+   * This combines two operations in one state update to avoid race conditions
+   * Note: All statuses are cleared when card goes to discard (except Revealed)
+   */
+  const destroyCard = useCallback((card: Card, boardCoords: { row: number, col: number }) => {
+    updateState(currentState => {
+      if (!currentState.isGameStarted) {
+        return currentState
+      }
+
+      const newState: GameState = deepCloneState(currentState)
+
+      // Verify the card is still at the expected location
+      const cell = newState.board[boardCoords.row][boardCoords.col]
+      if (!cell.card || cell.card.id !== card.id || cell.card.ownerId !== card.ownerId) {
+        // Card was moved or destroyed already
+        return currentState
+      }
+
+      const cardToDestroy = cell.card
+      const ownerId = cardToDestroy.ownerId
+      const ownerPlayer = newState.players.find(p => p.id === ownerId)
+
+      if (!ownerPlayer) {
+        return currentState
+      }
+
+      // Remove card from board
+      newState.board[boardCoords.row][boardCoords.col].card = null
+
+      // Clean up statuses when returning to storage (keep only Revealed)
+      if (cardToDestroy.statuses) {
+        cardToDestroy.statuses = cardToDestroy.statuses.filter(status => status.type === 'Revealed')
+      }
+      cardToDestroy.isFaceDown = false
+      delete cardToDestroy.powerModifier
+      delete cardToDestroy.bonusPower
+
+      // Add to owner's discard pile
+      ownerPlayer.discard.push(cardToDestroy)
+
+      // Recalculate board statuses
+      newState.board = recalculateBoardStatuses(newState)
+
+      return newState
+    })
+  }, [updateState])
+
   return {
     moveItem,
     swapBoardCards,
+    destroyCard,
   }
 }

@@ -34,6 +34,8 @@ export interface ActionHandlerProps {
   swapCards: (coords1: {row: number, col: number}, coords2: {row: number, col: number}) => void
   transferStatus: (fromCoords: {row: number, col: number}, toCoords: {row: number, col: number}, statusType: string) => void
   transferAllCounters: (fromCoords: {row: number, col: number}, toCoords: {row: number, col: number}) => void
+  transferAllStatusesWithoutException: (fromCoords: {row: number, col: number}, toCoords: {row: number, col: number}) => void
+  destroyCard: (card: any, boardCoords: { row: number; col: number }) => void
   spawnToken: (coords: {row: number, col: number}, name: string, ownerId: number) => void
   modifyBoardCardPower: (coords: {row: number, col: number}, delta: number) => void
   addBoardCardStatus: (coords: {row: number, col: number}, status: string, pid: number) => void
@@ -479,17 +481,8 @@ function handleEnterMode(
   const mode = action.mode
 
   // SHIELD_SELF_THEN_RIOT_PUSH (Reclaimed Gawain)
+  // Don't add Shield immediately - let user click self to add Shield and transition to RIOT_PUSH
   if (mode === 'SHIELD_SELF_THEN_RIOT_PUSH') {
-    const actorId = action.sourceCard!.ownerId!
-    addBoardCardStatus(sourceCoords, 'Shield', actorId)
-
-    const hasPushTargets = checkActionHasTargets(action, gameState, actorId, commandContext)
-    if (!hasPushTargets) {
-      triggerNoTarget(sourceCoords)
-      markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
-      return
-    }
-
     setAbilityMode(action)
     setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, undefined, commandContext)
     return

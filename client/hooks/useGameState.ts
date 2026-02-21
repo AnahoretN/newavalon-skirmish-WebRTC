@@ -4740,6 +4740,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     moveItem,
     // @ts-ignore - swapBoardCards exported but currently unused
     swapBoardCards,
+    destroyCard,
   } = cardMovement
 
   return {
@@ -4774,6 +4775,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     shufflePlayerDeck,
     moveItem,
     handleDrop: moveItem,  // Alias for backward compatibility
+    destroyCard,
     addBoardCardStatus,
     removeBoardCardStatus,
     removeBoardCardStatusByOwner,

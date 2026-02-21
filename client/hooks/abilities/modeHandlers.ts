@@ -37,7 +37,8 @@ export interface ModeHandlersProps {
   transferStatus: (fromCoords: {row: number, col: number}, toCoords: {row: number, col: number}, statusType: string) => void
   transferAllCounters: (fromCoords: {row: number, col: number}, toCoords: {row: number, col: number}) => void
   transferAllStatusesWithoutException: (fromCoords: {row: number, col: number}, toCoords: {row: number, col: number}) => void
-  spawnToken: (coords: {row: number; col: number}, name: string, ownerId: number) => void
+  destroyCard: (card: Card, boardCoords: { row: number; col: number }) => void
+  spawnToken: (coords: {row: number, col: number}, name: string, ownerId: number) => void
   modifyBoardCardPower: (coords: {row: number; col: number}, delta: number) => void
   addBoardCardStatus: (coords: {row: number; col: number}, status: string, pid: number) => void
   removeBoardCardStatus: (coords: {row: number; col: number }, status: string) => void
@@ -283,7 +284,7 @@ function handleSelectTargetActionType(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, markAbilityUsed, setAbilityMode, moveItem, modifyBoardCardPower, addBoardCardStatus, removeBoardCardStatus, removeBoardCardStatusByOwner, removeStatusByType, resetDeployStatus, setCounterSelectionData, handleActionExecution, gameState } = props
+  const { abilityMode, markAbilityUsed, setAbilityMode, moveItem, modifyBoardCardPower, addBoardCardStatus, removeBoardCardStatus, removeBoardCardStatusByOwner, removeStatusByType, resetDeployStatus, setCounterSelectionData, handleActionExecution, gameState, destroyCard } = props
   const { payload, sourceCoords, isDeployAbility, readyStatusToRemove } = abilityMode!
 
   const actorId = abilityMode!.sourceCard?.ownerId ?? (gameState.players.find(p => p.id === gameState.activePlayerId)?.isDummy ? gameState.activePlayerId : props.localPlayerId || gameState.activePlayerId)
@@ -403,20 +404,8 @@ function handleSelectTargetActionType(
     }
 
     // No Shield - destroy the card (send to discard)
-    // Remove Aim token if present (consumed by the ability)
-    const aimToken = card.statuses?.find(s => s.type === 'Aim')
-    if (aimToken) {
-      removeStatusByType(boardCoords, 'Aim')
-    }
-
-    moveItem({
-      card,
-      source: 'board',
-      boardCoords,
-    }, {
-      target: 'discard',
-      playerId: card.ownerId,  // Card goes to its owner's discard pile
-    })
+    // destroyCard removes Aim token (consumed by ability) and sends card to owner's discard in one atomic operation
+    destroyCard(card, boardCoords)
 
     markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
     setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
