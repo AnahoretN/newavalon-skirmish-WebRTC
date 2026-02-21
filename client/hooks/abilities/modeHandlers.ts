@@ -396,13 +396,19 @@ function handleSelectTargetActionType(
     if (hasShield) {
       removeBoardCardStatus(boardCoords, 'Shield')
     } else {
+      // Find Aim token on the card - if present, remove it after destruction
+      const aimToken = card.statuses?.find(s => s.type === 'Aim')
+      if (aimToken) {
+        removeStatusByType(boardCoords, 'Aim')
+      }
+
       moveItem({
         card,
         source: 'board',
         boardCoords,
       }, {
         target: 'discard',
-        playerId: card.ownerId,
+        playerId: card.ownerId,  // Card goes to its owner's discard pile
       })
     }
 

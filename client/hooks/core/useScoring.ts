@@ -78,7 +78,10 @@ export function useScoring(props: UseScoringProps) {
           const isOwner = card.ownerId === playerId
           const hasExploit = card.statuses?.some(s => s.type === 'Exploit' && s.addedByPlayerId === playerId)
 
-          if (isOwner || (hasActiveLiberator && hasExploit && card.ownerId !== playerId)) {
+          // Cards with your Exploit tokens score Points for you, regardless of who owns the card
+          // The isOwner check is for normal scoring (your own cards)
+          // The hasExploit check is for Data Liberator ability - it allows scoring other players' cards with your Exploit tokens
+          if (isOwner || (hasActiveLiberator && hasExploit)) {
             const points = Math.max(0, card.power + (card.powerModifier || 0) + (card.bonusPower || 0))
             if (points > 0) {
               totalScore += points
@@ -176,8 +179,10 @@ export function useScoring(props: UseScoringProps) {
 
       if (card && !card.statuses?.some(s => s.type === 'Stun')) {
         const isOwner = card.ownerId === playerId
+        const hasExploit = card.statuses?.some(s => s.type === 'Exploit' && s.addedByPlayerId === playerId)
 
-        if (isOwner) {
+        // Cards with your Exploit tokens score Points for you, regardless of who owns the card
+        if (isOwner || hasExploit) {
           const points = Math.max(0, card.power + (card.powerModifier || 0) + (card.bonusPower || 0))
           if (points > 0) {
             totalScore += points
