@@ -148,6 +148,7 @@ const AppInner = function AppInner() {
     connectAsGuest,
     requestDeckView,
     sendFullDeckToHost,
+    shareHostDeckWithGuests,
     // Reconnection props
     isReconnecting,
     reconnectProgress,
@@ -1677,6 +1678,13 @@ const AppInner = function AppInner() {
       }
     }
 
+    // If we're the host viewing our own deck, share deck data with all guests
+    // This ensures guests see the host's deck in the same order
+    if (isWebRTCMode && webrtcIsHost && player.id === localPlayerId && player.deck.length > 0) {
+      logger.info(`[handleViewDeck] Host sharing deck with guests (${player.deck.length} cards)`)
+      shareHostDeckWithGuests(player.deck, player.deck.length)
+    }
+
     if (isWebRTCMode && isOtherPlayerDeck && player.deck.length === 0) {
       // Request full deck data from host
       logger.info(`[handleViewDeck] Requesting deck data for player ${player.id}`)
@@ -1684,7 +1692,7 @@ const AppInner = function AppInner() {
     }
 
     setViewingDiscard({ player, isDeckView: true })
-  }, [localPlayerId, requestDeckView, sendFullDeckToHost, gameState.players, webrtcIsHost])
+  }, [localPlayerId, requestDeckView, sendFullDeckToHost, shareHostDeckWithGuests, gameState.players, webrtcIsHost])
   const handleViewDiscard = useCallback((player: Player) => {
     setViewingDiscard({ player, isDeckView: false })
   }, [])

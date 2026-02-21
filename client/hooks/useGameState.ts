@@ -22,7 +22,10 @@ import {
   deserializeDelta,
   deserializeDeltaBase64,
   deserializeFromBinary,
-  expandMinimalGameState
+  expandMinimalGameState,
+  deserializePersonalizedState,
+  serializeDeckCards,
+  deserializeDeckCards
 } from '../utils/webrtcSerialization'
 // New WebRTC message handlers (handles CARD_STATE, ABILITY_EFFECT, SESSION_EVENT)
 import { handleCodecMessage } from '../utils/webrtcMessageHandlers'
@@ -174,6 +177,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     sendWebrtcAction,
     requestDeckView,
     sendFullDeckToHost,
+    shareHostDeckWithGuests,
   } = webrtc
 
   // WebSocket connection hook - handles server communication
@@ -1260,13 +1264,25 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       case 'STATE_UPDATE_COMPACT':
         // Handle STATE_UPDATE_COMPACT - both host and guest
+        // Check if data is in MessagePack format (optimized)
+        let remoteState = message.data?.gameState
+        if (message.data?._format === 'msgpack' && typeof remoteState === 'string') {
+          try {
+            remoteState = deserializePersonalizedState(remoteState)
+            logger.info(`[STATE_UPDATE_COMPACT] Decoded MessagePack format`)
+          } catch (e) {
+            logger.error(`[STATE_UPDATE_COMPACT] Failed to decode MessagePack:`, e)
+            break
+          }
+        }
+
         if (webrtcIsHostRef.current) {
           // Host handling
           if (message.senderId && message.senderId !== webrtcManagerRef.current?.getPeerId()) {
             // Host received compact state from guest - reconstruct from baseId
             logger.info(`[STATE_UPDATE_COMPACT] Host received compact state from guest ${message.senderId}`)
-            if (message.data?.gameState) {
-              const guestState = message.data.gameState
+            if (remoteState) {
+              const guestState = remoteState
               setGameState(currentState => {
                 const guestPlayerId = message.playerId
                 if (guestPlayerId === undefined) {
@@ -1441,8 +1457,8 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           }
         } else if (!webrtcIsHostRef.current && message.data?.gameState) {
           // Guest receives compact state - reconstruct full cards
+          // remoteState is already decoded from MessagePack if needed (from line 1267)
           const recipientPlayerId = message.data.recipientPlayerId ?? null
-          const remoteState = message.data.gameState
           logger.info(`[STATE_UPDATE_COMPACT] Received compact state for player ${recipientPlayerId}, currentPhase=${remoteState.currentPhase}, activePlayerId=${remoteState.activePlayerId}`)
 
           // Skip if we recently restored from localStorage (has more complete data)
@@ -2055,11 +2071,24 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       case 'RECONNECT_SNAPSHOT':
         // Host sent compact reconnect snapshot (for guests reconnecting after page reload)
-        // This is much smaller than full STATE_UPDATE and avoids "Message too big for JSON channel" error
-        logger.info('[RECONNECT_SNAPSHOT] Received compact reconnect snapshot from host')
+        // Supports both MessagePack format (optimized) and legacy format
+        logger.info('[RECONNECT_SNAPSHOT] Received reconnect snapshot from host')
         receivedServerStateRef.current = true
-        if (message.data) {
-          const snapshot = message.data as any
+
+        // Check format and deserialize if needed
+        let snapshot = message.data as any
+        if (message.data?._format === 'msgpack' && typeof message.data === 'object') {
+          try {
+            snapshot = deserializePersonalizedState(message.data.data || message.data)
+            logger.info('[RECONNECT_SNAPSHOT] Decoded MessagePack format')
+          } catch (e) {
+            logger.error('[RECONNECT_SNAPSHOT] Failed to decode MessagePack:', e)
+            // Fallback to legacy format
+            snapshot = message.data
+          }
+        }
+
+        if (snapshot) {
           setGameState(prev => {
             // Build players from snapshot data
             const localPlayerId = localPlayerIdRef.current
@@ -3816,56 +3845,30 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
             if (targetPlayerId === localPlayerIdRef.current || targetPlayer.isDummy) {
               // Host or dummy - we have full deck data in gameState
-              logger.info(`[REQUEST_DECK_VIEW] Host/dummy deck has ${targetPlayer.deck.length} cards, first card: ${targetPlayer.deck[0]?.name}`)
-              deckToSend = targetPlayer.deck.map((c: any) => ({
-                id: c.id,
-                baseId: c.baseId,
-                name: c.name,
-                imageUrl: c.imageUrl,
-                power: c.power,
-                powerModifier: c.powerModifier || 0,
-                isFaceDown: c.isFaceDown ?? false,
-                statuses: c.statuses || [],
-                ownerId: c.ownerId,
-                deck: c.deck,
-                ability: c.ability,
-                color: c.color,
-                types: c.types,
-                faction: c.faction
-              }))
+              logger.info(`[REQUEST_DECK_VIEW] Host/dummy deck has ${targetPlayer.deck.length} cards`)
+              deckToSend = targetPlayer.deck
             } else {
               // Guest player - use stored full deck data from guestFullDecksRef
               const storedFullDeck = guestFullDecksRef.current.get(targetPlayerId)
               if (storedFullDeck && storedFullDeck.length > 0) {
                 // Use full deck data from DECK_DATA_UPDATE (preserves name, imageUrl, order)
-                logger.info(`[REQUEST_DECK_VIEW] Using stored full deck data for guest ${targetPlayerId}, ${storedFullDeck.length} cards, first card: ${storedFullDeck[0]?.name}`)
+                logger.info(`[REQUEST_DECK_VIEW] Using stored full deck data for guest ${targetPlayerId}, ${storedFullDeck.length} cards`)
                 deckToSend = storedFullDeck
               } else {
                 // Fallback: use deck array from gameState (might have been reconstructed)
                 logger.info(`[REQUEST_DECK_VIEW] No stored full deck for guest ${targetPlayerId}, using gameState deck, ${targetPlayer.deck.length} cards`)
-                deckToSend = targetPlayer.deck.map((c: any) => ({
-                  id: c.id,
-                  baseId: c.baseId,
-                  name: c.name,
-                  imageUrl: c.imageUrl,
-                  power: c.power,
-                  powerModifier: c.powerModifier || 0,
-                  isFaceDown: c.isFaceDown ?? false,
-                  statuses: c.statuses || [],
-                  ownerId: c.ownerId,
-                  deck: c.deck,
-                  ability: c.ability,
-                  color: c.color,
-                  types: c.types,
-                  faction: c.faction
-                }))
+                deckToSend = targetPlayer.deck
               }
             }
 
+            // Send optimized format (baseId array only)
+            const serializedDeck = serializeDeckCards(deckToSend)
+
             const deckData = {
               targetPlayerId,
-              deckCards: deckToSend,
-              deckSize: deckToSend.length
+              deckCards: serializedDeck,
+              deckSize: deckToSend.length,
+              _format: 'baseIdArray'
             }
 
             // Send directly to the requesting peer
@@ -3878,48 +3881,61 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
             // Send to the specific guest
             webrtcManagerRef.current.sendToGuest(message.senderId || '', responseMessage)
-            logger.info(`[REQUEST_DECK_VIEW] Sent ${deckData.deckCards.length} cards for player ${targetPlayerId}, first card: ${deckData.deckCards[0]?.name}`)
+            logger.info(`[REQUEST_DECK_VIEW] Sent ${deckData.deckSize} cards (optimized) for player ${targetPlayerId}`)
           }
         }
         break
 
       case 'DECK_VIEW_DATA':
-        // Host sends deck data for viewing - now includes full card data with name and imageUrl
+        // Host sends deck data for viewing - optimized format (baseId array) or legacy format
         if (message.data?.targetPlayerId !== undefined && message.data?.deckCards) {
           const targetPlayerId = message.data.targetPlayerId as number
-          const deckCards = message.data.deckCards as any[]
-
-          logger.info(`[DECK_VIEW_DATA] Received ${deckCards.length} deck cards for player ${targetPlayerId}`)
-
-          // Check if received data has full card info (name, imageUrl) or needs reconstruction
-          const firstCard = deckCards[0]
-          const hasFullData = firstCard?.name && firstCard?.imageUrl
+          const deckCardsData = message.data.deckCards
+          const isOptimizedFormat = message.data._format === 'baseIdArray'
 
           let processedDeck: Card[]
 
-          if (hasFullData) {
-            // Host now sends full card data - use it directly to preserve order
-            logger.info(`[DECK_VIEW_DATA] Received full card data, using directly. First card: ${firstCard.name}`)
-            processedDeck = deckCards.map(card => ({
-              id: card.id,
-              baseId: card.baseId || card.id,
-              name: card.name,
-              imageUrl: card.imageUrl,
-              fallbackImage: card.fallbackImage || '',
-              power: card.power,
-              powerModifier: card.powerModifier || 0,
-              isFaceDown: card.isFaceDown ?? false,
-              statuses: card.statuses || [],
-              deck: card.deck || DeckType.SynchroTech,
-              color: card.color || 'Red',
-              ability: card.ability || '',
+          if (isOptimizedFormat && typeof deckCardsData === 'string') {
+            // Optimized format: deserialize from baseId array
+            logger.info(`[DECK_VIEW_DATA] Received optimized format for player ${targetPlayerId}`)
+            try {
+              processedDeck = deserializeDeckCards(deckCardsData, targetPlayerId)
+            } catch (e) {
+              logger.error(`[DECK_VIEW_DATA] Failed to deserialize optimized deck:`, e)
+              break
+            }
+          } else {
+            // Legacy format: full card data array or compact card data
+            const deckCards = deckCardsData as any[]
+            logger.info(`[DECK_VIEW_DATA] Received legacy format (${deckCards.length} cards) for player ${targetPlayerId}`)
+
+            // Check if received data has full card info (name, imageUrl) or needs reconstruction
+            const firstCard = deckCards[0]
+            const hasFullData = firstCard?.name && firstCard?.imageUrl
+
+            if (hasFullData) {
+              // Host now sends full card data - use it directly to preserve order
+              logger.info(`[DECK_VIEW_DATA] Received full card data, using directly. First card: ${firstCard.name}`)
+              processedDeck = deckCards.map(card => ({
+                id: card.id,
+                baseId: card.baseId || card.id,
+                name: card.name,
+                imageUrl: card.imageUrl,
+                fallbackImage: card.fallbackImage || '',
+                power: card.power,
+                powerModifier: card.powerModifier || 0,
+                isFaceDown: card.isFaceDown ?? false,
+                statuses: card.statuses || [],
+                deck: card.deck || DeckType.SynchroTech,
+                color: card.color || 'Red',
+                ability: card.ability || '',
               bonusPower: card.bonusPower || 0,
               isPlaceholder: card.isPlaceholder || false,
               types: card.types || [],
               faction: card.faction || '',
               ownerId: card.ownerId || targetPlayerId
             }))
-          } else {
+            } else {
             // Fallback: reconstruct from baseId using contentDatabase
             logger.info(`[DECK_VIEW_DATA] Received compact data, reconstructing from contentDatabase`)
             const reconstructDeckCard = (compactCard: any): Card => {
@@ -3964,6 +3980,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             }
             processedDeck = deckCards.map(reconstructDeckCard)
           }
+          }
 
           // Update the target player's deck in local state
           setGameState(prev => ({
@@ -3984,55 +4001,101 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         // This data is used when someone requests to view this guest's deck
         if (webrtcIsHostRef.current && message.playerId !== undefined && message.data?.deck) {
           const guestPlayerId = message.playerId
-          const deck = message.data.deck as any[]
+          const deckData = message.data.deck
           const deckSize = message.data.deckSize as number
+          const isOptimizedFormat = message.data._format === 'baseIdArray'
 
-          logger.info(`[DECK_DATA_UPDATE] Received ${deck.length} cards for guest ${guestPlayerId}, deckSize=${deckSize}, first card: ${deck[0]?.name}`)
+          let deckWithOwnerId: any[]
+
+          if (isOptimizedFormat && typeof deckData === 'string') {
+            // Optimized format: deserialize from baseId array
+            logger.info(`[DECK_DATA_UPDATE] Received optimized format for guest ${guestPlayerId}, deckSize=${deckSize}`)
+            try {
+              const reconstructedDeck = deserializeDeckCards(deckData, guestPlayerId)
+              deckWithOwnerId = reconstructedDeck
+            } catch (e) {
+              logger.error(`[DECK_DATA_UPDATE] Failed to deserialize optimized deck:`, e)
+              break
+            }
+          } else {
+            // Legacy format: full card data array
+            const deck = deckData as any[]
+            logger.info(`[DECK_DATA_UPDATE] Received legacy format (${deck.length} cards) for guest ${guestPlayerId}, first card: ${deck[0]?.name}`)
+            deckWithOwnerId = deck.map(card => ({
+              ...card,
+              ownerId: card.ownerId ?? guestPlayerId
+            }))
+          }
 
           // Store full deck data in ref (preserves name, imageUrl, order even when gameState is updated)
-          const deckWithOwnerId = deck.map(card => ({
-            ...card,
-            ownerId: card.ownerId ?? guestPlayerId
-          }))
           guestFullDecksRef.current.set(guestPlayerId, deckWithOwnerId)
 
-          // Also update gameState for immediate use
-          setGameState(prev => ({
-            ...prev,
-            players: prev.players.map(p => {
-              if (p.id === guestPlayerId) {
-                return { ...p, deck: deckWithOwnerId, deckSize: deckSize }
-              }
-              return p
-            })
-          }))
+          // Update gameState for immediate use and broadcast to all guests
+          setGameState(prev => {
+            const updatedState = {
+              ...prev,
+              players: prev.players.map(p => {
+                if (p.id === guestPlayerId) {
+                  return { ...p, deck: deckWithOwnerId, deckSize: deckSize }
+                }
+                return p
+              })
+            }
+
+            // Broadcast the updated deck order to all guests (excluding sender)
+            // This ensures everyone sees the same deck order after shuffle
+            if (webrtcManagerRef.current && message.senderId) {
+              setTimeout(() => {
+                webrtcManagerRef.current!.broadcastGameState(updatedState, message.senderId)
+                logger.info(`[DECK_DATA_UPDATE] Broadcasted updated deck order for player ${guestPlayerId} to all guests`)
+              }, 0)
+            }
+
+            return updatedState
+          })
         }
         break
 
       case 'REQUEST_DECK_DATA':
         // Host requests deck data from all guests after F5 restore
-        // Guests should send their deck data to host
+        // Guests should send their deck data to host (optimized format)
         if (!webrtcIsHostRef.current && webrtcManagerRef.current) {
           const localPlayer = gameState.players.find(p => p.id === localPlayerIdRef.current)
           if (localPlayer && localPlayer.deck.length > 0) {
-            logger.info(`[REQUEST_DECK_DATA] Host requested deck data, sending ${localPlayer.deck.length} cards`)
+            logger.info(`[REQUEST_DECK_DATA] Host requested deck data, sending ${localPlayer.deck.length} cards (optimized format)`)
 
-            const compactDeckData = localPlayer.deck.map(card => ({
-              id: card.id,
-              baseId: card.baseId,
-              ownerId: card.ownerId ?? localPlayerIdRef.current, // Include ownerId for correct card back color
-              power: card.power,
-              powerModifier: card.powerModifier || 0,
-              isFaceDown: card.isFaceDown || false,
-              statuses: card.statuses || []
-            }))
+            // Send optimized baseId array instead of full card data
+            const serializedDeck = serializeDeckCards(localPlayer.deck)
 
             webrtcManagerRef.current.sendAction('DECK_DATA_UPDATE', {
               playerId: localPlayerIdRef.current,
-              deck: compactDeckData,
-              deckSize: compactDeckData.length
+              deck: serializedDeck,
+              deckSize: localPlayer.deck.length,
+              _format: 'baseIdArray' // Format marker
             })
           }
+        }
+        break
+
+      case 'HOST_DECK_DATA':
+        // Host shares their deck data with all guests
+        // Guests receive this to see host's deck in same order as host
+        if (!webrtcIsHostRef.current && message.data?.deck) {
+          const deck = message.data.deck as any[]
+          const deckSize = message.data.deckSize as number
+          const hostPlayerId = 1 // Host is always player 1
+
+          logger.info(`[HOST_DECK_DATA] Received host deck data: ${deck.length} cards`)
+
+          setGameState(prev => ({
+            ...prev,
+            players: prev.players.map(p => {
+              if (p.id === hostPlayerId) {
+                return { ...p, deck: deck, deckSize: deckSize }
+              }
+              return p
+            })
+          }))
         }
         break
 
@@ -4764,6 +4827,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     // Deck viewing function
     requestDeckView,
     sendFullDeckToHost,
+    shareHostDeckWithGuests,
     // Game lifecycle functions
     createGame,
     joinGame,

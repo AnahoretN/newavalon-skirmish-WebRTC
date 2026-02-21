@@ -82,6 +82,7 @@ export function useCardOperations(props: UseCardOperationsProps) {
 
   /**
    * Shuffle player's deck
+   * In WebRTC mode, send full deck after shuffle to ensure all players see same order
    */
   const shufflePlayerDeck = useCallback((playerId: number) => {
     updateState(currentState => {
@@ -95,9 +96,22 @@ export function useCardOperations(props: UseCardOperationsProps) {
       const newState = deepCloneState(currentState)
       const playerToUpdate = newState.players.find((p: Player) => p.id === playerId)!
       playerToUpdate.deck = shuffleDeck([...playerToUpdate.deck])
+
+      // In WebRTC mode, send full deck to host after shuffle to sync order
+      const webrtcManager = props.webrtcManager.current
+      const webrtcIsHost = props.webrtcIsHostRef.current
+      const localPlayerId = props.localPlayerIdRef.current
+
+      if (webrtcManager && currentState.gameId && !webrtcIsHost && playerId === localPlayerId) {
+        // Guest shuffled their own deck - send full deck to host for sync
+        setTimeout(() => {
+          webrtcManager.sendFullDeckToHost(playerId, playerToUpdate.deck, playerToUpdate.deck.length)
+        }, 0)
+      }
+
       return newState
     })
-  }, [updateState])
+  }, [updateState, props])
 
   /**
    * Flip board card face up

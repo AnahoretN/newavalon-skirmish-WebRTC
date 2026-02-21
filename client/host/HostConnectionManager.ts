@@ -16,7 +16,7 @@ import type {
   HostConfig
 } from './types'
 import { logger } from '../utils/logger'
-import { serializeDeltaBase64, serializeGameState } from '../utils/webrtcSerialization'
+import { serializeDeltaBase64, serializeGameState, serializePersonalizedState } from '../utils/webrtcSerialization'
 import { encodeAbilityEffect } from '../utils/abilityMessages'
 import { encodeSessionEvent } from '../utils/sessionMessages'
 import { AbilityEffectType } from '../types/codec'
@@ -300,6 +300,7 @@ export class HostConnectionManager {
 
   /**
    * Broadcast game state to all guests (personalized)
+   * Uses MessagePack serialization for smaller message size
    */
   broadcastGameState(gameState: GameState, excludePeerId?: string): void {
     if (this.connections.size === 0) {
@@ -326,13 +327,16 @@ export class HostConnectionManager {
       }
 
       try {
-        // Create personalized state for this guest
+        // Create personalized state for this guest (preserves all game functionality)
         const personalizedState = createPersonalizedGameState(gameState, guest.playerId)
 
+        // Serialize using MessagePack for smaller size
+        const serializedState = serializePersonalizedState(personalizedState)
+
         const message: WebrtcMessage = {
-          type: 'STATE_UPDATE_COMPACT',
+          type: 'STATE_UPDATE_COMPACT', // Keep same type for compatibility
           senderId: this.peer?.id,
-          data: { gameState: personalizedState },
+          data: { gameState: serializedState, _format: 'msgpack' }, // Add format marker
           timestamp: Date.now()
         }
 

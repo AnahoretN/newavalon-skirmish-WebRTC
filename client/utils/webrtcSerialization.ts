@@ -223,3 +223,126 @@ export function createMinimalGameState(
     }))
   }
 }
+
+// ============================================================================
+// OPTIMIZED STATE SERIALIZATION (MessagePack with Personalization)
+// ============================================================================
+
+/**
+ * Serialize personalized game state using MessagePack
+ * This preserves ALL functionality from createPersonalizedGameState while being more compact
+ *
+ * @param personalizedState - Already personalized game state from createPersonalizedGameState
+ * @returns Base64-encoded MessagePack data
+ */
+export function serializePersonalizedState(personalizedState: GameState): string {
+  try {
+    // Use MessagePack to encode the state
+    const encoded = encode(personalizedState)
+    // Convert to base64 for transmission
+    const binaryStr = String.fromCharCode(...encoded)
+    return btoa(binaryStr)
+  } catch (e) {
+    logger.error('[serializePersonalizedState] Failed to encode:', e)
+    throw e
+  }
+}
+
+/**
+ * Deserialize personalized game state from MessagePack
+ *
+ * @param base64Data - Base64-encoded MessagePack data
+ * @returns Deserialized game state
+ */
+export function deserializePersonalizedState(base64Data: string): GameState {
+  try {
+    // Decode base64
+    const binaryStr = atob(base64Data)
+    const bytes = new Uint8Array(binaryStr.length)
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i)
+    }
+    // Decode MessagePack
+    const decoded = decode(bytes)
+    logger.info('[deserializePersonalizedizedState] Decoded state, has players:', !!(decoded as any).players, 'keys:', Object.keys(decoded))
+    return decoded as GameState
+  } catch (e) {
+    logger.error('[deserializePersonalizedState] Failed to decode:', e)
+    throw e
+  }
+}
+
+/**
+ * Serialize deck cards using MessagePack (optimized for DECK_VIEW_DATA / DECK_DATA_UPDATE)
+ * Only sends baseId for each card - client reconstructs from contentDatabase
+ *
+ * @param deck - Array of cards to serialize
+ * @returns Base64-encoded MessagePack data
+ */
+export function serializeDeckCards(deck: any[]): string {
+  try {
+    // Send only baseId array for minimal size
+    const baseIds = deck.map(card => card.baseId || card.id)
+    const encoded = encode(baseIds)
+    const binaryStr = String.fromCharCode(...encoded)
+    return btoa(binaryStr)
+  } catch (e) {
+    logger.error('[serializeDeckCards] Failed to encode:', e)
+    throw e
+  }
+}
+
+/**
+ * Deserialize deck cards from baseId array
+ * Reconstructs full cards from contentDatabase
+ *
+ * @param base64Data - Base64-encoded MessagePack data with baseId array
+ * @param ownerId - Owner of the cards
+ * @returns Array of reconstructed cards
+ */
+export function deserializeDeckCards(base64Data: string, ownerId: number): any[] {
+  try {
+    const binaryStr = atob(base64Data)
+    const bytes = new Uint8Array(binaryStr.length)
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i)
+    }
+    const baseIds = decode(bytes) as string[]
+
+    // Reconstruct cards from contentDatabase
+    const { getCardDefinition } = require('../content')
+    return baseIds.map((baseId, index) => {
+      const cardDef = getCardDefinition(baseId)
+      if (cardDef) {
+        return {
+          id: `${ownerId}_deck_${index}_${Date.now()}`,
+          baseId,
+          name: cardDef.name,
+          imageUrl: cardDef.imageUrl,
+          power: cardDef.power || 0,
+          ability: cardDef.ability || '',
+          types: cardDef.types || [],
+          faction: cardDef.faction || '',
+          color: cardDef.color || 'Red',
+          ownerId,
+          isFaceDown: true,
+          statuses: []
+        }
+      }
+      // Fallback if card not found
+      return {
+        id: `${ownerId}_deck_${index}_${Date.now()}`,
+        baseId,
+        name: 'Unknown',
+        imageUrl: '',
+        power: 0,
+        ownerId,
+        isFaceDown: true,
+        statuses: []
+      }
+    })
+  } catch (e) {
+    logger.error('[deserializeDeckCards] Failed to decode:', e)
+    throw e
+  }
+}

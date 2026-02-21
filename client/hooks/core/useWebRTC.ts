@@ -142,11 +142,31 @@ export function useWebRTC(props: UseWebRTCProps) {
     return webrtcManagerRef.current.sendFullDeckToHost(playerId, deck, deckSize)
   }, [webrtcManagerRef, webrtcIsHostRef])
 
+  /**
+   * Host shares deck data with all guests
+   * Used when host opens deck view - sends full deck so guests can see it in same order
+   */
+  const shareHostDeckWithGuests = useCallback((deck: any[], deckSize: number) => {
+    if (!webrtcManagerRef.current || !webrtcIsHostRef.current) {
+      logger.warn('[shareHostDeckWithGuests] Only host can share deck data')
+      return false
+    }
+
+    logger.info(`[shareHostDeckWithGuests] Host sharing deck with ${deckSize} cards to all guests`)
+    return webrtcManagerRef.current.broadcastToGuests({
+      type: 'HOST_DECK_DATA',
+      senderId: webrtcManagerRef.current.getPeerId(),
+      data: { deck, deckSize },
+      timestamp: Date.now()
+    })
+  }, [webrtcManagerRef, webrtcIsHostRef])
+
   return {
     initializeWebrtcHost,
     connectAsGuest,
     sendWebrtcAction,
     requestDeckView,
     sendFullDeckToHost,
+    shareHostDeckWithGuests,
   }
 }

@@ -44,14 +44,27 @@ export function isDeltaEmpty(delta: StateDelta): boolean {
 
 /**
  * Stub: Create reconnect snapshot
+ * Uses MessagePack serialization for smaller size
  */
-export function createReconnectSnapshot(gameState: GameState, _localPlayerId?: number | null): {
+export function createReconnectSnapshot(gameState: GameState, localPlayerId?: number | null): {
   type: 'RECONNECT_SNAPSHOT'
   data: any
+  _format?: string
 } {
+  // Import serializePersonalizedState dynamically to avoid circular dependency
+  const { serializePersonalizedState } = require('./webrtcSerialization')
+
+  // Create personalized state for the reconnecting player
+  const { createPersonalizedGameState } = require('../host/StatePersonalization')
+  const personalizedState = createPersonalizedGameState(gameState, localPlayerId ?? null)
+
+  // Serialize using MessagePack
+  const serializedState = serializePersonalizedState(personalizedState)
+
   return {
     type: 'RECONNECT_SNAPSHOT',
-    data: gameState
+    data: serializedState,
+    _format: 'msgpack'
   }
 }
 

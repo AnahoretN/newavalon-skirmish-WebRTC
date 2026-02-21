@@ -85,6 +85,7 @@ export type WebrtcMessageType =
   | 'DECK_VIEW_DATA'       // Response with full deck data
   | 'DECK_DATA_UPDATE'     // Guest sends their full deck data to host (for deck view)
   | 'REQUEST_DECK_DATA'    // Host requests deck data from guests after F5 restore
+  | 'HOST_DECK_DATA'       // Host shares their deck data with all guests (for deck view sync)
   | 'GAME_LOGS'            // Game logs for debugging
   // New codec system messages (binary format)
   | 'CARD_REGISTRY'        // Card definitions registry (sent once per connection) - BINARY
