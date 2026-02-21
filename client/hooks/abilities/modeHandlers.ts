@@ -799,8 +799,9 @@ function handleTransferStatus(
   }
 
   // Transfer ALL statuses from source card to target card (for TRANSFER_ALL_STATUSES)
+  // Note: transferAllStatusesWithoutException(fromCoords, toCoords) - from source to target
   if (abilityMode.mode === 'TRANSFER_ALL_STATUSES') {
-    transferAllStatusesWithoutException(boardCoords, sourceCoords)
+    transferAllStatusesWithoutException(sourceCoords, boardCoords)
   } else {
     // For TRANSFER_STATUS_SELECT, legacy behavior - transfer one status
     // This is handled elsewhere

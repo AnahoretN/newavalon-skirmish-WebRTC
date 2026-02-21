@@ -12,7 +12,7 @@ import type { WebrtcEvent } from '../host/types'
 import { getWebRTCEnabled } from './useWebRTCEnabled'
 import type { WebrtcMessage } from '../host/types'
 import { toggleActivePlayer as toggleActivePlayerPhase, performPreparationPhase } from '../host/PhaseManagement'
-import { resetReadyStatusesForTurn } from '../utils/autoAbilities'
+import { recalculateAllReadyStatuses } from '../utils/autoAbilities'
 import {
   applyStateDelta,
   createReconnectSnapshot
@@ -1440,6 +1440,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                   board: reconstructedBoard
                 }
 
+                // IMPORTANT: Recalculate ready statuses for active player's perspective
+                if (newState.activePlayerId !== undefined) {
+                  recalculateAllReadyStatuses(newState)
+                }
+
                 // Broadcast the updated state to all guests (excluding the sender)
                 if (webrtcManagerRef.current) {
                   setTimeout(() => {
@@ -1818,6 +1823,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               board: recalculatedBoard
             }
             logger.info(`[STATE_UPDATE_COMPACT] Merged state: currentPhase=${mergedState.currentPhase}, activePlayerId=${mergedState.activePlayerId}, startingPlayerId=${mergedState.startingPlayerId}`)
+
+            // IMPORTANT: Recalculate ready statuses for active player's perspective
+            if (mergedState.activePlayerId !== undefined) {
+              recalculateAllReadyStatuses(mergedState)
+            }
 
             return mergedState
           })
@@ -3159,13 +3169,13 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
               // Reset ready statuses (readySetup, readyCommit) for the active player
               // This ensures Commit abilities become available in the Commit phase
-              resetReadyStatusesForTurn(newState, newState.activePlayerId!)
+              recalculateAllReadyStatuses(newState)
             }
 
             // Also reset ready statuses when a different player becomes active
             // This ensures all players have their abilities ready at turn start
             if (newState.activePlayerId && newState.activePlayerId !== prev.activePlayerId) {
-              resetReadyStatusesForTurn(newState, newState.activePlayerId)
+              recalculateAllReadyStatuses(newState)
             }
 
             return newState

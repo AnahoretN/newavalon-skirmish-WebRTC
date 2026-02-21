@@ -3,7 +3,7 @@ import { DeckType } from '@/types'
 import type { Card as CardType, PlayerColor } from '@/types'
 import { DECK_THEMES, PLAYER_COLORS, STATUS_ICONS, PLAYER_COLOR_RGB } from '@/constants'
 import { Tooltip, CardTooltipContent } from './Tooltip'
-import { hasReadyAbilityInCurrentPhase, hasReadyStatusForPhase } from '@/utils/autoAbilities'
+import { hasReadyAbilityInCurrentPhase } from '@/utils/autoAbilities'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { getOptimizedImageUrl, getThumbnailImageUrl, addCacheBust, isCloudinaryUrl } from '@/utils/imageOptimization'
 import { globalImageLoader } from '@/utils/imageLoader'
@@ -452,25 +452,18 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     activePlayerId
   )
 
-  // For visual display of ready statuses on OTHER players' cards
-  // (so everyone can see what abilities are available)
-  const hasReadyStatusVisual = hasReadyStatusForPhase(
-    card,
-    activePhaseIndex ?? 0
-  )
-
   // Check if this card is currently executing an ability
   const isExecutingAbility = boardCoords && activeAbilitySourceCoords &&
     boardCoords.row === activeAbilitySourceCoords.row &&
     boardCoords.col === activeAbilitySourceCoords.col
 
   // Highlight if:
-  // 1. Has a ready ability usable in current phase and by active player
-  // OR has ready status for visual display (for other players' cards)
+  // 1. Has a ready ability usable in current phase and by active player ONLY
   // 2. NOT currently executing an ability
   // 3. Not dismissed and not disabled
   // 4. NOT in targeting mode (ready abilities hidden during targeting)
-  const shouldHighlight = !disableActiveHighlights && !highlightDismissed && (hasReadyAbility || hasReadyStatusVisual) && !isExecutingAbility && !targetingMode
+  // IMPORTANT: Only show ready effect for active player's cards!
+  const shouldHighlight = !disableActiveHighlights && !highlightDismissed && hasReadyAbility && !isExecutingAbility && !targetingMode
 
   const handleCardClick = useCallback((e: React.MouseEvent) => {
     // Stop propagation to prevent double-triggering from parent GameBoard cell

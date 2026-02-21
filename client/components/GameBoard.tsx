@@ -3,7 +3,7 @@ import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerCol
 import { ClickWave as ClickWaveComponent } from './ClickWave'
 import { Card } from './Card'
 import { PLAYER_COLORS, FLOATING_TEXT_COLORS, PLAYER_COLOR_RGB } from '@/constants'
-import { hasReadyAbilityInCurrentPhase, hasReadyStatusForPhase } from '@/utils/autoAbilities'
+import { hasReadyAbilityInCurrentPhase } from '@/utils/autoAbilities'
 import { calculateGlowColor, rgba, TIMING } from '@/utils/common'
 
 interface GameBoardProps {
@@ -191,18 +191,13 @@ const GridCell = memo<{
       const canStack = isStackMode && isValidTarget
       // Interactive for click handling, but visual highlight comes from shared highlights
       const isInteractive = isValidTarget || canPlay || canStack
-      // Check if card has ready ability (for activation) or ready status (for visual display)
+      // Check if card has ready ability (for activation) - ONLY for active player's cards
       const hasReadyAbility = cell.card && hasReadyAbilityInCurrentPhase(
         cell.card,
         currentPhase ?? 0,
         activePlayerId
       )
-      // For visual display on other players' cards
-      const hasReadyStatusVisual = cell.card && hasReadyStatusForPhase(
-        cell.card,
-        currentPhase ?? 0
-      )
-      const hasActiveEffect = isValidTarget || hasReadyAbility || hasReadyStatusVisual
+      const hasActiveEffect = isValidTarget || hasReadyAbility
       // Card has active effects (highlight, selection, or ready ability) - should appear above other cards
 
       // Only add cursor pointer for interactive cells - visual highlight comes from shared highlights

@@ -14,11 +14,21 @@ import type { GameState, Card } from '../types'
 import { logger } from '../utils/logger'
 
 /**
+ * Ready status types that are player-specific and should NOT be broadcast
+ * These are calculated locally by each client based on their perspective
+ */
+const READY_STATUS_TYPES = ['readyDeploy', 'readySetup', 'readyCommit']
+
+/**
  * Optimize card for network transmission
  * Removes heavy fields (fallbackImage)
+ * Filters out player-specific ready statuses (calculated locally by each client)
  * Keeps gameplay-critical data and display data
  */
 export function optimizeCard(card: Card): any {
+  // Filter out ready statuses from broadcast - they are calculated locally by each client
+  const filteredStatuses = (card.statuses || []).filter(s => !READY_STATUS_TYPES.includes(s.type))
+
   return {
     id: card.id,
     baseId: card.baseId,
@@ -26,7 +36,7 @@ export function optimizeCard(card: Card): any {
     power: card.power,
     powerModifier: card.powerModifier || 0,
     isFaceDown: card.isFaceDown,
-    statuses: card.statuses || [],
+    statuses: filteredStatuses,
     ownerId: card.ownerId,
     deck: card.deck,
     // Include ability for board cards (needed for interactions)

@@ -118,6 +118,12 @@ export const hasReadyAbilityInCurrentPhase = (
     phaseIndex = phaseOrGameState
   }
 
+  // CRITICAL: Only show ready effect for active player's cards
+  // This prevents showing glow on other players' cards during their turn
+  if (activePlayerId !== undefined && card.ownerId !== activePlayerId) {
+    return false
+  }
+
   // Simply check if card has the appropriate ready status for current phase
   // The status itself should only exist when all conditions are met
   return getReadyStatusForPhase(card, phaseIndex) !== null
@@ -323,6 +329,40 @@ export const resetReadyStatusesForTurn = (gameState: GameState, playerId: number
   }
 
   logger.debug(`[resetReadyStatusesForTurn] Processed ${cardsProcessed} cards, reset setup: ${setupAdded}, commit: ${commitAdded}`)
+}
+
+/**
+ * Recalculates ready statuses for ALL players' cards from local perspective.
+ * - Active player's cards: may have readySetup/readyCommit (if conditions met)
+ * - Other players' cards: NO ready statuses (they are not active)
+ *
+ * This ensures that when receiving state from other players, we only see
+ * ready effects for the active player.
+ *
+ * @param gameState - The current game state (will be modified in place)
+ */
+export const recalculateAllReadyStatuses = (gameState: GameState): void => {
+  const activePlayerId = gameState.activePlayerId
+  if (activePlayerId === undefined) {
+    return
+  }
+
+  // First, remove ALL ready statuses from ALL cards on the board
+  for (let r = 0; r < gameState.board.length; r++) {
+    for (let c = 0; c < gameState.board[r].length; c++) {
+      const card = gameState.board[r][c].card
+      if (card && card.statuses) {
+        card.statuses = card.statuses.filter(s =>
+          s.type !== READY_STATUS_DEPLOY &&
+          s.type !== READY_STATUS_SETUP &&
+          s.type !== READY_STATUS_COMMIT
+        )
+      }
+    }
+  }
+
+  // Then, add ready statuses ONLY for the active player's cards
+  resetReadyStatusesForTurn(gameState, activePlayerId)
 }
 
 /**

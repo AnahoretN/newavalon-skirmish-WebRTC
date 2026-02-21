@@ -265,9 +265,7 @@ export const CARD_ABILITIES: CardAbilityDefinition[] = [
         filter: (target: Card, r: number, c: number) => {
           // Cannot target itself
           if (target.id === card.id) {return false}
-          // Must be owned by the same player
-          if (target.ownerId !== _ownerId) {return false}
-          // Must be adjacent
+          // Must be adjacent (any adjacent card on the battlefield is valid)
           return checkAdj(r, c, coords.row, coords.col)
         },
       },
@@ -276,17 +274,17 @@ export const CARD_ABILITIES: CardAbilityDefinition[] = [
   {
     baseId: 'recklessProvocateur',
     activationType: 'commit',
-    getAction: (_card, _gameState, _ownerId, coords) => ({
+    getAction: (card, _gameState, _ownerId, coords) => ({
       type: 'ENTER_MODE',
       mode: 'TRANSFER_ALL_STATUSES',
-      sourceCard: _card,
+      sourceCard: card,
       sourceCoords: coords,
       payload: {
         // Only owner's cards with specific tokens: Aim, Exploit, Rule, Shield, Stun
         filter: (target: Card) => {
-          if (target.id === _card.id) {return false}
-          // Must be owned by the same player
-          if (target.ownerId !== _ownerId) {return false}
+          if (target.id === card.id) {return false}
+          // Must be owned by the same player (use card.ownerId since Reckless Provocateur is owned by the player)
+          if (target.ownerId !== card.ownerId) {return false}
           // Must have at least one of the specified tokens/statuses
           if (!target.statuses || target.statuses.length === 0) {return false}
           const validTokens = ['Aim', 'Exploit', 'Rule', 'Shield', 'Stun']
