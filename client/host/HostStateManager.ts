@@ -55,7 +55,7 @@ export class HostStateManager {
    * Update state from local (host) action
    * Called when host (as a player) makes an action
    */
-  updateFromLocal(newState: GameState): void {
+  updateFromLocal(newState: GameState, excludePeerId?: string): void {
     if (!this.currentState) {
       logger.warn('[HostStateManager] No current state, setting as initial')
       this.currentState = newState
@@ -68,9 +68,9 @@ export class HostStateManager {
     // Update internal state
     this.currentState = newState
 
-    // Broadcast delta to all guests
+    // Broadcast delta to all guests (excluding sender if provided)
     if (!isDeltaEmpty(delta)) {
-      this.broadcastDelta(delta)
+      this.broadcastDelta(delta, excludePeerId)
       logger.info(`[HostStateManager] Local change broadcast: phase=${!!delta.phaseDelta}, players=${Object.keys(delta.playerDeltas || {}).length}`)
     }
   }
@@ -398,7 +398,7 @@ export class HostStateManager {
    * Set targeting mode (from guest action)
    * Updates internal state and broadcasts to all guests
    */
-  setTargetingMode(targetingMode: any): void {
+  setTargetingMode(targetingMode: any, excludePeerId?: string): void {
     if (!this.currentState) {
       logger.warn('[HostStateManager] No current state, ignoring targeting mode')
       return
@@ -412,15 +412,15 @@ export class HostStateManager {
 
     this.currentState = newState
 
-    // Broadcast full state to all guests
-    this.connectionManager.broadcastGameState(newState)
+    // Broadcast full state to all guests (excluding sender if provided)
+    this.connectionManager.broadcastGameState(newState, excludePeerId)
     logger.info(`[HostStateManager] Targeting mode set by player ${targetingMode.playerId}, broadcasting to all guests`)
   }
 
   /**
    * Clear targeting mode
    */
-  clearTargetingMode(): void {
+  clearTargetingMode(excludePeerId?: string): void {
     if (!this.currentState) {
       return
     }
@@ -433,8 +433,8 @@ export class HostStateManager {
 
     this.currentState = newState
 
-    // Broadcast full state to all guests
-    this.connectionManager.broadcastGameState(newState)
+    // Broadcast full state to all guests (excluding sender if provided)
+    this.connectionManager.broadcastGameState(newState, excludePeerId)
     logger.info('[HostStateManager] Targeting mode cleared, broadcasting to all guests')
   }
 }

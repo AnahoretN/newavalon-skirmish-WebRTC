@@ -390,7 +390,7 @@ export class HostManager {
 
       case 'SET_PHASE':
         if (message.data?.phaseIndex !== undefined) {
-          this.changePhase(message.data.phaseIndex)
+          this.changePhase(message.data.phaseIndex, message.data.activePlayerId, fromPeerId)
         }
         break
 
@@ -437,30 +437,15 @@ export class HostManager {
 
       case 'SET_TARGETING_MODE':
         if (message.data?.targetingMode) {
-          // Update host's internal state and broadcast to all guests
-          this.stateManager.setTargetingMode(message.data.targetingMode)
-          // Also broadcast the SET_TARGETING_MODE message to all guests
-          this.connectionManager.broadcast({
-            type: 'SET_TARGETING_MODE',
-            senderId: this.connectionManager.getPeerId(),
-            data: { targetingMode: message.data.targetingMode },
-            timestamp: Date.now()
-          })
+          // Update host's internal state and broadcast to all guests (excluding sender)
+          this.stateManager.setTargetingMode(message.data.targetingMode, fromPeerId)
         }
         break
 
       case 'CLEAR_TARGETING_MODE':
-        // Update host's internal state and broadcast to all guests
+        // Update host's internal state and broadcast to all guests (excluding sender)
         logger.info(`[HostManager] Processing CLEAR_TARGETING_MODE from ${fromPeerId} (player ${guestPlayerId})`)
-        this.stateManager.clearTargetingMode()
-        // Also broadcast the CLEAR_TARGETING_MODE message to all guests
-        this.connectionManager.broadcast({
-          type: 'CLEAR_TARGETING_MODE',
-          senderId: this.connectionManager.getPeerId(),
-          data: { timestamp: Date.now() },
-          timestamp: Date.now()
-        })
-        logger.info(`[HostManager] Broadcasted CLEAR_TARGETING_MODE to all guests`)
+        this.stateManager.clearTargetingMode(fromPeerId)
         break
 
       // Ability activation messages
@@ -819,7 +804,7 @@ export class HostManager {
    * Update state from local (host) action and broadcast to guests
    * This is called when host (as a player) makes an action
    */
-  updateFromLocal(newState: GameState): void {
+  updateFromLocal(newState: GameState, excludePeerId?: string): void {
     const oldState = this.stateManager.getState()
     if (!oldState) {
       this.stateManager.setInitialState(newState)
@@ -828,7 +813,7 @@ export class HostManager {
       return
     }
 
-    this.stateManager.updateFromLocal(newState)
+    this.stateManager.updateFromLocal(newState, excludePeerId)
     this.gameLogger.setGameState(newState)
     this.timerSystem.setGameState(newState)
 
@@ -901,18 +886,23 @@ export class HostManager {
   /**
    * Set specific phase
    */
-  changePhase(phaseIndex: number): void {
+  changePhase(phaseIndex: number, activePlayerId?: number, excludePeerId?: string): void {
     const state = this.stateManager.getState()
     if (!state) {return}
 
     const oldPhase = state.currentPhase
     const newState = setPhase(state, phaseIndex)
 
+    // If guest provided activePlayerId, use it (for consistency)
+    if (activePlayerId !== undefined && activePlayerId !== null) {
+      newState.activePlayerId = activePlayerId
+    }
+
     if (oldPhase !== newState.currentPhase) {
       this.gameLogger.logPhaseTransition(oldPhase, newState.currentPhase)
     }
 
-    this.updateFromLocal(newState)
+    this.updateFromLocal(newState, excludePeerId)
   }
 
   /**

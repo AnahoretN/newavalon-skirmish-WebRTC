@@ -902,6 +902,18 @@ const AppInner = function AppInner() {
       return
     }
 
+    // If targeting mode is already set for our ability mode, don't re-set it (prevents infinite loop)
+    // Check both action.mode and sourceCoords to ensure we're not re-setting the same targeting
+    if (gameState.targetingMode && abilityMode) {
+      const sameMode = gameState.targetingMode.action?.mode === abilityMode.mode
+      const sameSource = !gameState.targetingMode.sourceCoords || !abilityMode.sourceCoords ||
+        (gameState.targetingMode.sourceCoords.row === abilityMode.sourceCoords.row &&
+         gameState.targetingMode.sourceCoords.col === abilityMode.sourceCoords.col)
+      if (sameMode && sameSource) {
+        return
+      }
+    }
+
     // PRIORITY: cursorStack overrides abilityMode for visual effects
     // When tokens are active, abilityMode is suppressed
     let effectiveAction: AbilityAction | null = null
@@ -1325,6 +1337,13 @@ const AppInner = function AppInner() {
       }
     }
   }, [gameState?.isScoringStep, gameState?.activePlayerId, localPlayerId, gameState?.board, abilityMode, nextPhase, gameState?.players, boardSize])
+
+  // Close scoring mode when leaving Scoring phase (4)
+  useEffect(() => {
+    if (abilityMode?.mode === 'SCORE_LAST_PLAYED_LINE' && gameState.currentPhase !== 4) {
+      setAbilityMode(null)
+    }
+  }, [gameState?.currentPhase, abilityMode])
 
   useEffect(() => {
     if (actionQueue.length > 0 && !abilityMode && !cursorStack) {
@@ -2170,6 +2189,8 @@ const AppInner = function AppInner() {
         onToggleHideDummyCards={setHideDummyCards}
         currentRound={gameState.currentRound}
         turnNumber={gameState.turnNumber}
+        isScoringStep={gameState.isScoringStep}
+        hasLastPlayedCard={checkHasLastPlayedCard(gameState)}
         isReconnecting={isReconnecting}
         reconnectProgress={reconnectProgress}
       />
@@ -2527,6 +2548,22 @@ const AppInner = function AppInner() {
     </div>
     </>
   )
+}
+
+// Helper function to check if active player has a LastPlayed card
+function checkHasLastPlayedCard(gameState: GameState): boolean {
+  const activePlayerId = gameState.activePlayerId
+  if (!activePlayerId) return false
+
+  for (let r = 0; r < gameState.board.length; r++) {
+    for (let c = 0; c < gameState.board[r].length; c++) {
+      const card = gameState.board[r]?.[c]?.card
+      if (card?.statuses?.some(s => s.type === 'LastPlayed' && s.addedByPlayerId === activePlayerId)) {
+        return true
+      }
+    }
+  }
+  return false
 }
 
 // Wrapper component with ModalsProvider

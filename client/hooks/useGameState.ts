@@ -3756,6 +3756,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       case 'SET_TARGETING_MODE':
         // Targeting mode synchronization (P2P)
         // Both host and guests update their local state
+        // HostManager already handles broadcasting for host, so no need to rebroadcast
         if (message.data?.targetingMode) {
           const targetingMode = message.data.targetingMode
           // Support both old format (with action) and new format (with mode directly)
@@ -3776,8 +3777,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           }))
           gameStateRef.current.targetingMode = targetingMode
 
-          // Host broadcasts to all guests (if using old WebrtcManager)
-          if (webrtcIsHostRef.current && webrtcManagerRef.current) {
+          // Only guests need to broadcast (for old-style direct connections)
+          // Host uses HostManager which already handles broadcasting
+          if (!webrtcIsHostRef.current && webrtcManagerRef.current) {
             webrtcManagerRef.current.broadcastToGuests({
               type: 'SET_TARGETING_MODE',
               senderId: webrtcManagerRef.current.getPeerId?.() ?? undefined,
@@ -3792,6 +3794,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       case 'CLEAR_TARGETING_MODE':
         // Clear targeting mode (P2P)
         // Both host and guests update their local state
+        // HostManager already handles broadcasting for host, so no need to rebroadcast
         logger.info('[TargetingMode] Received CLEAR_TARGETING_MODE via WebRTC', {
           isHost: webrtcIsHostRef.current,
         })
@@ -3803,8 +3806,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
         logger.info('[TargetingMode] Cleared targeting mode locally')
 
-        // Host broadcasts to all guests (if using old WebrtcManager)
-        if (webrtcIsHostRef.current && webrtcManagerRef.current) {
+        // Only guests need to broadcast (for old-style direct connections)
+        // Host uses HostManager which already handles broadcasting
+        if (!webrtcIsHostRef.current && webrtcManagerRef.current) {
           webrtcManagerRef.current.broadcastToGuests({
             type: 'CLEAR_TARGETING_MODE',
             senderId: webrtcManagerRef.current.getPeerId?.() ?? undefined,

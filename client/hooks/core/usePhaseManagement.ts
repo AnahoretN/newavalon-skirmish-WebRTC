@@ -18,7 +18,7 @@ import { useCallback } from 'react'
 import { logger } from '../../utils/logger'
 import { deepCloneState } from '../../utils/common'
 import { recalculateBoardStatuses } from '@shared/utils/boardUtils'
-import { toggleActivePlayer as toggleActivePlayerPhase, passTurnToNextPlayer, playerHasCardsOnBoard } from '../../host/PhaseManagement'
+import { toggleActivePlayer as toggleActivePlayerPhase, passTurnToNextPlayer, playerHasCardsOnBoard, setPhase as hostSetPhase } from '../../host/PhaseManagement'
 import type { GameState, Board, DeckType } from '../../types'
 import type { WebRTCManager } from './types'
 
@@ -141,37 +141,69 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
 
     const isWebRTCMode = webrtcEnabled
 
-    // In WebRTC mode, send message to host instead of local update
-    // Host will apply the change (including readyDeploy removal) and broadcast to all
+    // In WebRTC mode, both host and guests update locally first, then handle sync
     if (isWebRTCMode && webrtcManagerRef.current) {
-      if (webrtcIsHostRef.current) {
-        // Host: apply locally and broadcast
-        const currentState = gameStateRef.current
+      updateState(currentState => {
         if (!currentState.isGameStarted) {
-          return
+          return currentState
         }
+
         const oldPhase = currentState.currentPhase
         const newPhase = Math.max(1, Math.min(phaseIndex, 4))
+
+        // Only proceed if phase is actually changing
         if (oldPhase === newPhase) {
-          return
+          return currentState
         }
 
-        // Use setPhase from PhaseManagement which includes readyDeploy removal
-        const { setPhase: hostSetPhase } = require('../../host/PhaseManagement')
-        const newState = hostSetPhase(currentState, phaseIndex)
+        // Clone and modify state with readyDeploy removal
+        const newState: GameState = deepCloneState(currentState)
+        newState.currentPhase = newPhase
 
-        setGameState(newState)
-        // Broadcast will happen automatically via updateState
-
-      } else {
-        // Guest: send SET_PHASE message to host
-        webrtcManagerRef.current.sendMessageToHost({
-          type: 'SET_PHASE',
-          senderId: undefined,
-          data: { phaseIndex },
-          timestamp: Date.now()
+        // Clear readyDeploy status from all cards (marks deploy abilities as "lost")
+        newState.board.forEach(row => {
+          row.forEach(cell => {
+            const card = cell.card
+            if (card && card.statuses) {
+              const filteredStatuses = card.statuses.filter(s => s.type !== 'readyDeploy')
+              if (filteredStatuses.length !== card.statuses.length) {
+                card.statuses = filteredStatuses
+              }
+            }
+          })
         })
-      }
+
+        // When entering Scoring phase, enable scoring step
+        // When leaving Scoring phase, disable scoring step
+        const enteringScoringPhase = newPhase === 4
+        const leavingScoringPhase = oldPhase === 4
+        if (enteringScoringPhase) {
+          newState.isScoringStep = true
+        } else if (leavingScoringPhase) {
+          newState.isScoringStep = false
+        }
+
+        // Now sync with other players
+        if (webrtcIsHostRef.current) {
+          // Host: broadcast to all guests (will happen via updateState)
+          logger.info(`[setPhase] Host setting phase to ${newPhase}`)
+        } else {
+          // Guest: notify host so host can sync with everyone
+          // Send minimal data: only phaseIndex and activePlayerId
+          logger.info(`[setPhase] Guest requesting phase ${newPhase} from host`)
+          webrtcManagerRef.current.sendMessageToHost({
+            type: 'SET_PHASE',
+            senderId: undefined,
+            data: {
+              phaseIndex: newPhase,
+              activePlayerId: newState.activePlayerId
+            },
+            timestamp: Date.now()
+          })
+        }
+
+        return newState
+      })
       return
     }
 
@@ -208,15 +240,16 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
       })
 
       const enteringScoringPhase = newPhase === 4
+      const leavingScoringPhase = oldPhase === 4
 
       // When entering Scoring phase from any phase, enable scoring step
-      // This matches the behavior of nextPhase
+      // When leaving Scoring phase, disable scoring step
       // If clearing line selection mode, also close isScoringStep to prevent re-triggering
       return {
         ...newState,
         currentPhase: newPhase,
         ...(enteringScoringPhase && !isClearingLineSelectionMode ? { isScoringStep: true } : {}),
-        ...(isClearingLineSelectionMode ? { isScoringStep: false } : {}),
+        ...(leavingScoringPhase || isClearingLineSelectionMode ? { isScoringStep: false } : {}),
       }
     })
   }, [updateState, abilityMode, setAbilityMode, webrtcManagerRef, webrtcIsHostRef, gameStateRef, setGameState])

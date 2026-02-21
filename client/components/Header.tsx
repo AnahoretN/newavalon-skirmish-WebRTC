@@ -48,6 +48,8 @@ interface HeaderProps {
   onToggleHideDummyCards: (enabled: boolean) => void;
   currentRound?: number;
   turnNumber?: number;
+  isScoringStep?: boolean;
+  hasLastPlayedCard?: boolean;
   // Reconnection props
   isReconnecting?: boolean;
   reconnectProgress?: { attempt: number; maxAttempts: number; timeRemaining: number } | null;
@@ -518,6 +520,8 @@ const Header = memo<HeaderProps>(({
   onToggleHideDummyCards,
   currentRound = 1,
   turnNumber = 1,
+  isScoringStep = false,
+  hasLastPlayedCard = false,
   isReconnecting = false,
   reconnectProgress = null,
 }) => {
@@ -605,20 +609,26 @@ const Header = memo<HeaderProps>(({
               // Get active player's color for current phase highlight
               const activePlayerColor = activePlayerId !== null ? playerColorMap.get(activePlayerId) : undefined
               const colorClasses = activePlayerColor ? PLAYER_COLORS[activePlayerColor as keyof typeof PLAYER_COLORS]?.bg : 'bg-yellow-500'
+
+              // Scoring phase (4) can only be clicked if:
+              // - We're already in scoring mode (isScoringStep=true), OR
+              // - Active player has a LastPlayed card
+              const isScoringPhase = visiblePhaseIndex === 4
+              const canClickScoring = isScoringPhase && (isScoringStep || hasLastPlayedCard)
+
               // Only show highlight color if game is started
               const bgClass = isGameStarted && isCurrentPhase ? `${colorClasses} text-white` : 'text-gray-400 hover:text-white'
+              const isDisabled = !isGameStarted || (isScoringPhase && !canClickScoring && !isScoringStep)
+
               return (
                 <div
                   key={phase}
-                  onClick={() => {
-                    console.log('[Header] Phase clicked:', phase, 'visiblePhaseIndex:', visiblePhaseIndex, 'isGameStarted:', isGameStarted)
-                    if (isGameStarted) {
-                      onSetPhase(visiblePhaseIndex)
-                    }
-                  }}
+                  onClick={() => !isDisabled && onSetPhase(visiblePhaseIndex)}
                   className={`
-                    px-3 py-1.5 text-sm font-bold uppercase transition-all duration-200 cursor-pointer rounded
+                    px-3 py-1.5 text-sm font-bold uppercase transition-all duration-200 rounded
                     ${isCurrentPhase ? '' : ''}
+                    ${isDisabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
+                    ${!isDisabled ? 'hover:bg-gray-700' : ''}
                     ${bgClass}
                   `}
                 >
