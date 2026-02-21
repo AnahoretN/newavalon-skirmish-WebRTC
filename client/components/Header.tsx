@@ -575,7 +575,7 @@ const Header = memo<HeaderProps>(({
         </div>
 
         {/* Center-left: Round tracker (always visible, inactive until game starts) */}
-        <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center" style={{ marginLeft: '-280px' }}>
+        <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center z-10" style={{ marginLeft: '-280px' }}>
           <RoundTracker
             currentRound={currentRound}
             turnNumber={turnNumber}
@@ -588,7 +588,7 @@ const Header = memo<HeaderProps>(({
         </div>
 
         {/* Center: Phase display with all 4 phases and navigation arrows (always visible, strictly centered) */}
-        <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center">
+        <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center z-10">
           <div className={`flex items-center bg-gray-800 rounded-lg p-1 border border-gray-700 shadow-md ${!isGameStarted ? 'opacity-50' : ''}`}>
             <button
               onClick={onPrevPhase}
@@ -610,7 +610,12 @@ const Header = memo<HeaderProps>(({
               return (
                 <div
                   key={phase}
-                  onClick={() => isGameStarted && onSetPhase(visiblePhaseIndex)}
+                  onClick={() => {
+                    console.log('[Header] Phase clicked:', phase, 'visiblePhaseIndex:', visiblePhaseIndex, 'isGameStarted:', isGameStarted)
+                    if (isGameStarted) {
+                      onSetPhase(visiblePhaseIndex)
+                    }
+                  }}
                   className={`
                     px-3 py-1.5 text-sm font-bold uppercase transition-all duration-200 cursor-pointer rounded
                     ${isCurrentPhase ? '' : ''}
@@ -632,7 +637,7 @@ const Header = memo<HeaderProps>(({
         </div>
 
         {/* Center-right: Tokens & Counters */}
-        <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center" style={{ marginLeft: '280px' }}>
+        <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center z-10" style={{ marginLeft: '280px' }}>
           <button
             onClick={onOpenTokensModal}
             className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-3 rounded text-sm"
