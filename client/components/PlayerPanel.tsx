@@ -546,8 +546,53 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
           {isFirstPlayer && (
             <img src={firstPlayerIconUrl} alt="First Player" className="w-6 h-6 drop-shadow-md flex-shrink-0" title="First Player" />
           )}
-          {/* Active player checkbox */}
-          <input type="checkbox" checked={isPlayerActive} onChange={() => onToggleActivePlayer(player.id)} disabled={!canPerformActions} className={`w-6 h-6 text-yellow-400 bg-gray-700 border-2 border-yellow-400 rounded flex-shrink-0 ${!canPerformActions ? 'cursor-not-allowed' : 'cursor-pointer'}`} title="Active Player" />
+          {/* Active player indicator - clickable to toggle */}
+          <div
+            onClick={() => canPerformActions && onToggleActivePlayer(player.id)}
+            className={`flex-shrink-0 cursor-pointer transition-all duration-200 ${
+              !canPerformActions ? 'cursor-not-allowed' : ''
+            }`}
+            title={isPlayerActive ? "Active Player - Click to deactivate" : "Inactive Player - Click to activate"}
+          >
+            <svg
+              width="28"
+              height="28"
+              viewBox="0 0 28 28"
+              className={`transition-all duration-200 ${
+                isPlayerActive
+                  ? 'drop-shadow-[0_0_8px_rgba(250,204,21,0.8)]'
+                  : 'opacity-40'
+              }`}
+            >
+              {/* Outer ring */}
+              <circle
+                cx="14"
+                cy="14"
+                r="12"
+                fill="none"
+                strokeWidth="2.5"
+                className={isPlayerActive ? 'stroke-yellow-400' : 'stroke-gray-500'}
+              />
+              {/* Inner circle */}
+              <circle
+                cx="14"
+                cy="14"
+                r="6"
+                className={isPlayerActive ? 'fill-yellow-400' : 'fill-gray-600'}
+              />
+              {/* Glow effect when active */}
+              {isPlayerActive && (
+                <circle
+                  cx="14"
+                  cy="14"
+                  r="9"
+                  fill="none"
+                  strokeWidth="1"
+                  className="stroke-yellow-300 opacity-50 animate-pulse"
+                />
+              )}
+            </svg>
+          </div>
         </div>
 
         {/* Header: ColorPicker + Name (name takes all available space) */}
@@ -881,15 +926,53 @@ key={`card-${card.id}`}
             {winCount > 0 && <img src={ROUND_WIN_MEDAL_URL} alt="Round Winner" className="w-[19px] h-[17.7] flex-shrink-0 mt-[1.3px]" title="Round Winner" />}
             {/* First player star */}
             {isFirstPlayer && <img src={firstPlayerIconUrl} className="w-[16.75px] h-[16.75px] flex-shrink-0" title="First Player" />}
-            {/* Active player checkbox */}
-            <input
-              type="checkbox"
-              checked={isPlayerActive}
-              onChange={() => onToggleActivePlayer(player.id)}
-              disabled={!canPerformActions}
-              className="w-[15px] h-[15px] text-yellow-400 bg-gray-800 border-2 border-yellow-400 rounded cursor-pointer flex-shrink-0 accent-yellow-500"
-              title="Active Player"
-            />
+            {/* Active player indicator - clickable to toggle */}
+            <div
+              onClick={() => canPerformActions && onToggleActivePlayer(player.id)}
+              className={`flex-shrink-0 cursor-pointer transition-all duration-200 ${
+                !canPerformActions ? 'cursor-not-allowed' : ''
+              }`}
+              title={isPlayerActive ? "Active Player - Click to deactivate" : "Inactive Player - Click to activate"}
+            >
+              <svg
+                width="17"
+                height="17"
+                viewBox="0 0 28 28"
+                className={`transition-all duration-200 ${
+                  isPlayerActive
+                    ? 'drop-shadow-[0_0_6px_rgba(250,204,21,0.8)]'
+                    : 'opacity-40'
+                }`}
+              >
+                {/* Outer ring */}
+                <circle
+                  cx="14"
+                  cy="14"
+                  r="12"
+                  fill="none"
+                  strokeWidth="2.5"
+                  className={isPlayerActive ? 'stroke-yellow-400' : 'stroke-gray-500'}
+                />
+                {/* Inner circle */}
+                <circle
+                  cx="14"
+                  cy="14"
+                  r="6"
+                  className={isPlayerActive ? 'fill-yellow-400' : 'fill-gray-600'}
+                />
+                {/* Glow effect when active */}
+                {isPlayerActive && (
+                  <circle
+                    cx="14"
+                    cy="14"
+                    r="9"
+                    fill="none"
+                    strokeWidth="1"
+                    className="stroke-yellow-300 opacity-50 animate-pulse"
+                  />
+                )}
+              </svg>
+            </div>
           </div>
         </div>
 
