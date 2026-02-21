@@ -546,13 +546,17 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
           {isFirstPlayer && (
             <img src={firstPlayerIconUrl} alt="First Player" className="w-6 h-6 drop-shadow-md flex-shrink-0" title="First Player" />
           )}
-          {/* Active player indicator - clickable to toggle */}
-          <div
+          {/* Active player indicator - clickable to toggle (DISABLED) */}
+          {/* <div
             onClick={() => canPerformActions && onToggleActivePlayer(player.id)}
             className={`flex-shrink-0 cursor-pointer transition-all duration-200 ${
               !canPerformActions ? 'cursor-not-allowed' : ''
             }`}
             title={isPlayerActive ? "Active Player - Click to deactivate" : "Inactive Player - Click to activate"}
+          > */}
+          <div
+            className="flex-shrink-0 transition-all duration-200"
+            title={isPlayerActive ? "Active Player" : "Inactive Player"}
           >
             <svg
               width="28"
@@ -593,6 +597,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
               )}
             </svg>
           </div>
+          {/* </div> */}
         </div>
 
         {/* Header: ColorPicker + Name (name takes all available space) */}
@@ -926,13 +931,17 @@ key={`card-${card.id}`}
             {winCount > 0 && <img src={ROUND_WIN_MEDAL_URL} alt="Round Winner" className="w-[19px] h-[17.7] flex-shrink-0 mt-[1.3px]" title="Round Winner" />}
             {/* First player star */}
             {isFirstPlayer && <img src={firstPlayerIconUrl} className="w-[16.75px] h-[16.75px] flex-shrink-0" title="First Player" />}
-            {/* Active player indicator - clickable to toggle */}
-            <div
+            {/* Active player indicator - clickable to toggle (DISABLED) */}
+            {/* <div
               onClick={() => canPerformActions && onToggleActivePlayer(player.id)}
               className={`flex-shrink-0 cursor-pointer transition-all duration-200 ${
                 !canPerformActions ? 'cursor-not-allowed' : ''
               }`}
               title={isPlayerActive ? "Active Player - Click to deactivate" : "Inactive Player - Click to activate"}
+            > */}
+            <div
+              className="flex-shrink-0 transition-all duration-200"
+              title={isPlayerActive ? "Active Player" : "Inactive Player"}
             >
               <svg
                 width="17"
@@ -973,6 +982,7 @@ key={`card-${card.id}`}
                 )}
               </svg>
             </div>
+            {/* </div> */}
           </div>
         </div>
 
