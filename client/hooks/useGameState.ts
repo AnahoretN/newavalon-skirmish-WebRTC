@@ -3706,9 +3706,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         // Both host and guests update their local state
         if (message.data?.targetingMode) {
           const targetingMode = message.data.targetingMode
+          // Support both old format (with action) and new format (with mode directly)
+          const mode = targetingMode.mode || targetingMode.action?.mode
           logger.info('[TargetingMode] Received SET_TARGETING_MODE via WebRTC', {
             playerId: targetingMode.playerId,
-            mode: targetingMode.action.mode,
+            mode: mode,
             boardTargetsCount: targetingMode.boardTargets?.length || 0,
             handTargetsCount: targetingMode.handTargets?.length || 0,
             isDeckSelectable: targetingMode.isDeckSelectable || false,

@@ -275,7 +275,17 @@ export const CARD_ABILITIES: CardAbilityDefinition[] = [
       payload: {
         filter: (target: Card) => {
           if (target.id === _card.id) {return false}
-          return target.ownerId === _ownerId
+          // Only ally cards (owner or teammates) that have at least one token
+          if (target.ownerId !== _ownerId) {
+            // Check if teammate (in team modes)
+            const targetPlayer = _gameState.players.find(p => p.id === target.ownerId)
+            const sourcePlayer = _gameState.players.find(p => p.id === _ownerId)
+            if (!targetPlayer?.teamId || !sourcePlayer?.teamId || targetPlayer.teamId !== sourcePlayer.teamId) {
+              return false
+            }
+          }
+          // Must have at least one token/status (Aim, Exploit, Stun, Shield, Threat, Revealed, Resurrected, etc.)
+          return target.statuses && target.statuses.length > 0
         },
       },
     })

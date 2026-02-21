@@ -592,13 +592,16 @@ function handleRiotMove(
  * Handle SHIELD_SELF_THEN_RIOT_PUSH (Reclaimed Gawain Deploy)
  * 1. Add Shield status to self
  * 2. Transition to RIOT_PUSH mode
+ *
+ * IMPORTANT: This ability ALWAYS transitions to RIOT_PUSH mode after adding Shield.
+ * Self-click activates the ability, then allows pushing an adjacent opponent card.
  */
 function handleShieldSelfThenRiotPush(
-  _card: Card,
+  card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, setAbilityMode, addBoardCardStatus, markAbilityUsed, interactionLock } = props
+  const { abilityMode, gameState, setAbilityMode, addBoardCardStatus, markAbilityUsed, interactionLock, setTargetingMode, commandContext } = props
 
   if (interactionLock.current) {
     return false
@@ -612,30 +615,31 @@ function handleShieldSelfThenRiotPush(
 
   const ownerId = sourceCard.ownerId!
 
-  // Allow self-click to skip/finish
+  // Clicking on source card (self) activates the ability
   if (boardCoords.row === sourceCoords.row && boardCoords.col === sourceCoords.col) {
-    // Just add Shield and finish
+    // Add Shield to self
     addBoardCardStatus(sourceCoords, 'Shield', ownerId)
+
+    // Mark ability as used
     markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
-    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+
+    // Transition to RIOT_PUSH mode
+    const riotPushAction: AbilityAction = {
+      type: 'ENTER_MODE',
+      mode: 'RIOT_PUSH',
+      sourceCard,
+      sourceCoords,
+      isDeployAbility: false, // Deploy already used
+      payload: {}
+    }
+
+    setAbilityMode(riotPushAction)
+    setTargetingMode(riotPushAction, ownerId, sourceCoords, undefined, commandContext)
     return true
   }
 
-  // First step: Add Shield to self
-  addBoardCardStatus(sourceCoords, 'Shield', ownerId)
-
-  // Second step: Transition to RIOT_PUSH mode
-  setAbilityMode({
-    type: 'ENTER_MODE',
-    mode: 'RIOT_PUSH',
-    sourceCard,
-    sourceCoords,
-    isDeployAbility,
-    readyStatusToRemove,
-    payload: {}
-  })
-
-  return true
+  // If clicked elsewhere, don't handle - RIOT_PUSH will handle it
+  return false
 }
 
 /**

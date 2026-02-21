@@ -335,9 +335,11 @@ export function useServerConnection(props: UseServerConnectionProps) {
               targetingMode: targetingMode,
             }))
             gameStateRef.current.targetingMode = targetingMode
+            // Support both old format (with action) and new format (with mode directly)
+            const mode = targetingMode.mode || targetingMode.action?.mode
             logger.info('[TargetingMode] Received targeting mode from server', {
               playerId: targetingMode.playerId,
-              mode: targetingMode.action.mode,
+              mode: mode,
             })
           }
         } else if (data.type === 'TARGETING_MODE_CLEARED') {

@@ -229,6 +229,29 @@ export function createMinimalGameState(
 // ============================================================================
 
 /**
+ * Create minimal targeting mode data for serialization
+ * Only includes data needed for visual display, not the full action (which contains functions)
+ */
+function createMinimalTargetingMode(targetingMode: any): any {
+  if (!targetingMode) return null
+
+  return {
+    playerId: targetingMode.playerId,
+    mode: targetingMode.action?.mode || targetingMode.mode,
+    sourceCoords: targetingMode.sourceCoords,
+    timestamp: targetingMode.timestamp,
+    boardTargets: targetingMode.boardTargets,
+    handTargets: targetingMode.handTargets,
+    isDeckSelectable: targetingMode.isDeckSelectable,
+    originalOwnerId: targetingMode.originalOwnerId,
+    // Include sourceCard info for display
+    sourceCardName: targetingMode.action?.sourceCard?.name,
+    sourceCardId: targetingMode.action?.sourceCard?.id,
+    // Don't include the full action - it contains functions that can't be serialized
+  }
+}
+
+/**
  * Serialize personalized game state using MessagePack
  * This preserves ALL functionality from createPersonalizedGameState while being more compact
  *
@@ -237,8 +260,14 @@ export function createMinimalGameState(
  */
 export function serializePersonalizedState(personalizedState: GameState): string {
   try {
+    // Create a copy with minimal targetingMode for serialization
+    const stateToSerialize = { ...personalizedState }
+    if (stateToSerialize.targetingMode) {
+      stateToSerialize.targetingMode = createMinimalTargetingMode(stateToSerialize.targetingMode)
+    }
+
     // Use MessagePack to encode the state
-    const encoded = encode(personalizedState)
+    const encoded = encode(stateToSerialize)
     // Convert to base64 for transmission
     const binaryStr = String.fromCharCode(...encoded)
     return btoa(binaryStr)

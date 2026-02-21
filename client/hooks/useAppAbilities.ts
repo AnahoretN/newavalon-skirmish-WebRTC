@@ -293,10 +293,13 @@ export const useAppAbilities = ({
         }
 
         // Place the token/status on the card
+        // IMPORTANT: ownerId determines who "owns" the token (for abilities that check for your tokens)
+        const effectiveActorId = cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId ?? gameState.activePlayerId ?? localPlayerId ?? 1
         moveItem({
           card: { id: 'dummy', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
           source: 'counter_panel',
           statusType: cursorStack.type,
+          ownerId: effectiveActorId,
           count: 1,
         }, { target: 'board', boardCoords })
 
