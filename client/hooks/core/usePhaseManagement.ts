@@ -663,7 +663,7 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
         gameId: gameStateRef.current.gameId,
       }))
     }
-  }, [ws, webrtcManagerRef, gameStateRef, setGameState, createDeck])
+  }, [ws, webrtcManagerRef, gameStateRef, setGameState, createDeck, webrtcEnabled])
 
   return {
     toggleActivePlayer,
