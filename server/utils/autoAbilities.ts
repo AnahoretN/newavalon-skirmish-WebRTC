@@ -256,12 +256,21 @@ export const CARD_ABILITIES: CardAbilityDefinition[] = [
   {
     baseId: 'recklessProvocateur',
     activationType: 'deploy',
-    getAction: (_card, _gameState, _ownerId, coords) => ({
+    getAction: (card, _gameState, _ownerId, coords) => ({
       type: 'ENTER_MODE',
       mode: 'SWAP_POSITIONS',
-      sourceCard: _card,
+      sourceCard: card,
       sourceCoords: coords,
-      payload: { filter: (_target: Card, r: number, c: number) => checkAdj(r, c, coords.row, coords.col) },
+      payload: {
+        filter: (target: Card, r: number, c: number) => {
+          // Cannot target itself
+          if (target.id === card.id) {return false}
+          // Must be owned by the same player
+          if (target.ownerId !== _ownerId) {return false}
+          // Must be adjacent
+          return checkAdj(r, c, coords.row, coords.col)
+        },
+      },
     })
   },
   {
@@ -273,19 +282,15 @@ export const CARD_ABILITIES: CardAbilityDefinition[] = [
       sourceCard: _card,
       sourceCoords: coords,
       payload: {
+        // Only owner's cards with specific tokens: Aim, Exploit, Rule, Shield, Stun
         filter: (target: Card) => {
           if (target.id === _card.id) {return false}
-          // Only ally cards (owner or teammates) that have at least one token
-          if (target.ownerId !== _ownerId) {
-            // Check if teammate (in team modes)
-            const targetPlayer = _gameState.players.find(p => p.id === target.ownerId)
-            const sourcePlayer = _gameState.players.find(p => p.id === _ownerId)
-            if (!targetPlayer?.teamId || !sourcePlayer?.teamId || targetPlayer.teamId !== sourcePlayer.teamId) {
-              return false
-            }
-          }
-          // Must have at least one token/status (Aim, Exploit, Stun, Shield, Threat, Revealed, Resurrected, etc.)
-          return target.statuses && target.statuses.length > 0
+          // Must be owned by the same player
+          if (target.ownerId !== _ownerId) {return false}
+          // Must have at least one of the specified tokens/statuses
+          if (!target.statuses || target.statuses.length === 0) {return false}
+          const validTokens = ['Aim', 'Exploit', 'Rule', 'Shield', 'Stun']
+          return target.statuses.some(s => validTokens.includes(s.type))
         },
       },
     })

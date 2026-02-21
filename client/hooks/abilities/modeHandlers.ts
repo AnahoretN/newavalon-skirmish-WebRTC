@@ -782,14 +782,18 @@ function handleTransferStatus(
     return false
   }
 
-  // Check filter if provided (for TRANSFER_ALL_STATUSES - only ally cards with tokens)
+  // Check filter if provided (for TRANSFER_ALL_STATUSES - only owner's cards with specific tokens)
   if (payload?.filter && !payload.filter(card)) {
     return false
   }
 
-  // For TRANSFER_ALL_STATUSES, card must have at least one token/status
+  // For TRANSFER_ALL_STATUSES, card must have at least one of the specific tokens
   if (abilityMode.mode === 'TRANSFER_ALL_STATUSES') {
     if (!card.statuses || card.statuses.length === 0) {
+      return false
+    }
+    const validTokens = ['Aim', 'Exploit', 'Rule', 'Shield', 'Stun']
+    if (!card.statuses.some(s => validTokens.includes(s.type))) {
       return false
     }
   }
