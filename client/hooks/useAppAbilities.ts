@@ -263,8 +263,9 @@ export const useAppAbilities = ({
       cursorStack,
       handleActionExecution,
       markAbilityUsed,
+      addBoardCardStatus,
     })
-  }, [gameState, localPlayerId, abilityMode, cursorStack, handleActionExecution, markAbilityUsed])
+  }, [gameState, localPlayerId, abilityMode, cursorStack, handleActionExecution, markAbilityUsed, addBoardCardStatus])
   /**
    * Handle click on board card
    */
@@ -515,6 +516,7 @@ export const useAppAbilities = ({
         cursorStack,
         handleActionExecution,
         markAbilityUsed,
+        addBoardCardStatus,
       }),
     })
   }, [abilityMode, cursorStack, gameState, localPlayerId, handleActionExecution, markAbilityUsed, setAbilityMode, setCommandContext, triggerHandCardSelection, moveItem, setCursorStack, clearTargetingMode, clearValidTargets, interactionLock])
@@ -545,6 +547,7 @@ export const useAppAbilities = ({
         cursorStack,
         handleActionExecution,
         markAbilityUsed,
+        addBoardCardStatus,
       }),
     })
   }, [abilityMode, cursorStack, gameState, localPlayerId, handleActionExecution, markAbilityUsed, setAbilityMode, setCommandContext, triggerHandCardSelection, moveItem, setCursorStack, clearTargetingMode, clearValidTargets, interactionLock])

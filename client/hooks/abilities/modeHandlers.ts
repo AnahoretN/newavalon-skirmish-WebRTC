@@ -596,7 +596,7 @@ function handleShieldSelfThenRiotPush(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, gameState, setAbilityMode, addBoardCardStatus, markAbilityUsed, interactionLock, setTargetingMode, commandContext } = props
+  const { abilityMode, gameState, setAbilityMode, addBoardCardStatus, markAbilityUsed, interactionLock, setTargetingMode, commandContext, moveItem } = props
 
   if (interactionLock.current) {
     return false
@@ -610,31 +610,102 @@ function handleShieldSelfThenRiotPush(
 
   const ownerId = sourceCard.ownerId!
 
-  // Clicking on source card (self) activates the ability
+  // Allow self-click to skip/finish (only if shield was already added)
+  // But in this mode, self-click is what ADDS shield and transitions to RIOT_PUSH
+
+  // Check if clicking on self first time
   if (boardCoords.row === sourceCoords.row && boardCoords.col === sourceCoords.col) {
     // Add Shield to self
     addBoardCardStatus(sourceCoords, 'Shield', ownerId)
 
-    // Mark ability as used AFTER the full sequence completes
-    // Don't mark it yet - RIOT_PUSH will mark it after completing
-
-    // Transition to RIOT_PUSH mode
+    // Transition to RIOT_PUSH mode with same parameters
     const riotPushAction: AbilityAction = {
       type: 'ENTER_MODE',
       mode: 'RIOT_PUSH',
       sourceCard,
       sourceCoords,
-      isDeployAbility: false,
-      readyStatusToRemove: readyStatusToRemove, // Pass through for later use
+      isDeployAbility,
+      readyStatusToRemove,
       payload: {}
     }
 
     setAbilityMode(riotPushAction)
-    setTargetingMode(riotPushAction, ownerId, sourceCoords, undefined, commandContext)
+
+    // Recalculate valid targets for RIOT_PUSH
+    const dRow = sourceCoords.row
+    const dCol = sourceCoords.col
+    const preCalculatedTargets: {row: number, col: number}[] = []
+
+    // Check all adjacent cells
+    const adjacentOffsets = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+    const gridSize = gameState.board.length
+    const offset = Math.floor((gridSize - gameState.activeGridSize) / 2)
+    const minBound = offset
+    const maxBound = offset + gameState.activeGridSize - 1
+
+    for (const [dr, dc] of adjacentOffsets) {
+      const r = dRow + dr
+      const c = dCol + dc
+      if (r >= minBound && r <= maxBound && c >= minBound && c <= maxBound) {
+        const targetCell = gameState.board[r][c]
+        if (targetCell.card) {
+          const targetPlayer = gameState.players.find(p => p.id === targetCell.card.ownerId)
+          const actorPlayer = gameState.players.find(p => p.id === ownerId)
+          const isTeammate = targetPlayer?.teamId !== undefined && actorPlayer?.teamId !== undefined &&
+                            targetPlayer.teamId === actorPlayer.teamId
+
+          if (targetCell.card.ownerId !== ownerId && !isTeammate) {
+            preCalculatedTargets.push({row: r, col: c})
+          }
+        }
+      }
+    }
+
+    setTargetingMode(riotPushAction, ownerId, sourceCoords, preCalculatedTargets, commandContext)
     return true
   }
 
-  // If clicked elsewhere, don't handle - RIOT_PUSH will handle it
+  // Handle push logic for adjacent opponent cards
+  const isAdj = Math.abs(boardCoords.row - sourceCoords.row) + Math.abs(boardCoords.col - sourceCoords.col) === 1
+  const targetPlayer = gameState.players.find(p => p.id === card.ownerId)
+  const actorPlayer = gameState.players.find(p => p.id === ownerId)
+  const isTeammate = targetPlayer?.teamId !== undefined && actorPlayer?.teamId !== undefined && targetPlayer.teamId === actorPlayer.teamId
+
+  if (isAdj && card.ownerId !== ownerId && !isTeammate) {
+    const dRow = boardCoords.row - sourceCoords.row
+    const dCol = boardCoords.col - sourceCoords.col
+    const targetRow = boardCoords.row + dRow
+    const targetCol = boardCoords.col + dCol
+
+    // Calculate visible grid boundaries
+    const gridSize = gameState.board.length
+    const offset = Math.floor((gridSize - gameState.activeGridSize) / 2)
+    const minBound = offset
+    const maxBound = offset + gameState.activeGridSize - 1
+
+    if (targetRow < minBound || targetRow > maxBound || targetCol < minBound || targetCol > maxBound) {
+      return false
+    }
+
+    if (gameState.board[targetRow][targetCol].card !== null) {
+      return false
+    }
+
+    // Perform the push
+    moveItem({ card, source: 'board', boardCoords, bypassOwnershipCheck: true }, { target: 'board', boardCoords: { row: targetRow, col: targetCol } })
+
+    // Transition to RIOT_MOVE mode (move into vacated cell)
+    setAbilityMode({
+      type: 'ENTER_MODE',
+      mode: 'RIOT_MOVE',
+      sourceCard,
+      sourceCoords,
+      isDeployAbility,
+      payload: { vacatedCoords: boardCoords }
+    })
+    return true
+  }
+
   return false
 }
 

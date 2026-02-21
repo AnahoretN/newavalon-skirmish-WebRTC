@@ -713,9 +713,59 @@ export function useCardMovement(props: UseCardMovementProps) {
     })
   }, [updateState])
 
+  /**
+   * Return a card to owner's hand (bounce effect)
+   * Removes card from board and adds it to owner's hand
+   * All statuses are cleared when card returns to hand
+   */
+  const returnCardToHand = useCallback((card: Card, boardCoords: { row: number, col: number }) => {
+    updateState(currentState => {
+      if (!currentState.isGameStarted) {
+        return currentState
+      }
+
+      const newState: GameState = deepCloneState(currentState)
+
+      // Verify the card is still at the expected location
+      const cell = newState.board[boardCoords.row][boardCoords.col]
+      if (!cell.card || cell.card.id !== card.id || cell.card.ownerId !== card.ownerId) {
+        // Card was moved or already returned
+        return currentState
+      }
+
+      const cardToReturn = cell.card
+      const ownerId = cardToReturn.ownerId
+      const ownerPlayer = newState.players.find(p => p.id === ownerId)
+
+      if (!ownerPlayer) {
+        return currentState
+      }
+
+      // Remove card from board
+      newState.board[boardCoords.row][boardCoords.col].card = null
+
+      // Clean up statuses when returning to hand
+      if (cardToReturn.statuses) {
+        cardToReturn.statuses = cardToReturn.statuses.filter(status => status.type === 'Revealed')
+      }
+      cardToReturn.isFaceDown = false
+      delete cardToReturn.powerModifier
+      delete cardToReturn.bonusPower
+
+      // Add to owner's hand
+      ownerPlayer.hand.push(cardToReturn)
+
+      // Recalculate board statuses
+      newState.board = recalculateBoardStatuses(newState)
+
+      return newState
+    })
+  }, [updateState])
+
   return {
     moveItem,
     swapBoardCards,
     destroyCard,
+    returnCardToHand,
   }
 }

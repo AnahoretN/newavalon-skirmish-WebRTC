@@ -16,6 +16,7 @@ export interface AbilityActivationProps {
   cursorStack: any
   handleActionExecution: (action: AbilityAction, sourceCoords: { row: number; col: number }) => void
   markAbilityUsed: (coords: { row: number; col: number }, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void
+  addBoardCardStatus: (coords: {row: number, col: number}, status: string, pid: number) => void
 }
 
 /**
@@ -34,6 +35,7 @@ export function activateAbility(
     cursorStack,
     handleActionExecution,
     markAbilityUsed,
+    addBoardCardStatus,
   } = props
 
   if (abilityMode || cursorStack) {
@@ -66,6 +68,38 @@ export function activateAbility(
 
   const action = getCardAbilityAction(card as any, gameState as any, card.ownerId!, boardCoords)
   if (action) {
+    // SPECIAL HANDLING: SHIELD_SELF_THEN_RIOT_PUSH
+    // Auto-add Shield and convert to RIOT_PUSH immediately
+    if (action.type === 'ENTER_MODE' && action.mode === 'SHIELD_SELF_THEN_RIOT_PUSH') {
+      // Add Shield to self immediately
+      addBoardCardStatus(boardCoords, 'Shield', card.ownerId!)
+
+      // Remove ready status
+      if (action.readyStatusToRemove) {
+        markAbilityUsed(boardCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+      }
+
+      // Create RIOT_PUSH action instead
+      const riotPushAction: AbilityAction = {
+        type: 'ENTER_MODE',
+        mode: 'RIOT_PUSH',
+        sourceCard: card,
+        sourceCoords: boardCoords,
+        isDeployAbility: action.isDeployAbility,
+        readyStatusToRemove: action.readyStatusToRemove,
+        payload: {}
+      }
+
+      // Add ABILITY_COMPLETE at the end
+      const actionWithComplete: AbilityAction = {
+        ...riotPushAction,
+        chainedAction: { type: 'ABILITY_COMPLETE' }
+      }
+
+      handleActionExecution(actionWithComplete, boardCoords)
+      return actionWithComplete
+    }
+
     // NEW FLOW: Remove ready status FIRST, then execute
     // This ensures the visual highlight disappears immediately on click
     if (action.readyStatusToRemove) {

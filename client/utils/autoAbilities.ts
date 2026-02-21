@@ -63,14 +63,12 @@ export const getReadyStatusForPhase = (card: Card, phaseIndex: number): string |
 
 /**
  * Checks if a card has a ready status for the current phase (for VISUAL display only).
- * This checks that the card's owner is the active player (unlike hasReadyAbilityInCurrentPhase
- * which also checks this). Used for showing ready abilities on cards during the owner's turn.
  *
- * Only checks:
- * 1. Card's owner is the active player
- * 2. Card has a ready status that matches the current phase
- * 3. Card doesn't have Stun status
- * 4. If ability requires Support, card has Support status
+ * SIMPLIFIED VERSION: Visual effect is now DIRECTLY tied to the presence of ready status.
+ * If status exists → effect shows. If status removed → effect disappears.
+ *
+ * All the rules (owner, Stun, phase, Support) are applied when ADDING/REMOVING the status,
+ * not when checking for visual display.
  *
  * @param card - The card to check
  * @param phaseOrGameState - Either current phase index (0-4) or full GameState
@@ -81,40 +79,23 @@ export const hasReadyStatusForPhase = (
   phaseOrGameState: GameState | number
 ): boolean => {
   let phaseIndex: number
-  let gameState: GameState | undefined
   if (typeof phaseOrGameState === 'object') {
     phaseIndex = phaseOrGameState.currentPhase
-    gameState = phaseOrGameState
   } else {
     phaseIndex = phaseOrGameState
   }
 
-  // IMPORTANT: Only show ready status for cards owned by the active player
-  const activePlayerId = gameState?.activePlayerId
-  if (activePlayerId === undefined || card.ownerId !== activePlayerId) {
-    return false
-  }
-
-  // Check if stunned
-  if (card.statuses?.some(s => s.type === 'Stun')) {
-    return false
-  }
-
-  // Get ready status for current phase
-  const readyStatus = getReadyStatusForPhase(card, phaseIndex)
-  if (!readyStatus) {
-    return false
-  }
-
-  // Check Support requirement using server-side logic
-  return serverCanActivateAbility(card as any, phaseIndex, card.ownerId, gameState as any)
+  // Simply check if card has the appropriate ready status for current phase
+  // The status itself should only exist when all conditions are met
+  return getReadyStatusForPhase(card, phaseIndex) !== null
 }
 
 /**
  * Checks if a card should show visual ready highlighting AND can be activated
  * (only when card's owner is the active player).
  *
- * Uses server-side canActivateAbility for consistent logic.
+ * SIMPLIFIED VERSION: Now directly checks for ready status presence.
+ * All rules (owner, Stun, Support) are applied when status is added/removed.
  *
  * @param card - The card to check
  * @param phaseOrGameState - Either current phase index (0-4) or full GameState
@@ -137,30 +118,9 @@ export const hasReadyAbilityInCurrentPhase = (
     phaseIndex = phaseOrGameState
   }
 
-  // IMPORTANT: Only show ready status for cards owned by the active player
-  if (activePlayerId === undefined || card.ownerId !== activePlayerId) {
-    return false
-  }
-
-  // Check if stunned
-  if (card.statuses?.some(s => s.type === 'Stun')) {
-    return false
-  }
-
-  // Check card's ready statuses directly
-  // If a card has a ready status, it means the card has that ability
-  const hasDeploy = hasReadyStatus(card, READY_STATUS_DEPLOY)
-  const hasSetup = hasReadyStatus(card, READY_STATUS_SETUP)
-  const hasCommit = hasReadyStatus(card, READY_STATUS_COMMIT)
-
-  // Use shared logic for phase-appropriate ready status check
-  return sharedHasReadyAbilityInCurrentPhase(
-    card,
-    phaseIndex,
-    hasDeploy,
-    hasSetup,
-    hasCommit
-  )
+  // Simply check if card has the appropriate ready status for current phase
+  // The status itself should only exist when all conditions are met
+  return getReadyStatusForPhase(card, phaseIndex) !== null
 }
 
 /**
@@ -264,6 +224,11 @@ export const resetPhaseReadyStatuses = (card: Card, ownerId: number): void => {
  * Resets phase-specific ready statuses for ALL cards owned by a player on the battlefield.
  * This should be called at the start of each turn (Preparation phase) for the active player.
  *
+ * IMPORTANT: Now applies ALL rules when adding/removing statuses:
+ * - Owner must be active player
+ * - Card must not have Stun
+ * - Card must meet Support requirement if ability needs it
+ *
  * @param gameState - The current game state (will be modified in place for efficiency)
  * @param playerId - The player whose cards should have their ready statuses reset
  */
@@ -277,6 +242,9 @@ export const resetReadyStatusesForTurn = (gameState: GameState, playerId: number
   let cardsProcessed = 0
   let setupAdded = 0
   let commitAdded = 0
+
+  // Current phase for checking
+  const currentPhase = gameState.currentPhase
 
   // Process each cell on the board
   for (let r = 0; r < gameState.board.length; r++) {
@@ -301,6 +269,25 @@ export const resetReadyStatusesForTurn = (gameState: GameState, playerId: number
       // Ensure card has statuses array
       if (!card.statuses) {
         card.statuses = []
+      }
+
+      // === PRE-CHECK: Common conditions for ALL ready statuses ===
+      // 1. Check if stunned
+      const isStunned = card.statuses.some(s => s.type === 'Stun')
+      if (isStunned) {
+        // Remove all ready statuses if stunned
+        card.statuses = card.statuses.filter(s => s.type !== READY_STATUS_SETUP && s.type !== READY_STATUS_COMMIT)
+        logger.debug(`[resetReadyStatusesForTurn] Card ${card.name} is stunned, removing ready statuses`)
+        continue
+      }
+
+      // 2. Check if can activate ability (includes Support requirement)
+      const canActivate = serverCanActivateAbility(card as any, currentPhase, playerId, gameState as any)
+      if (!canActivate) {
+        // Remove all ready statuses if cannot activate (e.g. missing Support)
+        card.statuses = card.statuses.filter(s => s.type !== READY_STATUS_SETUP && s.type !== READY_STATUS_COMMIT)
+        logger.debug(`[resetReadyStatusesForTurn] Card ${card.name} cannot activate (missing Support?), removing ready statuses`)
+        continue
       }
 
       // === SETUP ABILITY ===
@@ -336,6 +323,130 @@ export const resetReadyStatusesForTurn = (gameState: GameState, playerId: number
   }
 
   logger.debug(`[resetReadyStatusesForTurn] Processed ${cardsProcessed} cards, reset setup: ${setupAdded}, commit: ${commitAdded}`)
+}
+
+/**
+ * Rechecks and updates ready statuses for a single card based on current conditions.
+ * Should be called when conditions change: Stun added/removed, Support added/removed, etc.
+ *
+ * Rules applied (same as resetReadyStatusesForTurn):
+ * - Owner must be active player
+ * - Card must not have Stun
+ * - Card must meet Support requirement if ability needs it
+ *
+ * @param card - The card to recheck
+ * @param gameState - The current game state
+ */
+export const recheckReadyStatuses = (card: Card, gameState: GameState): void => {
+  if (!card.ownerId) {
+    return
+  }
+
+  const playerId = card.ownerId
+  const isActivePlayer = gameState.activePlayerId === playerId
+
+  // Ensure card has statuses array
+  if (!card.statuses) {
+    card.statuses = []
+  }
+
+  // Get baseId without set prefix
+  const baseId = card.baseId || card.id
+  if (!baseId) {
+    return
+  }
+
+  // Get list of cards with abilities
+  const setupCards = getCardsWithAbilityType('setup')
+  const commitCards = getCardsWithAbilityType('commit')
+  const deployCards = getCardsWithAbilityType('deploy')
+
+  // === CHECK CONDITIONS ===
+  let shouldHaveSetup = false
+  let shouldHaveCommit = false
+  let shouldHaveDeploy = false
+
+  // 1. Owner must be active player
+  if (!isActivePlayer) {
+    // Remove all ready statuses if not active player
+    card.statuses = card.statuses.filter(s => s.type !== READY_STATUS_SETUP && s.type !== READY_STATUS_COMMIT && s.type !== READY_STATUS_DEPLOY)
+    logger.debug(`[recheckReadyStatuses] Card ${card.name} owner not active, removed all ready statuses`)
+    return
+  }
+
+  // 2. Check if stunned
+  const isStunned = card.statuses.some(s => s.type === 'Stun')
+  if (isStunned) {
+    // Remove all ready statuses if stunned
+    card.statuses = card.statuses.filter(s => s.type !== READY_STATUS_SETUP && s.type !== READY_STATUS_COMMIT && s.type !== READY_STATUS_DEPLOY)
+    logger.debug(`[recheckReadyStatuses] Card ${card.name} is stunned, removed all ready statuses`)
+    return
+  }
+
+  // 3. Check if can activate ability (includes Support requirement)
+  const canActivate = serverCanActivateAbility(card as any, gameState.currentPhase, playerId, gameState as any)
+  if (!canActivate) {
+    // Remove all ready statuses if cannot activate (e.g. missing Support)
+    card.statuses = card.statuses.filter(s => s.type !== READY_STATUS_SETUP && s.type !== READY_STATUS_COMMIT && s.type !== READY_STATUS_DEPLOY)
+    logger.debug(`[recheckReadyStatuses] Card ${card.name} cannot activate (missing Support?), removed all ready statuses`)
+    return
+  }
+
+  // === DETERMINE WHICH STATUSES SHOULD EXIST ===
+  if (setupCards.includes(baseId)) {
+    shouldHaveSetup = true
+  }
+  if (commitCards.includes(baseId)) {
+    shouldHaveCommit = true
+  }
+  if (deployCards.includes(baseId)) {
+    // Deploy is special - only exists once when entering battlefield
+    // Don't re-add it here if it was removed
+    const hasDeploy = card.statuses.some(s => s.type === READY_STATUS_DEPLOY)
+    shouldHaveDeploy = hasDeploy
+  }
+
+  // === UPDATE STATUSES ===
+  // Setup
+  const hasSetup = card.statuses.some(s => s.type === READY_STATUS_SETUP)
+  if (shouldHaveSetup && !hasSetup) {
+    card.statuses.push({ type: READY_STATUS_SETUP, addedByPlayerId: playerId })
+    logger.debug(`[recheckReadyStatuses] Added READY_STATUS_SETUP to ${card.name}`)
+  } else if (!shouldHaveSetup && hasSetup) {
+    card.statuses = card.statuses.filter(s => s.type !== READY_STATUS_SETUP)
+    logger.debug(`[recheckReadyStatuses] Removed READY_STATUS_SETUP from ${card.name}`)
+  }
+
+  // Commit
+  const hasCommit = card.statuses.some(s => s.type === READY_STATUS_COMMIT)
+  if (shouldHaveCommit && !hasCommit) {
+    card.statuses.push({ type: READY_STATUS_COMMIT, addedByPlayerId: playerId })
+    logger.debug(`[recheckReadyStatuses] Added READY_STATUS_COMMIT to ${card.name}`)
+  } else if (!shouldHaveCommit && hasCommit) {
+    card.statuses = card.statuses.filter(s => s.type !== READY_STATUS_COMMIT)
+    logger.debug(`[recheckReadyStatuses] Removed READY_STATUS_COMMIT from ${card.name}`)
+  }
+
+  // Deploy is managed elsewhere (only removed on phase change, not re-added here)
+}
+
+/**
+ * Rechecks ready statuses for all cards of a player.
+ * Useful when conditions change globally (e.g. Support token added).
+ *
+ * @param gameState - The current game state (will be modified in place)
+ * @param playerId - The player whose cards should be rechecked
+ */
+export const recheckAllReadyStatuses = (gameState: GameState, playerId: number): void => {
+  for (let r = 0; r < gameState.board.length; r++) {
+    for (let c = 0; c < gameState.board[r].length; c++) {
+      const cell = gameState.board[r][c]
+      const card = cell.card
+      if (card && card.ownerId === playerId) {
+        recheckReadyStatuses(card, gameState)
+      }
+    }
+  }
 }
 
 /**

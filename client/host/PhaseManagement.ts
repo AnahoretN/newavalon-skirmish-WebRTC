@@ -110,9 +110,28 @@ export function setPhase(gameState: GameState, phaseIndex: number): GameState {
     return gameState
   }
 
+  // Create new state with updated phase
   const newState: GameState = {
     ...gameState,
     currentPhase: phaseIndex
+  }
+
+  // Clear readyDeploy status from all cards when phase changes
+  // This marks deploy abilities as "lost" when not used before phase change
+  // Note: We do NOT clear readySetup/readyCommit here - existing logic will handle those
+  if (oldPhase !== phaseIndex) {
+    newState.board.forEach(row => {
+      row.forEach(cell => {
+        const card = cell.card
+        if (card && card.statuses) {
+          // Create new array to ensure change is detected
+          const filteredStatuses = card.statuses.filter(s => s.type !== 'readyDeploy')
+          if (filteredStatuses.length !== card.statuses.length) {
+            card.statuses = filteredStatuses
+          }
+        }
+      })
+    })
   }
 
   logger.info(`[setPhase] Phase changed from ${oldPhase} (${getPhaseName(oldPhase)}) to ${phaseIndex} (${getPhaseName(phaseIndex)})`)
@@ -151,10 +170,32 @@ export function prevPhase(gameState: GameState): GameState {
     return gameState
   }
 
-  return {
+  const oldPhase = gameState.currentPhase
+
+  // Create new state with updated phase
+  const newState: GameState = {
     ...gameState,
     currentPhase: prevPhase
   }
+
+  // Clear readyDeploy status from all cards when phase changes
+  // This marks deploy abilities as "lost" when not used before phase change
+  if (oldPhase !== prevPhase) {
+    newState.board.forEach(row => {
+      row.forEach(cell => {
+        const card = cell.card
+        if (card && card.statuses) {
+          // Create new array to ensure change is detected
+          const filteredStatuses = card.statuses.filter(s => s.type !== 'readyDeploy')
+          if (filteredStatuses.length !== card.statuses.length) {
+            card.statuses = filteredStatuses
+          }
+        }
+      })
+    })
+  }
+
+  return newState
 }
 
 /**

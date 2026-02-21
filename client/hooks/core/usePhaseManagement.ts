@@ -15,7 +15,6 @@
  */
 
 import { useCallback } from 'react'
-import { getWebRTCEnabled } from '../useWebRTCEnabled'
 import { logger } from '../../utils/logger'
 import { deepCloneState } from '../../utils/common'
 import { recalculateBoardStatuses } from '@shared/utils/boardUtils'
@@ -34,6 +33,7 @@ interface UsePhaseManagementProps {
   abilityMode?: any
   setAbilityMode?: ((mode: any) => void) | null
   createDeck: (deckType: DeckType, playerId: number, playerName: string) => any[]
+  webrtcEnabled?: boolean
 }
 
 export function usePhaseManagement(props: UsePhaseManagementProps) {
@@ -48,13 +48,14 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
     abilityMode,
     setAbilityMode,
     createDeck,
+    webrtcEnabled,
   } = props
 
   /**
    * Toggle active player
    */
   const toggleActivePlayer = useCallback((playerId: number) => {
-    const isWebRTCMode = getWebRTCEnabled()
+    const isWebRTCMode = webrtcEnabled
 
     if (isWebRTCMode && webrtcManagerRef.current) {
       // WebRTC P2P mode
@@ -138,26 +139,87 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
       setAbilityMode(null);
     }
 
+    const isWebRTCMode = webrtcEnabled
+
+    // In WebRTC mode, send message to host instead of local update
+    // Host will apply the change (including readyDeploy removal) and broadcast to all
+    if (isWebRTCMode && webrtcManagerRef.current) {
+      if (webrtcIsHostRef.current) {
+        // Host: apply locally and broadcast
+        const currentState = gameStateRef.current
+        if (!currentState.isGameStarted) {
+          return
+        }
+        const oldPhase = currentState.currentPhase
+        const newPhase = Math.max(1, Math.min(phaseIndex, 4))
+        if (oldPhase === newPhase) {
+          return
+        }
+
+        // Use setPhase from PhaseManagement which includes readyDeploy removal
+        const { setPhase: hostSetPhase } = require('../../host/PhaseManagement')
+        const newState = hostSetPhase(currentState, phaseIndex)
+
+        setGameState(newState)
+        // Broadcast will happen automatically via updateState
+
+      } else {
+        // Guest: send SET_PHASE message to host
+        webrtcManagerRef.current.sendMessageToHost({
+          type: 'SET_PHASE',
+          senderId: undefined,
+          data: { phaseIndex },
+          timestamp: Date.now()
+        })
+      }
+      return
+    }
+
+    // WebSocket mode: local update (server doesn't handle readyDeploy removal)
     updateState(currentState => {
       if (!currentState.isGameStarted) {
         return currentState
       }
 
-      // Allow phases 1-4 (Setup, Main, Commit, Scoring), phase 0 (Preparation) is hidden
+      // Check if phase is actually changing
+      const oldPhase = currentState.currentPhase
       const newPhase = Math.max(1, Math.min(phaseIndex, 4))
+
+      // Only proceed if phase is actually changing
+      if (oldPhase === newPhase) {
+        return currentState
+      }
+
+      const newState: GameState = deepCloneState(currentState)
+
+      // Clear readyDeploy status from all cards (this marks deploy abilities as "lost" when phase changes)
+      // Note: We do NOT clear readySetup/readyCommit here - existing logic will handle those
+      newState.board.forEach(row => {
+        row.forEach(cell => {
+          const card = cell.card
+          if (card && card.statuses) {
+            // Create new array to ensure React detects the change
+            const filteredStatuses = card.statuses.filter(s => s.type !== 'readyDeploy')
+            if (filteredStatuses.length !== card.statuses.length) {
+              card.statuses = filteredStatuses
+            }
+          }
+        })
+      })
+
       const enteringScoringPhase = newPhase === 4
 
       // When entering Scoring phase from any phase, enable scoring step
       // This matches the behavior of nextPhase
       // If clearing line selection mode, also close isScoringStep to prevent re-triggering
       return {
-        ...currentState,
+        ...newState,
         currentPhase: newPhase,
         ...(enteringScoringPhase && !isClearingLineSelectionMode ? { isScoringStep: true } : {}),
         ...(isClearingLineSelectionMode ? { isScoringStep: false } : {}),
       }
     })
-  }, [updateState, abilityMode, setAbilityMode])
+  }, [updateState, abilityMode, setAbilityMode, webrtcManagerRef, webrtcIsHostRef, gameStateRef, setGameState])
 
   /**
    * Move to next phase
@@ -172,7 +234,7 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
     }
 
     const currentState = gameStateRef.current
-    const isWebRTCMode = getWebRTCEnabled()
+    const isWebRTCMode = webrtcEnabled
 
     // When at Scoring phase (4) or in scoring step, send NEXT_PHASE to server
     // Server will handle turn passing and Preparation phase for next player
@@ -225,17 +287,20 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
 
       const nextPhaseIndex = currentState.currentPhase + 1
 
-      // Only consume deploy abilities if preserveDeployAbilities is false (new ready status system)
-      if (!currentState.preserveDeployAbilities) {
-        newState.board.forEach(row => {
-          row.forEach(cell => {
-            if (cell.card?.statuses) {
-              // Remove readyDeploy status from all cards
-              cell.card.statuses = cell.card.statuses.filter(s => s.type !== 'readyDeploy')
+      // Clear readyDeploy status from all cards (this marks deploy abilities as "lost" when phase changes)
+      // Note: We do NOT clear readySetup/readyCommit here - existing logic will handle those
+      newState.board.forEach(row => {
+        row.forEach(cell => {
+          const card = cell.card
+          if (card && card.statuses) {
+            // Create new array to ensure React detects the change
+            const filteredStatuses = card.statuses.filter(s => s.type !== 'readyDeploy')
+            if (filteredStatuses.length !== card.statuses.length) {
+              card.statuses = filteredStatuses
             }
-          })
+          }
         })
-      }
+      })
 
       // When transitioning from Commit (phase 3) to Scoring (phase 4), enable scoring step
       // Case 2: If player has no cards on board during Commit phase, auto-pass turn
@@ -303,15 +368,50 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
         }
       }
 
+      // Check if phase is actually changing
+      const oldPhase = currentState.isScoringStep ? currentState.currentPhase : currentState.currentPhase
+      const newPhase = Math.max(1, currentState.currentPhase - 1)
+
+      // Only proceed if phase is actually changing
+      if (oldPhase !== newPhase) {
+        const newState: GameState = deepCloneState(currentState)
+
+        // Clear readyDeploy status from all cards (this marks deploy abilities as "lost" when phase changes)
+        // Note: We do NOT clear readySetup/readyCommit here - existing logic will handle those
+        newState.board.forEach(row => {
+          row.forEach(cell => {
+            const card = cell.card
+            if (card && card.statuses) {
+              // Create new array to ensure React detects the change
+              const filteredStatuses = card.statuses.filter(s => s.type !== 'readyDeploy')
+              if (filteredStatuses.length !== card.statuses.length) {
+                card.statuses = filteredStatuses
+              }
+            }
+          })
+        })
+
+        // If in scoring step, exit it AND move to previous phase (Commit or Setup)
+        if (currentState.isScoringStep) {
+          return { ...newState, isScoringStep: false, currentPhase: newPhase }
+        }
+        // Otherwise just move to previous phase (but not below Setup/1)
+        // Preparation (0) is only accessed via turn passing, not manual navigation
+        return {
+          ...newState,
+          currentPhase: newPhase,
+        }
+      }
+
       // If in scoring step, exit it AND move to previous phase (Commit or Setup)
       if (currentState.isScoringStep) {
-        return { ...currentState, isScoringStep: false, currentPhase: Math.max(1, currentState.currentPhase - 1) }
+        return { ...currentState, isScoringStep: false, currentPhase: newPhase }
       }
       // Otherwise just move to previous phase (but not below Setup/1)
       // Preparation (0) is only accessed via turn passing, not manual navigation
       return {
         ...currentState,
-        currentPhase: Math.max(1, currentState.currentPhase - 1),
+        currentPhase: newPhase,
       }
     })
   }, [updateState, abilityMode, setAbilityMode])
@@ -321,7 +421,7 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
    * Resets player scores and closes the modal
    */
   const closeRoundEndModal = useCallback(() => {
-    const isWebRTCMode = getWebRTCEnabled()
+    const isWebRTCMode = webrtcEnabled
 
     if (isWebRTCMode) {
       // WebRTC mode: Update state locally and broadcast via updateState
@@ -370,7 +470,7 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
    * Supports both WebSocket (server) and WebRTC (P2P) modes
    */
   const resetGame = useCallback(() => {
-    const isWebRTCMode = getWebRTCEnabled()
+    const isWebRTCMode = webrtcEnabled
 
     if (isWebRTCMode) {
       // WebRTC P2P mode: Reset locally and broadcast

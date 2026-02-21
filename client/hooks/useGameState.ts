@@ -3173,6 +3173,58 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
 
+      case 'SET_PHASE':
+        // Host (or guest via host relay) changed the phase
+        logger.info('[handleWebrtcMessage] Phase change received', message.data)
+        if (message.data && message.data.phaseIndex !== undefined) {
+          setGameState(prev => {
+            const newPhase = Math.max(1, Math.min(message.data.phaseIndex, 4))
+            const oldPhase = prev.currentPhase
+
+            // Only proceed if phase is actually changing
+            if (oldPhase === newPhase) {
+              return prev
+            }
+
+            // Clear readyDeploy status from all cards when phase changes
+            // This marks deploy abilities as "lost" when phase changes
+            const newBoard = prev.board.map(row =>
+              row.map(cell => {
+                if (!cell.card) return cell
+                const card = cell.card
+                if (card.statuses) {
+                  const filteredStatuses = card.statuses.filter(s => s.type !== 'readyDeploy')
+                  if (filteredStatuses.length !== card.statuses.length) {
+                    return {
+                      ...cell,
+                      card: {
+                        ...card,
+                        statuses: filteredStatuses
+                      }
+                    }
+                  }
+                }
+                return cell
+              })
+            )
+
+            const newState = {
+              ...prev,
+              currentPhase: newPhase,
+              board: newBoard
+            }
+
+            // Handle scoring step
+            const enteringScoringPhase = newPhase === 4
+            if (enteringScoringPhase) {
+              newState.isScoringStep = true
+            }
+
+            return newState
+          })
+        }
+        break
+
       case 'SYNC_DECK_SELECTIONS':
         // Host broadcasts deck selection changes to all guests
         logger.info('[SYNC_DECK_SELECTIONS] Received deck selection sync', message.data)
@@ -4404,6 +4456,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     abilityMode,
     setAbilityMode,
     createDeck,
+    webrtcEnabled,
   })
 
   // Destructure phase management functions for direct access

@@ -23,6 +23,7 @@
 import { useCallback } from 'react'
 import { deepCloneState } from '../../utils/common'
 import { recalculateBoardStatuses } from '@shared/utils/boardUtils'
+import { recheckReadyStatuses } from '../../utils/autoAbilities'
 import type { GameState, Card, CardIdentifier, RevealRequest } from '../../types'
 
 interface UseCardStatusProps {
@@ -66,6 +67,12 @@ export function useCardStatus(props: UseCardStatusProps) {
           card.statuses = []
         }
         card.statuses.push({ type: status, addedByPlayerId })
+
+        // Recheck ready statuses when Stun is added (removes all ready statuses)
+        // or when Support is added (may add ready statuses if requirements are met)
+        if (status === 'Stun' || status === 'Support') {
+          recheckReadyStatuses(card, newState)
+        }
       }
       return newState
     })
@@ -85,6 +92,12 @@ export function useCardStatus(props: UseCardStatusProps) {
         const lastIndex = card.statuses.map(s => s.type).lastIndexOf(status)
         if (lastIndex > -1) {
           card.statuses.splice(lastIndex, 1)
+
+          // Recheck ready statuses when Stun is removed (may restore ready statuses)
+          // or when Support is removed (may remove ready statuses if Support was required)
+          if (status === 'Stun' || status === 'Support') {
+            recheckReadyStatuses(card, newState)
+          }
         }
       }
       newState.board = recalculateBoardStatuses(newState)
@@ -106,6 +119,12 @@ export function useCardStatus(props: UseCardStatusProps) {
         const index = card.statuses.findIndex(s => s.type === status && s.addedByPlayerId === ownerId)
         if (index > -1) {
           card.statuses.splice(index, 1)
+
+          // Recheck ready statuses when Stun is removed (may restore ready statuses)
+          // or when Support is removed (may remove ready statuses if Support was required)
+          if (status === 'Stun' || status === 'Support') {
+            recheckReadyStatuses(card, newState)
+          }
         }
       }
       newState.board = recalculateBoardStatuses(newState)
