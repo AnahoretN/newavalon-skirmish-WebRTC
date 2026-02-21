@@ -36,6 +36,7 @@ export interface ModeHandlersProps {
   swapCards: (coords1: {row: number, col: number}, coords2: {row: number, col: number}) => void
   transferStatus: (fromCoords: {row: number, col: number}, toCoords: {row: number, col: number}, statusType: string) => void
   transferAllCounters: (fromCoords: {row: number, col: number}, toCoords: {row: number, col: number}) => void
+  transferAllStatusesWithoutException: (fromCoords: {row: number, col: number}, toCoords: {row: number, col: number}) => void
   spawnToken: (coords: {row: number; col: number}, name: string, ownerId: number) => void
   modifyBoardCardPower: (coords: {row: number; col: number}, delta: number) => void
   addBoardCardStatus: (coords: {row: number; col: number}, status: string, pid: number) => void
@@ -131,8 +132,8 @@ export function handleModeCardClick(
     return handleSwapPositions(card, boardCoords, props)
   }
 
-  // TRANSFER_STATUS_SELECT
-  if (mode === 'TRANSFER_STATUS_SELECT') {
+  // TRANSFER_STATUS_SELECT and TRANSFER_ALL_STATUSES (Reckless Provocateur Commit)
+  if (mode === 'TRANSFER_STATUS_SELECT' || mode === 'TRANSFER_ALL_STATUSES') {
     return handleTransferStatus(card, boardCoords, props)
   }
 
@@ -394,23 +395,28 @@ function handleSelectTargetActionType(
 
     const hasShield = card.statuses?.some(s => s.type === 'Shield')
     if (hasShield) {
+      // Shield protects the card - remove Shield and stop
       removeBoardCardStatus(boardCoords, 'Shield')
-    } else {
-      // Find Aim token on the card - if present, remove it after destruction
-      const aimToken = card.statuses?.find(s => s.type === 'Aim')
-      if (aimToken) {
-        removeStatusByType(boardCoords, 'Aim')
-      }
-
-      moveItem({
-        card,
-        source: 'board',
-        boardCoords,
-      }, {
-        target: 'discard',
-        playerId: card.ownerId,  // Card goes to its owner's discard pile
-      })
+      markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
+      setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+      return true
     }
+
+    // No Shield - destroy the card (send to discard)
+    // Remove Aim token if present (consumed by the ability)
+    const aimToken = card.statuses?.find(s => s.type === 'Aim')
+    if (aimToken) {
+      removeStatusByType(boardCoords, 'Aim')
+    }
+
+    moveItem({
+      card,
+      source: 'board',
+      boardCoords,
+    }, {
+      target: 'discard',
+      playerId: card.ownerId,  // Card goes to its owner's discard pile
+    })
 
     markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
     setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
@@ -620,8 +626,8 @@ function handleShieldSelfThenRiotPush(
     // Add Shield to self
     addBoardCardStatus(sourceCoords, 'Shield', ownerId)
 
-    // Mark ability as used
-    markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    // Mark ability as used AFTER the full sequence completes
+    // Don't mark it yet - RIOT_PUSH will mark it after completing
 
     // Transition to RIOT_PUSH mode
     const riotPushAction: AbilityAction = {
@@ -629,7 +635,8 @@ function handleShieldSelfThenRiotPush(
       mode: 'RIOT_PUSH',
       sourceCard,
       sourceCoords,
-      isDeployAbility: false, // Deploy already used
+      isDeployAbility: false,
+      readyStatusToRemove: readyStatusToRemove, // Pass through for later use
       payload: {}
     }
 
@@ -699,13 +706,13 @@ function handleTransferStatus(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, transferStatus, markAbilityUsed, setAbilityMode } = props
+  const { abilityMode, transferAllStatusesWithoutException, markAbilityUsed, setAbilityMode } = props
 
-  if (!abilityMode || abilityMode.mode !== 'TRANSFER_STATUS_SELECT') {
+  if (!abilityMode || (abilityMode.mode !== 'TRANSFER_STATUS_SELECT' && abilityMode.mode !== 'TRANSFER_ALL_STATUSES')) {
     return false
   }
 
-  const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
+  const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove, payload } = abilityMode
 
   if (!sourceCoords || sourceCoords.row < 0) {
     return false
@@ -715,11 +722,26 @@ function handleTransferStatus(
     return false
   }
 
-  if (!card.statuses || card.statuses.length === 0) {
+  // Check filter if provided (for TRANSFER_ALL_STATUSES - only ally cards with tokens)
+  if (payload?.filter && !payload.filter(card)) {
     return false
   }
 
-  transferStatus(boardCoords, sourceCoords, card.statuses[0].type)
+  // For TRANSFER_ALL_STATUSES, card must have at least one token/status
+  if (abilityMode.mode === 'TRANSFER_ALL_STATUSES') {
+    if (!card.statuses || card.statuses.length === 0) {
+      return false
+    }
+  }
+
+  // Transfer ALL statuses from source card to target card (for TRANSFER_ALL_STATUSES)
+  if (abilityMode.mode === 'TRANSFER_ALL_STATUSES') {
+    transferAllStatusesWithoutException(boardCoords, sourceCoords)
+  } else {
+    // For TRANSFER_STATUS_SELECT, legacy behavior - transfer one status
+    // This is handled elsewhere
+  }
+
   markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
   setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
   return true

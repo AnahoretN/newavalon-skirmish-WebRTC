@@ -43,6 +43,7 @@ interface UseAppAbilitiesProps {
     swapCards: (c1: any, c2: any) => void;
     transferStatus: (from: any, to: any, type: string) => void;
     transferAllCounters: (from: any, to: any) => void;
+    transferAllStatusesWithoutException: (from: any, to: any) => void;
     resurrectDiscardedCard: (pid: number, idx: number, coords: any) => void;
     spawnToken: (coords: any, name: string, ownerId: number) => void;
     scoreLine: (r1: number, c1: number, r2: number, c2: number, pid: number) => void;
@@ -172,6 +173,7 @@ export const useAppAbilities = ({
       swapCards,
       transferStatus,
       transferAllCounters,
+      transferAllStatusesWithoutException,
       spawnToken,
       modifyBoardCardPower,
       addBoardCardStatus,
@@ -367,6 +369,7 @@ export const useAppAbilities = ({
         swapCards,
         transferStatus,
         transferAllCounters,
+      transferAllStatusesWithoutException,
         spawnToken,
         modifyBoardCardPower,
         addBoardCardStatus,

@@ -199,6 +199,27 @@ export const useBoardManipulation = (props: UseBoardManipulationProps) => {
     })
   }, [updateState])
 
+  const transferAllStatusesWithoutException = useCallback((fromCoords: {row: number, col: number}, toCoords: {row: number, col: number}) => {
+    updateState(currentState => {
+      if (!currentState.isGameStarted) {
+        return currentState
+      }
+      const newState: GameState = deepCloneState(currentState)
+      const fromCard = newState.board[fromCoords.row][fromCoords.col].card
+      const toCard = newState.board[toCoords.row][toCoords.col].card
+      if (fromCard && toCard && fromCard.statuses && fromCard.statuses.length > 0) {
+        // Move ALL statuses (no exceptions)
+        if (!toCard.statuses) {
+          toCard.statuses = []
+        }
+        toCard.statuses.push(...fromCard.statuses)
+        fromCard.statuses = []
+      }
+      newState.board = recalculateBoardStatuses(newState)
+      return newState
+    })
+  }, [updateState])
+
   const spawnToken = useCallback((coords: {row: number, col: number}, tokenName: string, ownerId: number) => {
     updateState(currentState => {
       if (!currentState.isGameStarted) {
@@ -251,6 +272,7 @@ export const useBoardManipulation = (props: UseBoardManipulationProps) => {
     swapCards,
     transferStatus,
     transferAllCounters,
+    transferAllStatusesWithoutException,
     spawnToken,
     resetDeployStatus,
     removeStatusByType,
