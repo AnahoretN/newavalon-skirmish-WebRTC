@@ -52,6 +52,7 @@ export interface ModeHandlersProps {
   clearValidTargets: () => void
   validTargets?: {row: number, col: number}[]
   handleLineSelection: (coords: {row: number; col: number }) => void
+  setTargetingMode: (action: AbilityAction, playerId: number, sourceCoords?: { row: number; col: number }, preCalculatedTargets?: {row: number, col: number}[], commandContext?: CommandContext, preCalculatedHandTargets?: {playerId: number, cardIndex: number}[]) => void
 }
 
 /**
@@ -596,7 +597,7 @@ function handleShieldSelfThenRiotPush(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, gameState, setAbilityMode, addBoardCardStatus, markAbilityUsed, interactionLock, setTargetingMode, commandContext, moveItem } = props
+  const { abilityMode, gameState, setAbilityMode, addBoardCardStatus, /* markAbilityUsed, */ interactionLock, setTargetingMode, commandContext, moveItem } = props
 
   if (interactionLock.current) {
     return false
@@ -648,13 +649,14 @@ function handleShieldSelfThenRiotPush(
       const c = dCol + dc
       if (r >= minBound && r <= maxBound && c >= minBound && c <= maxBound) {
         const targetCell = gameState.board[r][c]
-        if (targetCell.card) {
-          const targetPlayer = gameState.players.find(p => p.id === targetCell.card.ownerId)
+        const targetCard = targetCell?.card
+        if (targetCard) {
+          const targetPlayer = gameState.players.find(p => p.id === targetCard.ownerId)
           const actorPlayer = gameState.players.find(p => p.id === ownerId)
           const isTeammate = targetPlayer?.teamId !== undefined && actorPlayer?.teamId !== undefined &&
                             targetPlayer.teamId === actorPlayer.teamId
 
-          if (targetCell.card.ownerId !== ownerId && !isTeammate) {
+          if (targetCard.ownerId !== ownerId && !isTeammate) {
             preCalculatedTargets.push({row: r, col: c})
           }
         }

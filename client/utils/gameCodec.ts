@@ -11,11 +11,47 @@ import { DeckType } from '../types'
 import { CodecMessageType } from '../types/codec'
 import { logger } from './logger'
 import { PLAYER_COLOR_NAMES } from '../constants'
-import { getCardDefinition, rawJsonData, cardDatabase, tokenDatabase } from '../content'
+import { getCardDefinition, rawJsonData } from '../content'
 
 // ============================================================================
 // CARD STATE ENCODING
 // ============================================================================
+
+/**
+ * Extract baseId from a card
+ * Handles various card.id formats:
+ * - "baseId" (simple)
+ * - "baseId_timestamp_random" (with suffix)
+ * - "baseId_otherPlayerHand_0_timestamp_random" (reconstructed)
+ */
+function extractBaseId(card: Card): string {
+  // Prefer card.baseId if set
+  if (card.baseId) {
+    return card.baseId
+  }
+
+  // Try to extract from card.id
+  if (card.id) {
+    // Remove common suffixes like _timestamp_random
+    // Pattern: baseId followed by _digits_ and more
+    const match = card.id.match(/^([a-zA-Z0-9_-]+?)(?:_\d+_[\d.]+)?$/)
+    if (match && match[1]) {
+      return match[1]
+    }
+
+    // Another pattern: baseId followed by underscore and more stuff
+    // e.g., "knight_hand_0_123_0.123" -> extract "knight"
+    const simpleMatch = card.id.match(/^([a-zA-Z0-9_-]+?)(?:_(?:hand|deck|discard|otherPlayer|recipient|dummy).*)?$/)
+    if (simpleMatch && simpleMatch[1]) {
+      return simpleMatch[1]
+    }
+
+    // Last resort: return card.id as-is
+    return card.id
+  }
+
+  return ''
+}
 
 /**
  * Get card flags as number
@@ -34,7 +70,7 @@ function getCardFlags(card: Card): number {
  * Guest will use baseId to look up full card data from local contentDatabase
  */
 function encodeCardRef(card: Card): Uint8Array {
-  const baseId = card.baseId || ''
+  const baseId = extractBaseId(card)
   const encoder = new TextEncoder()
   const baseIdBytes = encoder.encode(baseId)
 
@@ -75,7 +111,8 @@ function encodeStatusesToMask(statuses: CardStatus[]): number {
   const statusTypes = [
     'Stun', 'Aim', 'Exploit', 'Poison', 'Shield', 'Riot', 'Flying',
     'Deploy', 'Setup', 'Commit', 'LastPlayed',
-    'readyDeploy', 'readySetup', 'readyCommit'
+    'readyDeploy', 'readySetup', 'readyCommit',
+    'Revealed'  // Important: Revealed status must be encoded!
   ]
   let mask = 0
   for (const status of statuses) {
@@ -94,7 +131,8 @@ function decodeStatusesFromMask(mask: number, addedByPlayerId: number): CardStat
   const statusTypes = [
     'Stun', 'Aim', 'Exploit', 'Poison', 'Shield', 'Riot', 'Flying',
     'Deploy', 'Setup', 'Commit', 'LastPlayed',
-    'readyDeploy', 'readySetup', 'readyCommit'
+    'readyDeploy', 'readySetup', 'readyCommit',
+    'Revealed'  // Important: Revealed status must be decoded!
   ]
   const statuses: CardStatus[] = []
   for (let i = 0; i < 32; i++) {
@@ -111,9 +149,15 @@ function decodeStatusesFromMask(mask: number, addedByPlayerId: number): CardStat
 /**
  * Encode full game state to binary
  * No registry needed - sends baseId directly, guest uses local contentDatabase
+ *
+ * @param gameState - The game state to encode
+ * @param recipientPlayerId - The ID of the player who will receive this state.
+ *                            If provided, their hand/deck/discard will be included.
+ *                            If null, only board and dummy player data is included.
  */
 export function encodeCardState(
-  gameState: GameState
+  gameState: GameState,
+  recipientPlayerId?: number | null
 ): Uint8Array {
   const buffers: Uint8Array[] = []
 
@@ -135,8 +179,7 @@ export function encodeCardState(
   const playerCount = Math.min(gameState.players.length, 255)
   dataParts.push(new Uint8Array([playerCount]))
 
-  // For each player - only send metadata (not hand/deck/discard)
-  // Hand/deck/discard are synced separately via STATE_UPDATE_COMPACT
+  // For each player - send full metadata including hand/deck/discard sizes
   for (const player of gameState.players) {
     // [playerId: 1 byte]
     dataParts.push(new Uint8Array([player.id & 0xFF]))
@@ -150,12 +193,38 @@ export function encodeCardState(
 
     // [isReady: 1 byte]
     dataParts.push(new Uint8Array([player.isReady ? 1 : 0]))
+
+    // [playerFlags: 1 byte] - bit 0: isDummy, bit 1: isDisconnected, bit 2: autoDrawEnabled
+    let playerFlags = 0
+    if (player.isDummy) playerFlags |= 1 << 0
+    if (player.isDisconnected) playerFlags |= 1 << 1
+    if (player.autoDrawEnabled) playerFlags |= 1 << 2
+    dataParts.push(new Uint8Array([playerFlags]))
+
+    // [teamId: 1 byte] - 255 means undefined/no team
+    dataParts.push(new Uint8Array([(player.teamId ?? 255) & 0xFF]))
+
+    // [handSize: 1 byte] [deckSize: 2 bytes] [discardSize: 1 byte] - for all players
+    // This allows guests to see how many cards each player has without revealing card data
+    const handSize = player.hand?.length ?? 0
+    const deckSize = player.deck?.length ?? 0
+    const discardSize = player.discard?.length ?? 0
+    dataParts.push(new Uint8Array([handSize, (deckSize >> 8) & 0xFF, deckSize & 0xFF, discardSize]))
+
+    // Log encoding for each player
+    logger.info(`[GameCodec] Encoding player ${player.id}: hand=${handSize}, deck=${deckSize}, discard=${discardSize}, isDummy=${player.isDummy}`)
+
+    // [nameLength: 1 byte] [name: string]
+    const nameBytes = new TextEncoder().encode(player.name || '')
+    const nameLength = Math.min(nameBytes.length, 63) // Limit to 63 chars
+    dataParts.push(new Uint8Array([nameLength]))
+    dataParts.push(nameBytes.subarray(0, nameLength))
   }
 
   // Board state
-  // [boardSize: 1 byte] [rows: 1 byte] [cols: 1 byte]
+  // [boardSize: 1 byte] [activeGridSize: 1 byte] [rows: 1 byte] [cols: 1 byte]
   const boardSize = gameState.board.length
-  dataParts.push(new Uint8Array([boardSize, boardSize, boardSize]))
+  dataParts.push(new Uint8Array([boardSize, gameState.activeGridSize, boardSize, boardSize]))
 
   // Count board cards first
   const boardCards: Array<{row: number, col: number, card: Card}> = []
@@ -189,6 +258,138 @@ export function encodeCardState(
     gameState.currentRound === undefined ? 255 : Math.clamp(gameState.currentRound, 0, 254)
   ]))
 
+  // Game flags: [isGameStarted: 1 byte] (0 = false, 1 = true)
+  dataParts.push(new Uint8Array([gameState.isGameStarted ? 1 : 0]))
+
+  // Recipient player data: [hasRecipientPlayer: 1 byte] (0 = none, 1 = included)
+  // If included: [playerId: 1 byte] [handSize: 1 byte] [deckSize: 2 bytes] [discardSize: 1 byte]
+  // Then hand cards, deck cards, discard cards as baseId arrays
+  const recipientPlayer = recipientPlayerId !== undefined && recipientPlayerId !== null
+    ? gameState.players.find(p => p.id === recipientPlayerId)
+    : null
+
+  if (recipientPlayer && !recipientPlayer.isDummy) {
+    // Include recipient player's hand/deck/discard
+    dataParts.push(new Uint8Array([1])) // hasRecipientPlayer = true
+    dataParts.push(new Uint8Array([recipientPlayer.id & 0xFF]))
+
+    const handSize = recipientPlayer.hand?.length ?? 0
+    const deckSize = recipientPlayer.deck?.length ?? 0
+    const discardSize = recipientPlayer.discard?.length ?? 0
+
+    // [handSize: 1 byte] [deckSize: 2 bytes] [discardSize: 1 byte]
+    dataParts.push(new Uint8Array([handSize, (deckSize >> 8) & 0xFF, deckSize & 0xFF, discardSize]))
+
+    // Encode hand cards as baseId array
+    for (const card of recipientPlayer.hand || []) {
+      const baseId = extractBaseId(card)
+      const baseIdBytes = new TextEncoder().encode(baseId)
+      dataParts.push(new Uint8Array([baseIdBytes.length]))
+      dataParts.push(baseIdBytes)
+    }
+
+    // Encode deck cards as baseId array
+    for (const card of recipientPlayer.deck || []) {
+      const baseId = extractBaseId(card)
+      const baseIdBytes = new TextEncoder().encode(baseId)
+      dataParts.push(new Uint8Array([baseIdBytes.length]))
+      dataParts.push(baseIdBytes)
+    }
+
+    // Encode discard cards as baseId array
+    for (const card of recipientPlayer.discard || []) {
+      const baseId = extractBaseId(card)
+      const baseIdBytes = new TextEncoder().encode(baseId)
+      dataParts.push(new Uint8Array([baseIdBytes.length]))
+      dataParts.push(baseIdBytes)
+    }
+
+    logger.debug(`[GameCodec] Encoded recipient player ${recipientPlayer.id}: ${handSize} hand, ${deckSize} deck, ${discardSize} discard`)
+  } else {
+    dataParts.push(new Uint8Array([0])) // hasRecipientPlayer = false
+  }
+
+  // Dummy player data: [dummyCount: 1 byte] then for each dummy:
+  // [playerId: 1 byte] [handSize: 1 byte] [deckSize: 2 bytes] [discardSize: 1 byte]
+  // Then hand cards, deck cards, discard cards as baseId arrays
+  const dummyPlayers = gameState.players.filter(p => p.isDummy === true)
+  dataParts.push(new Uint8Array([dummyPlayers.length]))
+
+  for (const dummy of dummyPlayers) {
+    // [playerId: 1 byte]
+    dataParts.push(new Uint8Array([dummy.id & 0xFF]))
+
+    const handSize = dummy.hand?.length ?? 0
+    const deckSize = dummy.deck?.length ?? 0
+    const discardSize = dummy.discard?.length ?? 0
+
+    // [handSize: 1 byte] [deckSize: 2 bytes] [discardSize: 1 byte]
+    dataParts.push(new Uint8Array([handSize, (deckSize >> 8) & 0xFF, deckSize & 0xFF, discardSize]))
+
+    // Encode hand cards as baseId array
+    for (const card of dummy.hand || []) {
+      const baseId = extractBaseId(card)
+      const baseIdBytes = new TextEncoder().encode(baseId)
+      // [baseIdLength: 1 byte] [baseId: string]
+      dataParts.push(new Uint8Array([baseIdBytes.length]))
+      dataParts.push(baseIdBytes)
+    }
+
+    // Encode deck cards as baseId array
+    for (const card of dummy.deck || []) {
+      const baseId = extractBaseId(card)
+      const baseIdBytes = new TextEncoder().encode(baseId)
+      dataParts.push(new Uint8Array([baseIdBytes.length]))
+      dataParts.push(baseIdBytes)
+    }
+
+    // Encode discard cards as baseId array
+    for (const card of dummy.discard || []) {
+      const baseId = extractBaseId(card)
+      const baseIdBytes = new TextEncoder().encode(baseId)
+      dataParts.push(new Uint8Array([baseIdBytes.length]))
+      dataParts.push(baseIdBytes)
+    }
+
+    logger.debug(`[GameCodec] Encoded dummy player ${dummy.id}: ${handSize} hand, ${deckSize} deck, ${discardSize} discard`)
+  }
+
+  // Non-recipient real player hands and decks: [playerDeckCount: 1 byte] then for each non-recipient real player:
+  // [playerId: 1 byte] [handSize: 1 byte] [deckSize: 2 bytes]
+  // Then hand cards, deck cards as baseId arrays
+  // This allows host to see other players' card data when needed (e.g., when revealing with rule counters)
+  const otherRealPlayers = gameState.players.filter(p => !p.isDummy && p.id !== recipientPlayerId)
+  dataParts.push(new Uint8Array([otherRealPlayers.length]))
+
+  for (const player of otherRealPlayers) {
+    // [playerId: 1 byte]
+    dataParts.push(new Uint8Array([player.id & 0xFF]))
+
+    const handSize = player.hand?.length ?? 0
+    const deckSize = player.deck?.length ?? 0
+
+    // [handSize: 1 byte] [deckSize: 2 bytes]
+    dataParts.push(new Uint8Array([handSize, (deckSize >> 8) & 0xFF, deckSize & 0xFF]))
+
+    // Encode hand cards as baseId array
+    for (const card of player.hand || []) {
+      const baseId = extractBaseId(card)
+      const baseIdBytes = new TextEncoder().encode(baseId)
+      dataParts.push(new Uint8Array([baseIdBytes.length]))
+      dataParts.push(baseIdBytes)
+    }
+
+    // Encode deck cards as baseId array
+    for (const card of player.deck || []) {
+      const baseId = extractBaseId(card)
+      const baseIdBytes = new TextEncoder().encode(baseId)
+      dataParts.push(new Uint8Array([baseIdBytes.length]))
+      dataParts.push(baseIdBytes)
+    }
+
+    logger.debug(`[GameCodec] Encoded other player ${player.id}: ${handSize} hand, ${deckSize} deck`)
+  }
+
   // Calculate total data length
   let dataLength = 0
   for (const part of dataParts) {
@@ -208,7 +409,7 @@ export function encodeCardState(
     offset += buf.length
   }
 
-  logger.info(`[GameCodec] Encoded card state: ${result.length} bytes (${boardCardCount} board cards, ${gameState.players.length} players)`)
+  logger.info(`[GameCodec] Encoded card state: ${result.length} bytes (${boardCardCount} board cards, ${gameState.players.length} players, ${dummyPlayers.length} dummies, recipientPlayer=${recipientPlayerId ?? 'none'}, activeGridSize=${gameState.activeGridSize})`)
 
   return result
 }
@@ -239,6 +440,7 @@ export function decodeCardState(
   const playerCount = data[offset++]
 
   const players: Player[] = []
+  const decoder = new TextDecoder()
 
   for (let i = 0; i < playerCount; i++) {
     const playerId = data[offset++]
@@ -253,26 +455,55 @@ export function decodeCardState(
     // [isReady: 1 byte]
     const isReady = data[offset++] === 1
 
+    // [playerFlags: 1 byte] - bit 0: isDummy, bit 1: isDisconnected, bit 2: autoDrawEnabled
+    const playerFlags = data[offset++]
+    const isDummy = (playerFlags & (1 << 0)) !== 0
+    const isDisconnected = (playerFlags & (1 << 1)) !== 0
+    const autoDrawEnabled = (playerFlags & (1 << 2)) !== 0
+
+    // [teamId: 1 byte] - 255 means undefined
+    const teamIdByte = data[offset++]
+    const teamId = teamIdByte === 255 ? undefined : teamIdByte
+
+    // [handSize: 1 byte] [deckSize: 2 bytes] [discardSize: 1 byte] - size info for all players
+    const playerHandSize = data[offset++]
+    const playerDeckSize = (data[offset++] << 8) | data[offset++]
+    const playerDiscardSize = data[offset++]
+
+    // [nameLength: 1 byte] [name: string]
+    const nameLength = data[offset++]
+    const name = nameLength > 0 ? decoder.decode(data.subarray(offset, offset + nameLength)) : `Player ${playerId}`
+    offset += nameLength
+
     players.push({
       id: playerId,
-      name: '',  // Will be filled from existing state
+      name: name,
       color: playerColor,
       score: score,
       isReady: isReady,
-      hand: [],  // Not sent in CARD_STATE anymore - synced via STATE_UPDATE_COMPACT
-      deck: [], // Not sent in CARD_STATE anymore - synced via STATE_UPDATE_COMPACT
-      discard: [], // Not sent in CARD_STATE anymore - synced via STATE_UPDATE_COMPACT
-      announcedCard: null, // Not sent in CARD_STATE anymore - synced via STATE_UPDATE_COMPACT
-      selectedDeck: DeckType.Random,  // Will be filled from existing state
+      hand: [],  // Will be filled by recipient/dummy section, or empty for privacy
+      deck: [],
+      discard: [],
+      announcedCard: null,
+      selectedDeck: DeckType.Random,
       boardHistory: [],
-      isDummy: false,
-      isDisconnected: false,
-      teamId: undefined
+      isDummy: isDummy,
+      isDisconnected: isDisconnected,
+      teamId: teamId,
+      autoDrawEnabled: autoDrawEnabled,
+      // Store sizes for display (shows how many cards each player has)
+      handSize: playerHandSize,
+      deckSize: playerDeckSize,
+      discardSize: playerDiscardSize
     })
+
+    // Log decoding for each player
+    logger.info(`[GameCodec] Decoded player ${playerId}: handSize=${playerHandSize}, deckSize=${playerDeckSize}, discardSize=${playerDiscardSize}, isDummy=${isDummy}`)
   }
 
   // Read board
   const boardSize = data[offset++]
+  const activeGridSize = data[offset++]
   offset++ // Skip duplicate rows
   offset++ // Skip duplicate cols
 
@@ -310,14 +541,280 @@ export function decodeCardState(
   const activePlayerId = activePlayerByte === 255 ? null : activePlayerByte
   const currentRound = roundByte === 255 ? undefined : roundByte
 
-  logger.info(`[GameCodec] Decoded: ${boardCardCount} board cards, ${playerCount} players, phase=${currentPhase}`)
+  // Read game flags
+  const gameFlags = data[offset++]
+  const isGameStarted = (gameFlags & 0x01) !== 0
+
+  // Read recipient player data
+  const hasRecipientPlayer = data[offset++]
+  // decoder is already declared above
+
+  if (hasRecipientPlayer === 1) {
+    const recipientPlayerId = data[offset++]
+    const handSize = data[offset++]
+    const deckSize = (data[offset++] << 8) | data[offset++]
+    const discardSize = data[offset++]
+
+    // Find the player in players array and update it
+    const playerIndex = players.findIndex(p => p.id === recipientPlayerId)
+    if (playerIndex >= 0) {
+      const player = players[playerIndex]
+
+      // Decode hand cards
+      const hand: Card[] = []
+      for (let h = 0; h < handSize; h++) {
+        const baseIdLength = data[offset++]
+        const baseId = decoder.decode(data.subarray(offset, offset + baseIdLength))
+        offset += baseIdLength
+        const cardDef = getCardDefinitionFromLocal(baseId)
+        hand.push({
+          id: `${baseId}_recipientHand_${h}_${Date.now()}_${Math.random()}`,
+          baseId,
+          deck: 'Random' as any, // Required by Card type
+          name: cardDef?.name || baseId,
+          imageUrl: cardDef?.imageUrl || '',
+          power: cardDef?.power || 0,
+          ability: cardDef?.ability || '',
+          types: cardDef?.types || [],
+          faction: cardDef?.faction || '',
+          ownerId: player.id,
+          isFaceDown: false,
+          statuses: []
+        })
+      }
+      player.hand = hand
+
+      // Decode deck cards
+      const deck: Card[] = []
+      for (let dk = 0; dk < deckSize; dk++) {
+        const baseIdLength = data[offset++]
+        const baseId = decoder.decode(data.subarray(offset, offset + baseIdLength))
+        offset += baseIdLength
+        const cardDef = getCardDefinitionFromLocal(baseId)
+        deck.push({
+          id: `${baseId}_recipientDeck_${dk}_${Date.now()}_${Math.random()}`,
+          baseId,
+          deck: 'Random' as any, // Required by Card type
+          name: cardDef?.name || baseId,
+          imageUrl: cardDef?.imageUrl || '',
+          power: cardDef?.power || 0,
+          ability: cardDef?.ability || '',
+          types: cardDef?.types || [],
+          faction: cardDef?.faction || '',
+          ownerId: player.id,
+          isFaceDown: true,
+          statuses: []
+        })
+      }
+      player.deck = deck
+
+      // Decode discard cards
+      const discard: Card[] = []
+      for (let dc = 0; dc < discardSize; dc++) {
+        const baseIdLength = data[offset++]
+        const baseId = decoder.decode(data.subarray(offset, offset + baseIdLength))
+        offset += baseIdLength
+        const cardDef = getCardDefinitionFromLocal(baseId)
+        discard.push({
+          id: `${baseId}_recipientDiscard_${dc}_${Date.now()}_${Math.random()}`,
+          baseId,
+          deck: 'Random' as any, // Required by Card type
+          name: cardDef?.name || baseId,
+          imageUrl: cardDef?.imageUrl || '',
+          power: cardDef?.power || 0,
+          ability: cardDef?.ability || '',
+          types: cardDef?.types || [],
+          faction: cardDef?.faction || '',
+          ownerId: player.id,
+          isFaceDown: false,
+          statuses: []
+        })
+      }
+      player.discard = discard
+
+      logger.debug(`[GameCodec] Decoded recipient player ${recipientPlayerId}: ${handSize} hand, ${deckSize} deck, ${discardSize} discard`)
+    }
+  }
+
+  // Read dummy player data
+  const dummyCount = data[offset++]
+
+  for (let d = 0; d < dummyCount; d++) {
+    const dummyPlayerId = data[offset++]
+    const handSize = data[offset++]
+    const deckSize = (data[offset++] << 8) | data[offset++]
+    const discardSize = data[offset++]
+
+    // Find the player in players array and update it
+    const playerIndex = players.findIndex(p => p.id === dummyPlayerId)
+    if (playerIndex >= 0) {
+      const player = players[playerIndex]
+      player.isDummy = true
+
+      // Decode hand cards
+      const hand: Card[] = []
+      for (let h = 0; h < handSize; h++) {
+        const baseIdLength = data[offset++]
+        const baseId = decoder.decode(data.subarray(offset, offset + baseIdLength))
+        offset += baseIdLength
+        const cardDef = getCardDefinitionFromLocal(baseId)
+        hand.push({
+          id: `${baseId}_dummyHand_${h}_${Date.now()}_${Math.random()}`,
+          baseId,
+          deck: 'Random' as any, // Required by Card type
+          name: cardDef?.name || baseId,
+          imageUrl: cardDef?.imageUrl || '',
+          power: cardDef?.power || 0,
+          ability: cardDef?.ability || '',
+          types: cardDef?.types || [],
+          faction: cardDef?.faction || '',
+          ownerId: player.id,
+          isFaceDown: false,
+          statuses: []
+        })
+      }
+      player.hand = hand
+
+      // Decode deck cards
+      const deck: Card[] = []
+      for (let dk = 0; dk < deckSize; dk++) {
+        const baseIdLength = data[offset++]
+        const baseId = decoder.decode(data.subarray(offset, offset + baseIdLength))
+        offset += baseIdLength
+        const cardDef = getCardDefinitionFromLocal(baseId)
+        deck.push({
+          id: `${baseId}_dummyDeck_${dk}_${Date.now()}_${Math.random()}`,
+          baseId,
+          deck: 'Random' as any, // Required by Card type
+          name: cardDef?.name || baseId,
+          imageUrl: cardDef?.imageUrl || '',
+          power: cardDef?.power || 0,
+          ability: cardDef?.ability || '',
+          types: cardDef?.types || [],
+          faction: cardDef?.faction || '',
+          ownerId: player.id,
+          isFaceDown: true,
+          statuses: []
+        })
+      }
+      player.deck = deck
+
+      // Decode discard cards
+      const discard: Card[] = []
+      for (let dc = 0; dc < discardSize; dc++) {
+        const baseIdLength = data[offset++]
+        const baseId = decoder.decode(data.subarray(offset, offset + baseIdLength))
+        offset += baseIdLength
+        const cardDef = getCardDefinitionFromLocal(baseId)
+        discard.push({
+          id: `${baseId}_dummyDiscard_${dc}_${Date.now()}_${Math.random()}`,
+          baseId,
+          deck: 'Random' as any, // Required by Card type
+          name: cardDef?.name || baseId,
+          imageUrl: cardDef?.imageUrl || '',
+          power: cardDef?.power || 0,
+          ability: cardDef?.ability || '',
+          types: cardDef?.types || [],
+          faction: cardDef?.faction || '',
+          ownerId: player.id,
+          isFaceDown: false,
+          statuses: []
+        })
+      }
+      player.discard = discard
+
+      logger.debug(`[GameCodec] Decoded dummy player ${dummyPlayerId}: ${handSize} hand, ${deckSize} deck, ${discardSize} discard`)
+    }
+  }
+
+  // Decode other real player decks (non-recipient, non-dummy)
+  // [playerDeckCount: 1 byte]
+  const otherPlayerDeckCount = data[offset++]
+  for (let op = 0; op < otherPlayerDeckCount; op++) {
+    const playerId = data[offset++]
+    const handSize = data[offset++]
+    const deckSize = (data[offset++] << 8) | data[offset++]
+
+    // Find the player in players array
+    const playerIndex = players.findIndex(p => p.id === playerId)
+    if (playerIndex >= 0) {
+      const player = players[playerIndex]
+
+      // Decode hand cards - restore full card data from baseId
+      const hand: Card[] = []
+      for (let h = 0; h < handSize; h++) {
+        const baseIdLength = data[offset++]
+        const baseId = decoder.decode(data.subarray(offset, offset + baseIdLength))
+        offset += baseIdLength
+        const cardDef = getCardDefinitionFromLocal(baseId)
+        hand.push({
+          id: `${baseId}_otherPlayerHand_${playerId}_${h}_${Date.now()}_${Math.random()}`,
+          baseId,
+          deck: player.selectedDeck || 'Random' as any,
+          name: cardDef?.name || baseId,
+          imageUrl: cardDef?.imageUrl || '',
+          power: cardDef?.power || 0,
+          powerModifier: 0,
+          ability: cardDef?.ability || '',
+          types: cardDef?.types || [],
+          faction: cardDef?.faction || '',
+          color: player.color,
+          ownerId: player.id,
+          ownerName: player.name,
+          isFaceDown: false,
+          statuses: []
+        })
+      }
+      player.hand = hand
+
+      // Decode deck cards
+      const deck: Card[] = []
+      for (let dk = 0; dk < deckSize; dk++) {
+        const baseIdLength = data[offset++]
+        const baseId = decoder.decode(data.subarray(offset, offset + baseIdLength))
+        offset += baseIdLength
+        const cardDef = getCardDefinitionFromLocal(baseId)
+        deck.push({
+          id: `${baseId}_otherPlayerDeck_${playerId}_${dk}_${Date.now()}_${Math.random()}`,
+          baseId,
+          deck: 'Random' as any,
+          name: cardDef?.name || baseId,
+          imageUrl: cardDef?.imageUrl || '',
+          power: cardDef?.power || 0,
+          ability: cardDef?.ability || '',
+          types: cardDef?.types || [],
+          faction: cardDef?.faction || '',
+          ownerId: player.id,
+          isFaceDown: true,
+          statuses: []
+        })
+      }
+      player.deck = deck
+
+      logger.debug(`[GameCodec] Decoded other player ${playerId}: ${handSize} hand, ${deckSize} deck`)
+    } else {
+      // Player not found, skip their data
+      for (let h = 0; h < handSize; h++) {
+        const baseIdLength = data[offset++]
+        offset += baseIdLength
+      }
+      for (let dk = 0; dk < deckSize; dk++) {
+        const baseIdLength = data[offset++]
+        offset += baseIdLength
+      }
+    }
+  }
+
+  logger.info(`[GameCodec] Decoded: ${boardCardCount} board cards, ${playerCount} players, ${dummyCount} dummies, ${otherPlayerDeckCount} other player hands/decks, hasRecipientPlayer=${hasRecipientPlayer === 1}, phase=${currentPhase}, isGameStarted=${isGameStarted}, activeGridSize=${activeGridSize}`)
 
   return {
     players,
     board,
     currentPhase,
     activePlayerId,
-    currentRound
+    currentRound,
+    isGameStarted,
+    activeGridSize: activeGridSize as any // number to GridSize conversion
   }
 }
 
@@ -437,13 +934,15 @@ function getCardDefinitionFromLocal(baseId: string): { name: string, imageUrl: s
 /**
  * Merge decoded state into existing game state
  *
- * CARD_STATE only contains:
+ * CARD_STATE contains:
  * - Board cards (with all their data)
- * - Player metadata (id, color, score, isReady)
+ * - Full player list with metadata (id, name, color, score, isReady, isDummy, isDisconnected, teamId, autoDrawEnabled)
  * - Phase info (currentPhase, activePlayerId, currentRound)
+ * - Recipient player's hand/deck/discard (the player who received the message)
+ * - Dummy players' hand/deck/discard (all players can control them)
  *
  * CARD_STATE does NOT contain:
- * - Player hands, decks, discard piles (synced via STATE_UPDATE_COMPACT)
+ * - Other real players' hands, decks, discard piles (preserved from existing state)
  * - Announced cards (synced via other messages)
  */
 export function mergeDecodedState(
@@ -453,22 +952,71 @@ export function mergeDecodedState(
   const result = { ...existingState }
 
   if (decodedState.players) {
+    // Build new player list - include all players from decoded state
+    // (decoded state has authoritative player list from host)
     result.players = decodedState.players.map(player => {
       const existing = existingState.players.find(p => p.id === player.id)
       if (existing) {
-        // Preserve existing player data that is NOT sent in CARD_STATE:
-        // - name, hand, deck, discard, announcedCard, selectedDeck, boardHistory
+        // Player exists - merge hand/deck/discard intelligently
+        // For dummy players, use all decoded data (hand, deck, discard are included)
+        // For real players, check if hand/deck/discard were decoded (non-empty)
+        // If they are empty arrays, preserve existing data (privacy/other players)
+        // If they have data, use decoded data (recipient player or initial state)
+
+        const useDecodedHandDeck = player.isDummy ||
+          (player.hand && player.hand.length > 0) ||
+          (player.deck && player.deck.length > 0) ||
+          (player.discard && player.discard.length > 0)
+
+        if (useDecodedHandDeck) {
+          // Use decoded hand/deck/discard (dummy player or recipient player)
+          return {
+            ...player,
+            hand: player.hand || existing.hand,
+            deck: player.deck || existing.deck,
+            discard: player.discard || existing.discard,
+            // Preserve other properties from existing if not in decoded
+            announcedCard: player.announcedCard || existing.announcedCard,
+            boardHistory: player.boardHistory || existing.boardHistory,
+            selectedDeck: player.selectedDeck || existing.selectedDeck,
+            // Preserve/update size metadata
+            handSize: player.handSize ?? player.hand?.length ?? existing.handSize ?? existing.hand?.length,
+            deckSize: player.deckSize ?? player.deck?.length ?? existing.deckSize ?? existing.deck?.length,
+            discardSize: player.discardSize ?? player.discard?.length ?? existing.discardSize ?? existing.discard?.length
+          }
+        }
+
+        // Preserve existing hand/deck/discard (other real players)
+        // BUT update size metadata from decoded state
         return {
-          ...existing,
-          // Update only metadata that comes from CARD_STATE
-          id: player.id,
-          score: player.score,
-          isReady: player.isReady,
-          // Update color from CARD_STATE (it's authoritative for color changes)
-          color: player.color
+          ...player,
+          hand: existing.hand,
+          deck: existing.deck,
+          discard: existing.discard,
+          // Preserve other properties from existing if not in decoded
+          announcedCard: existing.announcedCard,
+          boardHistory: existing.boardHistory,
+          selectedDeck: existing.selectedDeck,
+          // Update size metadata from decoded state (this is the key fix!)
+          handSize: player.handSize ?? existing.handSize ?? existing.hand?.length,
+          deckSize: player.deckSize ?? existing.deckSize ?? existing.deck?.length,
+          discardSize: player.discardSize ?? existing.discardSize ?? existing.discard?.length
         }
       }
-      return player
+      // New player (not in existing state) - use decoded data as-is
+      return {
+        ...player,
+        hand: player.hand || [],
+        deck: player.deck || [],
+        discard: player.discard || [],
+        announcedCard: null,
+        boardHistory: [],
+        selectedDeck: player.selectedDeck || 'Random' as any,
+        // Ensure size metadata is set
+        handSize: player.handSize ?? player.hand?.length ?? 0,
+        deckSize: player.deckSize ?? player.deck?.length ?? 0,
+        discardSize: player.discardSize ?? player.discard?.length ?? 0
+      }
     })
   }
 
@@ -488,6 +1036,14 @@ export function mergeDecodedState(
     result.currentRound = decodedState.currentRound
   }
 
+  if (decodedState.isGameStarted !== undefined) {
+    result.isGameStarted = decodedState.isGameStarted
+  }
+
+  if (decodedState.activeGridSize !== undefined) {
+    result.activeGridSize = decodedState.activeGridSize
+  }
+
   return result
 }
 
@@ -503,15 +1059,4 @@ if (!Math.clamp) {
   Math.clamp = function(value: number, min: number, max: number): number {
     return Math.min(Math.max(value, min), max)
   }
-}
-
-// Internal type for card definition data
-interface CardDefinitionData {
-  baseId: string
-  name: string
-  imageUrl: string
-  power: number
-  ability: string
-  types: string[]
-  faction: string
 }

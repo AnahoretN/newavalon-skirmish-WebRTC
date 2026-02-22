@@ -326,12 +326,7 @@ export class HostManager {
 
       case 'CHANGE_PLAYER_DECK':
         if (guestPlayerId && message.data) {
-          this.stateManager.updatePlayerProperty(guestPlayerId, {
-            selectedDeck: message.data.deckType
-          })
-          this.gameLogger.logAction('DECK_CHANGED', {
-            deckType: message.data.deckType
-          }, guestPlayerId)
+          this.handleChangePlayerDeck(guestPlayerId, message.data, fromPeerId)
         }
         break
 
@@ -376,6 +371,14 @@ export class HostManager {
         // This is the main way guests sync their state changes (like score)
         if (message.data?.gameState && guestPlayerId !== undefined) {
           this.stateManager.updateFromGuest(guestPlayerId, message.data.gameState, fromPeerId)
+        }
+        break
+
+      case 'DECK_DATA_UPDATE':
+        // Guest sends their full deck data to host (for deck view feature)
+        // Host broadcasts this data to other guests so they can view the deck
+        if (guestPlayerId && message.data?.deck) {
+          this.handleDeckDataUpdate(guestPlayerId, message.data, fromPeerId)
         }
         break
 
@@ -524,10 +527,204 @@ export class HostManager {
         }
         break
 
+      case 'DECK_DATA_UPDATE':
+        // Guest sends their full deck data to host
+        // This is sent as an ACTION from guest, handle it here
+        if (actionData?.deck) {
+          logger.info(`[handleAction] DECK_DATA_UPDATE: Received ${actionData.deck?.length || 0} cards for guest ${guestPlayerId}`)
+          this.handleDeckDataUpdate(guestPlayerId, actionData, fromPeerId)
+        }
+        break
+
+      case 'REQUEST_GAME_RESET':
+        // Guest requests game reset from host
+        logger.info(`[handleAction] Player ${guestPlayerId} requested game reset`)
+        // Trigger reset - this will broadcast to all guests
+        this.resetGame()
+        break
+
       default:
         logger.debug(`[HostManager] Unhandled action type: ${actionType}`)
         break
     }
+  }
+
+  /**
+   * Handle player deck change
+   *
+   * IMPORTANT RULE: Host is the single source of truth for dummy player decks.
+   * - For dummy players: Host ALWAYS creates the deck, regardless of what guest sends
+   * - For real players: Host uses the deck data provided by guest
+   */
+  private handleChangePlayerDeck(playerId: number, deckData: any, _fromPeerId: string): void {
+    const state = this.stateManager.getState()
+    if (!state) {
+      logger.warn('[HostManager] No state for deck change')
+      return
+    }
+
+    const { deckType, deck: receivedDeck } = deckData
+    const targetPlayer = state.players.find(p => p.id === playerId)
+    if (!targetPlayer) {
+      logger.warn(`[HostManager] Player ${playerId} not found for deck change`)
+      return
+    }
+
+    const isDummy = targetPlayer.isDummy || false
+    let finalDeck: any[] = []
+    let compactDeckForBroadcast: any[] = []
+
+    // For dummy players, ALWAYS create deck on host (ignore guest's deck data)
+    // For real players, use deck data from guest if provided
+    if (isDummy || !receivedDeck || !Array.isArray(receivedDeck) || receivedDeck.length === 0) {
+      // Create deck locally on host
+      const { createDeck } = require('../hooks/core/gameCreators')
+      finalDeck = createDeck(deckType, playerId, targetPlayer.name)
+
+      // Create compact version for broadcast (only essential data)
+      compactDeckForBroadcast = finalDeck.map(card => ({
+        id: card.id,
+        baseId: card.baseId,
+        power: card.power,
+        powerModifier: card.powerModifier || 0,
+        isFaceDown: card.isFaceDown || false,
+        statuses: card.statuses || []
+      }))
+
+      logger.info(`[HostManager] Created deck for ${isDummy ? 'dummy' : 'real'} player ${playerId}: ${deckType}, ${finalDeck.length} cards`)
+    } else {
+      // Use deck data from guest (real player with custom deck data)
+      const { getCardDefinition } = require('../contentDatabase')
+
+      const reconstructedDeck = receivedDeck.map((compactCard: any) => {
+        if (compactCard.baseId) {
+          const cardDef = getCardDefinition(compactCard.baseId)
+          if (cardDef) {
+            return {
+              ...cardDef,
+              id: compactCard.id,
+              baseId: compactCard.baseId,
+              deck: deckType,
+              ownerId: playerId,
+              ownerName: targetPlayer.name,
+              power: compactCard.power,
+              powerModifier: compactCard.powerModifier || 0,
+              isFaceDown: compactCard.isFaceDown || false,
+              statuses: compactCard.statuses || []
+            }
+          }
+          return {
+            id: compactCard.id,
+            baseId: compactCard.baseId,
+            name: 'Unknown',
+            deck: deckType,
+            ownerId: playerId,
+            ownerName: targetPlayer.name,
+            power: compactCard.power || 0,
+            powerModifier: 0,
+            isFaceDown: false,
+            statuses: [],
+            imageUrl: '',
+            ability: ''
+          }
+        }
+        return {
+          id: compactCard.id,
+          baseId: compactCard.id,
+          name: 'Unknown',
+          deck: deckType,
+          ownerId: playerId,
+          ownerName: targetPlayer.name,
+          power: compactCard.power || 0,
+          powerModifier: 0,
+          isFaceDown: false,
+          statuses: [],
+          imageUrl: '',
+          ability: ''
+        }
+      })
+
+      finalDeck = reconstructedDeck
+      compactDeckForBroadcast = receivedDeck
+
+      logger.info(`[HostManager] Used guest's deck data for real player ${playerId}: ${deckType}, ${finalDeck.length} cards`)
+    }
+
+    // Update the player's deck
+    this.stateManager.updatePlayerProperty(playerId, {
+      selectedDeck: deckType,
+      deck: finalDeck,
+      hand: [],
+      discard: [],
+      announcedCard: null,
+      boardHistory: []
+    })
+
+    // Broadcast full deck data to ALL guests (including original sender for confirmation)
+    this.connectionManager.broadcast({
+      type: 'CHANGE_PLAYER_DECK',
+      senderId: this.connectionManager.getPeerId(),
+      playerId,
+      data: {
+        playerId,
+        deckType,
+        deck: compactDeckForBroadcast,
+        deckSize: compactDeckForBroadcast.length
+      },
+      timestamp: Date.now()
+    })
+
+    this.gameLogger.logAction('DECK_CHANGED', {
+      deckType
+    }, playerId)
+  }
+
+  /**
+   * Handle deck data update from guest (for deck view feature)
+   * Guest opens deck view for another player -> sends their deck to host
+   * Host broadcasts this to all guests so they can view the deck
+   */
+  private handleDeckDataUpdate(playerId: number, deckData: any, fromPeerId: string): void {
+    const state = this.stateManager.getState()
+    if (!state) {
+      logger.warn('[HostManager] No state for deck data update')
+      return
+    }
+
+    const { deck: receivedDeck, deckSize } = deckData
+    const targetPlayer = state.players.find(p => p.id === playerId)
+    if (!targetPlayer) {
+      logger.warn(`[HostManager] Player ${playerId} not found for deck data update`)
+      return
+    }
+
+    // IMPORTANT: Update the player's deck in HostStateManager state
+    // This ensures the deck is available when game starts
+    const updatedPlayers = state.players.map(p =>
+      p.id === playerId
+        ? { ...p, deck: receivedDeck || [], hand: p.hand || [], discard: p.discard || [] }
+        : p
+    )
+
+    const updatedState = { ...state, players: updatedPlayers }
+    this.stateManager.setInitialState(updatedState)
+    logger.info(`[HostManager] Updated player ${playerId} deck in state: ${receivedDeck?.length || 0} cards`)
+
+    // Broadcast deck data to ALL other guests (excluding sender)
+    // This allows guests to view each other's decks in the deck view modal
+    this.connectionManager.broadcast({
+      type: 'DECK_DATA_UPDATE',
+      senderId: this.connectionManager.getPeerId(),
+      playerId,
+      data: {
+        playerId,
+        deck: receivedDeck,
+        deckSize: deckSize || receivedDeck?.length || 0
+      },
+      timestamp: Date.now()
+    }, fromPeerId) // Exclude sender since they already have their own deck
+
+    logger.info(`[HostManager] Broadcasted deck data for player ${playerId}: ${receivedDeck?.length || 0} cards`)
   }
 
   /**
@@ -640,6 +837,12 @@ export class HostManager {
       newPlayerId
     )
 
+    // CRITICAL: Broadcast updated state to ALL existing guests so they see the new player
+    this.connectionManager.broadcastGameState(newState, guestPeerId)
+
+    // Also send PLAYER_CONNECTED event for consistency
+    this.connectionManager.broadcastPlayerConnected(newPlayerId, newPlayer.name, guestPeerId)
+
     // Log player join
     this.gameLogger.logAction('PLAYER_JOINED', { playerId: newPlayerId }, newPlayerId)
 
@@ -648,7 +851,7 @@ export class HostManager {
       this.config.onPlayerJoin(newPlayerId, guestPeerId)
     }
 
-    logger.info(`[HostManager] Added player ${newPlayerId} for guest ${guestPeerId}`)
+    logger.info(`[HostManager] Added player ${newPlayerId} for guest ${guestPeerId}, broadcasted to existing guests`)
   }
 
   /**
@@ -1104,6 +1307,13 @@ export class HostManager {
   }
 
   /**
+   * Alias for broadcast - for API compatibility with GuestConnectionManager
+   */
+  broadcastToGuests(message: any, excludePeerId?: string): number {
+    return this.broadcast(message, excludePeerId)
+  }
+
+  /**
    * Broadcast state delta to all guests
    */
   broadcastStateDelta(delta: StateDelta, excludePeerId?: string): void {
@@ -1112,14 +1322,22 @@ export class HostManager {
 
   /**
    * Broadcast game state to all guests
+   * Can be called with just excludePeerId (uses current state) or with explicit gameState
    */
-  broadcastGameState(excludePeerId?: string): void {
+  broadcastGameState(gameStateOrExcludePeerId?: GameState | string, excludePeerId?: string): void {
+    // Check if first arg is a state object (has players array) or just excludePeerId
+    if (gameStateOrExcludePeerId && typeof gameStateOrExcludePeerId !== 'string' && 'players' in gameStateOrExcludePeerId) {
+      // Called with (gameState, excludePeerId)
+      this.connectionManager.broadcastGameState(gameStateOrExcludePeerId as any, excludePeerId)
+      return
+    }
+    // Called with just (excludePeerId) - use current state
     const state = this.stateManager.getState()
     if (!state) {
       logger.warn('[HostManager] No game state to broadcast')
       return
     }
-    this.connectionManager.broadcastGameState(state, excludePeerId)
+    this.connectionManager.broadcastGameState(state, gameStateOrExcludePeerId as string | undefined)
   }
 
   // ==================== Game Settings ====================
@@ -1226,6 +1444,104 @@ export class HostManager {
     return this.initialized
   }
 
+  // ==================== Additional Compatibility Methods ====================
+  // These methods provide API compatibility with GuestConnectionManager
+  // Only methods that don't exist elsewhere in the class
+
+  /**
+   * Accept guest with minimal info
+   */
+  acceptGuestMinimal(peerId: string, minimalInfo: any, playerId: number): void {
+    this.connectionManager.acceptGuestMinimal(peerId, minimalInfo, playerId)
+  }
+
+  /**
+   * Broadcast card status sync to all guests
+   */
+  broadcastCardStatusSync(changes: any[], excludePeerId?: string): number {
+    return this.connectionManager.broadcastCardStatusSync(changes, excludePeerId)
+  }
+
+  /**
+   * Broadcast board card sync to all guests
+   */
+  broadcastBoardCardSync(cards: any[], action: 'update' | 'remove' | 'replace', excludePeerId?: string): number {
+    return this.connectionManager.broadcastBoardCardSync(cards, action, excludePeerId)
+  }
+
+  /**
+   * Send message to specific guest
+   */
+  sendToGuest(peerId: string, message: any): boolean {
+    return this.connectionManager.sendToGuest(peerId, message)
+  }
+
+  /**
+   * Broadcast card state using codec
+   */
+  broadcastCardState(gameState: GameState, localPlayerId: number | null, excludePeerId?: string): number {
+    return this.connectionManager.broadcastCardState(gameState, localPlayerId, excludePeerId)
+  }
+
+  /**
+   * Broadcast ability effect
+   */
+  broadcastAbilityEffect(effectType: any, data: any, excludePeerId?: string): number {
+    return this.connectionManager.broadcastAbilityEffect(effectType, data, excludePeerId)
+  }
+
+  /**
+   * Broadcast session event
+   */
+  broadcastSessionEvent(eventType: number, data: any, excludePeerId?: string): number {
+    return this.connectionManager.broadcastSessionEvent(eventType, data, excludePeerId)
+  }
+
+  /**
+   * Check if player is reconnecting
+   */
+  isPlayerReconnecting(playerId: number): boolean {
+    return this.connectionManager.isPlayerReconnecting(playerId)
+  }
+
+  /**
+   * Set guest player ID
+   */
+  setGuestPlayerId(peerId: string, playerId: number): void {
+    this.connectionManager.setGuestPlayerId(peerId, playerId)
+  }
+
+  // ==================== Compatibility Methods ====================
+  // These methods provide API compatibility with GuestConnectionManager
+  // to allow unified usage in hooks as WebRTCManager type
+
+  /**
+   * Get state manager (for compatibility with useReadyCheck)
+   */
+  getStateManager(): HostStateManager {
+    return this.stateManager
+  }
+
+  /**
+   * Send message to host (compatibility - host is always the "host" so this doesn't apply)
+   * Included for WebRTCManager type compatibility
+   */
+  sendMessageToHost(_message: any): boolean {
+    // Host doesn't send messages to itself
+    logger.warn('[HostManager] sendMessageToHost called on host - no-op')
+    return false
+  }
+
+  /**
+   * Send full deck to host (compatibility - host already has its own deck)
+   * Included for WebRTCManager type compatibility
+   */
+  sendFullDeckToHost(_playerId: number, _deck: any[], _deckSize: number): boolean {
+    // Host doesn't need to send its deck to itself
+    logger.warn('[HostManager] sendFullDeckToHost called on host - no-op')
+    return false
+  }
+
   /**
    * Cleanup
    */
@@ -1246,6 +1562,119 @@ export class HostManager {
 
     this.initialized = false
     this.localPlayerId = null
+  }
+
+  /**
+   * Reset game to lobby state
+   * Broadcasts GAME_RESET to all guests so they return to lobby
+   */
+  resetGame(): void {
+    const state = this.stateManager.getState()
+    if (!state) {
+      logger.warn('[HostManager] No state to reset game')
+      return
+    }
+
+    // Include player data so guests can recreate their state
+    const playersData = state.players.map(p => ({
+      id: p.id,
+      name: p.name,
+      color: p.color,
+      selectedDeck: p.selectedDeck,
+      isDummy: p.isDummy,
+      isDisconnected: p.isDisconnected,
+      autoDrawEnabled: p.autoDrawEnabled,
+      // For dummies, include full card data
+      ...(p.isDummy && {
+        hand: p.hand.map((card: any) => ({
+          id: card.id,
+          baseId: card.baseId,
+          name: card.name,
+          imageUrl: card.imageUrl,
+          power: card.power,
+          powerModifier: card.powerModifier,
+          ability: card.ability,
+          ownerId: card.ownerId,
+          color: card.color,
+          deck: card.deck,
+          isFaceDown: card.isFaceDown,
+          types: card.types,
+          faction: card.faction,
+          statuses: card.statuses,
+        })),
+        deck: p.deck.map((card: any) => ({
+          id: card.id,
+          baseId: card.baseId,
+          name: card.name,
+          imageUrl: card.imageUrl,
+          power: card.power,
+          powerModifier: card.powerModifier,
+          ability: card.ability,
+          ownerId: card.ownerId,
+          color: card.color,
+          deck: card.deck,
+          isFaceDown: card.isFaceDown,
+          types: card.types,
+          faction: card.faction,
+          statuses: card.statuses,
+        })),
+        discard: p.discard.map((card: any) => ({
+          id: card.id,
+          baseId: card.baseId,
+          name: card.name,
+          imageUrl: card.imageUrl,
+          power: card.power,
+          powerModifier: card.powerModifier,
+          ability: card.ability,
+          ownerId: card.ownerId,
+          color: card.color,
+          deck: card.deck,
+          isFaceDown: card.isFaceDown,
+          types: card.types,
+          faction: card.faction,
+          statuses: card.statuses,
+        })),
+      }),
+      score: p.score,
+      isReady: p.isReady,
+      announcedCard: p.announcedCard,
+    }))
+
+    this.broadcast({
+      type: 'GAME_RESET',
+      senderId: this.connectionManager.getPeerId(),
+      data: {
+        players: playersData,
+        gameMode: state.gameMode,
+        isPrivate: state.isPrivate,
+        activeGridSize: state.activeGridSize,
+        dummyPlayerCount: state.dummyPlayerCount,
+        autoAbilitiesEnabled: state.autoAbilitiesEnabled,
+        isGameStarted: false,
+        currentPhase: 0,
+        currentRound: 1,
+        turnNumber: 1,
+        activePlayerId: null,
+        startingPlayerId: null,
+        roundWinners: {},
+        gameWinner: null,
+        isRoundEndModalOpen: false,
+        isReadyCheckActive: false,
+      },
+      timestamp: Date.now()
+    })
+
+    logger.info('[HostManager] Broadcasted GAME_RESET to all guests')
+  }
+
+  /**
+   * Send action (compatibility - host handles actions directly via handleAction)
+   * Included for WebRTCManager type compatibility
+   */
+  sendAction(_actionType: string, _actionData: any): boolean {
+    // Host doesn't send actions to itself
+    logger.warn('[HostManager] sendAction called on host - no-op')
+    return false
   }
 }
 

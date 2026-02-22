@@ -18,7 +18,7 @@ export interface UseBoardManipulationProps {
 }
 
 export const useBoardManipulation = (props: UseBoardManipulationProps) => {
-  const { updateState, rawJsonData, broadcastCardStatusSync, broadcastBoardCardSync } = props
+  const { updateState, rawJsonData, broadcastCardStatusSync /*, broadcastBoardCardSync */ } = props
 
   const markAbilityUsed = useCallback((boardCoords: { row: number, col: number }, _isDeployAbility?: boolean, _setDeployAttempted?: boolean, readyStatusToRemove?: string) => {
     // Collect status changes to broadcast via optimized CARD_STATUS_SYNC

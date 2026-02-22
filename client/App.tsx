@@ -35,6 +35,7 @@ import type {
   CommandContext,
   CounterSelectionData,
   AbilityAction,
+  GameState,
 } from './types'
 import { DeckType } from './types'
 import { STATUS_ICONS, STATUS_DESCRIPTIONS, PLAYER_COLOR_RGB } from './constants'
@@ -480,24 +481,31 @@ const AppInner = function AppInner() {
     [gameState?.players, localPlayerId],
   )
 
+  // isGameActive now uses a more stable check that prevents flickering
+  // during state updates. We check if localPlayerId exists in the players array
+  // rather than requiring the localPlayer object itself (which can lag behind
+  // due to useMemo timing issues).
   const isGameActive = useMemo(
     () => {
-      const active = gameState?.gameId && (localPlayer || isSpectator)
+      // Check if local player exists in the players array (more stable than localPlayer object)
+      const localPlayerExists = localPlayerId !== null && gameState?.players?.some(p => p.id === localPlayerId)
+      const active = gameState?.gameId && (localPlayerExists || isSpectator)
+
       // Debug logging for WebRTC P2P restore
       if (getWebRTCEnabled()) {
         logger.debug('[isGameActive] Check:', {
           hasGameId: !!gameState?.gameId,
           gameId: gameState?.gameId,
-          hasLocalPlayer: !!localPlayer,
-          hasIsSpectator: isSpectator,
+          localPlayerExists,
           localPlayerId,
+          hasIsSpectator: isSpectator,
           playersCount: gameState?.players?.length || 0,
           isActive: active
         })
       }
       return active
     },
-    [gameState?.gameId, localPlayer, isSpectator, localPlayerId],
+    [gameState?.gameId, gameState?.players, localPlayerId, isSpectator],
   )
 
   const playerColorMap = useMemo(() => {
@@ -1313,7 +1321,7 @@ const AppInner = function AppInner() {
           for (let c = 0; c < boardSize; c++) {
             const cell = gameState.board[r]?.[c]
             const card = cell?.card
-            if (card?.statuses?.some(s => s.type === 'LastPlayed' && s.addedByPlayerId === activePlayerId)) {
+            if (card?.statuses?.some((s: CardStatus) => s.type === 'LastPlayed' && s.addedByPlayerId === activePlayerId)) {
               lastPlayedCoords = { row: r, col: c }
               found = true
               break
@@ -2459,7 +2467,7 @@ const AppInner = function AppInner() {
               allPlayers={sortedPlayers}
               localPlayerTeamId={localPlayer?.teamId}
               activePlayerId={gameState.activePlayerId}
-              onToggleActivePlayer={toggleActivePlayer}
+              _onToggleActivePlayer={toggleActivePlayer}
               imageRefreshVersion={imageRefreshVersion}
               layoutMode="list-local"
               onCardClick={handleHandCardClick}
@@ -2560,7 +2568,7 @@ const AppInner = function AppInner() {
                     allPlayers={sortedPlayers}
                     localPlayerTeamId={localPlayer?.teamId}
                     activePlayerId={gameState.activePlayerId}
-                    onToggleActivePlayer={toggleActivePlayer}
+                    _onToggleActivePlayer={toggleActivePlayer}
                     imageRefreshVersion={imageRefreshVersion}
                     layoutMode="list-remote"
                     onCardClick={handleHandCardClick}
@@ -2602,7 +2610,7 @@ function checkHasLastPlayedCard(gameState: GameState): boolean {
   for (let r = 0; r < gameState.board.length; r++) {
     for (let c = 0; c < gameState.board[r].length; c++) {
       const card = gameState.board[r]?.[c]?.card
-      if (card?.statuses?.some(s => s.type === 'LastPlayed' && s.addedByPlayerId === activePlayerId)) {
+      if (card?.statuses?.some((s: CardStatus) => s.type === 'LastPlayed' && s.addedByPlayerId === activePlayerId)) {
         return true
       }
     }

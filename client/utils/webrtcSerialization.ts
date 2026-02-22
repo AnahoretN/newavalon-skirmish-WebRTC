@@ -25,12 +25,16 @@ import {
 /**
  * Serialize game state to binary format
  * No registry needed - sends baseId directly, guest uses local contentDatabase
+ *
+ * @param gameState - The game state to serialize
+ * @param recipientPlayerId - The ID of the player who will receive this state.
+ *                             Their hand/deck/discard will be included in the encoding.
  */
 export function serializeGameState(
   gameState: GameState,
-  _localPlayerId: number | null
+  recipientPlayerId?: number | null
 ): Uint8Array {
-  return encodeCardState(gameState)
+  return encodeCardState(gameState, recipientPlayerId)
 }
 
 /**

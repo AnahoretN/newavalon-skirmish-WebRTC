@@ -18,10 +18,11 @@ import { useCallback } from 'react'
 import { logger } from '../../utils/logger'
 import { deepCloneState } from '../../utils/common'
 import { recalculateBoardStatuses } from '@shared/utils/boardUtils'
-import { toggleActivePlayer as toggleActivePlayerPhase, passTurnToNextPlayer, playerHasCardsOnBoard, setPhase as hostSetPhase } from '../../host/PhaseManagement'
+import { toggleActivePlayer as toggleActivePlayerPhase, passTurnToNextPlayer, playerHasCardsOnBoard } from '../../host/PhaseManagement'
 import { updateReadyStatuses, getCardAbilityInfo } from '../../utils/autoAbilities'
 import type { GameState, Board, DeckType } from '../../types'
 import type { WebRTCManager } from './types'
+import { getWebRTCEnabled } from '../useWebRTCEnabled'
 
 interface UsePhaseManagementProps {
   ws: React.MutableRefObject<WebSocket | null>
@@ -34,7 +35,6 @@ interface UsePhaseManagementProps {
   abilityMode?: any
   setAbilityMode?: ((mode: any) => void) | null
   createDeck: (deckType: DeckType, playerId: number, playerName: string) => any[]
-  webrtcEnabled?: boolean
 }
 
 export function usePhaseManagement(props: UsePhaseManagementProps) {
@@ -49,14 +49,13 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
     abilityMode,
     setAbilityMode,
     createDeck,
-    webrtcEnabled,
   } = props
 
   /**
    * Toggle active player
    */
   const toggleActivePlayer = useCallback((playerId: number) => {
-    const isWebRTCMode = webrtcEnabled
+    const isWebRTCMode = getWebRTCEnabled()
 
     if (isWebRTCMode && webrtcManagerRef.current) {
       // WebRTC P2P mode
@@ -140,7 +139,7 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
       setAbilityMode(null);
     }
 
-    const isWebRTCMode = webrtcEnabled
+    const isWebRTCMode = getWebRTCEnabled()
 
     // In WebRTC mode, both host and guests update locally first, then handle sync
     if (isWebRTCMode && webrtcManagerRef.current) {
@@ -198,7 +197,7 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
           // Guest: notify host so host can sync with everyone
           // Send minimal data: only phaseIndex and activePlayerId
           logger.info(`[setPhase] Guest requesting phase ${newPhase} from host`)
-          webrtcManagerRef.current.sendMessageToHost({
+          webrtcManagerRef.current?.sendMessageToHost({
             type: 'SET_PHASE',
             senderId: undefined,
             data: {
@@ -281,7 +280,7 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
     }
 
     const currentState = gameStateRef.current
-    const isWebRTCMode = webrtcEnabled
+    const isWebRTCMode = getWebRTCEnabled()
 
     // When at Scoring phase (4) or in scoring step, send NEXT_PHASE to server
     // Server will handle turn passing and Preparation phase for next player
@@ -495,7 +494,7 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
    * Resets player scores and closes the modal
    */
   const closeRoundEndModal = useCallback(() => {
-    const isWebRTCMode = webrtcEnabled
+    const isWebRTCMode = getWebRTCEnabled()
 
     if (isWebRTCMode) {
       // WebRTC mode: Update state locally and broadcast via updateState
@@ -544,158 +543,167 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
    * Supports both WebSocket (server) and WebRTC (P2P) modes
    */
   const resetGame = useCallback(() => {
-    const isWebRTCMode = webrtcEnabled
+    const isWebRTCMode = getWebRTCEnabled()
 
     if (isWebRTCMode) {
-      // WebRTC P2P mode: Reset locally and broadcast
-      const currentState = gameStateRef.current
+      // Check if host or guest
+      const isHost = webrtcIsHostRef.current
 
-      // Create fresh decks for all players based on their selectedDeck
-      const resetPlayers = currentState.players.map(p => {
-        const deckType = p.selectedDeck || 'SynchroTech'
-        return {
-          ...p,
-          hand: [],
-          deck: createDeck(deckType as any, p.id, p.name),
-          discard: [],
-          score: 0,
-          isReady: p.isDummy || false, // Dummy players are always ready, real players are not ready after reset
-          announcedCard: null,
-          boardHistory: [],
-        }
-      })
+      if (isHost) {
+        // Host: Perform reset and broadcast to all guests
+        const currentState = gameStateRef.current
 
-      // Create fresh board with correct grid size
-      const gridSize: number = (currentState.activeGridSize as unknown as number) || 8
-      const newBoard: Board = []
-      for (let i = 0; i < gridSize; i++) {
-        const row: any[] = []
-        for (let j = 0; j < gridSize; j++) {
-          row.push({ card: null })
-        }
-        newBoard.push(row)
-      }
-
-      const resetState: GameState = {
-        ...currentState,
-        players: resetPlayers,
-        board: newBoard,
-        isGameStarted: false,
-        currentPhase: 0,
-        currentRound: 1,
-        turnNumber: 1,
-        activePlayerId: null,
-        startingPlayerId: null,
-        roundWinners: {},
-        gameWinner: null,
-        roundEndTriggered: false,
-        isRoundEndModalOpen: false,
-        isReadyCheckActive: false,
-        // Clear other state
-        targetingMode: null,
-        floatingTexts: [],
-      }
-
-      // Update local state (this will broadcast delta in WebRTC mode)
-      setGameState(resetState)
-      gameStateRef.current = resetState
-
-      logger.info('[GameReset] Game reset in WebRTC mode')
-
-      // Broadcast GAME_RESET message to all WebRTC peers
-      // Send minimal data to avoid WebRTC message size limit
-      // Guests will recreate their decks locally using createDeck()
-      if (webrtcManagerRef.current) {
-        webrtcManagerRef.current.broadcastToGuests({
-          type: 'GAME_RESET',
-          senderId: webrtcManagerRef.current.getPeerId(),
-          data: {
-            players: resetPlayers.map(p => ({
-              id: p.id,
-              name: p.name,
-              color: p.color,
-              selectedDeck: p.selectedDeck,
-              isDummy: p.isDummy,
-              isDisconnected: p.isDisconnected,
-              autoDrawEnabled: p.autoDrawEnabled,
-              // Only send sizes, not full card arrays (guests create decks locally)
-              handSize: p.hand.length,
-              deckSize: p.deck.length,
-              discardSize: p.discard.length,
-              // For dummy players, send minimized card data so guests can see them
-              ...(p.isDummy && {
-                hand: p.hand.map((card: any) => ({
-                  id: card.id,
-                  baseId: card.baseId,
-                  name: card.name,
-                  imageUrl: card.imageUrl,
-                  power: card.power,
-                  powerModifier: card.powerModifier,
-                  ability: card.ability,
-                  ownerId: card.ownerId,
-                  color: card.color,
-                  deck: card.deck,
-                  isFaceDown: card.isFaceDown,
-                  types: card.types,
-                  faction: card.faction,
-                  statuses: card.statuses,
-                })),
-                deck: p.deck.map((card: any) => ({
-                  id: card.id,
-                  baseId: card.baseId,
-                  name: card.name,
-                  imageUrl: card.imageUrl,
-                  power: card.power,
-                  powerModifier: card.powerModifier,
-                  ability: card.ability,
-                  ownerId: card.ownerId,
-                  color: card.color,
-                  deck: card.deck,
-                  isFaceDown: card.isFaceDown,
-                  types: card.types,
-                  faction: card.faction,
-                  statuses: card.statuses,
-                })),
-                discard: p.discard.map((card: any) => ({
-                  id: card.id,
-                  baseId: card.baseId,
-                  name: card.name,
-                  imageUrl: card.imageUrl,
-                  power: card.power,
-                  powerModifier: card.powerModifier,
-                  ability: card.ability,
-                  ownerId: card.ownerId,
-                  color: card.color,
-                  deck: card.deck,
-                  isFaceDown: card.isFaceDown,
-                  types: card.types,
-                  faction: card.faction,
-                  statuses: card.statuses,
-                })),
-              }),
-              score: p.score,
-              isReady: p.isReady,
-              announcedCard: p.announcedCard,
-            })),
-            gameMode: resetState.gameMode,
-            isPrivate: resetState.isPrivate,
-            activeGridSize: resetState.activeGridSize,
-            dummyPlayerCount: resetState.dummyPlayerCount,
-            autoAbilitiesEnabled: resetState.autoAbilitiesEnabled,
-            isGameStarted: false,
-            currentPhase: 0,
-            currentRound: 1,
-            turnNumber: 1,
-            activePlayerId: null,
-            startingPlayerId: null,
-            roundWinners: {},
-            gameWinner: null,
-            isRoundEndModalOpen: false,
-            isReadyCheckActive: false,
-          },
-          timestamp: Date.now()
+        // Create fresh decks for all players based on their selectedDeck
+        const resetPlayers = currentState.players.map(p => {
+          const deckType = p.selectedDeck || 'SynchroTech'
+          return {
+            ...p,
+            hand: [],
+            deck: createDeck(deckType as any, p.id, p.name),
+            discard: [],
+            score: 0,
+            isReady: p.isDummy || false, // Dummy players are always ready, real players are not ready after reset
+            announcedCard: null,
+            boardHistory: [],
+          }
         })
-        logger.info('[GameReset] Broadcasted GAME_RESET message to guests')
+
+        // Create fresh board with correct grid size
+        const gridSize: number = (currentState.activeGridSize as unknown as number) || 8
+        const newBoard: Board = []
+        for (let i = 0; i < gridSize; i++) {
+          const row: any[] = []
+          for (let j = 0; j < gridSize; j++) {
+            row.push({ card: null })
+          }
+          newBoard.push(row)
+        }
+
+        const resetState: GameState = {
+          ...currentState,
+          players: resetPlayers,
+          board: newBoard,
+          isGameStarted: false,
+          currentPhase: 0,
+          currentRound: 1,
+          turnNumber: 1,
+          activePlayerId: null,
+          startingPlayerId: null,
+          roundWinners: {},
+          gameWinner: null,
+          roundEndTriggered: false,
+          isRoundEndModalOpen: false,
+          isReadyCheckActive: false,
+          // Clear other state
+          targetingMode: null,
+          floatingTexts: [],
+        }
+
+        // Update local state (this will broadcast delta in WebRTC mode)
+        setGameState(resetState)
+        gameStateRef.current = resetState
+
+        logger.info('[GameReset] Host reset game in WebRTC mode')
+
+        // Broadcast GAME_RESET message to all WebRTC guests
+        if (webrtcManagerRef.current) {
+          webrtcManagerRef.current.broadcastToGuests({
+            type: 'GAME_RESET',
+            senderId: webrtcManagerRef.current.getPeerId(),
+            data: {
+              players: resetPlayers.map(p => ({
+                id: p.id,
+                name: p.name,
+                color: p.color,
+                selectedDeck: p.selectedDeck,
+                isDummy: p.isDummy,
+                isDisconnected: p.isDisconnected,
+                autoDrawEnabled: p.autoDrawEnabled,
+                // Only send sizes, not full card arrays (guests create decks locally)
+                handSize: p.hand.length,
+                deckSize: p.deck.length,
+                discardSize: p.discard.length,
+                // For dummy players, send minimized card data so guests can see them
+                ...(p.isDummy && {
+                  hand: p.hand.map((card: any) => ({
+                    id: card.id,
+                    baseId: card.baseId,
+                    name: card.name,
+                    imageUrl: card.imageUrl,
+                    power: card.power,
+                    powerModifier: card.powerModifier,
+                    ability: card.ability,
+                    ownerId: card.ownerId,
+                    color: card.color,
+                    deck: card.deck,
+                    isFaceDown: card.isFaceDown,
+                    types: card.types,
+                    faction: card.faction,
+                    statuses: card.statuses,
+                  })),
+                  deck: p.deck.map((card: any) => ({
+                    id: card.id,
+                    baseId: card.baseId,
+                    name: card.name,
+                    imageUrl: card.imageUrl,
+                    power: card.power,
+                    powerModifier: card.powerModifier,
+                    ability: card.ability,
+                    ownerId: card.ownerId,
+                    color: card.color,
+                    deck: card.deck,
+                    isFaceDown: card.isFaceDown,
+                    types: card.types,
+                    faction: card.faction,
+                    statuses: card.statuses,
+                  })),
+                  discard: p.discard.map((card: any) => ({
+                    id: card.id,
+                    baseId: card.baseId,
+                    name: card.name,
+                    imageUrl: card.imageUrl,
+                    power: card.power,
+                    powerModifier: card.powerModifier,
+                    ability: card.ability,
+                    ownerId: card.ownerId,
+                    color: card.color,
+                    deck: card.deck,
+                    isFaceDown: card.isFaceDown,
+                    types: card.types,
+                    faction: card.faction,
+                    statuses: card.statuses,
+                  })),
+                }),
+                score: p.score,
+                isReady: p.isReady,
+                announcedCard: p.announcedCard,
+              })),
+              gameMode: resetState.gameMode,
+              isPrivate: resetState.isPrivate,
+              activeGridSize: resetState.activeGridSize,
+              dummyPlayerCount: resetState.dummyPlayerCount,
+              autoAbilitiesEnabled: resetState.autoAbilitiesEnabled,
+              isGameStarted: false,
+              currentPhase: 0,
+              currentRound: 1,
+              turnNumber: 1,
+              activePlayerId: null,
+              startingPlayerId: null,
+              roundWinners: {},
+              gameWinner: null,
+              isRoundEndModalOpen: false,
+              isReadyCheckActive: false,
+            },
+            timestamp: Date.now()
+          })
+          logger.info('[GameReset] Host broadcasted GAME_RESET message to guests')
+        }
+      } else {
+        // Guest: Send reset request to host
+        logger.info('[GameReset] Guest requesting game reset from host')
+        if (webrtcManagerRef.current) {
+          webrtcManagerRef.current.sendAction('REQUEST_GAME_RESET', {})
+        }
       }
     } else if (ws.current?.readyState === WebSocket.OPEN) {
       // WebSocket mode: Send RESET_GAME message to server
@@ -704,7 +712,7 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
         gameId: gameStateRef.current.gameId,
       }))
     }
-  }, [ws, webrtcManagerRef, gameStateRef, setGameState, createDeck, webrtcEnabled])
+  }, [ws, webrtcManagerRef, gameStateRef, setGameState, createDeck, webrtcIsHostRef])
 
   return {
     toggleActivePlayer,

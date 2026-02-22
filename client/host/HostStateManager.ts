@@ -32,8 +32,21 @@ export class HostStateManager {
    * Set the initial game state
    */
   setInitialState(state: GameState): void {
+    // Validate state before setting
+    logger.info(`[HostStateManager] setInitialState called: state=${!!state}, players=${state?.players?.length || 0}, gameId=${state?.gameId}, localPlayerId=${this.localPlayerId}`)
+    if (!state || !state.players || state.players.length === 0) {
+      logger.error('[HostStateManager] Invalid initial state - no players, rejecting')
+      return
+    }
     this.currentState = state
-    logger.info('[HostStateManager] Initial state set')
+
+    // If localPlayerId is not set yet, default to player 1 (host is always player 1)
+    if (!this.localPlayerId && state.players.length > 0) {
+      this.localPlayerId = state.players[0].id
+      logger.info(`[HostStateManager] Auto-set localPlayerId to ${this.localPlayerId} (first player)`)
+    }
+
+    logger.info('[HostStateManager] Initial state set with ' + state.players.length + ' players')
   }
 
   /**
@@ -56,6 +69,12 @@ export class HostStateManager {
    * Called when host (as a player) makes an action
    */
   updateFromLocal(newState: GameState, excludePeerId?: string): void {
+    // Validate new state
+    if (!newState || !newState.players || newState.players.length === 0) {
+      logger.error('[HostStateManager] Invalid newState - no players, rejecting update')
+      return
+    }
+
     if (!this.currentState) {
       logger.warn('[HostStateManager] No current state, setting as initial')
       this.currentState = newState
@@ -260,8 +279,9 @@ export class HostStateManager {
 
   /**
    * Update player property (name, color, deck, etc.)
+   * @param skipBroadcast - if true, don't broadcast (used when game start will broadcast immediately after)
    */
-  updatePlayerProperty(playerId: number, properties: Partial<GameState['players'][0]>): void {
+  updatePlayerProperty(playerId: number, properties: Partial<GameState['players'][0]>, skipBroadcast: boolean = false): void {
     if (!this.currentState) {return}
 
     const updatedPlayers = this.currentState.players.map(p =>
@@ -276,6 +296,12 @@ export class HostStateManager {
     const delta = createDeltaFromStates(this.currentState, updatedState, this.localPlayerId || 0)
     this.currentState = updatedState
 
+    // Skip broadcast if requested (e.g., when game start will broadcast immediately)
+    if (skipBroadcast) {
+      logger.info(`[HostStateManager] Skipped broadcast for player ${playerId} property update (skipBroadcast=true)`)
+      return
+    }
+
     if (!isDeltaEmpty(delta)) {
       this.broadcastDelta(delta)
     } else {
@@ -286,23 +312,48 @@ export class HostStateManager {
 
   /**
    * Mark player as ready
+   * IMPORTANT: If this makes all players ready, we skip the intermediate broadcast
+   * and only broadcast the final game-started state to avoid race conditions
    */
   setPlayerReady(playerId: number, isReady: boolean): void {
-    this.updatePlayerProperty(playerId, { isReady })
+    logger.info(`[HostStateManager] setPlayerReady called: playerId=${playerId}, isReady=${isReady}, hasState=${!!this.currentState}`)
+
+    // Check if marking this player ready will start the game
+    // We need to check BEFORE calling updatePlayerProperty
+    let willStartGame = false
+    if (isReady && this.currentState) {
+      const realPlayers = this.currentState.players.filter(p => !p.isDummy && !p.isDisconnected)
+      // Check if all OTHER players are already ready (or if this is the only real player)
+      const otherPlayers = realPlayers.filter(p => p.id !== playerId)
+      const otherPlayersReady = otherPlayers.length === 0 || otherPlayers.every(p => p.isReady)
+      willStartGame = otherPlayersReady
+      logger.info(`[HostStateManager] Will start game after marking player ${playerId} ready: ${willStartGame} (otherPlayers=${otherPlayers.length}, allReady=${otherPlayersReady})`)
+    }
+
+    // Update player ready status
+    // Skip broadcast if game will start immediately after (prevents race condition)
+    this.updatePlayerProperty(playerId, { isReady }, willStartGame)
 
     // Check if all real players are ready
     if (isReady && this.currentState) {
       const realPlayers = this.currentState.players.filter(p => !p.isDummy && !p.isDisconnected)
       const allReady = realPlayers.length > 0 && realPlayers.every(p => p.isReady)
 
+      logger.info(`[HostStateManager] Ready check: realPlayers=${realPlayers.length}, allReady=${allReady}, gameStarted=${this.currentState.isGameStarted}`)
+
       if (allReady && !this.currentState.isGameStarted) {
         this.startGame()
       }
+    } else if (!this.currentState) {
+      logger.warn('[HostStateManager] No current state - cannot check ready status')
     }
   }
 
   /**
    * Start the game
+   * - Draw initial hands for ALL players (host, guests, dummies)
+   * - Perform Preparation phase for starting player
+   * - Broadcast personalized CARD_STATE to each guest immediately
    */
   startGame(): void {
     if (!this.currentState || !this.localPlayerId) {
@@ -317,9 +368,8 @@ export class HostStateManager {
     const startingPlayerId = allPlayers[randomIndex].id
 
     // Create new state with game started
-    const oldState = this.currentState
     let newState: GameState = {
-      ...oldState,
+      ...this.currentState,
       isReadyCheckActive: false,
       isGameStarted: true,
       startingPlayerId: startingPlayerId,
@@ -327,15 +377,12 @@ export class HostStateManager {
       currentPhase: 0  // Start at Preparation phase
     }
 
-    // Draw initial hands (6 cards) for HOST and DUMMY players only
-    // Guests will draw their own cards from their local decks when they receive GAME_START
+    // Draw initial hands (6 cards) for ALL players
+    // Each guest receives their personalized hand in broadcastGameState
     newState.players = newState.players.map(player => {
       logger.info(`[HostStateManager] Player ${player.id}: hand=${player.hand.length}, deck=${player.deck.length}, isDummy=${player.isDummy}`)
-      // Only draw for host (local player) and dummies
-      // Guests have their own local deck data
-      const isHostOrDummy = player.id === this.localPlayerId || player.isDummy
 
-      if (isHostOrDummy && player.hand.length === 0 && player.deck.length > 0) {
+      if (player.hand.length === 0 && player.deck.length > 0) {
         const cardsToDraw = 6
         const newHand = [...player.hand]
         const newDeck = [...player.deck]
@@ -357,36 +404,18 @@ export class HostStateManager {
 
     logger.info(`[HostStateManager] Preparation phase completed, now in phase ${newState.currentPhase} (Setup)`)
 
-    // Create delta
-    const delta = createDeltaFromStates(oldState, newState, this.localPlayerId)
+    // Update current state
     this.currentState = newState
 
-    // Broadcast GAME_START first (for immediate feedback)
-    this.connectionManager.broadcast({
-      type: 'GAME_START',
-      senderId: this.connectionManager.getPeerId(),
-      data: {
-        startingPlayerId,
-        activePlayerId: startingPlayerId,
-        isGameStarted: true,
-        isReadyCheckActive: false
-      },
-      timestamp: Date.now()
+    // Log final state for debugging
+    newState.players.forEach(p => {
+      logger.info(`[HostStateManager] Final state - Player ${p.id}: hand=${p.hand.length}, deck=${p.deck.length}, discard=${p.discard.length}`)
     })
 
-    // Then broadcast the delta or full state
-    if (!isDeltaEmpty(delta)) {
-      setTimeout(() => {
-        this.broadcastDelta(delta)
-        logger.info('[HostStateManager] Broadcasted initial draw delta with Preparation phase')
-      }, 50)
-    } else {
-      // Delta system is stub, broadcast full state
-      setTimeout(() => {
-        this.connectionManager.broadcastGameState(newState)
-        logger.info('[HostStateManager] Broadcasted full state for game start (delta system is stub)')
-      }, 50)
-    }
+    // Broadcast personalized CARD_STATE to all guests IMMEDIATELY (no delay!)
+    // Each guest receives their own full hand/deck + sizes for other players
+    this.connectionManager.broadcastGameState(newState)
+    logger.info('[HostStateManager] Broadcasted personalized CARD_STATE to all guests')
   }
 
   /**

@@ -392,6 +392,7 @@ export const useAppAbilities = ({
         clearValidTargets,
         validTargets,
         handleLineSelection,
+        setTargetingMode,
       })
       if (handled) {return}
     }
@@ -434,6 +435,7 @@ export const useAppAbilities = ({
     validTargets,
     clearTargetingMode,
     activateAbility,
+    setTargetingMode,
   ])
 
   /**

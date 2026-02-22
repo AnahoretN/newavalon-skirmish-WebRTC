@@ -67,7 +67,7 @@ export interface Card {
   deck: DeckType | SpecialItemType;
   name: string;
   imageUrl: string; // The primary Cloudinary URL.
-  fallbackImage: string; // The local fallback image path.
+  fallbackImage?: string; // The local fallback image path (optional).
   power: number;
   powerModifier?: number; // Adjustment to the base power.
   bonusPower?: number; // Temporary power bonus from passive effects (recalculated on board updates).

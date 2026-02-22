@@ -5,7 +5,7 @@ import {
   updateReadyStatuses,
   initializeCardReadyStatuses,
   removeAllReadyStatuses as removeAllReadyStatusesShared,
-  getReadyStatusForPhase,
+  // getReadyStatusForPhase,  // eslint-disable-line - unused
   hasStatus,
   hasReadyStatus,
   addReadyStatus,
@@ -13,7 +13,7 @@ import {
   hasReadyStatusForPhase,
   hasReadyAbilityInCurrentPhase,
   READY_STATUS,
-  type ReadyStatusType,
+  // type ReadyStatusType,  // eslint-disable-line - unused
   type AbilityActivationType,
   type CardAbilityInfo
 } from '../../shared/abilities/index.js'
@@ -34,14 +34,6 @@ export {
 export const READY_STATUS_DEPLOY = READY_STATUS.DEPLOY
 export const READY_STATUS_SETUP = READY_STATUS.SETUP
 export const READY_STATUS_COMMIT = READY_STATUS.COMMIT
-
-// Use console.log instead of logger to avoid Node.js dependency issues
-// when this file is imported by client code via @server alias
-const debugLog = (...args: unknown[]) => {
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('[autoAbilities]', ...args)
-  }
-}
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // Parameters with _ prefix are used in nested functions/reducers, disable warning
@@ -930,20 +922,6 @@ export const getCardAbilityTypes = (card: Card): AbilityActivationType[] => {
 /**
  * Get all cards that have a specific ability type (includes both baseId and baseIdAlt)
  */
-const getCardsWithAbilityType = (activationType: AbilityActivationType): string[] => {
-  const cardIds: string[] = []
-  CARD_ABILITIES
-    .filter(a => a.activationType === activationType)
-    .forEach(a => {
-      cardIds.push(a.baseId)
-      if (a.baseIdAlt) {
-        cardIds.push(...a.baseIdAlt)
-      }
-    })
-  // Remove duplicates
-  return [...new Set(cardIds)]
-}
-
 /**
  * Get ability info for a card - provides data needed by shared ready system
  */
@@ -1099,11 +1077,6 @@ export const getCardAbilityAction = (
   const actorId = card.ownerId ?? localPlayerId ?? 0
 
   const phaseIndex = gameState.currentPhase
-
-  // Check if card has a phase-specific ability for current phase
-  const hasPhaseSpecificAbility =
-    (phaseIndex === 1 && abilities.some(a => a.activationType === 'setup')) ||
-    (phaseIndex === 3 && abilities.some(a => a.activationType === 'commit'))
 
   // Priority 1: Setup ability (ONLY in Setup phase / phase 1)
   if (phaseIndex === 1) {

@@ -91,90 +91,62 @@ export function useReadyCheck(props: UseReadyCheckProps) {
     // WebRTC P2P mode - host
     if (isWebRTCMode && webrtcManager.current && webrtcIsHostRef.current && localPlayerIdRef.current !== null) {
       logger.info('[playerReady] Host marking self as ready via WebRTC')
-      setGameState((prev: GameState) => {
-        const updatedPlayers = prev.players.map((p: any) =>
-          p.id === localPlayerIdRef.current ? { ...p, isReady: true } : p
-        )
-        const newState = { ...prev, players: updatedPlayers }
+      const playerId = localPlayerIdRef.current
 
-        const realPlayers = newState.players.filter((p: any) => !p.isDummy && !p.isDisconnected)
-        const allReady = realPlayers.length > 0 && realPlayers.every((p: any) => p.isReady)
+      // Call stateManager directly - this handles game start when all ready
+      const stateManager = webrtcManager.current.getStateManager?.()
+      logger.info(`[playerReady] State manager found: ${!!stateManager}`)
+      if (stateManager) {
+        const currentState = stateManager.getState()
+        logger.info(`[playerReady] State manager state: ${!!currentState}, players: ${currentState?.players?.length || 0}`)
+        stateManager.setPlayerReady(playerId, true)
+        logger.info('[playerReady] Called setPlayerReady')
 
-        if (allReady && !newState.isGameStarted) {
-          logger.info('[playerReady] All players ready! Starting game...')
-          const allPlayers = newState.players.filter((p: any) => !p.isDisconnected)
-          const randomIndex = Math.floor(Math.random() * allPlayers.length)
-          const startingPlayerId = allPlayers[randomIndex].id
+        // IMPORTANT: After setPlayerReady, get the updated state and sync React state
+        // NOTE: setPlayerReady returns synchronously, but game may start later when other guests ready
+        // So we need to poll for game start to update UI immediately when game starts
+        const initialUpdatedState = stateManager.getState()
+        logger.info(`[playerReady] Got initial state: ${!!initialUpdatedState}, type=${typeof initialUpdatedState}`)
 
-          const finalState = { ...newState }
-          finalState.isReadyCheckActive = false
-          finalState.isGameStarted = true
-          finalState.startingPlayerId = startingPlayerId
-          finalState.activePlayerId = startingPlayerId
-          finalState.currentPhase = 0
-
-          // Draw initial hands
-          finalState.players = finalState.players.map((player: any) => {
-            if (player.hand.length === 0 && player.deck.length > 0) {
-              const cardsToDraw = 6
-              const newHand = [...player.hand]
-              const newDeck = [...player.deck]
-
-              for (let i = 0; i < cardsToDraw && i < newDeck.length; i++) {
-                const drawnCard = newDeck[0]
-                newDeck.splice(0, 1)
-                newHand.push(drawnCard)
-              }
-
-              logger.info(`[playerReady] Drew initial ${newHand.length} cards for player ${player.id}`)
-              return { ...player, hand: newHand, deck: newDeck }
-            }
-            return player
-          })
-
-          // Preparation phase for starting player
-          const startingPlayer = finalState.players.find((p: any) => p.id === startingPlayerId)
-          if (startingPlayer && startingPlayer.deck.length > 0) {
-            const drawnCard = startingPlayer.deck[0]
-            const newDeck = [...startingPlayer.deck.slice(1)]
-            const newHand = [...startingPlayer.hand, drawnCard]
-
-            finalState.players = finalState.players.map((p: any) =>
-              p.id === startingPlayerId
-                ? { ...p, deck: newDeck, hand: newHand, readySetup: false, readyCommit: false }
-                : p
-            )
-            finalState.currentPhase = 1
-          }
-
-          // Broadcast the final complete state (not delta)
-          logger.info('[playerReady] Broadcasting final state after game start')
-          webrtcManager.current!.broadcastGameState(finalState)
-
-          webrtcManager.current!.broadcastToGuests({
-            type: 'GAME_START',
-            senderId: webrtcManager.current!.getPeerId(),
-            data: {
-              startingPlayerId,
-              activePlayerId: startingPlayerId,
-              isGameStarted: true,
-              isReadyCheckActive: false
-            },
-            timestamp: Date.now()
-          })
-
-          return finalState
+        // Sync initial state
+        if (initialUpdatedState) {
+          logger.info(`[playerReady] Syncing initial React state: phase=${initialUpdatedState.currentPhase}, isGameStarted=${initialUpdatedState.isGameStarted}`)
+          setGameState(initialUpdatedState)
         }
 
-        webrtcManager.current!.broadcastToGuests({
+        // Poll for game start (in case other guests become ready and game starts)
+        // This prevents the double-click bug where host doesn't see game start
+        if (!initialUpdatedState?.isGameStarted) {
+          logger.info('[playerReady] Game not started yet, polling for game start...')
+          let pollCount = 0
+          const maxPolls = 50 // 5 seconds (50 * 100ms)
+
+          const pollInterval = setInterval(() => {
+            pollCount++
+            const newState = stateManager.getState()
+
+            if (newState?.isGameStarted) {
+              clearInterval(pollInterval)
+              logger.info(`[playerReady] Game started detected! Syncing state: phase=${newState.currentPhase}, activePlayer=${newState.activePlayerId}`)
+              logger.info(`[playerReady] Player 1 hand: ${newState.players?.[0]?.hand?.length || 0}, deck: ${newState.players?.[0]?.deck?.length || 0}`)
+              setGameState(newState)
+            } else if (pollCount >= maxPolls) {
+              clearInterval(pollInterval)
+              logger.warn('[playerReady] Polling timeout - game may not have started')
+            }
+          }, 100)
+        }
+
+        // Broadcast to guests so they see the ready status
+        webrtcManager.current.broadcastToGuests({
           type: 'HOST_READY',
-          senderId: webrtcManager.current!.getPeerId(),
-          playerId: localPlayerIdRef.current ?? undefined,
+          senderId: webrtcManager.current.getPeerId(),
+          playerId,
           timestamp: Date.now()
         })
-
-        return newState
-      })
+      } else {
+        logger.error('[playerReady] State manager not found!')
+      }
       return
     }
 

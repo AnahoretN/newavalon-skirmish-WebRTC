@@ -664,7 +664,8 @@ const Header = memo<HeaderProps>(({
 
         {/* Right side: Ready button + divider + Exit */}
         <div className="flex items-center space-x-2">
-          {/* Ready button - shows I'm ready [x/y] */}
+          {/* Ready button - shows I'm ready [x/y] when game not started */}
+          {/* Reset Game button - shows when game is started (available to all players) */}
           {!isGameStarted && players && (
             <button
               onClick={onPlayerReady}
@@ -679,13 +680,11 @@ const Header = memo<HeaderProps>(({
             </button>
           )}
 
-          {/* Reset Game button (only visible when game is started) */}
           {isGameStarted && onResetGame && (
             <button
               onClick={onResetGame}
-              disabled={!isHost}
-              className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded text-sm disabled:bg-gray-600 disabled:opacity-70 disabled:cursor-not-allowed"
-              title="Reset game to lobby (keeps players and decks)"
+              className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded text-sm"
+              title={isHost ? "Reset game to lobby (keeps players and decks)" : "Request reset game to lobby (only host can reset)"}
             >
               {t('resetGame')}
             </button>

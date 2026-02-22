@@ -2,12 +2,13 @@
  * Common types used across hooks
  */
 
-import type { WebrtcManagerNew } from '../../host/WebrtcManager'
+import type { HostManager } from '../../host/HostManager'
+import type { GuestConnectionManager } from '../../host/GuestConnection'
 
 export type ConnectionStatus = 'Connecting' | 'Connected' | 'Disconnected'
 
-// Re-export WebRTC manager type for use in hooks
-export type WebRTCManager = WebrtcManagerNew
+// Unified WebRTC manager type - can be either HostManager or GuestConnectionManager
+export type WebRTCManager = HostManager | GuestConnectionManager
 
 /**
  * Props for useGameState hook

@@ -7,11 +7,10 @@ import { rawJsonData, getCardDefinition, getCardDefinitionByName, commandCardIds
 import { createInitialBoard, recalculateBoardStatuses } from '@shared/utils/boardUtils'
 import { logger } from '../utils/logger'
 import { deepCloneState, TIMING } from '../utils/common'
-import { getWebrtcManagerNew, type WebrtcManagerNew } from '../host/WebrtcManager'
 import type { WebrtcEvent } from '../host/types'
 import { getWebRTCEnabled } from './useWebRTCEnabled'
 import type { WebrtcMessage } from '../host/types'
-import { toggleActivePlayer as toggleActivePlayerPhase, performPreparationPhase } from '../host/PhaseManagement'
+import { toggleActivePlayer as toggleActivePlayerPhase } from '../host/PhaseManagement'
 import { recalculateAllReadyStatuses } from '../utils/autoAbilities'
 import {
   applyStateDelta,
@@ -133,7 +132,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   const [contentLoaded, setContentLoaded] = useState(!!rawJsonData)
 
   // WebRTC P2P mode state
-  const [webrtcEnabled, setWebrtcEnabled] = useState(false)
   const [webrtcHostId, setWebrtcHostId] = useState<string | null>(null)
   const [webrtcIsHost, setWebrtcIsHost] = useState(false)
   const webrtcIsHostRef = useRef<boolean>(false)  // Ref to always have current value
@@ -148,8 +146,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   const playerTokenRef = useRef<string | undefined>()
   const receivedServerStateRef = useRef<boolean>(false)
 
-  // WebRTC manager ref
-  const webrtcManagerRef = useRef<WebrtcManagerNew | null>(null)
+  // WebRTC manager ref - can be HostManager or GuestConnectionManager
+  // Using 'any' temporarily to avoid complex type checking - both managers have compatible APIs
+  const webrtcManagerRef = useRef<any>(null)
 
   // Store full deck data from guests for deck view feature
   // This preserves full card data (name, imageUrl, etc.) that guests send via DECK_DATA_UPDATE
@@ -158,6 +157,13 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
   // Ref for setGameStateWithDelta (used in callbacks)
   const setGameStateWithDeltaRef = useRef<(updater: React.SetStateAction<GameState>, sourcePlayerId?: number) => void>(() => {})
+
+  // Ref for startGuestReconnection (to avoid circular dependency in handleWebrtcEvent)
+  const startGuestReconnectionRef = useRef<((hostPeerId: string) => void) | null>(null)
+
+  // Track last CARD_STATE timestamp to ignore stale messages
+  // This prevents race conditions where an older state update arrives after a newer one
+  const lastCardStateTimestampRef = useRef<number>(0)
 
   // WebRTC P2P hook - handles WebRTC host/guest functions
   const webrtc = useWebRTC({
@@ -222,30 +228,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   useEffect(() => {
     webrtcIsHostRef.current = webrtcIsHost
   }, [webrtcIsHost])
-
-  // Initialize WebRTC manager
-  useEffect(() => {
-    // Check if WebRTC is enabled in settings
-    const webrtcSetting = getWebRTCEnabled()
-    setWebrtcEnabled(webrtcSetting)
-
-    if (webrtcSetting) {
-      webrtcManagerRef.current = getWebrtcManagerNew()
-      logger.info('WebRTC manager initialized')
-
-      // Setup WebRTC event handlers
-      const cleanup = webrtcManagerRef.current.on((event: WebrtcEvent) => {
-        handleWebrtcEvent(event)
-      })
-
-      return () => {
-        cleanup()
-        // Don't destroy manager on unmount, just cleanup listeners
-        // Note: This cleanup runs on HMR and unmount - we only remove listeners
-      }
-    }
-    return undefined
-  }, [])
 
   // Auto-restore WebRTC session on page load
   useEffect(() => {
@@ -493,7 +475,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
   // Check URL for hostId parameter (WebRTC guest join)
   useEffect(() => {
-    if (!webrtcEnabled || !webrtcManagerRef.current) {return}
+    if (!getWebRTCEnabled() || !webrtcManagerRef.current) {return}
 
     const hash = window.location.hash.slice(1)
     if (!hash) {return}
@@ -506,7 +488,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       logger.info(`Found hostId in URL: ${hostId}, connecting as guest...`)
       connectAsGuest(hostId)
     }
-  }, [webrtcEnabled])
+  }, [webrtcIsHost])
 
   // Sync refs with state values
   useEffect(() => {
@@ -564,7 +546,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   // ==================== Host PeerId Broadcasting ====================
   // Host periodically broadcasts its current peerId so guests can reconnect after F5
   useEffect(() => {
-    if (!webrtcEnabled || !webrtcIsHostRef.current || !gameState?.gameId) {return}
+    if (!getWebRTCEnabled() || !webrtcIsHostRef.current || !gameState?.gameId) {return}
 
     const gameId = gameState.gameId
 
@@ -580,12 +562,12 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     const interval = setInterval(broadcast, 2000) // Broadcast every 2 seconds
 
     return () => clearInterval(interval)
-  }, [webrtcEnabled, gameState?.gameId])
+  }, [webrtcIsHost, gameState?.gameId])
 
   // ==================== Guest Auto-Reconnect ====================
   // Guests monitor for host peerId changes and auto-reconnect
   useEffect(() => {
-    if (!webrtcEnabled || webrtcIsHostRef.current || !gameState?.gameId) {return}
+    if (!getWebRTCEnabled() || webrtcIsHostRef.current || !gameState?.gameId) {return}
 
     const gameId = gameState.gameId
 
@@ -602,7 +584,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           logger.info('[Guest Auto-Reconnect] Successfully reconnected to host')
           setConnectionStatus('Connected')
         })
-        .catch((err) => {
+        .catch((err: unknown) => {
           logger.error('[Guest Auto-Reconnect] Failed to reconnect:', err)
           setConnectionStatus('Disconnected')
         })
@@ -642,7 +624,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       window.removeEventListener('storage', handleStorageChange)
       clearInterval(checkInterval)
     }
-  }, [webrtcEnabled, gameState?.gameId, webrtcHostId])
+  }, [webrtcIsHost, gameState?.gameId, webrtcHostId])
 
   // Auto-cleanup old floating texts (highlights persist while ability mode is active)
   useEffect(() => {
@@ -715,25 +697,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         setConnectionStatus('Disconnected')
         setIsReconnecting(true)  // Show reconnection modal to all players
 
-        // Start automatic reconnection for guests
-        if (!webrtcIsHostRef.current && webrtcHostId && gameState) {
-          // Store current state for reconnection
-          try {
-            const reconnectionData = {
-              hostPeerId: webrtcHostId,
-              playerId: localPlayerId,
-              gameState: gameState,
-              timestamp: Date.now(),
-              isHost: false
-            }
-            localStorage.setItem('webrtc_reconnection_data', JSON.stringify(reconnectionData))
-            logger.info('[Reconnection] Stored reconnection data before disconnect')
-
-            // Start reconnection
-            startGuestReconnection(webrtcHostId)
-          } catch (e) {
-            logger.error('[Reconnection] Failed to store data:', e)
-          }
+        // Start automatic reconnection for guests (with slight delay to avoid rapid reconnection attempts)
+        if (!webrtcIsHostRef.current && webrtcHostId && startGuestReconnectionRef.current) {
+          setTimeout(() => {
+            startGuestReconnectionRef.current?.(webrtcHostId)
+          }, 500)
         }
         break
 
@@ -749,7 +717,21 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         logger.error('WebRTC error:', event.data)
         break
     }
-  }, [gameState, localPlayerId, webrtcHostId, webrtcIsHost])
+  }, [webrtcHostId, setConnectionStatus, setIsReconnecting, setReconnectProgress, recentlyRestoredFromStorageRef, webrtcIsHostRef])
+
+  // Subscribe to WebRTC manager events
+  useEffect(() => {
+    if (!webrtcManagerRef.current) {
+      return
+    }
+
+    // Subscribe to manager events
+    const cleanup = webrtcManagerRef.current.on((event: WebrtcEvent) => {
+      handleWebrtcEvent(event)
+    })
+
+    return cleanup
+  }, [handleWebrtcEvent])
 
   /**
    * Handle WebRTC guest join request (host only)
@@ -2363,7 +2345,14 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       case 'CARD_STATE':
         // New binary card state update
-        logger.info(`[handleWebrtcMessage] Received CARD_STATE`)
+        // Ignore stale messages (older than the last one we received)
+        // This prevents race conditions where rapid state updates arrive out of order
+        if (message.timestamp && message.timestamp <= lastCardStateTimestampRef.current) {
+          logger.warn(`[handleWebrtcMessage] Ignoring stale CARD_STATE (timestamp=${message.timestamp}, last=${lastCardStateTimestampRef.current})`)
+          break
+        }
+
+        logger.info(`[handleWebrtcMessage] Received CARD_STATE with timestamp=${message.timestamp}`)
         if (typeof message.data === 'string') {
           // Decode base64 to Uint8Array (PeerJS converts to string)
           try {
@@ -2379,6 +2368,10 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                 prev,
                 localPlayerIdRef.current || prev.localPlayerId
               )
+              // Update timestamp after successfully applying state
+              if (message.timestamp) {
+                lastCardStateTimestampRef.current = message.timestamp
+              }
               return updatedState.gameState
             })
           } catch (e) {
@@ -2392,6 +2385,10 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               prev,
               localPlayerIdRef.current || prev.localPlayerId
             )
+            // Update timestamp after successfully applying state
+            if (message.timestamp) {
+              lastCardStateTimestampRef.current = message.timestamp
+            }
             return updatedState.gameState
           })
         }
@@ -2886,85 +2883,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               logger.info(`[PLAYER_READY] Broadcasted ready status for player ${message.playerId}`)
             }
 
-            // Check if all real players are ready
-            const realPlayers = newState.players.filter(p => !p.isDummy && !p.isDisconnected)
-            const allReady = realPlayers.length > 0 && realPlayers.every(p => p.isReady)
-
-            if (allReady && !newState.isGameStarted) {
-              logger.info('[PLAYER_READY] All players ready! Starting game...')
-              // All players ready - start the game!
-              const allPlayers = newState.players.filter(p => !p.isDisconnected)
-              const randomIndex = Math.floor(Math.random() * allPlayers.length)
-              const startingPlayerId = allPlayers[randomIndex].id
-
-              // Prepare final state with cards drawn for all players
-              let finalState = { ...newState }
-              finalState.isReadyCheckActive = false
-              finalState.isGameStarted = true
-              finalState.startingPlayerId = startingPlayerId
-              finalState.activePlayerId = startingPlayerId
-              finalState.currentPhase = 0  // Preparation phase
-
-              // Draw cards for each player
-              finalState.players = finalState.players.map(player => {
-                if (player.hand.length === 0 && player.deck.length > 0) {
-                  const cardsToDraw = 6
-                  const newHand = [...player.hand]
-                  const newDeck = [...player.deck]
-
-                  for (let i = 0; i < cardsToDraw && i < newDeck.length; i++) {
-                    const drawnCard = newDeck[0]
-                    newDeck.splice(0, 1)
-                    newHand.push(drawnCard)
-                  }
-
-                  logger.info(`[PLAYER_READY] Drew ${newHand.length} cards for player ${player.id}`)
-                  return { ...player, hand: newHand, deck: newDeck }
-                }
-                return player
-              })
-
-              // IMPORTANT: Perform Preparation phase for starting player (draws 7th card, transitions to Setup)
-              // This MUST be done before creating minimalState for broadcast
-              finalState = performPreparationPhase(finalState, startingPlayerId)
-              logger.info(`[PLAYER_READY] Preparation phase completed, currentPhase=${finalState.currentPhase}`)
-
-              // Broadcast game start notification first
-              if (webrtcManagerRef.current) {
-                webrtcManagerRef.current.broadcastToGuests({
-                  type: 'GAME_START',
-                  senderId: webrtcManagerRef.current.getPeerId(),
-                  data: {
-                    startingPlayerId,
-                    activePlayerId: startingPlayerId,
-                    currentPhase: finalState.currentPhase,  // Send current phase (should be 1 = Setup after Preparation)
-                    isGameStarted: true,
-                    isReadyCheckActive: false
-                  },
-                  timestamp: Date.now()
-                })
-
-                // Send ACTIVE_PLAYER_CHANGED to sync phase and active player
-                // This is a small message with only phase info, not full gameState
-                setTimeout(() => {
-                  logger.info(`[PLAYER_READY] Sending ACTIVE_PLAYER_CHANGED after game start: activePlayerId=${startingPlayerId}, currentPhase=${finalState.currentPhase}`)
-                  if (webrtcManagerRef.current) {
-                    webrtcManagerRef.current.broadcastToGuests({
-                      type: 'ACTIVE_PLAYER_CHANGED',
-                      senderId: webrtcManagerRef.current.getPeerId(),
-                      data: {
-                        activePlayerId: finalState.activePlayerId,
-                        currentPhase: finalState.currentPhase,
-                        turnNumber: finalState.turnNumber
-                      },
-                      timestamp: Date.now()
-                    })
-                  }
-                }, 100)
-              }
-
-              return finalState
-            }
+            // NOTE: Game start is now handled by HostStateManager.startGame()
+            // This happens via setPlayerReady -> setPlayerReady in HostStateManager
+            // No need to duplicate logic here
 
             return newState
           })
@@ -3061,21 +2982,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         receivedServerStateRef.current = true
         logger.info('[handleWebrtcMessage] Game starting!', message.data)
         logger.info(`[GAME_START] Received data: startingPlayerId=${message.data?.startingPlayerId}, activePlayerId=${message.data?.activePlayerId}, currentPhase=${message.data?.currentPhase}, isGameStarted=${message.data?.isGameStarted}`)
-        // Log current deck/hand sizes before applying GAME_START
-        if (gameStateRef.current) {
-          logger.info(`[GAME_START] Current phase before: ${gameStateRef.current.currentPhase}`)
-          gameStateRef.current.players.forEach(p => {
-            logger.info(`[GAME_START] Before: Player ${p.id} - deck: ${p.deck.length}, hand: ${p.hand.length}`)
-          })
-        }
+
         if (message.data) {
           setGameState(prev => {
-            // Log sizes before drawing
-            logger.info(`[GAME_START] Processing for localPlayerId=${localPlayerIdRef.current}`)
-            prev.players.forEach(p => {
-              logger.info(`[GAME_START] Player ${p.id} before: deck=${p.deck.length}, hand=${p.hand.length}`)
-            })
-
             const startingPlayerId = message.data.startingPlayerId ?? message.data.activePlayerId
             const newState = {
               ...prev,
@@ -3083,45 +2992,10 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               isReadyCheckActive: false,
               startingPlayerId: startingPlayerId,
               activePlayerId: message.data.activePlayerId,
-              // IMPORTANT: Use phase from host if provided, otherwise keep current phase
-              // Host sends currentPhase=1 (Setup) after executing Preparation phase
               currentPhase: message.data.currentPhase ?? prev.currentPhase
             }
 
-            // Draw initial hand (6 cards) for the local player only
-            // Other players' deck/hand sizes will be updated via STATE_UPDATE from host
-            const localPlayer = newState.players.find(p => p.id === localPlayerIdRef.current)
-            if (localPlayer && localPlayer.hand.length === 0 && localPlayer.deck.length > 0) {
-              const cardsToDraw = 6
-              const newHand = [...localPlayer.hand]
-              const newDeck = [...localPlayer.deck]
-
-              for (let i = 0; i < cardsToDraw && i < newDeck.length; i++) {
-                const drawnCard = newDeck[0]
-                newDeck.splice(0, 1)
-                newHand.push(drawnCard)
-              }
-
-              // Update the local player in players array
-              newState.players = newState.players.map(p =>
-                p.id === localPlayerIdRef.current
-                  ? { ...p, hand: newHand, deck: newDeck }
-                  : p
-              )
-
-              logger.info(`[GAME_START] Drew ${newHand.length} cards for local player ${localPlayerIdRef.current}, deck now has ${newDeck.length} cards`)
-            }
-
-            // NOTE: Preparation phase for the starting player will be handled via STATE_UPDATE from host
-            // The host has already executed it and will send the correct state
-
-            // Log sizes after drawing
-            newState.players.forEach(p => {
-              logger.info(`[GAME_START] Player ${p.id} after: deck=${p.deck.length}, hand=${p.hand.length}`)
-            })
-
-            logger.info(`[GAME_START] Final state: currentPhase=${newState.currentPhase}, activePlayerId=${newState.activePlayerId}, startingPlayerId=${newState.startingPlayerId}`)
-
+            logger.info(`[GAME_START] Game started - waiting for CARD_STATE with personalized hand/deck from host`)
             return newState
           })
         }
@@ -4064,11 +3938,10 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         break
 
       case 'DECK_DATA_UPDATE':
-        // Guest sends their full deck to host (for deck view feature)
-        // Host stores this deck in a separate ref to preserve full card data (name, imageUrl, etc.)
-        // This data is used when someone requests to view this guest's deck
-        if (webrtcIsHostRef.current && message.playerId !== undefined && message.data?.deck) {
-          const guestPlayerId = message.playerId
+        // Guest sends their full deck to host OR host broadcasts deck data to guests
+        // This is used for the deck view feature - guests can view other guests' decks
+        if (message.playerId !== undefined && message.data?.deck) {
+          const sourcePlayerId = message.playerId
           const deckData = message.data.deck
           const deckSize = message.data.deckSize as number
           const isOptimizedFormat = message.data._format === 'baseIdArray'
@@ -4077,9 +3950,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
           if (isOptimizedFormat && typeof deckData === 'string') {
             // Optimized format: deserialize from baseId array
-            logger.info(`[DECK_DATA_UPDATE] Received optimized format for guest ${guestPlayerId}, deckSize=${deckSize}`)
+            logger.info(`[DECK_DATA_UPDATE] Received optimized format for player ${sourcePlayerId}, deckSize=${deckSize}`)
             try {
-              const reconstructedDeck = deserializeDeckCards(deckData, guestPlayerId)
+              const reconstructedDeck = deserializeDeckCards(deckData, sourcePlayerId)
               deckWithOwnerId = reconstructedDeck
             } catch (e) {
               logger.error(`[DECK_DATA_UPDATE] Failed to deserialize optimized deck:`, e)
@@ -4088,39 +3961,31 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           } else {
             // Legacy format: full card data array
             const deck = deckData as any[]
-            logger.info(`[DECK_DATA_UPDATE] Received legacy format (${deck.length} cards) for guest ${guestPlayerId}, first card: ${deck[0]?.name}`)
+            logger.info(`[DECK_DATA_UPDATE] Received deck data (${deck.length} cards) for player ${sourcePlayerId}`)
             deckWithOwnerId = deck.map(card => ({
               ...card,
-              ownerId: card.ownerId ?? guestPlayerId
+              ownerId: card.ownerId ?? sourcePlayerId
             }))
           }
 
-          // Store full deck data in ref (preserves name, imageUrl, order even when gameState is updated)
-          guestFullDecksRef.current.set(guestPlayerId, deckWithOwnerId)
+          // Host: Store full deck data in ref
+          // NOTE: Host does NOT broadcast here because HostManager.handleDeckDataUpdate already does the broadcast
+          // The broadcast from HostManager goes to all guests, and we don't want to duplicate it here
+          if (webrtcIsHostRef.current) {
+            guestFullDecksRef.current.set(sourcePlayerId, deckWithOwnerId)
+            logger.info(`[DECK_DATA_UPDATE] Host stored deck data for player ${sourcePlayerId}, skipping broadcast (already done in HostManager)`)
+          }
 
-          // Update gameState for immediate use and broadcast to all guests
-          setGameState(prev => {
-            const updatedState = {
-              ...prev,
-              players: prev.players.map(p => {
-                if (p.id === guestPlayerId) {
-                  return { ...p, deck: deckWithOwnerId, deckSize: deckSize }
-                }
-                return p
-              })
-            }
-
-            // Broadcast the updated deck order to all guests (excluding sender)
-            // This ensures everyone sees the same deck order after shuffle
-            if (webrtcManagerRef.current && message.senderId) {
-              setTimeout(() => {
-                webrtcManagerRef.current!.broadcastGameState(updatedState, message.senderId)
-                logger.info(`[DECK_DATA_UPDATE] Broadcasted updated deck order for player ${guestPlayerId} to all guests`)
-              }, 0)
-            }
-
-            return updatedState
-          })
+          // Update gameState for the player (both host and guests do this)
+          setGameState(prev => ({
+            ...prev,
+            players: prev.players.map(p => {
+              if (p.id === sourcePlayerId) {
+                return { ...p, deck: deckWithOwnerId, deckSize: deckSize }
+              }
+              return p
+            })
+          }))
         }
         break
 
@@ -4373,6 +4238,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     attemptReconnect()
   }, [isReconnecting, gameState, localPlayerId])
 
+  // Store function in ref for use in handleWebrtcEvent (avoid circular dependency)
+  startGuestReconnectionRef.current = startGuestReconnection
+
   const updateState = useCallback((newStateOrFn: GameState | ((prevState: GameState) => GameState)) => {
     setGameState((prevState) => {
       // Guard against undefined prevState
@@ -4401,9 +4269,35 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       }
 
       // Use WebRTC for P2P communication if enabled
-      if (webrtcEnabled && webrtcManagerRef.current) {
+      if (getWebRTCEnabled() && webrtcManagerRef.current) {
         if (webrtcIsHostRef.current) {
           // Host broadcasts full state to all guests (personalized for each)
+          // Also update HostStateManager to keep it in sync with React state
+          const isCreatingNewGame = !prevState.gameId && newState.gameId
+          logger.info(`[updateState] isCreatingNewGame=${isCreatingNewGame}, localPlayerId=${localPlayerIdRef.current}`)
+
+          const stateManager = webrtcManagerRef.current.getStateManager?.()
+          if (stateManager) {
+            if (isCreatingNewGame && !stateManager.getState()) {
+              // New game - set initial state
+              logger.info(`[updateState] Calling setInitialState with ${newState.players?.length || 0} players`)
+              stateManager.setInitialState(newState)
+
+              // Update localPlayerIdRef with the ID set by stateManager
+              // (HostStateManager auto-sets it to player 1)
+              const afterState = stateManager.getState()
+              if (afterState && afterState.players.length > 0) {
+                localPlayerIdRef.current = afterState.players[0].id
+                logger.info(`[updateState] Set localPlayerIdRef to ${localPlayerIdRef.current}`)
+              }
+            } else if (stateManager.getState()) {
+              // Existing game - use updateFromLocal to sync state
+              // This ensures HostStateManager.currentState stays in sync
+              stateManager.updateFromLocal(newState)
+              logger.info(`[updateState] Synced state to HostStateManager: ${newState.players?.length || 0} players`)
+            }
+          }
+
           webrtcManagerRef.current.broadcastGameState(newState)
           logger.info(`[updateState] Host broadcast state: phase=${newState.currentPhase}, activePlayer=${newState.activePlayerId}`)
 
@@ -4445,7 +4339,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       return newState
     })
-  }, [webrtcEnabled, webrtcIsHost, broadcastWebrtcState])
+  }, [webrtcIsHost, broadcastWebrtcState])
 
   // ==================== Game Lifecycle Functions ====================
   // These wrap the server connection functions and handle updateState for createGame
@@ -4568,7 +4462,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     abilityMode,
     setAbilityMode,
     createDeck,
-    webrtcEnabled,
   })
 
   // Destructure phase management functions for direct access

@@ -14,19 +14,24 @@ import {
 import {
   decodeSessionEvent
 } from '../utils/sessionMessages'
+import {
+  mergeDecodedState
+} from '../utils/gameCodec'
 
 /**
  * Handle CARD_STATE message
  *
- * CARD_STATE contains ONLY:
+ * CARD_STATE contains:
  * - Board cards (with baseId - guest uses local contentDatabase for full data)
  * - Board positions (row, col for each card)
  * - Card statuses and tokens
  * - Player metadata (id, color, score, isReady)
  * - Phase info (currentPhase, activePlayerId, currentRound)
+ * - Recipient player's hand/deck/discard (the local player)
+ * - Dummy players' hand/deck/discard (all players can control them)
  *
  * CARD_STATE does NOT contain:
- * - Player hands, decks, discard piles (synced via STATE_UPDATE_COMPACT)
+ * - Other real players' hands, decks, discard piles (preserved from existing state)
  * - Announced cards (synced via other messages)
  */
 export function handleCardStateMessage(
@@ -36,47 +41,10 @@ export function handleCardStateMessage(
 ): GameState {
   try {
     const decodedState = deserializeGameState(data, localPlayerId)
-    logger.info(`[WebRTCCodec] Received card state: ${decodedState.board?.length}x${decodedState.board?.[0]?.length || 0}, ${decodedState.players?.length || 0} players`)
+    logger.info(`[WebRTCCodec] Received card state: ${decodedState.board?.length}x${decodedState.board?.[0]?.length || 0}, ${decodedState.players?.length || 0} players, activeGridSize=${decodedState.activeGridSize}`)
 
-    // Merge decoded state into current state
-    const result = { ...currentState }
-
-    if (decodedState.players) {
-      result.players = decodedState.players.map(player => {
-        const existing = currentState.players.find(p => p.id === player.id)
-        if (existing) {
-          // Preserve ALL existing player data that is NOT sent in CARD_STATE:
-          // - name, hand, deck, discard, announcedCard, selectedDeck, boardHistory, isDummy, isDisconnected, teamId
-          return {
-            ...existing,
-            // Update only metadata that comes from CARD_STATE
-            score: player.score,
-            isReady: player.isReady,
-            // Update color from CARD_STATE (it's authoritative for color changes)
-            color: player.color
-          }
-        }
-        return player
-      })
-    }
-
-    if (decodedState.board) {
-      result.board = decodedState.board
-    }
-
-    if (decodedState.currentPhase !== undefined) {
-      result.currentPhase = decodedState.currentPhase
-    }
-
-    if (decodedState.activePlayerId !== undefined) {
-      result.activePlayerId = decodedState.activePlayerId
-    }
-
-    if (decodedState.currentRound !== undefined) {
-      result.currentRound = decodedState.currentRound
-    }
-
-    return result
+    // Use the mergeDecodedState utility for consistent merging
+    return mergeDecodedState(currentState, decodedState)
   } catch (e) {
     logger.error('[WebRTCCodec] Failed to deserialize card state:', e)
     return currentState

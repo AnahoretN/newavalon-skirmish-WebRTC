@@ -21,6 +21,7 @@ import { serializeDeltaBase64, serializeGameState } from '../utils/webrtcSeriali
 import { encodeAbilityEffect } from '../utils/abilityMessages'
 import { encodeSessionEvent } from '../utils/sessionMessages'
 import { AbilityEffectType } from '../types/codec'
+import { HostStateManager } from './HostStateManager'
 
 // Enable/disable optimized serialization
 const USE_OPTIMIZED_SERIALIZATION = true
@@ -30,6 +31,7 @@ export class HostConnectionManager {
   private connections: Map<string, DataConnection> = new Map()
   private guests: Map<string, GuestConnection> = new Map()
   private eventHandlers: Set<WebrtcEventHandler> = new Set()
+  private stateManager: HostStateManager
   private config: HostConfig
   // Track players who are in reconnection window (by playerId)
   private reconnectingPlayers: Map<number, {
@@ -49,6 +51,9 @@ export class HostConnectionManager {
     if (!webrtcEnabled) {
       logger.info('WebRTC mode is disabled')
     }
+
+    // Initialize state manager
+    this.stateManager = new HostStateManager(this)
   }
 
   /**
@@ -307,6 +312,17 @@ export class HostConnectionManager {
   broadcastGameState(gameState: GameState, excludePeerId?: string): void {
     if (this.connections.size === 0) {
       logger.debug('[broadcastGameState] No guests to broadcast to')
+      return
+    }
+
+    // Validate gameState before broadcasting
+    if (!gameState) {
+      logger.error('[broadcastGameState] Invalid gameState - null/undefined, skipping broadcast')
+      return
+    }
+
+    if (!gameState.players || !Array.isArray(gameState.players) || gameState.players.length === 0) {
+      logger.error('[broadcastGameState] Invalid gameState - no players array, skipping broadcast. GameState keys:', Object.keys(gameState))
       return
     }
 
@@ -913,6 +929,45 @@ export class HostConnectionManager {
       }
     })
   }
+
+  // ==================== State Management ====================
+
+  /**
+   * Get the state manager
+   */
+  getStateManager(): HostStateManager {
+    return this.stateManager
+  }
+
+  /**
+   * Set the local player (host's player) ID
+   */
+  setLocalPlayerId(playerId: number): void {
+    this.stateManager.setLocalPlayerId(playerId)
+  }
+
+  /**
+   * Set initial game state
+   */
+  setInitialState(state: GameState): void {
+    this.stateManager.setInitialState(state)
+  }
+
+  /**
+   * Mark player as ready (called when host or guest clicks ready button)
+   */
+  setPlayerReady(playerId: number, isReady: boolean): void {
+    this.stateManager.setPlayerReady(playerId, isReady)
+  }
+
+  /**
+   * Get current game state
+   */
+  getState(): GameState | null {
+    return this.stateManager.getState()
+  }
+
+  // ==================== Cleanup ====================
 
   /**
    * Cleanup and disconnect all connections

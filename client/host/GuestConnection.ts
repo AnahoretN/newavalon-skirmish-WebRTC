@@ -262,6 +262,13 @@ export class GuestConnectionManager {
     return success
   }
 
+  /**
+   * Alias for sendMessage - for API compatibility with useReadyCheck
+   */
+  sendMessageToHost(message: WebrtcMessage): boolean {
+    return this.sendMessage(message)
+  }
+
   // ==================== State Sync Methods ====================
 
   /**
@@ -442,6 +449,47 @@ export class GuestConnectionManager {
     this.webrtcPeer.cleanup()
     this.hostPeerId = null
     logger.info('GuestConnection cleaned up')
+  }
+
+  // ==================== Compatibility Methods ====================
+  // These methods provide API compatibility with HostManager
+  // to allow unified usage in hooks
+
+  /**
+   * Broadcast method (alias for sendMessage for host/guest compatibility)
+   * Guest can only send to host, not broadcast
+   */
+  broadcast(message: any, _excludePeerId?: string): number {
+    return this.sendMessage(message) ? 1 : 0
+  }
+
+  /**
+   * Broadcast to guests (alias for broadcast - compatibility)
+   */
+  broadcastToGuests(message: any, _excludePeerId?: string): number {
+    return this.sendMessage(message) ? 1 : 0
+  }
+
+  /**
+   * Initialize as guest (alias for connect - compatibility)
+   */
+  async initializeAsGuest(hostPeerId: string): Promise<void> {
+    return this.connect(hostPeerId)
+  }
+
+  /**
+   * Initialize as reconnecting guest
+   */
+  async initializeAsReconnectingGuest(hostPeerId: string, playerId: number): Promise<void> {
+    return this.connectAsReconnecting(hostPeerId, playerId)
+  }
+
+  /**
+   * Get state manager (for compatibility with WebRTCManager type)
+   * Guests don't have a state manager, so return null
+   */
+  getStateManager(): null {
+    return null
   }
 }
 

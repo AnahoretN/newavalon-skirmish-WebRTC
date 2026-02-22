@@ -1,7 +1,8 @@
 /**
  * useWebRTC - Hook for WebRTC P2P connection management
  *
- * Refactored to use the new unified WebRTC system from client/host/
+ * Uses HostManager for host and GuestConnectionManager for guests directly
+ * (no intermediate wrapper layer for clarity)
  *
  * Functions:
  * - initializeWebrtcHost - Initialize as host, get peer ID, broadcast to guests
@@ -12,11 +13,14 @@
 import { useCallback } from 'react'
 import { logger } from '../../utils/logger'
 import { broadcastHostPeerId, saveHostData } from '../../host/WebrtcStatePersistence'
-import { getWebrtcManagerNew, type WebrtcManagerNew } from '../../host/WebrtcManager'
+import { getHostManager, type HostManager } from '../../host/HostManager'
+import { GuestConnectionManager } from '../../host/GuestConnection'
+
+export type WebRTCManager = HostManager | GuestConnectionManager
 
 export interface UseWebRTCProps {
-  // WebRTC manager ref - now uses the new system
-  webrtcManagerRef: React.MutableRefObject<WebrtcManagerNew | null>
+  // WebRTC manager ref - can be HostManager or GuestConnectionManager
+  webrtcManagerRef: React.MutableRefObject<WebRTCManager | null>
   // WebRTC refs
   webrtcIsHostRef: React.MutableRefObject<boolean>
   // WebRTC state setters
@@ -47,11 +51,11 @@ export function useWebRTC(props: UseWebRTCProps) {
       setWebrtcIsHost(true)
       setConnectionStatus('Connecting')
 
-      // Use the new WebRTC manager
-      const manager = getWebrtcManagerNew()
-      webrtcManagerRef.current = manager
+      // Use HostManager directly
+      const hostManager = getHostManager()
+      webrtcManagerRef.current = hostManager
 
-      const peerId = await manager.initializeAsHost()
+      const peerId = await hostManager.initialize()
       setWebrtcHostId(peerId)  // Store host peer ID for invite links
       setConnectionStatus('Connected')
 
@@ -87,11 +91,26 @@ export function useWebRTC(props: UseWebRTCProps) {
       setWebrtcHostId(hostId)  // Store host ID immediately for reconnection tracking
       setConnectionStatus('Connecting')
 
-      // Use the new WebRTC manager
-      const manager = getWebrtcManagerNew()
-      webrtcManagerRef.current = manager
+      // Use GuestConnectionManager directly
+      const guestManager = new GuestConnectionManager({
+        onMessage: (message) => {
+          // Message handling is done via event subscription in useGameState
+          logger.debug('[Guest] Received message:', message.type)
+        },
+        onHostConnected: () => {
+          setConnectionStatus('Connected')
+        },
+        onHostDisconnected: () => {
+          setConnectionStatus('Disconnected')
+        },
+        onError: (error) => {
+          logger.error('[Guest] Error:', error)
+        }
+      })
+      webrtcManagerRef.current = guestManager
 
-      await manager.initializeAsGuest(hostId)
+      await guestManager.connect(hostId)
+      setConnectionStatus('Connected')
       return true
     } catch (err) {
       logger.error('Failed to connect as guest:', err)
@@ -152,10 +171,12 @@ export function useWebRTC(props: UseWebRTCProps) {
       return false
     }
 
+    // For host, use HostManager's broadcast method
+    const hostManager = webrtcManagerRef.current as HostManager
     logger.info(`[shareHostDeckWithGuests] Host sharing deck with ${deckSize} cards to all guests`)
-    return webrtcManagerRef.current.broadcastToGuests({
+    return hostManager.broadcast({
       type: 'HOST_DECK_DATA',
-      senderId: webrtcManagerRef.current.getPeerId(),
+      senderId: hostManager.getPeerId() ?? '',
       data: { deck, deckSize },
       timestamp: Date.now()
     })

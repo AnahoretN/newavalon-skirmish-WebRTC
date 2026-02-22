@@ -100,7 +100,7 @@ interface PlayerPanelProps {
   allPlayers: Player[];
   localPlayerTeamId?: number;
   activePlayerId?: number | null; // Aligned with GameState type (null when no active player)
-  onToggleActivePlayer: (playerId: number) => void;
+  _onToggleActivePlayer?: (playerId: number) => void;
   imageRefreshVersion: number;
   layoutMode: 'list-local' | 'list-remote';
   onCardClick?: (player: Player, card: CardType, index: number) => void;
@@ -377,7 +377,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   allPlayers,
   localPlayerTeamId,
   activePlayerId,
-  onToggleActivePlayer,
+  // _onToggleActivePlayer is reserved for future use but not yet implemented
   imageRefreshVersion,
   layoutMode,
   onCardClick,
@@ -413,10 +413,17 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   }, [openContextMenu, onCancelAllModes])
 
   // Helper: Get effective deck size
-  // Always use deck.length - the actual array length is the source of truth
-  // deckSize field is deprecated and only used for network optimization
+  // Use deckSize metadata for WebRTC optimized states where deck array may be empty
   const getDeckSize = (): number => {
-    return player.deck.length ?? 0
+    // If deck array has cards, use its length (source of truth for local player)
+    if (player.deck.length > 0) {
+      return player.deck.length
+    }
+    // Otherwise use deckSize metadata (for remote players in WebRTC)
+    if (player.deckSize !== undefined) {
+      return player.deckSize
+    }
+    return 0
   }
 
   const prevDeckLengthRef = useRef<number>(getDeckSize())
@@ -665,7 +672,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     )}
                     <div
                       onClick={handleDeckInteraction}
-                      className="absolute inset-0 bg-card-back rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-md select-none text-white"
+                      className={`absolute inset-0 rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-md select-none text-white ${PLAYER_COLORS[player.color]?.bg || 'bg-card-back'}`}
                       style={deckHighlightStyle}
                     >
                       <span className="text-[10px] sm:text-xs font-bold mb-0.5 uppercase tracking-tight relative z-20">{t('deck')}</span>
@@ -765,123 +772,163 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
             }
           }} className="flex-grow bg-gray-800 rounded-lg p-2 overflow-y-scroll border border border-gray-700 custom-scrollbar">
             <div className="flex flex-col gap-[2px]">
-              {player.hand.map((card, index) => {
-                // Check if this card is a valid target (from local validHandTargets or targetingMode)
-                const isLocalTarget = validHandTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-                const isTargetingModeTarget = targetingMode?.handTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-                const isTarget = isLocalTarget || isTargetingModeTarget
+              {(() => {
+                // For local players, use actual hand cards
+                // For remote players in WebRTC mode, hand is now populated with baseId data from CARD_STATE
+                // so we can use player.hand directly
+                const cardsToRender = player.hand || []
 
-                // Use targeting player's color for the highlight
-                // If targetingMode is active, use that player's color, otherwise use highlightOwnerId or activePlayerId
-                const targetPlayerId = targetingMode?.playerId ?? (highlightOwnerId ?? activePlayerId)
-                const activePlayerColorName = targetPlayerId !== null && targetPlayerId !== undefined ? playerColorMap.get(targetPlayerId) : null
-                const rgb = getPlayerColorRgbOrDefault(activePlayerColorName, { r: 37, g: 99, b: 235 })
+                return cardsToRender.map((card, index) => {
+                  // Check if this card is a valid target (from local validHandTargets or targetingMode)
+                  const isLocalTarget = validHandTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
+                  const isTargetingModeTarget = targetingMode?.handTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
+                  const isTarget = isLocalTarget || isTargetingModeTarget
 
-                // Find recent hand card selection for this card (within last 1 second)
-                const now = Date.now()
-                const recentSelection = handCardSelections?.find(
-                  cs => cs.playerId === player.id && cs.cardIndex === index && (now - cs.timestamp) < 1000
-                )
+                  // Use targeting player's color for the highlight
+                  // If targetingMode is active, use that player's color, otherwise use highlightOwnerId or activePlayerId
+                  const targetPlayerId = targetingMode?.playerId ?? (highlightOwnerId ?? activePlayerId)
+                  const activePlayerColorName = targetPlayerId !== null && targetPlayerId !== undefined ? playerColorMap.get(targetPlayerId) : null
+                  const rgb = getPlayerColorRgbOrDefault(activePlayerColorName, { r: 37, g: 99, b: 235 })
 
-                // Find click waves for this specific hand card
-                const cardClickWaves = clickWaves?.filter(
-                  w => w.location === 'hand' && w.handTarget?.playerId === player.id && w.handTarget?.cardIndex === index
-                ) || []
+                  // Find recent hand card selection for this card (within last 1 second)
+                  const now = Date.now()
+                  const recentSelection = handCardSelections?.find(
+                    cs => cs.playerId === player.id && cs.cardIndex === index && (now - cs.timestamp) < 1000
+                  )
 
-                // Card container style with highlight if target
-                const cardContainerStyle = isTarget ? {
-                  boxShadow: `0 0 12px 2px ${rgba(calculateGlowColor(rgb), 0.5)}`,
-                  border: '3px solid rgb(255, 255, 255)',
-                } : {}
+                  // Find click waves for this specific hand card
+                  const cardClickWaves = clickWaves?.filter(
+                    w => w.location === 'hand' && w.handTarget?.playerId === player.id && w.handTarget?.cardIndex === index
+                  ) || []
 
-                return (
-                  <div
-key={`card-${card.id}`}
-                    className="relative"
-                  >
-                    {/* Highlight overlay - doesn't interfere with card visibility */}
-                    {isTarget && (
-                      <div
-                        className="absolute inset-0 rounded pointer-events-none animate-glow-pulse"
-                        style={{
-                          zIndex: 10,
-                          background: `radial-gradient(circle at center, transparent 30%, ${rgba(rgb, 0.4)} 100%)`,
-                        }}
-                      />
-                    )}
-                    {/* Ripple effect when card is selected */}
-                    {recentSelection && (
-                      <div
-                        className="absolute inset-0 rounded pointer-events-none animate-deck-selection"
-                        style={{
-                          zIndex: 15,
-                          border: '3px solid',
-                          borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
-                          background: `radial-gradient(circle at center, transparent 20%, ${rgba(rgb, 0.6)} 100%)`,
-                        }}
-                      />
-                    )}
+                  // Card container style with highlight if target
+                  const cardContainerStyle = isTarget ? {
+                    boxShadow: `0 0 12px 2px ${rgba(calculateGlowColor(rgb), 0.5)}`,
+                    border: '3px solid rgb(255, 255, 255)',
+                  } : {}
+
+                  const isPlaceholder = (card as any)._isPlaceholder
+
+                  return (
                     <div
-                      className={`flex items-center bg-gray-900 border rounded p-2 min-w-0 ${isTarget ? 'border-transparent' : 'border-gray-700'}`}
-                      style={cardContainerStyle}
-                      draggable={canDrag}
-                      onDragStart={() => canDrag && setDraggedItem({
-                        card,
-                        source: 'hand',
-                        playerId: player.id,
-                        cardIndex: index,
-                        isManual: true
-                      })}
-                      onDragEnd={() => { setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK) }}
-                      onContextMenu={(e) => canPerformActions && handleContextMenuWithCancel(e, 'handCard', {
-                        card,
-                        player,
-                        cardIndex: index
-                      })}
-                      onDoubleClick={() => onHandCardDoubleClick(player, card, index)}
-                      onClick={() => {
-                        // Trigger click wave for hand cards
-                        if (triggerClickWave && localPlayerId !== null) {
-                          triggerClickWave('hand', undefined, { playerId: player.id, cardIndex: index })
-                        }
-                        onCardClick?.(player, card, index)
-                      }}
-                      data-hand-card={`${player.id},${index}`}
-                      data-interactive="true"
+                      key={`card-${card.id}-${index}`}
+                      className="relative"
                     >
-                      <div className="aspect-square flex-shrink-0 mr-3 w-[28.75%] max-w-[230px] min-w-[40px] overflow-hidden rounded">
-                        <CardComponent
-                          card={card}
-                          isFaceUp={true}
-                          playerColorMap={playerColorMap}
-                          localPlayerId={localPlayerId}
-                          imageRefreshVersion={imageRefreshVersion}
-                          loadPriority={isLocalPlayer ? 'high' : 'low'}
-                          disableTooltip={true}
-                          disableActiveHighlights={disableActiveHighlights}
-                          preserveDeployAbilities={preserveDeployAbilities}
-                          playerColor={player.color}
+                      {/* Highlight overlay - doesn't interfere with card visibility */}
+                      {isTarget && (
+                        <div
+                          className="absolute inset-0 rounded pointer-events-none animate-glow-pulse"
+                          style={{
+                            zIndex: 10,
+                            background: `radial-gradient(circle at center, transparent 30%, ${rgba(rgb, 0.4)} 100%)`,
+                          }}
                         />
-                      </div>
-                      <div className="flex-grow min-w-0">
-                        <CardTooltipContent
-                          card={card}
-                          className="relative flex flex-col text-left w-full h-full justify-start whitespace-normal break-words"
-                          hideOwner={card.ownerId === player.id}
+                      )}
+                      {/* Ripple effect when card is selected */}
+                      {recentSelection && (
+                        <div
+                          className="absolute inset-0 rounded pointer-events-none animate-deck-selection"
+                          style={{
+                            zIndex: 15,
+                            border: '3px solid',
+                            borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
+                            background: `radial-gradient(circle at center, transparent 20%, ${rgba(rgb, 0.6)} 100%)`,
+                          }}
                         />
+                      )}
+                      <div
+                        className={`flex items-center bg-gray-900 border rounded p-2 min-w-0 ${isTarget ? 'border-transparent' : 'border-gray-700'}`}
+                        style={cardContainerStyle}
+                        draggable={canDrag && !isPlaceholder}
+                        onDragStart={() => (canDrag && !isPlaceholder) && setDraggedItem({
+                          card,
+                          source: 'hand',
+                          playerId: player.id,
+                          cardIndex: index,
+                          isManual: true
+                        })}
+                        onDragEnd={() => { setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK) }}
+                        onContextMenu={(e) => canPerformActions && !isPlaceholder && handleContextMenuWithCancel(e, 'handCard', {
+                          card,
+                          player,
+                          cardIndex: index
+                        })}
+                        onDoubleClick={() => !isPlaceholder && onHandCardDoubleClick(player, card, index)}
+                        onClick={() => {
+                          if (!isPlaceholder) {
+                            // Trigger click wave for hand cards
+                            if (triggerClickWave && localPlayerId !== null) {
+                              triggerClickWave('hand', undefined, { playerId: player.id, cardIndex: index })
+                            }
+                            onCardClick?.(player, card, index)
+                          }
+                        }}
+                        data-hand-card={`${player.id},${index}`}
+                        data-interactive="true"
+                      >
+                        <div className="aspect-square flex-shrink-0 mr-3 w-[28.75%] max-w-[230px] min-w-[40px] overflow-hidden rounded">
+                          {isPlaceholder ? (
+                            // Show card back for placeholder cards (remote players in WebRTC)
+                            // Use the same CardComponent with isFaceUp={false} for consistent card backs
+                            <CardComponent
+                              card={{
+                                ...card,
+                                id: card.id,
+                                baseId: card.baseId,
+                                name: 'Hidden Card',
+                                ownerId: player.id,
+                                ownerName: player.name,
+                                deck: DeckTypeEnum.Random,
+                                imageUrl: '',
+                                ability: '',
+                              }}
+                              isFaceUp={false}
+                              playerColorMap={playerColorMap}
+                              localPlayerId={localPlayerId}
+                              imageRefreshVersion={imageRefreshVersion}
+                              loadPriority="low"
+                              disableTooltip={true}
+                              disableActiveHighlights={true}
+                              preserveDeployAbilities={false}
+                              playerColor={player.color}
+                            />
+                          ) : (
+                            <CardComponent
+                              card={card}
+                              isFaceUp={true}
+                              playerColorMap={playerColorMap}
+                              localPlayerId={localPlayerId}
+                              imageRefreshVersion={imageRefreshVersion}
+                              loadPriority={isLocalPlayer ? 'high' : 'low'}
+                              disableTooltip={true}
+                              disableActiveHighlights={disableActiveHighlights}
+                              preserveDeployAbilities={preserveDeployAbilities}
+                              playerColor={player.color}
+                            />
+                          )}
+                        </div>
+                        <div className="flex-grow min-w-0">
+                          {!isPlaceholder && (
+                            <CardTooltipContent
+                              card={card}
+                              className="relative flex flex-col text-left w-full h-full justify-start whitespace-normal break-words"
+                              hideOwner={card.ownerId === player.id}
+                            />
+                          )}
+                        </div>
                       </div>
+                      {/* Click waves for hand cards */}
+                      {cardClickWaves.map(wave => (
+                        <ClickWaveComponent
+                          key={wave.timestamp}
+                          timestamp={wave.timestamp}
+                          playerColor={wave.playerColor}
+                        />
+                      ))}
                     </div>
-                    {/* Click waves for hand cards */}
-                    {cardClickWaves.map(wave => (
-                      <ClickWaveComponent
-                        key={wave.timestamp}
-                        timestamp={wave.timestamp}
-                        playerColor={wave.playerColor}
-                      />
-                    ))}
-                  </div>
-                )
-              })}
+                  )
+                })
+              })()}
             </div>
           </DropZone>
         </div>
@@ -1050,7 +1097,7 @@ key={`card-${card.id}`}
                         label={t('deck')}
                         count={getDeckSize()}
                         onClick={handleDeckInteraction}
-                        className="bg-card-back"
+                        className={PLAYER_COLORS[player.color]?.bg || 'bg-card-back'}
                         style={deckHighlightStyle}
                         delta={deckChangeDelta}
                       />
@@ -1135,134 +1182,190 @@ key={`card-${card.id}`}
             }}
             className="grid grid-cols-6 gap-1 overflow-y-scroll custom-scrollbar flex-grow content-start min-h-[30px]"
           >
-            {player.hand.map((card, index) => {
-              // Check if this card is a valid target (from local validHandTargets or targetingMode)
-              const isLocalTarget = validHandTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-              const isTargetingModeTarget = targetingMode?.handTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-              const isTarget = isLocalTarget || isTargetingModeTarget
+            {(() => {
+              // For local players, use actual hand cards
+              // For remote players in WebRTC mode, hand may be empty but handSize tells us how many cards they have
+              const cardsToRender = isLocalPlayer || player.hand.length > 0
+                ? player.hand
+                : Array.from({ length: player.handSize || 0 }, (_, i) => ({
+                    id: `hidden-${player.id}-${i}`,
+                    baseId: 'hidden',
+                    name: 'Hidden Card',
+                    ownerId: player.id,
+                    ownerName: player.name,
+                    power: 0,
+                    deck: DeckTypeEnum.Random,
+                    imageUrl: '',
+                    ability: '',
+                    isFaceDown: true,
+                    // Marker to indicate this is a placeholder
+                    _isPlaceholder: true
+                  }))
 
-              // Use targeting player's color for the highlight
-              const targetPlayerId = targetingMode?.playerId ?? (highlightOwnerId ?? activePlayerId)
-              const activePlayerColorName = targetPlayerId !== null && targetPlayerId !== undefined ? playerColorMap.get(targetPlayerId) : null
-              const rgb = getPlayerColorRgbOrDefault(activePlayerColorName, { r: 37, g: 99, b: 235 })
+              return cardsToRender.map((card, index) => {
+                // Check if this card is a valid target (from local validHandTargets or targetingMode)
+                const isLocalTarget = validHandTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
+                const isTargetingModeTarget = targetingMode?.handTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
+                const isTarget = isLocalTarget || isTargetingModeTarget
 
-              // Find recent hand card selection for this card (within last 1 second)
-              const now = Date.now()
-              const recentSelection = handCardSelections?.find(
-                cs => cs.playerId === player.id && cs.cardIndex === index && (now - cs.timestamp) < 1000
-              )
+                // Use targeting player's color for the highlight
+                const targetPlayerId = targetingMode?.playerId ?? (highlightOwnerId ?? activePlayerId)
+                const activePlayerColorName = targetPlayerId !== null && targetPlayerId !== undefined ? playerColorMap.get(targetPlayerId) : null
+                const rgb = getPlayerColorRgbOrDefault(activePlayerColorName, { r: 37, g: 99, b: 235 })
 
-              // Find click waves for this specific hand card
-              const cardClickWaves = clickWaves?.filter(
-                w => w.location === 'hand' && w.handTarget?.playerId === player.id && w.handTarget?.cardIndex === index
-              ) || []
+                // Find recent hand card selection for this card (within last 1 second)
+                const now = Date.now()
+                const recentSelection = handCardSelections?.find(
+                  cs => cs.playerId === player.id && cs.cardIndex === index && (now - cs.timestamp) < 1000
+                )
 
-              // Card container style with highlight if target
-              const cardHighlightStyle = isTarget ? {
-                boxShadow: `0 0 12px 2px ${rgba(calculateGlowColor(rgb), 0.5)}`,
-                border: '3px solid rgb(255, 255, 255)',
-              } : {}
+                // Find click waves for this specific hand card
+                const cardClickWaves = clickWaves?.filter(
+                  w => w.location === 'hand' && w.handTarget?.playerId === player.id && w.handTarget?.cardIndex === index
+                ) || []
 
-              const isRevealedToAll = card.revealedTo === 'all'
-              const isRevealedToMe = localPlayerId !== null && Array.isArray(card.revealedTo) && card.revealedTo.includes(localPlayerId)
-              const isRevealedByStatus = localPlayerId !== null && card.statuses?.some(s => s.type === 'Revealed' && s.addedByPlayerId === localPlayerId)
+                // Card container style with highlight if target
+                const cardHighlightStyle = isTarget ? {
+                  boxShadow: `0 0 12px 2px ${rgba(calculateGlowColor(rgb), 0.5)}`,
+                  border: '3px solid rgb(255, 255, 255)',
+                } : {}
 
-              const owner = allPlayers.find(p => p.id === card.ownerId)
-              const isOwnerDummy = owner?.isDummy
-              const isOwner = localPlayerId === card.ownerId
+                const isPlaceholder = (card as any)._isPlaceholder
+                const isRealCard = !isPlaceholder
+                const realCard = card as CardType
+                const isRevealedToAll = isRealCard && realCard.revealedTo === 'all'
+                const isRevealedToMe = isRealCard && localPlayerId !== null && Array.isArray(realCard.revealedTo) && realCard.revealedTo.includes(localPlayerId)
+                const isRevealedByStatus = isRealCard && localPlayerId !== null && realCard.statuses?.some((s: any) => s.type === 'Revealed' && s.addedByPlayerId === localPlayerId)
 
-              // If hideDummyCards is enabled, dummy cards are only visible if they have a reveal status
-              const isDummyVisible = !hideDummyCards || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
-              const isVisible: boolean = isOwner || (!!isOwnerDummy && isDummyVisible) || isTeammate || isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
+                const owner = allPlayers.find(p => p.id === card.ownerId)
+                const isOwnerDummy = owner?.isDummy
+                const isOwner = localPlayerId === card.ownerId
 
-              return (
-                <div
-                  key={`${player.id}-hand-${index}-${card.id}`}
-                  className="aspect-square relative"
-                  draggable={canDrag}
-                  onDragStart={() => canDrag && setDraggedItem({ card, source: 'hand', playerId: player.id, cardIndex: index, isManual: true })}
-                  onDragEnd={() => { setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK) }}
-                  onContextMenu={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    handleContextMenuWithCancel(e, 'handCard', { card, player, cardIndex: index })
-                  }}
-                  onDoubleClick={() => onHandCardDoubleClick(player, card, index)}
-                  onClick={() => {
-                    // Trigger click wave for hand cards
-                    if (triggerClickWave && localPlayerId !== null) {
-                      triggerClickWave('hand', undefined, { playerId: player.id, cardIndex: index })
-                    }
-                    onCardClick?.(player, card, index)
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    if (draggedItem) {
-                      // If dropping on same player's hand, insert at this index
-                      if (draggedItem.playerId === player.id && draggedItem.source === 'hand') {
-                        handleDrop(draggedItem, { target: 'hand', playerId: player.id, cardIndex: index })
-                      } else {
-                        // Different source or player, append to end
-                        handleDrop(draggedItem, { target: 'hand', playerId: player.id })
+                // If hideDummyCards is enabled, dummy cards are only visible if they have a reveal status
+                const isDummyVisible = !hideDummyCards || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
+                const isVisible: boolean = isRealCard && (isOwner || (!!isOwnerDummy && isDummyVisible) || isTeammate || isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus)
+
+                return (
+                  <div
+                    key={`${player.id}-hand-${index}-${card.id}`}
+                    className="aspect-square relative"
+                    draggable={canDrag && !isPlaceholder}
+                    onDragStart={() => (canDrag && !isPlaceholder) && setDraggedItem({ card, source: 'hand', playerId: player.id, cardIndex: index, isManual: true })}
+                    onDragEnd={() => { setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK) }}
+                    onContextMenu={(e) => {
+                      if (!isPlaceholder) {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        handleContextMenuWithCancel(e, 'handCard', { card, player, cardIndex: index })
                       }
-                    }
-                  }}
-                  data-hand-card={`${player.id},${index}`}
-                  data-interactive="true"
-                >
-                  {/* Highlight overlay - doesn't interfere with card visibility */}
-                  {isTarget && (
-                    <div
-                      className="absolute inset-0 rounded pointer-events-none animate-glow-pulse"
-                      style={{
-                        zIndex: 10,
-                        background: `radial-gradient(circle at center, transparent 30%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 100%)`,
-                      }}
-                    />
-                  )}
-                  {/* Ripple effect when card is selected */}
-                  {recentSelection && (
-                    <div
-                      className="absolute inset-0 rounded pointer-events-none animate-deck-selection"
-                      style={{
-                        zIndex: 15,
-                        border: '3px solid',
-                        borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
-                        background: `radial-gradient(circle at center, transparent 20%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 100%)`,
-                      }}
-                    />
-                  )}
-                  <div className="w-full h-full rounded" style={cardHighlightStyle}>
-                    <CardComponent
-                      card={card}
-                      isFaceUp={isVisible}
-                      playerColorMap={playerColorMap}
-                      localPlayerId={localPlayerId}
-                      imageRefreshVersion={imageRefreshVersion}
-                      loadPriority={isLocalPlayer ? 'high' : 'low'}
-                      disableTooltip={!isVisible}
-                      disableActiveHighlights={disableActiveHighlights}
-                      smallStatusIcons={true}
-                      preserveDeployAbilities={preserveDeployAbilities}
-                      playerColor={player.color}
-                    />
+                    }}
+                    onDoubleClick={() => !isPlaceholder && onHandCardDoubleClick(player, card, index)}
+                    onClick={() => {
+                      if (!isPlaceholder) {
+                        // Trigger click wave for hand cards
+                        if (triggerClickWave && localPlayerId !== null) {
+                          triggerClickWave('hand', undefined, { playerId: player.id, cardIndex: index })
+                        }
+                        onCardClick?.(player, card, index)
+                      }
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      if (draggedItem && !isPlaceholder) {
+                        // If dropping on same player's hand, insert at this index
+                        if (draggedItem.playerId === player.id && draggedItem.source === 'hand') {
+                          handleDrop(draggedItem, { target: 'hand', playerId: player.id, cardIndex: index })
+                        } else {
+                          // Different source or player, append to end
+                          handleDrop(draggedItem, { target: 'hand', playerId: player.id })
+                        }
+                      }
+                    }}
+                    data-hand-card={`${player.id},${index}`}
+                    data-interactive="true"
+                  >
+                    {/* Highlight overlay - doesn't interfere with card visibility */}
+                    {isTarget && (
+                      <div
+                        className="absolute inset-0 rounded pointer-events-none animate-glow-pulse"
+                        style={{
+                          zIndex: 10,
+                          background: `radial-gradient(circle at center, transparent 30%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 100%)`,
+                        }}
+                      />
+                    )}
+                    {/* Ripple effect when card is selected */}
+                    {recentSelection && (
+                      <div
+                        className="absolute inset-0 rounded pointer-events-none animate-deck-selection"
+                        style={{
+                          zIndex: 15,
+                          border: '3px solid',
+                          borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
+                          background: `radial-gradient(circle at center, transparent 20%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6) 100%)`,
+                        }}
+                      />
+                    )}
+                    <div className="w-full h-full rounded" style={cardHighlightStyle}>
+                      {isPlaceholder ? (
+                        // Show card back for placeholder cards (remote players in WebRTC)
+                        // Use the same CardComponent with isFaceUp={false} for consistent card backs
+                        <CardComponent
+                          card={{
+                            ...card,
+                            id: card.id,
+                            baseId: card.baseId,
+                            name: 'Hidden Card',
+                            ownerId: player.id,
+                            ownerName: player.name,
+                            deck: DeckTypeEnum.Random,
+                            imageUrl: '',
+                            ability: '',
+                          }}
+                          isFaceUp={false}
+                          playerColorMap={playerColorMap}
+                          localPlayerId={localPlayerId}
+                          imageRefreshVersion={imageRefreshVersion}
+                          loadPriority="low"
+                          disableTooltip={true}
+                          disableActiveHighlights={true}
+                          smallStatusIcons={false}
+                          preserveDeployAbilities={false}
+                          playerColor={player.color}
+                        />
+                      ) : (
+                        <CardComponent
+                          card={card}
+                          isFaceUp={isVisible}
+                          playerColorMap={playerColorMap}
+                          localPlayerId={localPlayerId}
+                          imageRefreshVersion={imageRefreshVersion}
+                          loadPriority={isLocalPlayer ? 'high' : 'low'}
+                          disableTooltip={!isVisible}
+                          disableActiveHighlights={disableActiveHighlights}
+                          smallStatusIcons={true}
+                          preserveDeployAbilities={preserveDeployAbilities}
+                          playerColor={player.color}
+                        />
+                      )}
+                    </div>
+                    {/* Click waves for hand cards */}
+                    {cardClickWaves.map(wave => (
+                      <ClickWaveComponent
+                        key={wave.timestamp}
+                        timestamp={wave.timestamp}
+                        playerColor={wave.playerColor}
+                      />
+                    ))}
                   </div>
-                  {/* Click waves for hand cards */}
-                  {cardClickWaves.map(wave => (
-                    <ClickWaveComponent
-                      key={wave.timestamp}
-                      timestamp={wave.timestamp}
-                      playerColor={wave.playerColor}
-                    />
-                  ))}
-                </div>
-              )
-            })}
+                )
+              })
+            })()}
           </div>
           </div>
         </div>
@@ -1289,7 +1392,20 @@ key={`card-${card.id}`}
      prevProps.draggedItem?.playerId === nextProps.draggedItem?.playerId)
   )
   // Helper to get deck size for comparison (use deckSize if available)
-  const getDeckSizeForCompare = (p: Player): number => p.deck.length ?? 0
+  const getDeckSizeForCompare = (p: Player): number => {
+    if (p.deck.length > 0) return p.deck.length
+    return p.deckSize ?? 0
+  }
+
+  const getHandSizeForCompare = (p: Player): number => {
+    if (p.hand.length > 0) return p.hand.length
+    return p.handSize ?? 0
+  }
+
+  const getDiscardSizeForCompare = (p: Player): number => {
+    if (p.discard.length > 0) return p.discard.length
+    return p.discardSize ?? 0
+  }
 
   return (
     prevProps.player.id === nextProps.player.id &&
@@ -1297,9 +1413,9 @@ key={`card-${card.id}`}
     prevProps.player.color === nextProps.player.color &&
     prevProps.player.name === nextProps.player.name &&
     prevProps.player.selectedDeck === nextProps.player.selectedDeck &&
-    prevProps.player.hand.length === nextProps.player.hand.length &&
+    getHandSizeForCompare(prevProps.player) === getHandSizeForCompare(nextProps.player) &&
     getDeckSizeForCompare(prevProps.player) === getDeckSizeForCompare(nextProps.player) &&
-    prevProps.player.discard.length === nextProps.player.discard.length &&
+    getDiscardSizeForCompare(prevProps.player) === getDiscardSizeForCompare(nextProps.player) &&
     prevProps.player.announcedCard?.id === nextProps.player.announcedCard?.id &&
     prevProps.isGameStarted === nextProps.isGameStarted &&
     prevProps.activePlayerId === nextProps.activePlayerId &&
