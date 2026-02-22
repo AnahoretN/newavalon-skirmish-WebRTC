@@ -311,7 +311,7 @@ export function useDeckManagement(props: UseDeckManagementProps) {
 
         // Initialize ready statuses for the resurrected card
         // This allows abilities to be used when card returns from discard
-        initializeReadyStatuses(card, playerId)
+        initializeReadyStatuses(card, playerId, newState.currentPhase)
 
         // Lucius Bonus if resurrected
         if (card.baseId === 'luciusTheImmortal' || card.name.includes('Lucius')) {

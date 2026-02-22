@@ -7,7 +7,7 @@
 import type { GameState } from '../types'
 import { logger } from '../utils/logger'
 import { checkRoundEnd, endRound } from './RoundManagement'
-import { resetReadyStatusesForTurn } from '../utils/autoAbilities'
+import { resetReadyStatusesForTurn, clearTurnLimitedAbilitiesForPlayer } from '../utils/autoAbilities'
 
 /**
  * Phase indices
@@ -116,23 +116,11 @@ export function setPhase(gameState: GameState, phaseIndex: number): GameState {
     currentPhase: phaseIndex
   }
 
-  // Clear readyDeploy status from all cards when phase changes
-  // This marks deploy abilities as "lost" when not used before phase change
-  // Note: We do NOT clear readySetup/readyCommit here - existing logic will handle those
-  if (oldPhase !== phaseIndex) {
-    newState.board.forEach(row => {
-      row.forEach(cell => {
-        const card = cell.card
-        if (card && card.statuses) {
-          // Create new array to ensure change is detected
-          const filteredStatuses = card.statuses.filter(s => s.type !== 'readyDeploy')
-          if (filteredStatuses.length !== card.statuses.length) {
-            card.statuses = filteredStatuses
-          }
-        }
-      })
-    })
-  }
+  // NOTE: We NO LONGER clear readyDeploy status on phase change
+  // readyDeploy persists until:
+  // 1. The Deploy ability is used (markAbilityUsed)
+  // 2. The Deploy ability is skipped via right-click
+  // This allows cards to use their Deploy ability even if they entered in a different phase
 
   logger.info(`[setPhase] Phase changed from ${oldPhase} (${getPhaseName(oldPhase)}) to ${phaseIndex} (${getPhaseName(phaseIndex)})`)
   return newState
@@ -170,30 +158,14 @@ export function prevPhase(gameState: GameState): GameState {
     return gameState
   }
 
-  const oldPhase = gameState.currentPhase
-
   // Create new state with updated phase
   const newState: GameState = {
     ...gameState,
     currentPhase: prevPhase
   }
 
-  // Clear readyDeploy status from all cards when phase changes
-  // This marks deploy abilities as "lost" when not used before phase change
-  if (oldPhase !== prevPhase) {
-    newState.board.forEach(row => {
-      row.forEach(cell => {
-        const card = cell.card
-        if (card && card.statuses) {
-          // Create new array to ensure change is detected
-          const filteredStatuses = card.statuses.filter(s => s.type !== 'readyDeploy')
-          if (filteredStatuses.length !== card.statuses.length) {
-            card.statuses = filteredStatuses
-          }
-        }
-      })
-    })
-  }
+  // NOTE: We NO LONGER clear readyDeploy status on phase change
+  // readyDeploy persists until Deploy ability is used/skipped
 
   return newState
 }
@@ -374,6 +346,12 @@ export function passTurnToNextPlayer(gameState: GameState): GameState {
         return cell
       })
     )
+  }
+
+  // Clear turn-limited ability usage (setupUsedThisTurn, commitUsedThisTurn) from current player's cards
+  // This allows them to use Setup/Commit abilities again in their next turn
+  if (gameState.activePlayerId !== null) {
+    clearTurnLimitedAbilitiesForPlayer(newState, gameState.activePlayerId)
   }
 
   // Clear enteredThisTurn flags from all cards

@@ -7,7 +7,7 @@
 import type { Card, Player, AbilityAction, CursorStackState } from '@/types'
 import { TIMING } from '@/utils/common'
 import { validateTarget } from '@shared/utils/targeting'
-import { canActivateAbility } from '@shared/abilities'
+import { canActivateAbility as canActivateAbilityOld } from '@shared/abilities/readyStatus.js'
 
  
 
@@ -258,7 +258,7 @@ export function handleAnnouncedCardDoubleClick(
   if (gameState.activePlayerId !== player.id) {
     return
   }
-  if (!canActivateAbility(card as any, 'setup', gameState.currentPhase)) {
+  if (!canActivateAbilityOld(card as any, 'setup', gameState.currentPhase)) {
     return
   }
   activateAbility(card, { row: -1, col: -1 })

@@ -17,7 +17,17 @@ import {
 
 /**
  * Handle CARD_STATE message
- * Receives full or partial game state update
+ *
+ * CARD_STATE contains ONLY:
+ * - Board cards (with baseId - guest uses local contentDatabase for full data)
+ * - Board positions (row, col for each card)
+ * - Card statuses and tokens
+ * - Player metadata (id, color, score, isReady)
+ * - Phase info (currentPhase, activePlayerId, currentRound)
+ *
+ * CARD_STATE does NOT contain:
+ * - Player hands, decks, discard piles (synced via STATE_UPDATE_COMPACT)
+ * - Announced cards (synced via other messages)
  */
 export function handleCardStateMessage(
   data: Uint8Array,
@@ -35,14 +45,15 @@ export function handleCardStateMessage(
       result.players = decodedState.players.map(player => {
         const existing = currentState.players.find(p => p.id === player.id)
         if (existing) {
-          // For local player, preserve their actual hand from existing state
-          const isLocalPlayer = player.id === localPlayerId
+          // Preserve ALL existing player data that is NOT sent in CARD_STATE:
+          // - name, hand, deck, discard, announcedCard, selectedDeck, boardHistory, isDummy, isDisconnected, teamId
           return {
             ...existing,
-            ...player,
-            hand: isLocalPlayer ? existing.hand : player.hand,
-            // Preserve color from existing state to avoid stale data from guest
-            color: existing.color
+            // Update only metadata that comes from CARD_STATE
+            score: player.score,
+            isReady: player.isReady,
+            // Update color from CARD_STATE (it's authoritative for color changes)
+            color: player.color
           }
         }
         return player

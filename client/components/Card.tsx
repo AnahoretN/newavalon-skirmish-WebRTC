@@ -487,11 +487,13 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   }, [shouldHighlight, localPlayerId, card, onCardClick, boardCoords, triggerClickWave])
 
   // Aggregate statuses by TYPE and PLAYER ID to allow separate icons for different players.
-  // Filter out readiness statuses (readyDeploy, readySetup, readyCommit) - they are always invisible to players
-  // DEV NOTE: ready* statuses are internal-only and intentionally hidden from the UI.
+  // Filter out internal statuses - they are always invisible to players:
+  // - readyDeploy, readySetup, readyCommit: control ability availability
+  // - setupUsedThisTurn, commitUsedThisTurn: track once-per-turn usage
+  // DEV NOTE: These statuses are internal-only and intentionally hidden from the UI.
   // They control ability availability and are managed by the auto-abilities system.
   const statusGroups = useMemo(() => {
-    const hiddenStatusTypes = ['readyDeploy', 'readySetup', 'readyCommit']
+    const hiddenStatusTypes = ['readyDeploy', 'readySetup', 'readyCommit', 'setupUsedThisTurn', 'commitUsedThisTurn']
     return (card.statuses ?? []).reduce((acc, status) => {
       // Skip readiness statuses - they should not be displayed
       if (hiddenStatusTypes.includes(status.type)) {

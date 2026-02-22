@@ -4167,6 +4167,104 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
 
+      case 'CARD_STATUS_SYNC':
+        // Optimized card status synchronization - only changes, not full state
+        logger.info('[CARD_STATUS_SYNC] Received card status changes:', message.data?.changes?.length || 0)
+
+        const statusChanges = message.data?.changes || []
+        if (statusChanges.length > 0) {
+          setGameState(prev => {
+            const newState = { ...prev }
+            // Apply each status change to the corresponding card
+            for (const change of statusChanges) {
+              const { cardId, statusType, action, ownerId } = change
+              // Find card on board
+              for (let r = 0; r < newState.board.length; r++) {
+                for (let c = 0; c < newState.board[r].length; c++) {
+                  const cell = newState.board[r][c]
+                  if (cell?.card && cell.card.id === cardId) {
+                    const card = cell.card
+                    if (!card.statuses) {
+                      card.statuses = []
+                    }
+                    if (action === 'add') {
+                      // Add status if not already present
+                      if (!card.statuses.some(s => s.type === statusType)) {
+                        card.statuses.push({ type: statusType, addedByPlayerId: ownerId ?? 0 })
+                        logger.debug(`[CARD_STATUS_SYNC] Added status '${statusType}' to card ${cardId}`)
+                      }
+                    } else if (action === 'remove') {
+                      // Remove status
+                      const beforeLength = card.statuses.length
+                      card.statuses = card.statuses.filter(s => s.type !== statusType)
+                      if (card.statuses.length !== beforeLength) {
+                        logger.debug(`[CARD_STATUS_SYNC] Removed status '${statusType}' from card ${cardId}`)
+                      }
+                    }
+                    break // Found the card, no need to continue searching
+                  }
+                }
+              }
+            }
+            return newState
+          })
+        }
+        break
+
+      case 'BOARD_CARD_SYNC':
+        // Optimized board card synchronization - only card data, not full state
+        logger.info('[BOARD_CARD_SYNC] Received board card data:', message.data?.cards?.length || 0, 'action:', message.data?.action)
+
+        const boardCards = message.data?.cards || []
+        const syncAction = message.data?.action || 'update'
+
+        if (boardCards.length > 0) {
+          setGameState(prev => {
+            const newState = { ...prev }
+            const board = [...newState.board]
+
+            for (const cardData of boardCards) {
+              const { cardId, row, col, power, ownerId, enteredThisTurn, statuses } = cardData
+
+              // Ensure the cell exists
+              if (!board[row] || !board[row][col]) {
+                logger.warn(`[BOARD_CARD_SYNC] Invalid cell at [${row},${col}] for card ${cardId}`)
+                continue
+              }
+
+              if (syncAction === 'remove') {
+                // Remove card from board
+                if (board[row][col].card?.id === cardId) {
+                  board[row][col].card = null
+                  logger.debug(`[BOARD_CARD_SYNC] Removed card ${cardId} from [${row},${col}]`)
+                }
+              } else {
+                // Update existing card
+                const existingCard = board[row][col].card
+
+                if (existingCard && existingCard.id === cardId) {
+                  // Update existing card
+                  existingCard.power = power
+                  existingCard.ownerId = ownerId
+                  existingCard.enteredThisTurn = enteredThisTurn
+                  if (statuses && Array.isArray(statuses)) {
+                    existingCard.statuses = statuses.map(s => ({ type: s.type, addedByPlayerId: s.addedByPlayerId }))
+                  }
+                  logger.debug(`[BOARD_CARD_SYNC] Updated card ${cardId} at [${row},${col}]`)
+                } else if (syncAction === 'replace' || !existingCard) {
+                  // For 'replace' action or empty cell, we need full card data from registry
+                  // This would require looking up the card by baseId
+                  logger.debug(`[BOARD_CARD_SYNC] Would replace card at [${row},${col}] - need full card data from registry`)
+                }
+              }
+            }
+
+            newState.board = board
+            return newState
+          })
+        }
+        break
+
       default:
         // Log unknown message types for debugging
         logger.warn(`[handleWebrtcMessage] Unknown message type: ${message.type}`, message)
@@ -4781,6 +4879,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     updatePlayerScore,
     triggerFloatingText,
     clearTargetingMode,
+    webrtcIsHostRef,
   })
 
   // Destructure scoring functions for direct access
@@ -4793,6 +4892,16 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   const boardManipulation = useBoardManipulation({
     updateState,
     rawJsonData,
+    broadcastCardStatusSync: (changes: any[]) => {
+      if (getWebRTCEnabled() && webrtcIsHostRef.current && webrtcManagerRef.current) {
+        webrtcManagerRef.current.broadcastCardStatusSync(changes)
+      }
+    },
+    broadcastBoardCardSync: (cards: any[], action: 'update' | 'remove' | 'replace') => {
+      if (getWebRTCEnabled() && webrtcIsHostRef.current && webrtcManagerRef.current) {
+        webrtcManagerRef.current.broadcastBoardCardSync(cards, action)
+      }
+    }
   })
 
   // Card movement hook - handles item movement between zones
@@ -4882,6 +4991,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     swapCards: boardManipulation.swapCards,
     transferStatus: boardManipulation.transferStatus,
     transferAllCounters: boardManipulation.transferAllCounters,
+    transferAllStatusesWithoutException: boardManipulation.transferAllStatusesWithoutException,
     spawnToken: boardManipulation.spawnToken,
     resetDeployStatus: boardManipulation.resetDeployStatus,
     removeStatusByType: boardManipulation.removeStatusByType,

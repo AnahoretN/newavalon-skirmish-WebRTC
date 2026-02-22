@@ -98,10 +98,12 @@ export const CardTooltipContent: React.FC<CardTooltipContentProps> = ({ card, st
     : (card.deck === 'counter' ? '' : `${card.deck} Card`)
 
   // Group statuses by type and count them
-  // Filter out readiness statuses (readyDeploy, readySetup, readyCommit) - they are invisible to players
-  const hiddenStatusTypes = ['readyDeploy', 'readySetup', 'readyCommit']
+  // Filter out internal statuses - they are invisible to players:
+  // - readyDeploy, readySetup, readyCommit: control ability availability
+  // - setupUsedThisTurn, commitUsedThisTurn: track once-per-turn usage
+  const hiddenStatusTypes = ['readyDeploy', 'readySetup', 'readyCommit', 'setupUsedThisTurn', 'commitUsedThisTurn']
   const statusCountsByType = (card.statuses ?? []).reduce((acc, status) => {
-    // Skip readiness statuses - they should not be displayed
+    // Skip internal statuses - they should not be displayed
     if (hiddenStatusTypes.includes(status.type)) {
       return acc
     }

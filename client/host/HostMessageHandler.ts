@@ -441,6 +441,17 @@ export class HostMessageHandler {
       return guestPlayer
     })
 
+    // DEBUG: Log board status from guest
+    let boardWithReadyDeploy = 0
+    guestState.board.forEach((row: any[]) => {
+      row.forEach((cell: any) => {
+        if (cell.card?.statuses?.some((s: any) => s.type === 'readyDeploy')) {
+          boardWithReadyDeploy++
+        }
+      })
+    })
+    logger.info(`[handleStateUpdateAction] Guest ${guestPlayerId} sent board with ${boardWithReadyDeploy} cards having readyDeploy`)
+
     const mergedState = {
       ...guestState,
       players: mergedPlayers,

@@ -44,9 +44,10 @@ import { getCommandAction } from '@server/utils/commandLogic'
 import { createTargetingActionFromCursorStack, createTargetingActionFromAbilityMode, determineTargetingPlayerId } from './utils/targetingActionUtils'
 import { getTokenTargetingRules } from './utils/tokenTargeting'
 import { useLanguage } from './contexts/LanguageContext'
-import { TIMING } from './utils/common'
+import { TIMING, deepCloneState } from './utils/common'
 import { shuffleDeck } from '@shared/utils/array'
 import { getWebRTCEnabled } from './hooks/useWebRTCEnabled'
+import { getCardAbilityTypes } from '@server/utils/autoAbilities'
 
 // Inner app component without ModalsProvider
 const AppInner = function AppInner() {
@@ -762,6 +763,8 @@ const AppInner = function AppInner() {
       if (mounted && Object.keys(countersDatabase).length > 0) {
         setImageRefreshVersion(prev => prev + 1)
       }
+
+      logger.info('[App] Content loaded successfully')
     }).catch(err => {
       logger.error('Failed to load content database:', err)
     })
@@ -1634,6 +1637,47 @@ const AppInner = function AppInner() {
   // Cancels all active modes (abilityMode, cursorStack, playMode, targetingMode)
   // Called by right-click on board or cards
   const handleCancelAllModes = useCallback(() => {
+    // Handle Deploy ability cancellation: remove readyDeploy and add phase-specific status
+    if (abilityMode && abilityMode.isDeployAbility && abilityMode.sourceCoords) {
+      const { row, col } = abilityMode.sourceCoords
+      if (row >= 0 && col >= 0) {
+        // Clone state to avoid mutation
+        const newState = deepCloneState(gameState)
+        const card = newState.board[row]?.[col]?.card
+        if (card && card.ownerId && card.statuses) {
+          // Find if card has readyDeploy
+          const hasReadyDeploy = card.statuses.some(s => s.type === 'readyDeploy')
+          if (hasReadyDeploy) {
+            // Remove readyDeploy
+            card.statuses = card.statuses.filter(s => s.type !== 'readyDeploy')
+            // Add phase-specific status if conditions are met
+            // Note: We DON'T check canActivate here because the card just lost readyDeploy
+            // and hasn't gained the phase-specific status yet, so canActivate would return false
+            const isActivePlayer = newState.activePlayerId === card.ownerId
+            const isStunned = card.statuses.some(s => s.type === 'Stun')
+
+            if (isActivePlayer && !isStunned) {
+              // Check which phase-specific status to add using getCardAbilityTypes
+              const abilityTypes = getCardAbilityTypes(card as any)
+              let phaseStatusToAdd: string | null = null
+
+              if (newState.currentPhase === 1 && abilityTypes.includes('setup')) {
+                phaseStatusToAdd = 'readySetup'
+              } else if (newState.currentPhase === 3 && abilityTypes.includes('commit')) {
+                phaseStatusToAdd = 'readyCommit'
+              }
+
+              if (phaseStatusToAdd && !card.statuses.some(s => s.type === phaseStatusToAdd)) {
+                card.statuses.push({ type: phaseStatusToAdd, addedByPlayerId: card.ownerId })
+              }
+            }
+            // Update state
+            updateState(newState)
+          }
+        }
+      }
+    }
+
     // Clear ability mode
     if (abilityMode) {
       setAbilityMode(null)
@@ -1652,7 +1696,7 @@ const AppInner = function AppInner() {
     setValidHandTargets([])
     // Clear valid board targets
     setValidTargets([])
-  }, [abilityMode, cursorStack, playMode, clearTargetingMode])
+  }, [abilityMode, cursorStack, playMode, clearTargetingMode, gameState, updateState])
 
   const handleDoubleClickHandCard = (player: Player, card: Card, cardIndex: number) => {
     if (abilityMode || cursorStack) {

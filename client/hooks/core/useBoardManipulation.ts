@@ -2,21 +2,28 @@ import { useCallback } from 'react'
 import { DeckType } from '../../types'
 import type { GameState, Card } from '../../types'
 import { recalculateBoardStatuses } from '../../../shared/utils/boardUtils'
-import { initializeReadyStatuses } from '../../utils/autoAbilities'
+import { initializeReadyStatuses, READY_STATUS_DEPLOY, READY_STATUS_SETUP, READY_STATUS_COMMIT, markAbilityUsedThisTurn } from '../../utils/autoAbilities'
 import { deepCloneState } from '../../utils/common'
 import { logger } from '../../utils/logger'
+import { getCardAbilityTypes } from '@server/utils/autoAbilities'
+import type { CardStatusChange, BoardCardData } from '../../host/types'
 
 export interface UseBoardManipulationProps {
   updateState: (newStateOrFn: GameState | ((prevState: GameState) => GameState)) => void
   rawJsonData: {
     tokenDatabase: Record<string, Omit<Card, 'id' | 'deck'>>
   } | null
+  broadcastCardStatusSync?: (changes: CardStatusChange[]) => void  // Optional callback for WebRTC mode
+  broadcastBoardCardSync?: (cards: BoardCardData[], action: 'update' | 'remove' | 'replace') => void  // Optional callback for WebRTC mode
 }
 
 export const useBoardManipulation = (props: UseBoardManipulationProps) => {
-  const { updateState, rawJsonData } = props
+  const { updateState, rawJsonData, broadcastCardStatusSync, broadcastBoardCardSync } = props
 
   const markAbilityUsed = useCallback((boardCoords: { row: number, col: number }, _isDeployAbility?: boolean, _setDeployAttempted?: boolean, readyStatusToRemove?: string) => {
+    // Collect status changes to broadcast via optimized CARD_STATUS_SYNC
+    const statusChanges: CardStatusChange[] = []
+
     updateState(currentState => {
       if (!currentState.isGameStarted) {
         return currentState
@@ -34,13 +41,78 @@ export const useBoardManipulation = (props: UseBoardManipulationProps) => {
           card.statuses = card.statuses.filter(s => s.type !== readyStatusToRemove)
           const newStatusesTypes = card.statuses.map(s => s.type)
           logger.debug(`[markAbilityUsed] Removed status '${readyStatusToRemove}' from ${card.name} at [${boardCoords.row},${boardCoords.col}]: [${oldStatusesTypes.join(', ')}] -> [${newStatusesTypes.join(', ')}]`)
+
+          // Mark Setup/Commit abilities as used this turn (once-per-turn limit)
+          if (readyStatusToRemove === READY_STATUS_SETUP) {
+            markAbilityUsedThisTurn(card, 'setup')
+            logger.debug(`[markAbilityUsed] Marked Setup ability as used this turn for ${card.name}`)
+
+            // Collect change to broadcast
+            statusChanges.push({
+              cardId: card.id,
+              statusType: 'setupUsedThisTurn',
+              action: 'add',
+              ownerId: card.ownerId
+            })
+          } else if (readyStatusToRemove === READY_STATUS_COMMIT) {
+            markAbilityUsedThisTurn(card, 'commit')
+            logger.debug(`[markAbilityUsed] Marked Commit ability as used this turn for ${card.name}`)
+
+            // Collect change to broadcast
+            statusChanges.push({
+              cardId: card.id,
+              statusType: 'commitUsedThisTurn',
+              action: 'add',
+              ownerId: card.ownerId
+            })
+          }
+
+          // SPECIAL CASE: After removing readyDeploy, add phase-specific ready status
+          // This ensures cards that enter during Setup/Commit phases get their phase-specific status after using Deploy
+          if (readyStatusToRemove === READY_STATUS_DEPLOY) {
+            const playerId = card.ownerId
+            if (playerId && playerId > 0) {
+              // Check common conditions: must be active player, not stunned
+              // Note: We DON'T check canActivate here because the card just lost readyDeploy
+              // and hasn't gained the phase-specific status yet, so canActivate would return false
+              const isActivePlayer = newState.activePlayerId === playerId
+              const isStunned = card.statuses?.some(s => s.type === 'Stun')
+
+              if (isActivePlayer && !isStunned) {
+                // Determine which phase-specific status to add
+                const abilityTypes = getCardAbilityTypes(card as any)
+                let phaseStatusToAdd: string | null = null
+
+                if (newState.currentPhase === 1 && abilityTypes.includes('setup')) {
+                  phaseStatusToAdd = READY_STATUS_SETUP
+                } else if (newState.currentPhase === 3 && abilityTypes.includes('commit')) {
+                  phaseStatusToAdd = READY_STATUS_COMMIT
+                }
+
+                if (phaseStatusToAdd && !card.statuses.some(s => s.type === phaseStatusToAdd)) {
+                  card.statuses.push({ type: phaseStatusToAdd, addedByPlayerId: playerId })
+                  logger.debug(`[markAbilityUsed] Added phase-specific status '${phaseStatusToAdd}' to ${card.name} after Deploy`)
+
+                  // Collect change to broadcast (phase-specific statuses are local, so we skip them in WebRTC mode)
+                  // But setupUsedThisTurn/commitUsedThisTurn need to be synced
+                }
+              }
+            }
+          }
         } else {
           logger.debug(`[markAbilityUsed] Called for ${card.name} at [${boardCoords.row},${boardCoords.col}] but no readyStatusToRemove specified. Current statuses: [${oldStatusesTypes.join(', ')}]`)
         }
       }
       return newState
     })
-  }, [updateState])
+
+    // Broadcast status changes via optimized CARD_STATUS_SYNC message
+    if (statusChanges.length > 0 && broadcastCardStatusSync) {
+      setTimeout(() => {
+        broadcastCardStatusSync(statusChanges)
+      }, 0)
+    }
+  }, [updateState, broadcastCardStatusSync])
 
   const resetDeployStatus = useCallback((boardCoords: { row: number, col: number }) => {
     updateState(currentState => {
@@ -258,7 +330,7 @@ export const useBoardManipulation = (props: UseBoardManipulationProps) => {
         // Initialize ready statuses based on token's actual abilities
         // Ready statuses belong to the token owner (even if it's a dummy player)
         // Control is handled by canActivateAbility checking dummy ownership
-        initializeReadyStatuses(tokenCard, ownerId)
+        initializeReadyStatuses(tokenCard, ownerId, newState.currentPhase)
         newState.board[coords.row][coords.col].card = tokenCard
       }
       newState.board = recalculateBoardStatuses(newState)

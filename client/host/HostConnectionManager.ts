@@ -13,14 +13,14 @@ import type {
   WebrtcEvent,
   WebrtcConnectionInfo,
   GuestConnection,
-  HostConfig
+  HostConfig,
+  CardStatusChange
 } from './types'
 import { logger } from '../utils/logger'
-import { serializeDeltaBase64, serializeGameState, serializePersonalizedState } from '../utils/webrtcSerialization'
+import { serializeDeltaBase64, serializeGameState } from '../utils/webrtcSerialization'
 import { encodeAbilityEffect } from '../utils/abilityMessages'
 import { encodeSessionEvent } from '../utils/sessionMessages'
 import { AbilityEffectType } from '../types/codec'
-import { createPersonalizedGameState } from './StatePersonalization'
 
 // Enable/disable optimized serialization
 const USE_OPTIMIZED_SERIALIZATION = true
@@ -240,20 +240,22 @@ export class HostConnectionManager {
       guest.playerId = playerId
     }
 
-    const message: WebrtcMessage = {
-      type: 'JOIN_ACCEPT_MINIMAL',
-      senderId: this.peer?.id,
-      playerId: playerId,
-      data: minimalInfo,
-      timestamp: Date.now()
-    }
-
     try {
+      // Send JOIN_ACCEPT_MINIMAL directly - no need for CARD_REGISTRY
+      // Guest uses local contentDatabase to look up cards by baseId
+      const message: WebrtcMessage = {
+        type: 'JOIN_ACCEPT_MINIMAL',
+        senderId: this.peer?.id,
+        playerId: playerId,
+        data: minimalInfo,
+        timestamp: Date.now()
+      }
+
       conn.send(message)
       logger.info(`Accepted guest ${peerId} as player ${playerId} (minimal)`)
       return true
     } catch (err) {
-      logger.error(`[acceptGuestMinimal] Failed to send JOIN_ACCEPT_MINIMAL to ${peerId}:`, err)
+      logger.error(`[acceptGuestMinimal] Failed to send to ${peerId}:`, err)
       return false
     }
   }
@@ -300,7 +302,7 @@ export class HostConnectionManager {
 
   /**
    * Broadcast game state to all guests (personalized)
-   * Uses MessagePack serialization for smaller message size
+   * Uses BINARY codec for MUCH smaller message size
    */
   broadcastGameState(gameState: GameState, excludePeerId?: string): void {
     if (this.connections.size === 0) {
@@ -327,16 +329,14 @@ export class HostConnectionManager {
       }
 
       try {
-        // Create personalized state for this guest (preserves all game functionality)
-        const personalizedState = createPersonalizedGameState(gameState, guest.playerId)
-
-        // Serialize using MessagePack for smaller size
-        const serializedState = serializePersonalizedState(personalizedState)
+        // Use BINARY codec - much smaller than MessagePack!
+        const stateData = serializeGameState(gameState, guest.playerId)
+        const base64Data = btoa(String.fromCharCode(...stateData))
 
         const message: WebrtcMessage = {
-          type: 'STATE_UPDATE_COMPACT', // Keep same type for compatibility
+          type: 'CARD_STATE', // Use binary codec message type
           senderId: this.peer?.id,
-          data: { gameState: serializedState, _format: 'msgpack' }, // Add format marker
+          data: base64Data,
           timestamp: Date.now()
         }
 
@@ -546,6 +546,52 @@ export class HostConnectionManager {
       { playerId },
       excludePeerId
     )
+  }
+
+  /**
+   * Broadcast card status changes to all guests
+   * OPTIMIZED: Only sends {cardId, statusType, action} instead of full gameState
+   * This prevents "Message too big" errors when syncing ready statuses
+   */
+  broadcastCardStatusSync(changes: CardStatusChange[], excludePeerId?: string): number {
+    try {
+      const message: WebrtcMessage = {
+        type: 'CARD_STATUS_SYNC',
+        senderId: this.peer?.id,
+        data: { changes },
+        timestamp: Date.now()
+      }
+
+      const successCount = this.broadcast(message, excludePeerId)
+      logger.info(`[broadcastCardStatusSync] Sent ${changes.length} status changes to ${successCount} guests`)
+      return successCount
+    } catch (err) {
+      logger.error('[broadcastCardStatusSync] Failed to broadcast:', err)
+      return 0
+    }
+  }
+
+  /**
+   * Broadcast board card data to all guests
+   * OPTIMIZED: Only sends essential card data instead of full gameState
+   * This prevents "Message too big" errors when syncing board changes
+   */
+  broadcastBoardCardSync(cards: any[], action: 'update' | 'remove' | 'replace', excludePeerId?: string): number {
+    try {
+      const message: WebrtcMessage = {
+        type: 'BOARD_CARD_SYNC',
+        senderId: this.peer?.id,
+        data: { cards, action, timestamp: Date.now() },
+        timestamp: Date.now()
+      }
+
+      const successCount = this.broadcast(message, excludePeerId)
+      logger.info(`[broadcastBoardCardSync] Sent ${cards.length} card data (${action}) to ${successCount} guests`)
+      return successCount
+    } catch (err) {
+      logger.error('[broadcastBoardCardSync] Failed to broadcast:', err)
+      return 0
+    }
   }
 
   /**

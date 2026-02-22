@@ -63,8 +63,10 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, ownerPla
   }, [ownerPlayer])
 
   // Aggregate statuses by type
-  // Filter out readiness statuses (readyDeploy, readySetup, readyCommit) - they are invisible to players
-  const hiddenStatusTypes = ['readyDeploy', 'readySetup', 'readyCommit']
+  // Filter out internal statuses - they are invisible to players:
+  // - readyDeploy, readySetup, readyCommit: control ability availability
+  // - setupUsedThisTurn, commitUsedThisTurn: track once-per-turn usage
+  const hiddenStatusTypes = ['readyDeploy', 'readySetup', 'readyCommit', 'setupUsedThisTurn', 'commitUsedThisTurn']
   const statusGroups: Record<string, number[]> = (card.statuses ?? []).reduce(
     (acc, status) => {
       // Skip readiness statuses - they should not be displayed

@@ -799,9 +799,11 @@ function handleTransferStatus(
   }
 
   // Transfer ALL statuses from source card to target card (for TRANSFER_ALL_STATUSES)
+  // Reckless Provocateur Commit: Move tokens FROM chosen allied card TO Reckless Provocateur
   // Note: transferAllStatusesWithoutException(fromCoords, toCoords) - from source to target
   if (abilityMode.mode === 'TRANSFER_ALL_STATUSES') {
-    transferAllStatusesWithoutException(sourceCoords, boardCoords)
+    // boardCoords = chosen allied card (source of tokens), sourceCoords = Reckless Provocateur (destination)
+    transferAllStatusesWithoutException(boardCoords, sourceCoords)
   } else {
     // For TRANSFER_STATUS_SELECT, legacy behavior - transfer one status
     // This is handled elsewhere

@@ -143,6 +143,30 @@ export class WebrtcManagerNew {
   }
 
   /**
+   * Broadcast card status changes to all guests (host only)
+   * OPTIMIZED: Only sends {cardId, statusType, action} instead of full gameState
+   */
+  broadcastCardStatusSync(changes: any[], excludePeerId?: string): number {
+    if (!this.hostManager) {
+      logger.warn('[WebrtcManager] Not in host mode')
+      return 0
+    }
+    return this.hostManager.broadcastCardStatusSync(changes, excludePeerId)
+  }
+
+  /**
+   * Broadcast board card data to all guests (host only)
+   * OPTIMIZED: Only sends essential card data (cardId, row, col, statuses) instead of full gameState
+   */
+  broadcastBoardCardSync(cards: any[], action: 'update' | 'remove' | 'replace', excludePeerId?: string): number {
+    if (!this.hostManager) {
+      logger.warn('[WebrtcManager] Not in host mode')
+      return 0
+    }
+    return this.hostManager.broadcastBoardCardSync(cards, action, excludePeerId)
+  }
+
+  /**
    * Broadcast to all guests (host only)
    */
   broadcastToGuests(message: WebrtcMessage, excludePeerId?: string): number {

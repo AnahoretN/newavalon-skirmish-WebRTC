@@ -13,40 +13,10 @@ import { encode, decode } from '@msgpack/msgpack'
 import type { GameState } from '../types'
 import { logger } from './logger'
 import {
-  buildCardRegistry,
-  serializeCardRegistry,
-  deserializeCardRegistry,
   encodeCardState,
   decodeCardState,
   mergeDecodedState
 } from './gameCodec'
-import type { CardRegistry } from '../types/codec'
-
-// ============================================================================
-// CARD REGISTRY MANAGEMENT
-// ============================================================================
-
-/**
- * Global card registry instance
- */
-let globalCardRegistry: CardRegistry | null = null
-
-/**
- * Get or create the global card registry
- */
-export function getCardRegistry(): CardRegistry {
-  if (!globalCardRegistry) {
-    globalCardRegistry = buildCardRegistry()
-  }
-  return globalCardRegistry
-}
-
-/**
- * Reset the global card registry (for testing)
- */
-export function resetCardRegistry(): void {
-  globalCardRegistry = null
-}
 
 // ============================================================================
 // SERIALIZATION FUNCTIONS
@@ -54,36 +24,25 @@ export function resetCardRegistry(): void {
 
 /**
  * Serialize game state to binary format
- * This replaces the old delta system
+ * No registry needed - sends baseId directly, guest uses local contentDatabase
  */
 export function serializeGameState(
   gameState: GameState,
-  localPlayerId: number | null
+  _localPlayerId: number | null
 ): Uint8Array {
-  const registry = getCardRegistry()
-  return encodeCardState(gameState, registry, localPlayerId)
+  return encodeCardState(gameState)
 }
 
 /**
  * Deserialize game state from binary format
+ * Uses local contentDatabase to look up cards by baseId
  */
 export function deserializeGameState(
   data: Uint8Array,
-  localPlayerId: number | null
+  _localPlayerId: number | null
 ): Partial<GameState> {
-  const registry = getCardRegistry()
-  return decodeCardState(data, registry, localPlayerId)
+  return decodeCardState(data)
 }
-
-/**
- * Serialize card registry for transmission
- */
-export { serializeCardRegistry }
-
-/**
- * Deserialize card registry from transmission
- */
-export { deserializeCardRegistry }
 
 /**
  * Merge decoded state into existing state
@@ -293,8 +252,9 @@ export function deserializePersonalizedState(base64Data: string): GameState {
     }
     // Decode MessagePack
     const decoded = decode(bytes)
-    logger.info('[deserializePersonalizedizedState] Decoded state, has players:', !!(decoded as any).players, 'keys:', Object.keys(decoded))
-    return decoded as GameState
+    const decodedState = decoded as any
+    logger.info('[deserializePersonalizedizedState] Decoded state, has players:', !!decodedState.players, 'keys:', Object.keys(decodedState))
+    return decodedState as GameState
   } catch (e) {
     logger.error('[deserializePersonalizedState] Failed to decode:', e)
     throw e

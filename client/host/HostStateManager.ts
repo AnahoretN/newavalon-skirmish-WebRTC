@@ -62,8 +62,12 @@ export class HostStateManager {
       return
     }
 
+    const oldState = this.currentState
+    const phaseChanged = oldState.currentPhase !== newState.currentPhase
+    const activePlayerChanged = oldState.activePlayerId !== newState.activePlayerId
+
     // Create delta from old state to new state
-    const delta = createDeltaFromStates(this.currentState, newState, this.localPlayerId || 0)
+    const delta = createDeltaFromStates(oldState, newState, this.localPlayerId || 0)
 
     // Update internal state
     this.currentState = newState
@@ -71,7 +75,12 @@ export class HostStateManager {
     // Broadcast delta to all guests (excluding sender if provided)
     if (!isDeltaEmpty(delta)) {
       this.broadcastDelta(delta, excludePeerId)
-      logger.info(`[HostStateManager] Local change broadcast: phase=${!!delta.phaseDelta}, players=${Object.keys(delta.playerDeltas || {}).length}`)
+      logger.info(`[HostStateManager] Local change broadcast via delta: phase=${!!delta.phaseDelta}, players=${Object.keys(delta.playerDeltas || {}).length}`)
+    } else if (phaseChanged || activePlayerChanged) {
+      // Delta system is stub (returns empty delta), so broadcast full state for important changes
+      // This ensures guests receive phase changes and active player changes
+      this.connectionManager.broadcastGameState(newState, excludePeerId)
+      logger.info(`[HostStateManager] Local change broadcast via full state: phaseChanged=${phaseChanged}, activePlayerChanged=${activePlayerChanged}, newPhase=${newState.currentPhase}, activePlayerId=${newState.activePlayerId}`)
     }
   }
 
@@ -144,10 +153,17 @@ export class HostStateManager {
 
     this.currentState = newState
 
+    const phaseChanged = oldState.currentPhase !== newState.currentPhase
+    const activePlayerChanged = oldState.activePlayerId !== newState.activePlayerId
+
     if (!isDeltaEmpty(delta)) {
       // Broadcast to all guests (excluding the sender if needed)
       this.broadcastDelta(delta, excludePeerId)
       logger.info(`[HostStateManager] Guest ${guestPlayerId} update broadcast: phase=${!!delta.phaseDelta}, players=${Object.keys(delta.playerDeltas || {}).length}`)
+    } else if (phaseChanged || activePlayerChanged) {
+      // Delta system is stub (returns empty delta), so broadcast full state for important changes
+      this.connectionManager.broadcastGameState(newState, excludePeerId)
+      logger.info(`[HostStateManager] Guest ${guestPlayerId} update broadcast via full state: phaseChanged=${phaseChanged}, activePlayerChanged=${activePlayerChanged}`)
     }
   }
 
@@ -169,10 +185,17 @@ export class HostStateManager {
 
     this.currentState = newState
 
+    const phaseChanged = oldState.currentPhase !== newState.currentPhase
+    const activePlayerChanged = oldState.activePlayerId !== newState.activePlayerId
+
     if (!isDeltaEmpty(newDelta)) {
       // Broadcast to all guests except the sender
       this.broadcastDelta(newDelta, senderPeerId)
       logger.info(`[HostStateManager] Guest ${guestPlayerId} delta broadcast: phase=${!!newDelta.phaseDelta}, players=${Object.keys(newDelta.playerDeltas || {}).length}`)
+    } else if (phaseChanged || activePlayerChanged) {
+      // Delta system is stub (returns empty delta), so broadcast full state for important changes
+      this.connectionManager.broadcastGameState(newState, senderPeerId)
+      logger.info(`[HostStateManager] Guest ${guestPlayerId} delta broadcast via full state: phaseChanged=${phaseChanged}, activePlayerChanged=${activePlayerChanged}`)
     }
   }
 
@@ -207,6 +230,9 @@ export class HostStateManager {
 
     if (!isDeltaEmpty(delta)) {
       this.broadcastDelta(delta)
+    } else {
+      // Delta system is stub, broadcast full state
+      this.connectionManager.broadcastGameState(updatedState)
     }
   }
 
@@ -226,6 +252,9 @@ export class HostStateManager {
 
     if (!isDeltaEmpty(delta)) {
       this.broadcastDelta(delta)
+    } else {
+      // Delta system is stub, broadcast full state
+      this.connectionManager.broadcastGameState(updatedState)
     }
   }
 
@@ -249,6 +278,9 @@ export class HostStateManager {
 
     if (!isDeltaEmpty(delta)) {
       this.broadcastDelta(delta)
+    } else {
+      // Delta system is stub, broadcast full state
+      this.connectionManager.broadcastGameState(updatedState)
     }
   }
 
@@ -342,11 +374,17 @@ export class HostStateManager {
       timestamp: Date.now()
     })
 
-    // Then broadcast the delta
+    // Then broadcast the delta or full state
     if (!isDeltaEmpty(delta)) {
       setTimeout(() => {
         this.broadcastDelta(delta)
         logger.info('[HostStateManager] Broadcasted initial draw delta with Preparation phase')
+      }, 50)
+    } else {
+      // Delta system is stub, broadcast full state
+      setTimeout(() => {
+        this.connectionManager.broadcastGameState(newState)
+        logger.info('[HostStateManager] Broadcasted full state for game start (delta system is stub)')
       }, 50)
     }
   }

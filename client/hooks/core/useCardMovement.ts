@@ -399,7 +399,7 @@ export function useCardMovement(props: UseCardMovementProps) {
             }
             cardToMove.ownerId = ownerId
           }
-          initializeReadyStatuses(cardToMove, ownerId)
+          initializeReadyStatuses(cardToMove, ownerId, newState.currentPhase)
 
           // Lucius, The Immortal: Bonus if entered from discard
           if (item.source === 'discard' && (cardToMove.baseId === 'luciusTheImmortal' || cardToMove.name.includes('Lucius'))) {

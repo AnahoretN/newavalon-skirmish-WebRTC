@@ -19,6 +19,7 @@ import { logger } from '../../utils/logger'
 import { deepCloneState } from '../../utils/common'
 import { recalculateBoardStatuses } from '@shared/utils/boardUtils'
 import { toggleActivePlayer as toggleActivePlayerPhase, passTurnToNextPlayer, playerHasCardsOnBoard, setPhase as hostSetPhase } from '../../host/PhaseManagement'
+import { updateReadyStatuses, getCardAbilityInfo } from '../../utils/autoAbilities'
 import type { GameState, Board, DeckType } from '../../types'
 import type { WebRTCManager } from './types'
 
@@ -183,6 +184,12 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
           newState.isScoringStep = false
         }
 
+        // Update ready statuses when entering Setup (1) or Commit (3) phase
+        // This ensures cards with Setup/Commit abilities get the ready status
+        if (newPhase === 1 || newPhase === 3) {
+          updateReadyStatuses({ gameState: newState }, getCardAbilityInfo)
+        }
+
         // Now sync with other players
         if (webrtcIsHostRef.current) {
           // Host: broadcast to all guests (will happen via updateState)
@@ -245,12 +252,19 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
       // When entering Scoring phase from any phase, enable scoring step
       // When leaving Scoring phase, disable scoring step
       // If clearing line selection mode, also close isScoringStep to prevent re-triggering
-      return {
+      const resultState = {
         ...newState,
         currentPhase: newPhase,
         ...(enteringScoringPhase && !isClearingLineSelectionMode ? { isScoringStep: true } : {}),
         ...(leavingScoringPhase || isClearingLineSelectionMode ? { isScoringStep: false } : {}),
       }
+
+      // Update ready statuses when entering Setup (1) or Commit (3) phase
+      if (newPhase === 1 || newPhase === 3) {
+        updateReadyStatuses({ gameState: resultState }, getCardAbilityInfo)
+      }
+
+      return resultState
     })
   }, [updateState, abilityMode, setAbilityMode, webrtcManagerRef, webrtcIsHostRef, gameStateRef, setGameState])
 
@@ -302,12 +316,21 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
 
     // WebRTC mode: Handle turn passing when at Scoring phase and in scoring step
     // Case 1: Auto-pass turn after finishing Scoring phase
-    if (isWebRTCMode && currentState.isGameStarted && currentState.currentPhase === 4 && currentState.isScoringStep) {
+    // IMPORTANT: Only HOST should trigger turn passing in WebRTC mode
+    // Guests should wait for host to broadcast the state change
+    if (isWebRTCMode && webrtcIsHostRef.current && currentState.isGameStarted && currentState.currentPhase === 4 && currentState.isScoringStep) {
       updateState(currentState => {
         // Use passTurnToNextPlayer to properly transition to next player
         // This handles: Preparation phase, card drawing, includes dummy players
         return passTurnToNextPlayer(currentState)
       })
+      return
+    }
+
+    // In WebRTC mode as GUEST, ignore nextPhase clicks during scoring step
+    // The host will broadcast the state change
+    if (isWebRTCMode && !webrtcIsHostRef.current && currentState.currentPhase === 4 && currentState.isScoringStep) {
+      logger.info('[nextPhase] Guest ignoring Next Phase during Scoring - waiting for host broadcast')
       return
     }
 
@@ -337,7 +360,8 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
 
       // When transitioning from Commit (phase 3) to Scoring (phase 4), enable scoring step
       // Case 2: If player has no cards on board during Commit phase, auto-pass turn
-      if (isWebRTCMode && nextPhaseIndex === 4 && currentState.currentPhase === 3) {
+      // IMPORTANT: Only HOST should trigger auto-pass in WebRTC mode
+      if (isWebRTCMode && nextPhaseIndex === 4 && currentState.currentPhase === 3 && webrtcIsHostRef.current) {
         // Check if active player has any cards on board
         const hasCards = playerHasCardsOnBoard(currentState, currentState.activePlayerId!)
 
@@ -353,7 +377,7 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
         return newState
       }
 
-      // Non-WebRTC mode: normal transition from Commit to Scoring
+      // For non-host or non-WebRTC, or normal transition from Commit to Scoring
       if (nextPhaseIndex === 4 && currentState.currentPhase === 3) {
         // Entering Scoring phase from Commit - enable scoring
         newState.isScoringStep = true
@@ -381,6 +405,13 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
       newState.board = recalculateBoardStatuses(newState)
 
       newState.currentPhase = nextPhaseIndex
+
+      // Update ready statuses when entering Setup (1) or Commit (3) phase
+      // This ensures cards with Setup/Commit abilities get the ready status
+      if (nextPhaseIndex === 1 || nextPhaseIndex === 3) {
+        updateReadyStatuses({ gameState: newState }, getCardAbilityInfo)
+      }
+
       return newState
     })
   }, [updateState, abilityMode, setAbilityMode, gameStateRef, ws, scoreDeltaAccumulator])
@@ -426,14 +457,24 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
 
         // If in scoring step, exit it AND move to previous phase (Commit or Setup)
         if (currentState.isScoringStep) {
-          return { ...newState, isScoringStep: false, currentPhase: newPhase }
+          const resultState = { ...newState, isScoringStep: false, currentPhase: newPhase }
+          // Update ready statuses when entering Setup (1) or Commit (3) phase
+          if (newPhase === 1 || newPhase === 3) {
+            updateReadyStatuses({ gameState: resultState }, getCardAbilityInfo)
+          }
+          return resultState
         }
         // Otherwise just move to previous phase (but not below Setup/1)
         // Preparation (0) is only accessed via turn passing, not manual navigation
-        return {
+        const resultState = {
           ...newState,
           currentPhase: newPhase,
         }
+        // Update ready statuses when entering Setup (1) or Commit (3) phase
+        if (newPhase === 1 || newPhase === 3) {
+          updateReadyStatuses({ gameState: resultState }, getCardAbilityInfo)
+        }
+        return resultState
       }
 
       // If in scoring step, exit it AND move to previous phase (Commit or Setup)

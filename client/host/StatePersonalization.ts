@@ -15,9 +15,16 @@ import { logger } from '../utils/logger'
 
 /**
  * Ready status types that are player-specific and should NOT be broadcast
- * These are calculated locally by each client based on their perspective
+ *
+ * IMPORTANT: readyDeploy is NO LONGER filtered because:
+ * - It's a one-time status that persists until Deploy ability is used/skipped
+ * - It needs to be synchronized across all clients
+ * - readySetup and readyCommit are still filtered (recalculated locally)
+ *
+ * NOTE: setupUsedThisTurn and commitUsedThisTurn MUST be synchronized
+ * because they track once-per-turn usage and need to be consistent across all clients
  */
-const READY_STATUS_TYPES = ['readyDeploy', 'readySetup', 'readyCommit']
+const READY_STATUS_TYPES = ['readySetup', 'readyCommit']
 
 /**
  * Optimize card for network transmission
@@ -28,6 +35,12 @@ const READY_STATUS_TYPES = ['readyDeploy', 'readySetup', 'readyCommit']
 export function optimizeCard(card: Card): any {
   // Filter out ready statuses from broadcast - they are calculated locally by each client
   const filteredStatuses = (card.statuses || []).filter(s => !READY_STATUS_TYPES.includes(s.type))
+
+  // Log readyDeploy for debugging
+  const hasReadyDeploy = (card.statuses || []).some(s => s.type === 'readyDeploy')
+  if (hasReadyDeploy) {
+    logger.debug(`[optimizeCard] Card ${card.name} has readyDeploy, including in broadcast`)
+  }
 
   return {
     id: card.id,

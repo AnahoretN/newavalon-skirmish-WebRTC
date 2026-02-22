@@ -93,6 +93,10 @@ export type WebrtcMessageType =
   | 'CARD_STATE'           // Game state update (cards, board, players)
   | 'ABILITY_EFFECT'       // Visual/ability effects
   | 'SESSION_EVENT'        // Session events (connect, disconnect, phase change, etc.)
+  // Card status synchronization (optimized - only changed statuses)
+  | 'CARD_STATUS_SYNC'     // Sync card status changes (readyDeploy, setupUsedThisTurn, etc.)
+  // Board card synchronization (optimized - only card data on board)
+  | 'BOARD_CARD_SYNC'      // Sync board cards (cardId, row, col, statuses, power, etc.)
 
 export interface WebrtcMessage {
   type: WebrtcMessageType
@@ -126,6 +130,47 @@ export interface WebrtcEvent {
 }
 
 export type WebrtcEventHandler = (event: WebrtcEvent) => void
+
+/**
+ * Card status change for CARD_STATUS_SYNC message
+ * Only sends the minimal data needed to update a card's status
+ */
+export interface CardStatusChange {
+  cardId: string          // Unique card ID
+  statusType: string      // Status type (e.g., 'readyDeploy', 'setupUsedThisTurn')
+  action: 'add' | 'remove' // Whether to add or remove the status
+  ownerId?: number        // Owner ID for the status
+}
+
+/**
+ * Board card data for BOARD_CARD_SYNC message
+ * Only sends essential data about a card on the board
+ * Optimized to minimize message size for WebRTC
+ */
+export interface BoardCardData {
+  cardId: string          // Unique card ID
+  baseId: string          // Base ID for looking up card definition
+  row: number             // Board row (0-5)
+  col: number             // Board column (0-5)
+  power: number           // Current power (may be modified by statuses)
+  ownerId: number         // Player who owns the card
+  enteredThisTurn: boolean // Whether card entered the board this turn
+  // Statuses - array of status objects with minimal data
+  statuses: Array<{
+    type: string          // Status type (Stun, Support, Threat, etc.)
+    addedByPlayerId: number // Player who added the status
+  }>
+}
+
+/**
+ * Board card sync message
+ * Contains multiple board card updates for efficient synchronization
+ */
+export interface BoardCardSyncMessage {
+  cards: BoardCardData[]  // Array of card data
+  action: 'update' | 'remove' | 'replace' // What to do with the data
+  timestamp: number       // For ordering
+}
 
 /**
  * Host configuration

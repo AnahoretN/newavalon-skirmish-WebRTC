@@ -561,14 +561,8 @@ function handleEnterMode(
 
   // RIOT_PUSH
   if (mode === 'RIOT_PUSH') {
-    // For Deploy abilities, don't check targets immediately - let player activate anytime
-    // Target validation happens when they click on a target (in modeHandlers)
-    if (action.isDeployAbility) {
-      setAbilityMode(action)
-      setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords)
-      return
-    }
-    // For non-deploy (shouldn't happen with RIOT_PUSH, but kept for safety)
+    // Check targets BEFORE activating targeting mode
+    // This ensures "no target" is shown if there are no adjacent cards to push
     const hasPushTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
     if (!hasPushTargets) {
       triggerNoTarget(action.sourceCoords || sourceCoords)
@@ -580,8 +574,29 @@ function handleEnterMode(
     return
   }
 
+  // SWAP_POSITIONS (Reckless Provocateur Deploy)
+  if (mode === 'SWAP_POSITIONS') {
+    // Check targets BEFORE activating targeting mode
+    const hasSwapTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    if (!hasSwapTargets) {
+      triggerNoTarget(action.sourceCoords || sourceCoords)
+      markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+      return
+    }
+    setAbilityMode(action)
+    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords)
+    return
+  }
+
   // PATROL_MOVE
   if (mode === 'PATROL_MOVE') {
+    // Check targets BEFORE activating targeting mode
+    const hasPatrolTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    if (!hasPatrolTargets) {
+      triggerNoTarget(action.sourceCoords || sourceCoords)
+      markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+      return
+    }
     setAbilityMode(action)
     setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords)
     return
