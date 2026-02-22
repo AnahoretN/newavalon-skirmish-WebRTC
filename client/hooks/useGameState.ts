@@ -2353,6 +2353,12 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
 
         logger.info(`[handleWebrtcMessage] Received CARD_STATE with timestamp=${message.timestamp}`)
+        // Mark that we've received state from host (enables sending our own updates via updateState)
+        if (!webrtcIsHostRef.current) {
+          receivedServerStateRef.current = true
+          logger.info('[handleWebrtcMessage] Received first CARD_STATE from host, state sync enabled')
+        }
+
         if (typeof message.data === 'string') {
           // Decode base64 to Uint8Array (PeerJS converts to string)
           try {
