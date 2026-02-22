@@ -1,5 +1,5 @@
 <div align="center">
-<img src="https://res.cloudinary.com/dxxh6meej/image/upload/v1767442866/DamanakiPreview_b1ggds.png" alt="New Avalon: Skirmish" />
+<img src="https://res.cloudinary.com/dxxh6meej/image/upload/v1771744777/DamanakiPreview2_kwwyo2.webp" alt="New Avalon: Skirmish" />
 </div>
 
 # New Avalon: Skirmish

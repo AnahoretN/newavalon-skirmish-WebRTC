@@ -39,15 +39,15 @@ const DEFAULT_RULES = {
 }
 
 // --- Constants for Demo ---
-const GAWAIN_IMG = 'https://res.cloudinary.com/dxxh6meej/image/upload/v1764622845/Reclaimed_Gawain_sg6257.png'
-const GAWAIN_FALLBACK = '/images/cards/NEU_RECLAIMED_GAWAIN.png'
+const GAWAIN_IMG = 'https://res.cloudinary.com/dxxh6meej/image/upload/v1771367448/N_Reclaimed_Gawain_sjmlsp.webp'
+const GAWAIN_FALLBACK = '/images/cards/FUS_DEVOUT_SYNTHETIC.png'
 
 const DEMO_CARDS: Record<string, CardType> = {
   gawain: {
     id: 'demo_gawain',
     name: 'Reclaimed "Gawain"',
     deck: DeckType.Neutral,
-    power: 5,
+    power: 4,
     imageUrl: GAWAIN_IMG,
     fallbackImage: GAWAIN_FALLBACK,
     ability: 'Deploy: Shield 1. Push an adjacent card 1 cell. May take its place.\nSetup: Destroy an adjacent card with threat or stun.',
@@ -60,7 +60,7 @@ const DEMO_CARDS: Record<string, CardType> = {
     name: 'Riot Agent',
     deck: DeckType.SynchroTech,
     power: 3,
-    imageUrl: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1763253337/SYN_RIOT_AGENT_jurf4t.png',
+    imageUrl: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1771365236/SYN_RIOT_AGENT_i4lk5m.webp',
     fallbackImage: '/images/cards/SYN_RIOT_AGENT.png',
     ability: 'Deploy: Push.',
     types: ['Unit', 'SynchroTech'],
@@ -72,7 +72,7 @@ const DEMO_CARDS: Record<string, CardType> = {
     name: 'Princeps',
     deck: DeckType.Optimates,
     power: 3,
-    imageUrl: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1763253332/OPT_PRINCEPS_w3o5lq.png',
+    imageUrl: 'https://res.cloudinary.com/dxxh6meej/image/upload/v1771365252/OPT_PRINCEPS_aaqakx.webp',
     fallbackImage: '/images/cards/OPT_PRINCEPS.png',
     ability: '',
     types: ['Unit', 'Optimates'],
@@ -390,7 +390,6 @@ const HandVisual = ({ demoImageRefreshVersion }: { demoImageRefreshVersion: numb
 // VI. Counters Visual
 const CountersVisual = () => {
   const countersToShow = ['Stun', 'Shield', 'Revealed', 'Aim', 'Exploit', 'Support', 'Threat']
-  const COUNTER_BG_URL = 'https://res.cloudinary.com/dxxh6meej/image/upload/v1763653192/background_counter_socvss.png'
 
   return (
     <VisualWrapper>
@@ -399,15 +398,7 @@ const CountersVisual = () => {
           const iconUrl = STATUS_ICONS[type]
           return (
             <div key={type} className="flex flex-col items-center gap-2 p-2 bg-gray-800/50 rounded border border-white/5 hover:bg-gray-800 transition-colors">
-              <div
-                className="w-10 h-10 rounded-full border-2 border-white/30 flex items-center justify-center shadow-lg relative"
-                style={{
-                  backgroundImage: `url(${COUNTER_BG_URL})`,
-                  backgroundSize: 'contain',
-                  backgroundPosition: 'center',
-                  backgroundRepeat: 'no-repeat',
-                }}
-              >
+              <div className="w-10 h-10 rounded-full border-2 border-white/30 flex items-center justify-center shadow-lg relative bg-gradient-to-br from-gray-700 to-gray-900">
                 {iconUrl ? (
                   <img src={iconUrl} alt={type} className="w-6 h-6 object-contain drop-shadow-md" />
                 ) : (
