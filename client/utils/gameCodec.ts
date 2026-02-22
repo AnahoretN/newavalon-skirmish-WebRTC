@@ -65,6 +65,19 @@ function getCardFlags(card: Card): number {
 }
 
 /**
+ * Encode a card collection (hand/deck/discard) as baseId arrays
+ * Format: For each card: [baseIdLength: 1 byte] [baseId: string]
+ */
+function encodeCardCollection(collection: Card[] | undefined, dataParts: Uint8Array[]): void {
+  for (const card of collection || []) {
+    const baseId = extractBaseId(card)
+    const baseIdBytes = new TextEncoder().encode(baseId)
+    dataParts.push(new Uint8Array([baseIdBytes.length]))
+    dataParts.push(baseIdBytes)
+  }
+}
+
+/**
  * Encode a card reference to bytes
  * Format: [baseIdLength: 1 byte] [baseId: string] [ownerId: 1 byte] [power: 1 byte] [flags: 1 byte] [statusMask: 4 bytes]
  * Guest will use baseId to look up full card data from local contentDatabase
@@ -280,29 +293,10 @@ export function encodeCardState(
     // [handSize: 1 byte] [deckSize: 2 bytes] [discardSize: 1 byte]
     dataParts.push(new Uint8Array([handSize, (deckSize >> 8) & 0xFF, deckSize & 0xFF, discardSize]))
 
-    // Encode hand cards as baseId array
-    for (const card of recipientPlayer.hand || []) {
-      const baseId = extractBaseId(card)
-      const baseIdBytes = new TextEncoder().encode(baseId)
-      dataParts.push(new Uint8Array([baseIdBytes.length]))
-      dataParts.push(baseIdBytes)
-    }
-
-    // Encode deck cards as baseId array
-    for (const card of recipientPlayer.deck || []) {
-      const baseId = extractBaseId(card)
-      const baseIdBytes = new TextEncoder().encode(baseId)
-      dataParts.push(new Uint8Array([baseIdBytes.length]))
-      dataParts.push(baseIdBytes)
-    }
-
-    // Encode discard cards as baseId array
-    for (const card of recipientPlayer.discard || []) {
-      const baseId = extractBaseId(card)
-      const baseIdBytes = new TextEncoder().encode(baseId)
-      dataParts.push(new Uint8Array([baseIdBytes.length]))
-      dataParts.push(baseIdBytes)
-    }
+    // Encode hand, deck, and discard cards as baseId arrays
+    encodeCardCollection(recipientPlayer.hand, dataParts)
+    encodeCardCollection(recipientPlayer.deck, dataParts)
+    encodeCardCollection(recipientPlayer.discard, dataParts)
 
     logger.debug(`[GameCodec] Encoded recipient player ${recipientPlayer.id}: ${handSize} hand, ${deckSize} deck, ${discardSize} discard`)
   } else {
@@ -326,30 +320,10 @@ export function encodeCardState(
     // [handSize: 1 byte] [deckSize: 2 bytes] [discardSize: 1 byte]
     dataParts.push(new Uint8Array([handSize, (deckSize >> 8) & 0xFF, deckSize & 0xFF, discardSize]))
 
-    // Encode hand cards as baseId array
-    for (const card of dummy.hand || []) {
-      const baseId = extractBaseId(card)
-      const baseIdBytes = new TextEncoder().encode(baseId)
-      // [baseIdLength: 1 byte] [baseId: string]
-      dataParts.push(new Uint8Array([baseIdBytes.length]))
-      dataParts.push(baseIdBytes)
-    }
-
-    // Encode deck cards as baseId array
-    for (const card of dummy.deck || []) {
-      const baseId = extractBaseId(card)
-      const baseIdBytes = new TextEncoder().encode(baseId)
-      dataParts.push(new Uint8Array([baseIdBytes.length]))
-      dataParts.push(baseIdBytes)
-    }
-
-    // Encode discard cards as baseId array
-    for (const card of dummy.discard || []) {
-      const baseId = extractBaseId(card)
-      const baseIdBytes = new TextEncoder().encode(baseId)
-      dataParts.push(new Uint8Array([baseIdBytes.length]))
-      dataParts.push(baseIdBytes)
-    }
+    // Encode hand, deck, and discard cards as baseId arrays
+    encodeCardCollection(dummy.hand, dataParts)
+    encodeCardCollection(dummy.deck, dataParts)
+    encodeCardCollection(dummy.discard, dataParts)
 
     logger.debug(`[GameCodec] Encoded dummy player ${dummy.id}: ${handSize} hand, ${deckSize} deck, ${discardSize} discard`)
   }
@@ -371,21 +345,9 @@ export function encodeCardState(
     // [handSize: 1 byte] [deckSize: 2 bytes]
     dataParts.push(new Uint8Array([handSize, (deckSize >> 8) & 0xFF, deckSize & 0xFF]))
 
-    // Encode hand cards as baseId array
-    for (const card of player.hand || []) {
-      const baseId = extractBaseId(card)
-      const baseIdBytes = new TextEncoder().encode(baseId)
-      dataParts.push(new Uint8Array([baseIdBytes.length]))
-      dataParts.push(baseIdBytes)
-    }
-
-    // Encode deck cards as baseId array
-    for (const card of player.deck || []) {
-      const baseId = extractBaseId(card)
-      const baseIdBytes = new TextEncoder().encode(baseId)
-      dataParts.push(new Uint8Array([baseIdBytes.length]))
-      dataParts.push(baseIdBytes)
-    }
+    // Encode hand and deck cards as baseId arrays
+    encodeCardCollection(player.hand, dataParts)
+    encodeCardCollection(player.deck, dataParts)
 
     logger.debug(`[GameCodec] Encoded other player ${player.id}: ${handSize} hand, ${deckSize} deck`)
   }

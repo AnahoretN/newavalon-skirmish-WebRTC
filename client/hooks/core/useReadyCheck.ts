@@ -10,7 +10,7 @@
  * but are no longer used in the simplified ready system (button-based)
  */
 
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import { logger } from '../../utils/logger'
 import type { GameState } from '../../types'
 import { getWebRTCEnabled } from '../useWebRTCEnabled'
@@ -34,6 +34,9 @@ export function useReadyCheck(props: UseReadyCheckProps) {
     webrtcIsHostRef,
     setGameState,
   } = props
+
+  // Track polling interval to prevent duplicates and enable cleanup
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   /**
    * Start ready check
@@ -118,20 +121,29 @@ export function useReadyCheck(props: UseReadyCheckProps) {
         // This prevents the double-click bug where host doesn't see game start
         if (!initialUpdatedState?.isGameStarted) {
           logger.info('[playerReady] Game not started yet, polling for game start...')
+
+          // Clear any existing polling interval to prevent duplicates
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current)
+            pollingIntervalRef.current = null
+          }
+
           let pollCount = 0
           const maxPolls = 50 // 5 seconds (50 * 100ms)
 
-          const pollInterval = setInterval(() => {
+          pollingIntervalRef.current = setInterval(() => {
             pollCount++
             const newState = stateManager.getState()
 
             if (newState?.isGameStarted) {
-              clearInterval(pollInterval)
+              clearInterval(pollingIntervalRef.current!)
+              pollingIntervalRef.current = null
               logger.info(`[playerReady] Game started detected! Syncing state: phase=${newState.currentPhase}, activePlayer=${newState.activePlayerId}`)
               logger.info(`[playerReady] Player 1 hand: ${newState.players?.[0]?.hand?.length || 0}, deck: ${newState.players?.[0]?.deck?.length || 0}`)
               setGameState(newState)
             } else if (pollCount >= maxPolls) {
-              clearInterval(pollInterval)
+              clearInterval(pollingIntervalRef.current!)
+              pollingIntervalRef.current = null
               logger.warn('[playerReady] Polling timeout - game may not have started')
             }
           }, 100)
@@ -172,7 +184,7 @@ export function useReadyCheck(props: UseReadyCheckProps) {
     if (ws.current?.readyState === WebSocket.OPEN && gameStateRef.current.gameId && localPlayerIdRef.current !== null) {
       ws.current.send(JSON.stringify({ type: 'PLAYER_READY', gameId: gameStateRef.current.gameId, playerId: localPlayerIdRef.current }))
     }
-  }, [ws, webrtcManager, gameStateRef, localPlayerIdRef, webrtcIsHostRef, setGameState])
+  }, [ws, webrtcManager, gameStateRef, localPlayerIdRef, webrtcIsHostRef, setGameState, pollingIntervalRef])
 
   return {
     startReadyCheck,
