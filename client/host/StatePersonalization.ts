@@ -82,11 +82,63 @@ export function createCardBack(card: Card): any {
 }
 
 /**
- * Create compact card data for transmission
- * Used when sender wants to minimize data (id + baseId + stats only)
- *
- * NOTE: Uses baseId for reconstruction - name, imageUrl come from contentDatabase
- * This keeps messages small while preserving functionality
+ * Ultra-compact card reference for network transmission
+ * Format: { index, baseId } - just the position and baseId
+ * Uses baseId instead of id because id is unique per client but baseId is shared
+ * Clients reconstruct full cards using their local contentDatabase via baseId
+ */
+export interface UltraCompactCardRef {
+  index: number  // Position in the list (0-based)
+  baseId: string // Card baseId (shared across all clients)
+}
+
+/**
+ * Compact status data for transmission
+ * Format: { type } - just the status type, clients have all status definitions
+ */
+export interface CompactStatus {
+  type: string
+}
+
+/**
+ * Ultra-compact card data for transmission
+ * Format: { id, baseId, isFaceDown, statuses[] }
+ * Statuses are just type strings, not full objects
+ * Clients reconstruct name, description, imageUrl, power, ability, etc. from contentDatabase
+ */
+export interface UltraCompactCardData {
+  id: string
+  baseId: string
+  isFaceDown: boolean
+  statuses: CompactStatus[]  // Only status types, not full objects with addedByPlayerId
+}
+
+/**
+ * Convert full status array to compact format (type strings only)
+ */
+export function toCompactStatuses(statuses: any[] | undefined): CompactStatus[] {
+  if (!statuses || statuses.length === 0) {
+    return []
+  }
+  return statuses.map(s => ({ type: s.type }))
+}
+
+/**
+ * Create ultra-compact card data for transmission
+ * Format: { id, baseId, isFaceDown, statuses: [{type}] }
+ */
+export function toUltraCompactCardData(card: Card): UltraCompactCardData {
+  return {
+    id: card.id,
+    baseId: card.baseId || card.id,
+    isFaceDown: card.isFaceDown ?? false,
+    statuses: toCompactStatuses(card.statuses)
+  }
+}
+
+/**
+ * Legacy compact card data for transmission (kept for compatibility)
+ * @deprecated Use toUltraCompactCardData instead
  */
 export interface CompactCardData {
   id: string
@@ -100,7 +152,7 @@ export interface CompactCardData {
 export function toCompactCardData(card: Card): CompactCardData {
   return {
     id: card.id,
-    baseId: card.baseId || card.id, // Fallback to card.id if baseId is undefined
+    baseId: card.baseId || card.id,
     power: card.power,
     powerModifier: card.powerModifier || 0,
     isFaceDown: card.isFaceDown ?? false,
@@ -232,12 +284,22 @@ export function createPersonalizedGameState(
 }
 
 /**
- * Create compact state for guest to send to host
- * - Send minimal card data (id + baseId + essential stats) for local player
- * - Host will reconstruct full cards using baseId from contentDatabase
- * - Send minimal data for other players (host already has their data)
- * - For dummy players: send full deck/discard data since all players can control them
- * - For other players: send hand cards that have statuses (modified by guest)
+ * Create ultra-compact state for guest to send to host
+ *
+ * ULTRA-COMPACT FORMAT:
+ * - handCards: [{ id, baseId, isFaceDown, statuses: [{type}] }]
+ * - deckCardRefs: [{ index, baseId }] - just position and baseId (not id!)
+ * - discardCards: [{ id, baseId, isFaceDown, statuses: [{type}] }]
+ *
+ * Host reconstructs full cards using:
+ * 1. baseId from the reference (shared across all clients)
+ * 2. Uses baseId to get name, imageUrl, power, ability from contentDatabase
+ * 3. Generates new unique ID or preserves existing ID if card already exists
+ * 4. Applies statuses (type only) to reconstruct statuses array
+ *
+ * This minimizes data:
+ * - Deck: 30 objects with {index, baseId} instead of 30 full card objects
+ * - Statuses: just type strings instead of full objects with addedByPlayerId
  */
 export function createCompactStateForHost(
   gameState: GameState,
@@ -247,14 +309,16 @@ export function createCompactStateForHost(
     ...gameState,
     players: gameState.players.map(p => {
       if (p.id === localPlayerId) {
-        // Local player - send compact card data (id + baseId for reconstruction)
-        logger.debug(`[createCompactStateForHost] Player ${p.id} (local): sending ${p.hand.length} hand cards, ${p.deck.length} deck cards`)
+        // Local player - send ULTRA-COMPACT data
+        logger.debug(`[createCompactStateForHost] Player ${p.id} (local): sending ${p.hand.length} hand cards, ${p.deck.length} deck refs`)
         return {
           ...p,
-          // Send compact card data - host can reconstruct from baseId
-          handCards: p.hand.map(c => toCompactCardData(c)),
-          deckCards: p.deck.map(c => toCompactCardData(c)),
-          discardCards: p.discard.map(c => toCompactCardData(c)),
+          // Send ultra-compact hand card data (id + baseId + isFaceDown + status types)
+          handCards: p.hand.map(c => toUltraCompactCardData(c)),
+          // Send ONLY deck card references (index + baseId) - uses baseId which is shared across all clients
+          deckCardRefs: p.deck.map((c, index) => ({ index, baseId: c.baseId || c.id })),
+          // Send ultra-compact discard card data
+          discardCards: p.discard.map(c => toUltraCompactCardData(c)),
           // Don't send full arrays
           hand: [],
           deck: [],
@@ -277,9 +341,9 @@ export function createCompactStateForHost(
 
         const compactPlayer: any = {
           ...p,
-          // Send only hand cards that have been modified (have statuses)
+          // Send only hand cards that have been modified (have statuses) - ultra-compact format
           ...(shouldSendHandCards && {
-            handCards: p.hand.map((c: any) => toCompactCardData(c))
+            handCards: p.hand.map((c: any) => toUltraCompactCardData(c))
           }),
           hand: [],
           deck: [],
@@ -290,13 +354,13 @@ export function createCompactStateForHost(
           discardSize: p.discardSize ?? p.discard.length ?? 0
         }
 
-        // For dummy players, always send full deck/discard data (not just sizes)
+        // For dummy players, always send ultra-compact deck/discard data
         // This allows guests to draw cards, play cards, etc. for dummy players
         if (isDummyPlayer) {
-          logger.info(`[createCompactStateForHost] Dummy player ${p.id}: sending ${p.hand.length} hand, ${p.deck.length} deck, ${p.discard.length} discard`)
-          compactPlayer.handCards = p.hand.map((c: any) => toCompactCardData(c))
-          compactPlayer.deckCards = p.deck.map((c: any) => toCompactCardData(c))
-          compactPlayer.discardCards = p.discard.map((c: any) => toCompactCardData(c))
+          logger.info(`[createCompactStateForHost] Dummy player ${p.id}: sending ${p.hand.length} hand, ${p.deck.length} deck refs, ${p.discard.length} discard`)
+          compactPlayer.handCards = p.hand.map((c: any) => toUltraCompactCardData(c))
+          compactPlayer.deckCardRefs = p.deck.map((c: any, index: number) => ({ index, baseId: c.baseId || c.id }))
+          compactPlayer.discardCards = p.discard.map((c: any) => toUltraCompactCardData(c))
         }
 
         // Log score for debugging - CRITICAL for verifying score sync

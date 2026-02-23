@@ -10,6 +10,7 @@ import type { GameState, Player, DeckType } from '../types'
 import type { StateDelta } from '../types'
 import type { WebrtcMessage } from './types'
 import type { HostConnectionManager } from './HostConnectionManager'
+import type { UltraCompactCardData, UltraCompactCardRef, CompactStatus } from './StatePersonalization'
 // import type { HostStateManager } from './HostStateManager' // Not used, functionality in HostManager
 import { logger } from '../utils/logger'
 import { createDeltaFromStates, isDeltaEmpty, applyStateDelta } from '../utils/stateDelta'
@@ -22,6 +23,96 @@ export interface HostMessageHandlerConfig {
   onStateUpdate?: (newState: GameState) => void
   onPlayerJoin?: (playerId: number, peerId: string) => void
   onPlayerLeave?: (playerId: number, peerId: string) => void
+}
+
+/**
+ * Reconstruct a full card from ultra-compact data using contentDatabase
+ * Uses baseId directly to get name, imageUrl, power, ability from contentDatabase
+ * Preserves the card's original ID from the ultra-compact data
+ */
+function reconstructCardFromUltraCompact(
+  ultraCompact: UltraCompactCardData,
+  _deckCards: any[]
+): any {
+  // Use baseId directly from ultra-compact data
+  const baseId = ultraCompact.baseId || ultraCompact.id
+
+  // Get card definition from contentDatabase
+  const cardDef = getCardDefinition(baseId)
+
+  if (!cardDef) {
+    return {
+      id: ultraCompact.id,
+      baseId: baseId,
+      name: 'Unknown',
+      power: 0,
+      ability: '',
+      types: [],
+      isFaceDown: ultraCompact.isFaceDown,
+      statuses: ultraCompact.statuses.map((s: CompactStatus) => ({
+        type: s.type,
+        addedByPlayerId: 0  // Will be filled in by host if needed
+      }))
+    }
+  }
+
+  return {
+    ...cardDef,
+    id: ultraCompact.id,
+    baseId: baseId,
+    isFaceDown: ultraCompact.isFaceDown,
+    statuses: ultraCompact.statuses.map((s: CompactStatus) => ({
+      type: s.type,
+      addedByPlayerId: 0  // Will be filled in by host if needed
+    }))
+  }
+}
+
+/**
+ * Reconstruct deck from ultra-compact card references (index + baseId)
+ * Uses baseId instead of id because id is unique per client but baseId is shared
+ * The host reconstructs cards using contentDatabase via baseId
+ */
+function reconstructDeckFromRefs(
+  deckCardRefs: UltraCompactCardRef[],
+  existingDeck: any[]
+): any[] {
+  if (!deckCardRefs || deckCardRefs.length === 0) {
+    return existingDeck
+  }
+
+  // Create a map of baseId to card from existing deck
+  const cardMap = new Map<string, any>()
+  for (const card of existingDeck) {
+    const baseId = card.baseId || card.id
+    cardMap.set(baseId, card)
+  }
+
+  // Reconstruct deck in the order specified by refs
+  const reconstructed: any[] = []
+  for (const ref of deckCardRefs) {
+    // Use baseId directly from ref (changed from ref.id to ref.baseId)
+    const card = cardMap.get(ref.baseId)
+    if (card) {
+      reconstructed.push(card)
+    } else {
+      // Card not found in existing deck - try to create from contentDatabase
+      const cardDef = getCardDefinition(ref.baseId)
+      if (cardDef) {
+        reconstructed.push({
+          ...cardDef,
+          id: `${ref.baseId}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+          baseId: ref.baseId,
+          isFaceDown: true,
+          statuses: []
+        })
+      } else {
+        logger.warn(`[reconstructDeckFromRefs] Card ${ref.baseId} not found in existing deck and not in contentDatabase`)
+      }
+    }
+  }
+
+  return reconstructed
 }
 
 export class HostMessageHandler {
@@ -241,6 +332,11 @@ export class HostMessageHandler {
 
   /**
    * Handle state update action from guest
+   *
+   * ULTRA-COMPACT FORMAT SUPPORT:
+   * - handCards: [{ id, baseId, isFaceDown, statuses: [{type}] }]
+   * - deckCardRefs: [{ index, id }] - reconstruct from host's deck
+   * - discardCards: [{ id, baseId, isFaceDown, statuses: [{type}] }]
    */
   private handleStateUpdateAction(actionData: any, guestPlayerId: number): void {
     if (!actionData?.gameState || !this.gameState) {return}
@@ -260,32 +356,34 @@ export class HostMessageHandler {
         logger.info(`[handleStateUpdateAction] Guest ${guestPlayerId} score: ${guestPlayer.score}, host score: ${hostPlayer?.score}`)
 
         if ((guestPlayer as any).handCards && hostPlayer) {
-          // CRITICAL FIX: Reconstruct hand from handCards for the guest player
-          // Guest sends handCards (compact format with id, baseId, power, statuses)
-          // Host needs to reconstruct full hand from card database
-          const handCards = (guestPlayer as any).handCards
-          const reconstructedHand = handCards.map((hc: any) => {
-            const cardDef = getCardDefinition(hc.baseId)
-            if (!cardDef) {
-              return { id: hc.id, baseId: hc.baseId, name: 'Unknown', power: hc.power || 0, ability: '', types: [] }
-            }
-            return {
-              ...cardDef,
-              id: hc.id,
-              power: hc.power,
-              powerModifier: hc.powerModifier || 0,
-              isFaceDown: hc.isFaceDown,
-              statuses: hc.statuses || []
-            }
-          })
+          // Reconstruct hand from ultra-compact handCards
+          const handCards = (guestPlayer as any).handCards as UltraCompactCardData[]
+          const reconstructedHand = handCards.map(hc => reconstructCardFromUltraCompact(hc, hostPlayer.deck))
+
+          // Reconstruct deck from deckCardRefs if present (ultra-compact format)
+          let reconstructedDeck = hostPlayer.deck
+          if ((guestPlayer as any).deckCardRefs) {
+            const deckCardRefs = (guestPlayer as any).deckCardRefs as UltraCompactCardRef[]
+            reconstructedDeck = reconstructDeckFromRefs(deckCardRefs, hostPlayer.deck)
+            logger.info(`[handleStateUpdateAction] Guest ${guestPlayerId} reconstructed deck from ${deckCardRefs.length} refs`)
+          }
+
+          // Reconstruct discard from ultra-compact discardCards
+          let reconstructedDiscard = hostPlayer.discard
+          if ((guestPlayer as any).discardCards) {
+            const discardCards = (guestPlayer as any).discardCards as UltraCompactCardData[]
+            reconstructedDiscard = discardCards.map(dc => reconstructCardFromUltraCompact(dc, hostPlayer.discard))
+          }
 
           // CRITICAL: Preserve deck/discard from host (for card privacy), but take score from guest
           const merged = {
             ...guestPlayer,
             hand: reconstructedHand,
             handCards: undefined, // Remove temporary handCards
-            deck: hostPlayer.deck,
-            discard: hostPlayer.discard,
+            deckCardRefs: undefined, // Remove temporary deckCardRefs
+            discardCards: undefined, // Remove temporary discardCards
+            deck: reconstructedDeck,
+            discard: reconstructedDiscard,
           }
           logger.info(`[handleStateUpdateAction] Guest ${guestPlayerId} merged score: ${merged.score}`)
           return merged
@@ -311,54 +409,26 @@ export class HostMessageHandler {
           // This allows guests to draw cards, play cards, etc. for dummy players
           logger.info(`[handleStateUpdateAction] Guest ${guestPlayerId} modified dummy player ${guestPlayer.id}`)
 
-          // Check if guest sent compact card data (handCards, deckCards, discardCards)
-          if ((guestPlayer as any).handCards || (guestPlayer as any).deckCards || (guestPlayer as any).discardCards) {
-            const reconstructedHand = ((guestPlayer as any).handCards || []).map((hc: any) => {
-              const cardDef = getCardDefinition(hc.baseId)
-              if (!cardDef) {
-                return { id: hc.id, baseId: hc.baseId, name: 'Unknown', power: hc.power || 0, ability: '', types: [] }
-              }
-              return {
-                ...cardDef,
-                id: hc.id,
-                power: hc.power,
-                powerModifier: hc.powerModifier || 0,
-                isFaceDown: hc.isFaceDown,
-                statuses: hc.statuses || []
-              }
-            })
+          // Check if guest sent ultra-compact card data
+          const hasUltraCompactData = (guestPlayer as any).handCards?.length > 0 ||
+                                       (guestPlayer as any).deckCardRefs?.length > 0 ||
+                                       (guestPlayer as any).discardCards?.length > 0
 
-            // Reconstruct deck from deckCards
-            const reconstructedDeck = ((guestPlayer as any).deckCards || []).map((dc: any) => {
-              const cardDef = getCardDefinition(dc.baseId)
-              if (!cardDef) {
-                return { id: dc.id, baseId: dc.baseId, name: 'Unknown', power: dc.power || 0, ability: '', types: [] }
-              }
-              return {
-                ...cardDef,
-                id: dc.id,
-                power: dc.power,
-                powerModifier: dc.powerModifier || 0,
-                isFaceDown: dc.isFaceDown,
-                statuses: dc.statuses || []
-              }
-            })
+          if (hasUltraCompactData) {
+            // Reconstruct hand from ultra-compact handCards
+            const handCards = ((guestPlayer as any).handCards || []) as UltraCompactCardData[]
+            const reconstructedHand = handCards.map(hc => reconstructCardFromUltraCompact(hc, hostPlayer.deck))
 
-            // Reconstruct discard from discardCards
-            const reconstructedDiscard = ((guestPlayer as any).discardCards || []).map((dc: any) => {
-              const cardDef = getCardDefinition(dc.baseId)
-              if (!cardDef) {
-                return { id: dc.id, baseId: dc.baseId, name: 'Unknown', power: dc.power || 0, ability: '', types: [] }
-              }
-              return {
-                ...cardDef,
-                id: dc.id,
-                power: dc.power,
-                powerModifier: dc.powerModifier || 0,
-                isFaceDown: dc.isFaceDown,
-                statuses: dc.statuses || []
-              }
-            })
+            // Reconstruct deck from deckCardRefs
+            let reconstructedDeck = hostPlayer.deck
+            if ((guestPlayer as any).deckCardRefs) {
+              const deckCardRefs = (guestPlayer as any).deckCardRefs as UltraCompactCardRef[]
+              reconstructedDeck = reconstructDeckFromRefs(deckCardRefs, hostPlayer.deck)
+            }
+
+            // Reconstruct discard from ultra-compact discardCards
+            const discardCards = ((guestPlayer as any).discardCards || []) as UltraCompactCardData[]
+            const reconstructedDiscard = discardCards.map(dc => reconstructCardFromUltraCompact(dc, hostPlayer.discard))
 
             logger.info(`[handleStateUpdateAction] Dummy player ${guestPlayer.id}: reconstructed ${reconstructedHand.length} hand, ${reconstructedDeck.length} deck, ${reconstructedDiscard.length} discard`)
 
@@ -390,15 +460,18 @@ export class HostMessageHandler {
         // This happens when guest places Revealed tokens on other players' cards
         if ((guestPlayer as any).handCards && hostPlayer.hand) {
           // Apply status updates from guest's handCards to host's hand
-          const guestHandCards = (guestPlayer as any).handCards
+          const guestHandCards = (guestPlayer as any).handCards as UltraCompactCardData[]
           const updatedHand = hostPlayer.hand.map(hostCard => {
             // Find matching card in guest's handCards by id
-            const guestCard = guestHandCards.find((gc: any) => gc.id === hostCard.id)
+            const guestCard = guestHandCards.find(gc => gc.id === hostCard.id)
             if (guestCard && guestCard.statuses) {
-              // Apply the statuses from guest's version
+              // Apply the statuses from guest's version (ultra-compact format)
               return {
                 ...hostCard,
-                statuses: guestCard.statuses,
+                statuses: guestCard.statuses.map(s => ({
+                  type: s.type,
+                  addedByPlayerId: 0  // Will be filled if needed
+                })),
                 isFaceDown: guestCard.isFaceDown, // Also update face-down status (revealed cards)
               }
             }

@@ -326,10 +326,17 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
       return
     }
 
-    // In WebRTC mode as GUEST, ignore nextPhase clicks during scoring step
-    // The host will broadcast the state change
+    // In WebRTC mode as GUEST during scoring step:
+    // Clear isScoringStep locally and send state to host
+    // Host will then handle turn passing and broadcast the result
     if (isWebRTCMode && !webrtcIsHostRef.current && currentState.currentPhase === 4 && currentState.isScoringStep) {
-      logger.info('[nextPhase] Guest ignoring Next Phase during Scoring - waiting for host broadcast')
+      logger.info('[nextPhase] Guest clearing scoring step and sending to host')
+      updateState(currentState => {
+        return {
+          ...currentState,
+          isScoringStep: false
+        }
+      })
       return
     }
 

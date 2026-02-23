@@ -250,6 +250,7 @@ export interface TranslationResource {
     inviteLinkDesc: string;
     copyGameLink: string;
     copyGameLinkDesc: string;
+    serverSettings: string;
     reconnect: string;
     hideDummyCards: string;
     hideDummyCardsTooltip: string;
@@ -259,6 +260,8 @@ export interface TranslationResource {
     saveJson: string;
     saveText: string;
     loadTextDeck: string;
+    saveDeck: string;
+    loadDeckFile: string;
     cannotSaveEmptyDeck: string;
     failedToParseDeckFile: string;
     webrtcMode: string;

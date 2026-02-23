@@ -804,12 +804,15 @@ export class HostManager {
     }
 
     // Create new player with their preferred deck
+    // CRITICAL: Create the deck on host so host has full card data
+    const playerDeck = createDeck(preferredDeck, newPlayerId, `Player ${newPlayerId}`)
+
     const newPlayer = {
       id: newPlayerId,
       name: `Player ${newPlayerId}`,
       color: PLAYER_COLOR_NAMES[(newPlayerId - 1) % PLAYER_COLOR_NAMES.length],
       hand: [],
-      deck: [],
+      deck: playerDeck,
       discard: [],
       announcedCard: null,
       score: 0,

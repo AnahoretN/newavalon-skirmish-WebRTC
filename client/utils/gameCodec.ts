@@ -9,9 +9,123 @@
 import type { GameState, Card, Player, Board, CardStatus } from '../types'
 import { DeckType } from '../types'
 import { CodecMessageType } from '../types/codec'
+import type { UltraCompactCardData, UltraCompactCardRef, CompactStatus } from '../host/StatePersonalization'
 import { logger } from './logger'
 import { PLAYER_COLOR_NAMES } from '../constants'
 import { getCardDefinition, rawJsonData } from '../content'
+
+// ============================================================================
+// ULTRA-COMPACT CARD RECONSTRUCTION
+// ============================================================================
+
+/**
+ * Reconstruct a full card from ultra-compact data using contentDatabase
+ * The card ID is used to look up the card in the deck, then baseId is used
+ * to get name, imageUrl, power, ability from contentDatabase
+ */
+function reconstructCardFromUltraCompact(
+  ultraCompact: UltraCompactCardData,
+  deckCards: Card[]
+): Card {
+  // First, find the card in the deck to get its baseId and deck
+  const deckCard = deckCards.find(c => c.id === ultraCompact.id)
+  const baseId = deckCard?.baseId || ultraCompact.baseId || ultraCompact.id
+  const deck = deckCard?.deck || 'SynchroTech' as any
+
+  // Get card definition from contentDatabase
+  const cardDef = getCardDefinition(baseId)
+
+  if (!cardDef) {
+    return {
+      id: ultraCompact.id,
+      baseId: baseId,
+      deck: deck,
+      name: 'Unknown',
+      imageUrl: '',
+      power: 0,
+      ability: '',
+      types: [],
+      isFaceDown: ultraCompact.isFaceDown,
+      statuses: ultraCompact.statuses.map((s: CompactStatus) => ({
+        type: s.type,
+        addedByPlayerId: 0
+      }))
+    }
+  }
+
+  return {
+    ...cardDef,
+    id: ultraCompact.id,
+    baseId: baseId,
+    deck: deck,  // Use deck from the card found in deck, not from cardDef
+    ownerId: deckCard?.ownerId,
+    ownerName: deckCard?.ownerName,
+    isFaceDown: ultraCompact.isFaceDown,
+    statuses: ultraCompact.statuses.map((s: CompactStatus) => ({
+      type: s.type,
+      addedByPlayerId: 0
+    }))
+  }
+}
+
+/**
+ * Reconstruct deck from ultra-compact card references (index + baseId)
+ * Uses baseId instead of id because id is unique per client but baseId is shared
+ * The client reconstructs cards using contentDatabase via baseId
+ */
+function reconstructDeckFromRefs(
+  deckCardRefs: UltraCompactCardRef[],
+  existingDeck: Card[]
+): Card[] {
+  if (!deckCardRefs || deckCardRefs.length === 0) {
+    return existingDeck
+  }
+
+  // Create a map of baseId to card from existing deck
+  const cardMap = new Map<string, Card>()
+  for (const card of existingDeck) {
+    const baseId = card.baseId || card.id
+    cardMap.set(baseId, card)
+  }
+
+  // Reconstruct deck in the order specified by refs
+  const reconstructed: Card[] = []
+  for (const ref of deckCardRefs) {
+    // Use baseId directly from ref (changed from ref.id to ref.baseId)
+    const card = cardMap.get(ref.baseId)
+    if (card) {
+      reconstructed.push(card)
+    } else {
+      // Card not found in existing deck - try to create from contentDatabase
+      const cardDef = getCardDefinition(ref.baseId)
+      if (cardDef) {
+        // Get deck type from existing deck (first card) or default to Random
+        const deckType = existingDeck.length > 0 ? existingDeck[0].deck : DeckType.Random
+        reconstructed.push({
+          ...cardDef,
+          id: `${ref.baseId}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+          baseId: ref.baseId,
+          deck: deckType,
+          isFaceDown: true,
+          statuses: []
+        })
+      } else {
+        logger.warn(`[reconstructDeckFromRefs] Card ${ref.baseId} not found in existing deck and not in contentDatabase`)
+      }
+    }
+  }
+
+  return reconstructed
+}
+
+/**
+ * Check if a player object has ultra-compact card data
+ */
+function hasUltraCompactData(player: any): boolean {
+  return (player.handCards?.length > 0) ||
+         (player.deckCardRefs?.length > 0) ||
+         (player.discardCards?.length > 0)
+}
 
 // ============================================================================
 // CARD STATE ENCODING
@@ -225,9 +339,11 @@ export function encodeCardState(
 
     // [handSize: 1 byte] [deckSize: 2 bytes] [discardSize: 1 byte] - for all players
     // This allows guests to see how many cards each player has without revealing card data
-    const handSize = player.hand?.length ?? 0
-    const deckSize = player.deck?.length ?? 0
-    const discardSize = player.discard?.length ?? 0
+    // CRITICAL: Use deckSize/handSize/discardSize properties if available, fallback to array.length
+    // This is necessary because guests send deck: [] with deckSize: N for optimization
+    const handSize = player.handSize ?? player.hand?.length ?? 0
+    const deckSize = player.deckSize ?? player.deck?.length ?? 0
+    const discardSize = player.discardSize ?? player.discard?.length ?? 0
     dataParts.push(new Uint8Array([handSize, (deckSize >> 8) & 0xFF, deckSize & 0xFF, discardSize]))
 
     // Log encoding for each player
@@ -527,6 +643,8 @@ export function decodeCardState(
     const playerIndex = players.findIndex(p => p.id === recipientPlayerId)
     if (playerIndex >= 0) {
       const player = players[playerIndex]
+      // Get the deck type for this player (use selectedDeck if available, otherwise Random)
+      const playerDeckType = player.selectedDeck || DeckType.Random
 
       // Decode hand cards
       const hand: Card[] = []
@@ -538,7 +656,7 @@ export function decodeCardState(
         hand.push({
           id: `${baseId}_recipientHand_${h}_${Date.now()}_${Math.random()}`,
           baseId,
-          deck: 'Random' as any, // Required by Card type
+          deck: playerDeckType,
           name: cardDef?.name || baseId,
           imageUrl: cardDef?.imageUrl || '',
           power: cardDef?.power || 0,
@@ -546,6 +664,7 @@ export function decodeCardState(
           types: cardDef?.types || [],
           faction: cardDef?.faction || '',
           ownerId: player.id,
+          ownerName: player.name,
           isFaceDown: false,
           statuses: []
         })
@@ -562,7 +681,7 @@ export function decodeCardState(
         deck.push({
           id: `${baseId}_recipientDeck_${dk}_${Date.now()}_${Math.random()}`,
           baseId,
-          deck: 'Random' as any, // Required by Card type
+          deck: playerDeckType,
           name: cardDef?.name || baseId,
           imageUrl: cardDef?.imageUrl || '',
           power: cardDef?.power || 0,
@@ -570,6 +689,7 @@ export function decodeCardState(
           types: cardDef?.types || [],
           faction: cardDef?.faction || '',
           ownerId: player.id,
+          ownerName: player.name,
           isFaceDown: true,
           statuses: []
         })
@@ -586,7 +706,7 @@ export function decodeCardState(
         discard.push({
           id: `${baseId}_recipientDiscard_${dc}_${Date.now()}_${Math.random()}`,
           baseId,
-          deck: 'Random' as any, // Required by Card type
+          deck: playerDeckType,
           name: cardDef?.name || baseId,
           imageUrl: cardDef?.imageUrl || '',
           power: cardDef?.power || 0,
@@ -594,6 +714,7 @@ export function decodeCardState(
           types: cardDef?.types || [],
           faction: cardDef?.faction || '',
           ownerId: player.id,
+          ownerName: player.name,
           isFaceDown: false,
           statuses: []
         })
@@ -891,12 +1012,13 @@ function getCardDefinitionFromLocal(baseId: string): { name: string, imageUrl: s
         faction: cardDef.faction || ''
       }
     }
-  } catch (e) {
-    logger.warn(`[GameCodec] Failed to look up card ${baseId}:`, e)
-  }
 
-  logger.warn(`[GameCodec] Card ${baseId} not found in local database`)
-  return null
+    logger.warn(`[GameCodec] Card ${baseId} not found in local database`)
+    return null
+  } catch (e) {
+    logger.error(`[GameCodec] Error getting card definition for ${baseId}:`, e)
+    return null
+  }
 }
 
 // ============================================================================
@@ -930,6 +1052,58 @@ export function mergeDecodedState(
     result.players = decodedState.players.map(player => {
       const existing = existingState.players.find(p => p.id === player.id)
       if (existing) {
+        // Check if player has ultra-compact card data (new format)
+        const hasUltraCompact = hasUltraCompactData(player)
+
+        if (hasUltraCompact) {
+          // NEW ULTRA-COMPACT FORMAT: Reconstruct cards from minimal data
+          logger.debug(`[mergeDecodedState] Player ${player.id} has ultra-compact data`)
+
+          // Reconstruct hand from ultra-compact handCards
+          let reconstructedHand = existing.hand
+          if ((player as any).handCards?.length > 0) {
+            const handCards = (player as any).handCards as UltraCompactCardData[]
+            reconstructedHand = handCards.map(hc => reconstructCardFromUltraCompact(hc, existing.deck))
+          }
+
+          // Reconstruct deck from deckCardRefs
+          let reconstructedDeck = existing.deck
+          if ((player as any).deckCardRefs?.length > 0) {
+            const deckCardRefs = (player as any).deckCardRefs as UltraCompactCardRef[]
+            reconstructedDeck = reconstructDeckFromRefs(deckCardRefs, existing.deck)
+          }
+
+          // Reconstruct discard from ultra-compact discardCards
+          let reconstructedDiscard = existing.discard
+          if ((player as any).discardCards?.length > 0) {
+            const discardCards = (player as any).discardCards as UltraCompactCardData[]
+            reconstructedDiscard = discardCards.map(dc => reconstructCardFromUltraCompact(dc, existing.discard))
+          }
+
+          const isLocalPlayer = player.id === localPlayerId
+          const preserveSelectedDeck = isLocalPlayer && existing.selectedDeck
+
+          return {
+            ...player,
+            hand: reconstructedHand,
+            deck: reconstructedDeck,
+            discard: reconstructedDiscard,
+            // Remove temporary properties
+            handCards: undefined,
+            deckCardRefs: undefined,
+            discardCards: undefined,
+            // Preserve other properties from existing if not in decoded
+            announcedCard: player.announcedCard || existing.announcedCard,
+            boardHistory: player.boardHistory || existing.boardHistory,
+            // For local player, preserve existing selectedDeck; for others, use decoded
+            selectedDeck: preserveSelectedDeck ? existing.selectedDeck : (player.selectedDeck || existing.selectedDeck),
+            // Update size metadata
+            handSize: reconstructedHand.length,
+            deckSize: reconstructedDeck.length,
+            discardSize: reconstructedDiscard.length
+          }
+        }
+
         // Player exists - merge hand/deck/discard intelligently
         // For dummy players, use all decoded data (hand, deck, discard are included)
         // For real players, check if hand/deck/discard were decoded (non-empty)

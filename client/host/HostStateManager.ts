@@ -8,11 +8,125 @@
  * - Host is also a player, so their actions go through the same pipeline
  */
 
-import type { GameState, StateDelta } from '../types'
+import type { GameState, StateDelta, Card, DeckType } from '../types'
 import type { HostConnectionManager } from './HostConnectionManager'
+import type { UltraCompactCardData, UltraCompactCardRef, CompactStatus } from './StatePersonalization'
 import { createDeltaFromStates, isDeltaEmpty, applyStateDelta } from '../utils/stateDelta'
 import { logger } from '../utils/logger'
 import { performPreparationPhase } from './PhaseManagement'
+import { getCardDefinition } from '../content'
+
+/**
+ * Reconstruct a full card from ultra-compact data using contentDatabase
+ * Uses baseId to get card definition from contentDatabase
+ */
+function reconstructCardFromUltraCompact(
+  ultraCompact: UltraCompactCardData,
+  playerDeck: DeckType
+): Card {
+  const baseId = ultraCompact.baseId || ultraCompact.id
+  const cardDef = getCardDefinition(baseId)
+
+  if (!cardDef) {
+    logger.warn(`[reconstructCardFromUltraCompact] Card ${baseId} not found in contentDatabase`)
+    return {
+      id: ultraCompact.id,
+      baseId: baseId,
+      deck: playerDeck,
+      name: 'Unknown',
+      imageUrl: '',
+      power: 0,
+      ability: '',
+      types: [],
+      isFaceDown: ultraCompact.isFaceDown,
+      statuses: ultraCompact.statuses.map((s: CompactStatus) => ({
+        type: s.type,
+        addedByPlayerId: 0
+      }))
+    }
+  }
+
+  return {
+    ...cardDef,
+    id: ultraCompact.id,
+    baseId: baseId,
+    deck: playerDeck,
+    isFaceDown: ultraCompact.isFaceDown,
+    statuses: ultraCompact.statuses.map((s: CompactStatus) => ({
+      type: s.type,
+      addedByPlayerId: 0
+    }))
+  }
+}
+
+/**
+ * Reconstruct deck from ultra-compact card references (index + baseId)
+ * Uses contentDatabase to reconstruct full cards from baseId
+ * IMPORTANT: baseId is used instead of id because id is unique per client
+ * but baseId is shared across all clients (from contentDatabase)
+ */
+function reconstructDeckFromRefs(
+  deckCardRefs: UltraCompactCardRef[],
+  playerDeck: DeckType,
+  existingDeck: Card[]
+): Card[] {
+  if (!deckCardRefs || deckCardRefs.length === 0) {
+    return existingDeck
+  }
+
+  // Create a map of baseId to card definition from existing deck (to preserve IDs if possible)
+  const cardMap = new Map<string, Card>()
+  for (const card of existingDeck) {
+    const baseId = card.baseId || card.id
+    cardMap.set(baseId, card)
+  }
+
+  // Reconstruct deck in the order specified by refs
+  const reconstructed: Card[] = []
+  for (const ref of deckCardRefs) {
+    // Use baseId directly from ref (it's now baseId, not id)
+    const baseId = ref.baseId
+    const existingCard = cardMap.get(baseId)
+
+    if (existingCard) {
+      // Card exists in existing deck, preserve its ID
+      const cardDef = getCardDefinition(baseId)
+      if (cardDef) {
+        reconstructed.push({
+          ...cardDef,
+          id: existingCard.id,  // Preserve existing ID
+          baseId: baseId,
+          deck: playerDeck,
+          isFaceDown: true,
+          statuses: []
+        })
+      } else {
+        logger.warn(`[reconstructDeckFromRefs] Card ${baseId} not found in contentDatabase`)
+        // Fallback to existing card
+        reconstructed.push(existingCard)
+      }
+    } else {
+      // Card not in existing deck, create new from contentDatabase
+      const cardDef = getCardDefinition(baseId)
+      if (cardDef) {
+        // Generate a unique ID for new card
+        const uniqueId = `${baseId}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+        reconstructed.push({
+          ...cardDef,
+          id: uniqueId,
+          baseId: baseId,
+          deck: playerDeck,
+          isFaceDown: true,
+          statuses: []
+        })
+      } else {
+        logger.warn(`[reconstructDeckFromRefs] Card ${baseId} not found in contentDatabase and not in existing deck`)
+      }
+    }
+  }
+
+  return reconstructed
+}
 
 export interface StateUpdateOptions {
   excludeSender?: boolean  // Don't send back to the player who made the change
@@ -106,6 +220,11 @@ export class HostStateManager {
   /**
    * Update state from guest action
    * Called when a guest sends a state update or delta
+   *
+   * ULTRA-COMPACT FORMAT SUPPORT:
+   * - handCards: [{ id, baseId, isFaceDown, statuses: [{type}] }]
+   * - deckCardRefs: [{ index, id }] - reconstruct using contentDatabase
+   * - discardCards: [{ id, baseId, isFaceDown, statuses: [{type}] }]
    */
   updateFromGuest(guestPlayerId: number, guestState: GameState, excludePeerId?: string): void {
     if (!this.currentState) {
@@ -124,7 +243,6 @@ export class HostStateManager {
     }
 
     // Merge guest state with host state
-    // Preserve deck/discard for players that aren't the guest
     const mergedPlayers = this.currentState.players.map(hostPlayer => {
       const guestPlayer = guestState.players.find(p => p.id === hostPlayer.id)
 
@@ -134,10 +252,56 @@ export class HostStateManager {
       }
 
       if (guestPlayer.id === guestPlayerId) {
-        // This is the guest who sent the update - use their state
+        // This is the guest who sent the update
+        // Check if guest sent ultra-compact data
+        const hasUltraCompactData = (guestPlayer as any).handCards?.length > 0 ||
+                                     (guestPlayer as any).deckCardRefs?.length > 0 ||
+                                     (guestPlayer as any).discardCards?.length > 0
+
+        if (hasUltraCompactData) {
+          // Reconstruct hand from ultra-compact handCards
+          let reconstructedHand = hostPlayer.hand
+          if ((guestPlayer as any).handCards) {
+            const handCards = (guestPlayer as any).handCards as UltraCompactCardData[]
+            reconstructedHand = handCards.map(hc => reconstructCardFromUltraCompact(hc, hostPlayer.selectedDeck))
+          }
+
+          // Reconstruct deck from deckCardRefs using contentDatabase
+          let reconstructedDeck = hostPlayer.deck
+          if ((guestPlayer as any).deckCardRefs) {
+            const deckCardRefs = (guestPlayer as any).deckCardRefs as UltraCompactCardRef[]
+            reconstructedDeck = reconstructDeckFromRefs(deckCardRefs, hostPlayer.selectedDeck, hostPlayer.deck)
+            logger.info(`[HostStateManager] Guest ${guestPlayerId} reconstructed deck from ${deckCardRefs.length} refs`)
+          }
+
+          // Reconstruct discard from ultra-compact discardCards
+          let reconstructedDiscard = hostPlayer.discard
+          if ((guestPlayer as any).discardCards) {
+            const discardCards = (guestPlayer as any).discardCards as UltraCompactCardData[]
+            reconstructedDiscard = discardCards.map(dc => reconstructCardFromUltraCompact(dc, hostPlayer.selectedDeck))
+          }
+
+          const merged = {
+            ...guestPlayer,
+            hand: reconstructedHand,
+            deck: reconstructedDeck,
+            discard: reconstructedDiscard,
+            // CRITICAL: Update size metadata to match reconstructed arrays
+            handSize: reconstructedHand.length,
+            deckSize: reconstructedDeck.length,
+            discardSize: reconstructedDiscard.length,
+            // Remove temporary properties
+            handCards: undefined,
+            deckCardRefs: undefined,
+            discardCards: undefined,
+          }
+          logger.info(`[HostStateManager] Guest ${guestPlayerId} merged: hand=${merged.handSize}, deck=${merged.deckSize}, discard=${merged.discardSize}, score=${merged.score}`)
+          return merged
+        }
+
+        // No ultra-compact data, use guest state but preserve host's deck/discard
         const merged = {
           ...guestPlayer,
-          // But preserve deck/discard from host (for card privacy)
           deck: hostPlayer.deck,
           discard: hostPlayer.discard,
         }
@@ -183,6 +347,22 @@ export class HostStateManager {
       // Delta system is stub (returns empty delta), so broadcast full state for important changes
       this.connectionManager.broadcastGameState(newState, excludePeerId)
       logger.info(`[HostStateManager] Guest ${guestPlayerId} update broadcast via full state: phaseChanged=${phaseChanged}, activePlayerChanged=${activePlayerChanged}`)
+    }
+
+    // Special handling: Guest completed scoring step (isScoringStep went from true to false)
+    // Host should pass turn to next player
+    const scoringStepCompleted = oldState.isScoringStep && !newState.isScoringStep &&
+                                guestPlayerId === newState.activePlayerId &&
+                                newState.currentPhase === 4
+
+    if (scoringStepCompleted) {
+      logger.info(`[HostStateManager] Guest ${guestPlayerId} completed scoring step, passing turn`)
+      // Import and use passTurnToNextPlayer
+      const { passTurnToNextPlayer } = require('./PhaseManagement')
+      const turnPassedState = passTurnToNextPlayer(newState)
+      this.currentState = turnPassedState
+      this.connectionManager.broadcastGameState(turnPassedState, excludePeerId)
+      logger.info(`[HostStateManager] Turn passed to player ${turnPassedState.activePlayerId}, phase ${turnPassedState.currentPhase}`)
     }
   }
 

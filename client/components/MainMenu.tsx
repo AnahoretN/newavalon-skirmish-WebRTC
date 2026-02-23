@@ -125,7 +125,34 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
         <h1 className="text-5xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600 drop-shadow-lg">
                     New Avalon
         </h1>
-        <h2 className="text-2xl font-light mb-6 text-gray-300 tracking-widest">SKIRMISH</h2>
+        <div className="flex items-center justify-center gap-3 mb-6">
+          <h2 className="text-2xl font-light text-gray-300 tracking-widest">SKIRMISH</h2>
+          <span className={`relative flex h-3 w-3`}>
+            {/* WebRTC P2P mode - blue indicator */}
+            {actualWebrtcEnabled && (
+              <>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+              </>
+            )}
+            {/* Standard server mode - green/yellow/red based on status */}
+            {!actualWebrtcEnabled && connectionStatus === 'Connected' && (
+              <>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+              </>
+            )}
+            {!actualWebrtcEnabled && connectionStatus === 'Connecting' && (
+              <>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
+              </>
+            )}
+            {!actualWebrtcEnabled && connectionStatus === 'Disconnected' && (
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+            )}
+          </span>
+        </div>
 
         <div className="space-y-4 w-full">
           {/* Host Game Button */}
@@ -209,52 +236,6 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
             {t('settings')}
           </button>
-        </div>
-
-        {/* Connection Status Indicator - moved below buttons */}
-        <div className="mt-6 flex items-center justify-center gap-2">
-          <span className={`relative flex h-3 w-3`}>
-            {/* WebRTC P2P mode - blue indicator */}
-            {actualWebrtcEnabled && (
-              <>
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
-              </>
-            )}
-            {/* Standard server mode - green/yellow/red based on status */}
-            {!actualWebrtcEnabled && connectionStatus === 'Connected' && (
-              <>
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-              </>
-            )}
-            {!actualWebrtcEnabled && connectionStatus === 'Connecting' && (
-              <>
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
-              </>
-            )}
-            {!actualWebrtcEnabled && connectionStatus === 'Disconnected' && (
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-            )}
-          </span>
-          <span className="text-sm text-gray-400">
-            {actualWebrtcEnabled ? t('peerToPeer') : (
-              <>
-                {connectionStatus === 'Connected' && t('connected')}
-                {connectionStatus === 'Connecting' && t('connecting')}
-                {connectionStatus === 'Disconnected' && t('disconnected')}
-              </>
-            )}
-          </span>
-          {!actualWebrtcEnabled && connectionStatus === 'Disconnected' && (
-            <button
-              onClick={forceReconnect}
-              className="ml-2 text-xs text-blue-400 hover:text-blue-300 underline"
-            >
-              {t('reconnect')}
-            </button>
-          )}
         </div>
 
         <div className="mt-8 pt-6 border-t border-gray-700 flex justify-center gap-6">

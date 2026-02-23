@@ -19,7 +19,7 @@ import { rawJsonData } from '../../content'
 import { getWebRTCEnabled } from '../useWebRTCEnabled'
 import { getWebSocketURL } from './websocketHelpers'
 import { syncGameStateImages, saveGameState, clearGameState, RECONNECTION_DATA_KEY } from './gameStateStorage'
-import { createInitialState, generateGameId, createNewPlayer } from './gameCreators'
+import { createInitialState, generateGameId, createNewPlayer, createDeck } from './gameCreators'
 import type { ConnectionStatus } from './types'
 
 /**
@@ -396,9 +396,43 @@ export function useServerConnection(props: UseServerConnectionProps) {
               newBoard.push(row)
             }
 
+            // Process players: for each player, create fresh hand/deck/discard
+            // Dummy players get their data from the message, real players create decks locally
+            const resetPlayers = (data.players || []).map((p: any) => {
+              const existingPlayer = prev.players.find(ep => ep.id === p.id)
+              if (p.isDummy) {
+                // Dummy player: use data from host message (which includes full hand/deck/discard)
+                return {
+                  ...p,
+                  hand: p.hand || [],
+                  deck: p.deck || [],
+                  discard: p.discard || [],
+                  announcedCard: null,
+                  boardHistory: [],
+                  statuses: p.statuses || [],
+                }
+              } else {
+                // Real player: create deck locally based on selectedDeck
+                const deckType = p.selectedDeck || existingPlayer?.selectedDeck || 'SynchroTech'
+                const deck = createDeck(deckType as any, p.id, p.name)
+                return {
+                  ...p,
+                  hand: [],
+                  deck: deck,
+                  discard: [],
+                  announcedCard: null,
+                  boardHistory: [],
+                  // Preserve other properties from existing player if not in message
+                  autoDrawEnabled: p.autoDrawEnabled ?? existingPlayer?.autoDrawEnabled ?? true,
+                  teamId: p.teamId ?? existingPlayer?.teamId,
+                  isDisconnected: p.isDisconnected ?? false,
+                }
+              }
+            })
+
             const resetState = {
               ...prev,
-              players: data.players || [],
+              players: resetPlayers,
               gameMode: data.gameMode,
               isPrivate: data.isPrivate,
               activeGridSize: data.activeGridSize,

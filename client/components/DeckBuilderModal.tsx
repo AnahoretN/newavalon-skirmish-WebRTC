@@ -267,12 +267,12 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             />
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={handleClearDeck} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm font-bold transition-colors">{t('clear')}</button>
-            <button onClick={handleLoadTextDeckClick} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm font-bold transition-colors">{t('loadTextDeck')}</button>
+            <button onClick={handleClearDeck} className="px-4 py-2 bg-red-700 hover:bg-red-600 text-white rounded text-sm font-bold transition-colors">{t('clear')}</button>
+            <button onClick={handleLoadTextDeckClick} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm font-bold transition-colors">{t('loadDeckFile')}</button>
             <input type="file" ref={textFileInputRef} onChange={handleFileSelected} accept=".txt" className="hidden" />
-            <button onClick={handleSaveAsText} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm font-bold transition-colors">{t('saveText')}</button>
+            <button onClick={handleSaveAsText} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm font-bold transition-colors">{t('saveDeck')}</button>
             <div className="w-px h-8 bg-gray-600 mx-2"></div>
-            <button onClick={onClose} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm font-bold transition-colors">{t('close')}</button>
+            <button onClick={onClose} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm font-bold transition-colors">{t('close')}</button>
           </div>
         </div>
 

@@ -681,11 +681,14 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
                     </div>
                   ) : (
                     <img
+                      key={card.id} // Stable key to prevent React from recreating img element
                       src={currentImageSrc}
                       onLoad={handleImageLoad}
                       onError={handleImageError}
                       alt={displayCard.name}
-                      className={`absolute inset-0 w-full h-full object-cover ${imageLoadState === 'loading' ? 'opacity-0' : 'opacity-100'}`}
+                      className={`absolute inset-0 w-full h-full object-cover ${
+                        disableImageTransition ? 'opacity-100' : (imageLoadState === 'loading' ? 'opacity-0' : 'opacity-100')
+                      }`}
                       style={disableImageTransition ? undefined : { transition: 'opacity 0.15s ease-out' }}
                     />
                   )}
