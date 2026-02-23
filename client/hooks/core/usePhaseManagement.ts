@@ -603,6 +603,16 @@ export function usePhaseManagement(props: UsePhaseManagementProps) {
         setGameState(resetState)
         gameStateRef.current = resetState
 
+        // IMPORTANT: Also update HostStateManager to ensure it has the reset state
+        // Without this, when host presses "I'm ready", HostStateManager uses old state
+        if (webrtcManagerRef.current) {
+          const stateManager = webrtcManagerRef.current.getStateManager?.()
+          if (stateManager) {
+            stateManager.setInitialState(resetState)
+            logger.info('[GameReset] Updated HostStateManager with reset state')
+          }
+        }
+
         logger.info('[GameReset] Host reset game in WebRTC mode')
 
         // Broadcast GAME_RESET message to all WebRTC guests
