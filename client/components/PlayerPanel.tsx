@@ -1393,17 +1393,23 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   )
   // Helper to get deck size for comparison (use deckSize if available)
   const getDeckSizeForCompare = (p: Player): number => {
-    if (p.deck.length > 0) return p.deck.length
+    if (p.deck.length > 0) {
+      return p.deck.length
+    }
     return p.deckSize ?? 0
   }
 
   const getHandSizeForCompare = (p: Player): number => {
-    if (p.hand.length > 0) return p.hand.length
+    if (p.hand.length > 0) {
+      return p.hand.length
+    }
     return p.handSize ?? 0
   }
 
   const getDiscardSizeForCompare = (p: Player): number => {
-    if (p.discard.length > 0) return p.discard.length
+    if (p.discard.length > 0) {
+      return p.discard.length
+    }
     return p.discardSize ?? 0
   }
 

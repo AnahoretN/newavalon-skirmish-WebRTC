@@ -209,9 +209,15 @@ export function encodeCardState(
 
     // [playerFlags: 1 byte] - bit 0: isDummy, bit 1: isDisconnected, bit 2: autoDrawEnabled
     let playerFlags = 0
-    if (player.isDummy) playerFlags |= 1 << 0
-    if (player.isDisconnected) playerFlags |= 1 << 1
-    if (player.autoDrawEnabled) playerFlags |= 1 << 2
+    if (player.isDummy) {
+      playerFlags |= 1 << 0
+    }
+    if (player.isDisconnected) {
+      playerFlags |= 1 << 1
+    }
+    if (player.autoDrawEnabled) {
+      playerFlags |= 1 << 2
+    }
     dataParts.push(new Uint8Array([playerFlags]))
 
     // [teamId: 1 byte] - 255 means undefined/no team
@@ -812,6 +818,10 @@ function decodeCardRef(data: Uint8Array, offset: number): { card: Card, bytesCon
   // Look up card definition from local contentDatabase
   const cardDef = getCardDefinitionFromLocal(baseId)
 
+  // Decode statuses with ownerId as the default addedByPlayerId
+  // This ensures status icons show the correct owner color
+  // Note: This assumes statuses belong to card owner, which is correct for most cases
+  // (Support/Threat from different players would require more complex encoding)
   return {
     card: {
       id: `${baseId}_${ownerId}_${Date.now()}_${Math.random()}`,
@@ -827,7 +837,7 @@ function decodeCardRef(data: Uint8Array, offset: number): { card: Card, bytesCon
       isFaceDown: (flags & 1) !== 0,
       enteredThisTurn: (flags & 2) !== 0,
       revealedTo: (flags & 4) ? 'all' : undefined,
-      statuses: decodeStatusesFromMask(statusMask, 0)
+      statuses: decodeStatusesFromMask(statusMask, ownerId)
     },
     bytesConsumed: pos - offset
   }

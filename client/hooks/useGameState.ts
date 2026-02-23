@@ -705,13 +705,14 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
 
-      case 'message_received':
+      case 'message_received': {
         // Handle incoming WebRTC message
         // GuestConnection sends: { type: 'message_received', data: message }
         // HostConnectionManager sends: { type: 'message_received', data: { message, fromPeerId } }
         const messageToHandle = event.data.message || event.data
         handleWebrtcMessage(messageToHandle)
         break
+      }
 
       case 'error':
         logger.error('WebRTC error:', event.data)
@@ -1244,7 +1245,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
 
-      case 'STATE_UPDATE_COMPACT':
+      case 'STATE_UPDATE_COMPACT': {
         // Handle STATE_UPDATE_COMPACT - both host and guest
         // Check if data is in MessagePack format (optimized)
         let remoteState = message.data?.gameState
@@ -1815,6 +1816,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           })
         }
         break
+      }
 
       case 'STATE_UPDATE':
         if (webrtcIsHostRef.current && message.senderId && message.senderId !== webrtcManagerRef.current?.getPeerId()) {
@@ -2061,7 +2063,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
 
-      case 'RECONNECT_SNAPSHOT':
+      case 'RECONNECT_SNAPSHOT': {
         // Host sent compact reconnect snapshot (for guests reconnecting after page reload)
         // Supports both MessagePack format (optimized) and legacy format
         logger.info('[RECONNECT_SNAPSHOT] Received reconnect snapshot from host')
@@ -2210,6 +2212,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           })
         }
         break
+      }
 
       case 'STATE_DELTA':
         // Host: received delta from guest, rebroadcast to all other guests
@@ -2883,11 +2886,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             const newState = { ...prev, players: updatedPlayers }
             logger.info(`Player ${message.playerId} is ready via WebRTC`)
 
-            // Broadcast the ready status to all guests (so they see the updated status)
-            if (webrtcManagerRef.current) {
-              webrtcManagerRef.current.broadcastGameState(newState)
-              logger.info(`[PLAYER_READY] Broadcasted ready status for player ${message.playerId}`)
-            }
+            // NOTE: Game start and broadcasting is handled by HostStateManager.setPlayerReady
+            // Do NOT broadcast here to avoid race conditions with HostStateManager's broadcasts
+            // HostStateManager already broadcasts the correct state after starting the game
 
             // NOTE: Game start is now handled by HostStateManager.startGame()
             // This happens via setPlayerReady -> setPlayerReady in HostStateManager
@@ -3080,7 +3081,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             // This marks deploy abilities as "lost" when phase changes
             const newBoard = prev.board.map(row =>
               row.map(cell => {
-                if (!cell.card) return cell
+                if (!cell.card) {
+                  return cell
+                }
                 const card = cell.card
                 if (card.statuses) {
                   const filteredStatuses = card.statuses.filter(s => s.type !== 'readyDeploy')
@@ -4038,7 +4041,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
 
-      case 'CARD_STATUS_SYNC':
+      case 'CARD_STATUS_SYNC': {
         // Optimized card status synchronization - only changes, not full state
         logger.info('[CARD_STATUS_SYNC] Received card status changes:', message.data?.changes?.length || 0)
 
@@ -4081,8 +4084,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           })
         }
         break
+      }
 
-      case 'BOARD_CARD_SYNC':
+      case 'BOARD_CARD_SYNC': {
         // Optimized board card synchronization - only card data, not full state
         logger.info('[BOARD_CARD_SYNC] Received board card data:', message.data?.cards?.length || 0, 'action:', message.data?.action)
 
@@ -4135,6 +4139,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           })
         }
         break
+      }
 
       default:
         // Log unknown message types for debugging

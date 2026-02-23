@@ -52,9 +52,11 @@ export function createReconnectSnapshot(gameState: GameState, localPlayerId?: nu
   _format?: string
 } {
   // Import serializePersonalizedState dynamically to avoid circular dependency
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { serializePersonalizedState } = require('./webrtcSerialization')
 
   // Create personalized state for the reconnecting player
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { createPersonalizedGameState } = require('../host/StatePersonalization')
   const personalizedState = createPersonalizedGameState(gameState, localPlayerId ?? null)
 

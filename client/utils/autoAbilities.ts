@@ -277,7 +277,6 @@ export const initializeReadyStatuses_Deprecated = (card: Card, ownerId: number, 
 /**
  * @deprecated Use updateReadyStatuses instead
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const resetPhaseReadyStatuses = (_card: Card, _ownerId: number): void => {
   // This was used for single-card reset, now handled by updateReadyStatuses
   logger.warn('[resetPhaseReadyStatuses] Deprecated, use updateReadyStatuses instead')

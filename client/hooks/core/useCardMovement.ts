@@ -365,7 +365,8 @@ export function useCardMovement(props: UseCardMovementProps) {
         if (!cardToMove.statuses) {
           cardToMove.statuses = []
         }
-        if (item.source !== 'board' && cardToMove.isFaceDown === undefined) {
+        // All cards on the battlefield are face-up for all players
+        if (item.source !== 'board') {
           cardToMove.isFaceDown = false
         }
         if (item.source !== 'board') {

@@ -14,6 +14,9 @@ import type { HostConnectionManager } from './HostConnectionManager'
 import { logger } from '../utils/logger'
 import { createDeltaFromStates, isDeltaEmpty, applyStateDelta } from '../utils/stateDelta'
 import { PLAYER_COLOR_NAMES } from '../constants'
+import { getCardDefinition } from '../content'
+import { createDeck } from '../hooks/core/gameCreators'
+import { deserializeDelta } from '../utils/webrtcSerialization'
 
 export interface HostMessageHandlerConfig {
   onStateUpdate?: (newState: GameState) => void
@@ -244,11 +247,7 @@ export class HostMessageHandler {
 
     const guestState = actionData.gameState
 
-    // Import card database for reconstruction
-    const { getCardDefinition } = require('@/contentDatabase')
-
     // Log dummy player status for debugging
-    logger.info(`[handleStateUpdateAction] Guest ${guestPlayerId} sent state. Host players:`, this.gameState.players.map(p => ({id: p.id, isDummy: p.isDummy, deckSize: p.deck.length})))
     logger.info(`[handleStateUpdateAction] Guest players:`, guestState.players.map((p: Player) => ({id: p.id, isDummy: p.isDummy, deckSize: (p as any).deckCards?.length ?? p.deck?.length ?? 0})))
 
     // Merge players: preserve deck/discard AND score from host state for players that aren't the guest
@@ -314,10 +313,6 @@ export class HostMessageHandler {
 
           // Check if guest sent compact card data (handCards, deckCards, discardCards)
           if ((guestPlayer as any).handCards || (guestPlayer as any).deckCards || (guestPlayer as any).discardCards) {
-            // Import card database for reconstruction
-            const { getCardDefinition } = require('@/contentDatabase')
-
-            // Reconstruct hand from handCards
             const reconstructedHand = ((guestPlayer as any).handCards || []).map((hc: any) => {
               const cardDef = getCardDefinition(hc.baseId)
               if (!cardDef) {
@@ -508,10 +503,8 @@ export class HostMessageHandler {
 
     // Deserialize delta from binary format
     try {
-      const { deserializeDelta } = require('../utils/webrtcSerialization')
       const delta = deserializeDelta(message.data)
 
-      logger.info(`[HostMessageHandler] Received STATE_DELTA_BINARY from player ${guestPlayerId}, boardCells=${delta.boardCells?.length || 0}`)
 
       // Apply delta using the same logic as STATE_DELTA
       const newState = applyStateDelta(this.gameState, delta, guestPlayerId)
@@ -687,7 +680,6 @@ export class HostMessageHandler {
     // For real players, use deck data from guest if provided
     if (isDummy || !receivedDeck || !Array.isArray(receivedDeck) || receivedDeck.length === 0) {
       // Create deck locally on host
-      const { createDeck } = require('../../hooks/core/gameCreators')
       finalDeck = createDeck(deckType, playerId, targetPlayer.name)
 
       // Create compact version for broadcast
@@ -703,8 +695,6 @@ export class HostMessageHandler {
       logger.info(`[handleChangePlayerDeck] Host created deck for ${isDummy ? 'dummy' : 'real'} player ${playerId}: ${deckType}, ${finalDeck.length} cards`)
     } else {
       // Use deck data from guest (real player with custom deck data)
-      const { getCardDefinition } = require('../../contentDatabase')
-
       const reconstructedDeck = receivedDeck.map((compactCard: any) => {
         if (compactCard.baseId) {
           const cardDef = getCardDefinition(compactCard.baseId)

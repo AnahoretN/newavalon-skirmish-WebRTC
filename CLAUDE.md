@@ -431,3 +431,434 @@ interface TargetingModeData {
    - `Math.floor(Math.random() * allPlayers.length)` selects index
    - Sets both `startingPlayerId` and `activePlayerId` to selected player
    - Triggers Draw phase for starting player (7th card after initial 6)
+
+---
+
+# WebRTC P2P Architecture
+
+## Overview
+
+The project supports **two connection modes**:
+1. **WebSocket Server Mode** — Traditional client-server architecture using Express + ws
+2. **WebRTC P2P Mode** — True peer-to-peer connection without central server during gameplay
+
+WebRTC P2P mode allows players to connect directly to each other, reducing latency and server dependency. The first player (host) becomes the authority, and other players (guests) connect directly to them.
+
+## WebRTC Core Components
+
+### HostManager (`client/host/HostManager.ts`)
+The central authority that manages everything in P2P mode:
+- **State Authority**: Maintains the source of truth for game state
+- **Guest Management**: Handles guest connections, disconnections, and reconnections
+- **Action Processing**: All game actions from guests flow through the host
+- **State Broadcasting**: Distributes personalized state updates to all guests
+- **Phase Management**: Controls game phases, rounds, and turn progression
+- **Visual Effects**: Synchronizes highlights, floating text, targeting modes
+
+### HostConnectionManager (`client/host/HostConnectionManager.ts`)
+Low-level WebRTC connection management:
+- Uses **PeerJS** library for WebRTC abstraction
+- Manages multiple guest connections simultaneously
+- Handles data serialization with **MessagePack** for efficiency
+- Routes incoming messages to appropriate handlers
+- Connection health monitoring
+
+### GuestConnectionManager (`client/host/GuestConnection.ts` OR `client/host/GuestConnectionManager.ts`)
+Guest-side connection to host:
+- Initiates connection to host's peerId
+- Sends player actions to host for processing
+- Receives personalized state updates from host
+- **Reconnection System**: Auto-reconnects within 30-second window
+- Uses **localStorage** to persist connection data across page refreshes
+
+### HostStateManager (`client/host/HostStateManager.ts`)
+Manages game state on the host:
+- Maintains master copy of game state
+- **Personalized State Broadcasting**: Creates custom state views for each guest:
+  - Local player: Full hand, deck, discard data
+  - Other players: Only sizes (handSize, deckSize, discardSize) for privacy
+  - Dummy players: Full data (all players control dummies)
+- Merges guest state updates with master state
+- Manages targeting modes and visual effects state
+
+### VisualEffectsManager (`client/host/VisualEffects.ts`)
+Synchronizes visual feedback across all players:
+- **Highlights**: Row/column/cell highlighting
+- **Floating Text**: Damage, score changes, ability effects (batched for efficiency)
+- **Targeting Mode**: Shows valid targets when activating abilities
+- **No Target Overlay**: Indicates invalid targets
+- **Deck/Hand Selection**: Visual feedback for selecting other players' cards
+
+### ReconnectionManager (`client/host/ReconnectionManager.ts`)
+Handles disconnect/reconnect scenarios:
+- **30-second reconnect window**: Guests can reconnect and resume
+- **localStorage persistence**: Connection data survives page refresh
+- **F5 Support**: Host broadcasts new peerId after page refresh
+- **Guest timeout**: Converts to dummy player after timeout
+
+### PhaseManagement (`client/host/PhaseManagement.ts`)
+Controls game flow in P2P mode:
+- Phase transitions (Preparation → Setup → Main → Commit → Scoring)
+- Round management and victory checking
+- Turn cycling between players
+
+## WebRTC Connection Flow
+
+### 1. Host Starting a Game
+```
+1. Host clicks "Create Game"
+2. HostManager creates PeerJS instance with unique peerId
+3. Host broadcasts peerId via BroadcastChannel API (for same-browser tabs)
+4. Host shares peerId with guests (via invite link or manual sharing)
+```
+
+### 2. Guest Joining
+```
+1. Guest enters host's peerId (or via invite link)
+2. GuestConnectionManager connects to host's PeerJS
+3. Guest sends JOIN_REQUEST with:
+   - playerName
+   - deckPreference (optional)
+4. Host assigns unique playerId (1 = host, 2+ = guests)
+5. Host sends initial personalized game state
+6. Guest receives and renders initial state
+```
+
+### 3. Gameplay Loop
+```
+Guest Action Flow:
+1. Guest performs action (play card, move card, etc.)
+2. Guest sends ACTION message to host
+3. Host processes action on master state
+4. Host broadcasts updated state to ALL guests
+5. All guests receive and apply update
+
+Visual Effects Flow:
+1. Any player triggers effect (highlight, floating text)
+2. Effect sent to host
+3. Host broadcasts to all guests
+4. All guests render effect synchronously
+```
+
+### 4. Disconnect/Reconnect
+```
+Guest Disconnect:
+1. Connection lost detected
+2. 30-second reconnect timer starts
+3. Guest shows "Reconnecting..." UI
+4. Guest attempts to reconnect with saved credentials
+
+Successful Reconnect:
+1. Guest reconnects to host (or new host peerId after F5)
+2. Guest sends RECONNECT message with previous playerId
+3. Host validates and sends current state
+4. Guest resumes with full state
+
+Failed Reconnect:
+1. Timer expires (30 seconds)
+2. Host converts guest to dummy player
+3. Game continues with AI-controlled dummy
+```
+
+## State Optimization Techniques
+
+### Binary Encoding
+- Cards sent with **baseId only** (not full card objects)
+- ~90% size reduction for card-heavy messages
+- Guests reconstruct full cards from local contentDatabase
+
+### Personalized States
+- Each guest receives custom view of state
+- Privacy: Opponents' hands hidden (only count shown)
+- Efficiency: Only send relevant data to each guest
+
+### Delta Updates (Future)
+- Currently: Full state broadcast on each change
+- Planned: Only send changed portions (stub in `stateDelta.ts`)
+
+## WebRTC vs WebSocket Comparison
+
+| Feature | WebSocket Server | WebRTC P2P |
+|---------|------------------|------------|
+| Latency | Medium (server relay) | Low (direct P2P) |
+| Server Required | Yes | No (after initial) |
+| Player Discovery | Server games list | Manual peerId sharing |
+| State Authority | Server | Host player |
+| Disconnect Recovery | Via server | 30s window to host |
+| Bandwidth | Server mediates all | Direct P2P streams |
+
+---
+
+# Game User Features
+
+## What is New Avalon: Skirmish?
+
+A **multiplayer tactical card game** where players:
+1. Build decks from faction-specific cards
+2. Place units on a grid-based battlefield
+3. Activate abilities to attack, defend, and manipulate the board
+4. Score points by completing lines (horizontal, vertical, diagonal)
+5. Compete in round-based matches (best of 3)
+
+## Game Modes
+
+### FFA (Free For All)
+- Every player competes individually
+- No teams
+- Winner is the player with highest score
+
+### 2v2 (Two vs Two)
+- Two teams of two players each
+- Team scores are combined
+- Both team members share victory/defeat
+
+### 3v1 (Three vs One)
+- One team of three vs one player
+- Asymmetric gameplay
+- Single player has advantages to balance
+
+## Card System
+
+### Card Locations
+- **Hand**: Cards available to play (max varies by deck)
+- **Deck**: Draw pile, shuffled between rounds
+- **Battlefield**: Grid where cards are placed (4x4 to 7x7)
+- **Showcase**: Announced/command cards displayed separately
+- **Discard**: Used cards pile
+
+### Card Attributes
+- **Name**: Card identifier
+- **Power**: Combat strength (number in corner)
+- **Faction**: SynchroTech, Hoods, Optimates, Fusion
+- **Abilities**: Special effects (text description)
+- **Status Icons**: Active conditions (shield, poison, etc.)
+
+### Card Types
+- **Unit Cards**: Place on battlefield, have power and abilities
+- **Command Cards**: Special cards with multiple choice effects
+- **Token Cards**: Temporary modifiers, counters, status effects
+
+## Deck System
+
+### Faction Decks
+- **SynchroTech**: Tech-focused, synergy abilities
+- **Hoods**: Aggressive, direct damage
+- **Optimates**: Defensive, control-oriented
+- **Fusion**: Multi-faction combinations
+
+### Custom Decks
+- Players can build custom decks
+- **Text Format**: "Nx Card Name" (e.g., "3x Plasma Trooper")
+- Import/export via .txt files
+- Validation ensures card legality
+
+### Deck Selection
+- Visual dropdown in player panel
+- Immediate visual feedback when selected
+- Can change before game starts
+
+## Gameplay Phases
+
+### 1. Preparation (Phase 0)
+- Active player draws 1 card from deck
+- Automatic at start of turn
+- Skips if deck is empty
+
+### 2. Setup (Phase 1)
+- Place units from hand onto battlefield
+- Can place **face-up** or **face-down**
+- Face-down cards are hidden until revealed
+- Grid size varies (4x4 to 7x7)
+
+### 3. Main (Phase 2)
+- Activate card abilities
+- May enter **targeting mode** to select targets
+- Examples: Deal damage, destroy cards, draw cards
+- Some abilities require specific conditions
+
+### 4. Commit (Phase 3)
+- Add counters/statuses to cards
+- Place tokens from hand
+- Prepare for scoring
+
+### 5. Scoring (Phase 4)
+- Count completed lines on battlefield
+- **Lines**: Horizontal, vertical, diagonal
+- Line = "complete" if full of cards
+- Each line = points equal to total power
+- Add points to player score
+- End turn
+
+## Scoring & Victory
+
+### Round Victory
+- Victory threshold: `10 + (roundNumber × 10)`
+- Round 1: 20 points to win
+- Round 2: 30 points to win
+- Round 3+: 40+ points
+- Player(s) with highest score win the round
+
+### Match Victory
+- **Best of 3 rounds**
+- First player to win 2 rounds wins the match
+- Game Over modal appears
+- Option to start new match
+
+### Score Tracking
+- Scores displayed in player panels
+- Round wins shown with medal icons
+- Round number displayed in header
+
+## Turn Management
+
+### Turn Cycle
+1. Starting player selected randomly at game start
+2. Active player indicator (highlighted panel)
+3. Click any player to select them (including yourself)
+4. Click same player again to **deselect** and check round end
+5. Turn passes to selected player
+
+### Auto-Draw
+- Can be toggled in settings
+- Automatically draws card at turn start
+- Manual draw button available if disabled
+
+## Ready Check System
+
+### Before Game Start
+1. Players join lobby
+2. Select decks
+3. Assign teams (if team mode)
+4. Click "Ready" button when prepared
+5. Host sees who's ready (green checkmarks)
+6. Guests see only own status
+
+### Starting the Game
+- When **all players are ready**, game starts automatically
+- Random first player selected
+- Each player draws 6 initial cards
+- First player enters Preparation phase (draws 7th card)
+
+## Team Assignment
+
+### Drag-and-Drop Interface
+- Visual team assignment modal
+- Drag players to teams
+- Respects game mode constraints:
+  - 2v2: 2 players per team
+  - 3v1: 3 vs 1
+- Visual feedback with team colors
+
+## Visual Effects System
+
+### Highlights
+- **Row Highlight**: Highlight entire row
+- **Column Highlight**: Highlight entire column
+- **Cell Highlight**: Highlight single cell
+- Color-coded by player
+
+### Floating Text
+- **Damage**: Red numbers showing damage dealt
+- **Score Changes**: Green/yellow numbers for points
+- **Ability Effects**: Text describing ability results
+- Batched for efficiency (multiple texts at once)
+
+### Targeting Mode
+- Shows valid targets for abilities
+- Dashed border highlights
+- All players see targeting (only targeting player can select)
+- Automatically clears after target selected
+
+### No Target Overlay
+- Red "X" overlay on invalid targets
+- Visual feedback when ability has no valid targets
+
+## Command System
+
+### Command Cards
+Special cards with multiple options:
+- **Overwatch**: Choose from several tactical options
+- **Tactical Maneuver**: Movement/positioning choices
+- **Inspiration**: Buff options
+
+### Command Modal
+- Opens when playing a command card
+- Shows N options separated by "●"
+- Player clicks to select option
+- Selected option is executed
+
+## Invite Link System
+
+### Creating Invite Link
+1. Host clicks "Copy Game Link" in header
+2. Link includes:
+   - Game ID
+   - Encoded WebSocket URL (for server mode)
+   - Host peerId (for WebRTC mode)
+3. Share link with potential players
+
+### Joining via Invite Link
+1. Guest opens link
+2. URL parameters parsed:
+   - `game` → game ID (server mode)
+   - `s` → encoded server URL (server mode)
+   - `peerId` → host peerId (WebRTC mode)
+3. Auto-join when connected
+4. sessionStorage cleared after join
+
+## Settings & Configuration
+
+### Game Settings
+- **Game Mode**: FFA, 2v2, 3v1
+- **Grid Size**: 4x4, 5x5, 6x6, 7x7
+- **Privacy**: Public (listed) or Private (unlisted)
+- **Dummy Players**: Add AI-controlled players
+
+### Connection Settings
+- **WebSocket URL**: Configure server address
+- **Reconnect**: Force reconnection button
+- **Connection Status**: Visual indicator (green/yellow/red)
+
+### Player Settings
+- **Player Name**: Change display name
+- **Player Color**: Choose from preset colors
+- **Deck Selection**: Choose faction deck
+
+## Special Features
+
+### Dummy Players
+- AI-controlled players
+- Can be added by host
+- Auto-generated random decks
+- Controlled by all players
+- Converted from disconnected players (after timeout)
+
+### Spectator Mode
+- Watch games without participating
+- See all players' hands
+- No interaction with game state
+
+### Auto-Abilities
+- Some abilities trigger automatically
+- Deploy abilities: Trigger when card placed
+- Continuous effects: Ongoing modifications
+- Can be toggled in settings
+
+### Card Interactions
+- **Drag & Drop**: Move cards between locations
+- **Double Click**: Quick actions (play, announce, details)
+- **Right Click**: Context menu with options
+- **Click**: Select for targeting
+
+## Localization
+
+### Supported Languages
+- **English** (en)
+- **Russian** (ru)
+- **Serbian** (sr)
+
+### Translation System
+- React Context for language state
+- All UI text translatable
+- Card names and abilities translated
+- Language selection in Settings

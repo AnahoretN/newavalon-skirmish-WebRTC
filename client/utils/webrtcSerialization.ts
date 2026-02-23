@@ -196,7 +196,9 @@ export function createMinimalGameState(
  * Only includes data needed for visual display, not the full action (which contains functions)
  */
 function createMinimalTargetingMode(targetingMode: any): any {
-  if (!targetingMode) return null
+  if (!targetingMode) {
+    return null
+  }
 
   return {
     playerId: targetingMode.playerId,
@@ -303,6 +305,7 @@ export function deserializeDeckCards(base64Data: string, ownerId: number): any[]
     const baseIds = decode(bytes) as string[]
 
     // Reconstruct cards from contentDatabase
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { getCardDefinition } = require('../content')
     return baseIds.map((baseId, index) => {
       const cardDef = getCardDefinition(baseId)

@@ -2605,7 +2605,9 @@ const AppInner = function AppInner() {
 // Helper function to check if active player has a LastPlayed card
 function checkHasLastPlayedCard(gameState: GameState): boolean {
   const activePlayerId = gameState.activePlayerId
-  if (!activePlayerId) return false
+  if (!activePlayerId) {
+    return false
+  }
 
   for (let r = 0; r < gameState.board.length; r++) {
     for (let c = 0; c < gameState.board[r].length; c++) {

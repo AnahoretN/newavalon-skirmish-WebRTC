@@ -1,10 +1,11 @@
 
-import React, { useRef, useState, useEffect } from 'react'
+import React, { useRef, useState, useEffect, useMemo } from 'react'
 import { DeckType } from '@/types'
-import type { DragItem, Card as CardType } from '@/types'
+import type { DragItem, Card as CardType, PlayerColor } from '@/types'
 import { decksData } from '@/content'
 import { Card } from './Card'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { PLAYER_COLORS } from '@/constants'
 
 interface TokensModalProps {
   isOpen: boolean;
@@ -17,14 +18,28 @@ interface TokensModalProps {
   localPlayerId: number | null; // The player who is dragging the token (becomes token owner)
   activePlayerId?: number | null; // The active player (may be dummy)
   players?: any[]; // All players to check if active is dummy
+  playerColorMap?: Map<number, PlayerColor>; // Player colors for display
 }
 
-export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDraggedItem, openContextMenu, canInteract, anchorEl, imageRefreshVersion, localPlayerId, activePlayerId, players }) => {
+export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDraggedItem, openContextMenu, canInteract, anchorEl, imageRefreshVersion, localPlayerId, activePlayerId, players, playerColorMap }) => {
   const { t } = useLanguage()
   const [draggedTokenId, setDraggedTokenId] = useState<string | null>(null)
   const [droppedOutside, setDroppedOutside] = useState(false)
   const modalRef = useRef<HTMLDivElement>(null)
   const draggedTokenRef = useRef<CardType | null>(null)
+
+  // Determine the token owner's color for display
+  const tokenOwnerColor = useMemo(() => {
+    const activePlayer = players?.find(p => p.id === activePlayerId)
+    const isDummy = activePlayer?.isDummy && activePlayerId !== null
+
+    // Token belongs to active player (or dummy's actual owner for display)
+    const ownerId = isDummy ? activePlayerId : localPlayerId
+    if (!ownerId) return null
+
+    const colorName = playerColorMap?.get(ownerId)
+    return colorName ? PLAYER_COLORS[colorName] : null
+  }, [activePlayerId, localPlayerId, players, playerColorMap])
 
   useEffect(() => {
     if (isOpen) {
@@ -114,6 +129,18 @@ export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDr
               const isBeingDragged = draggedTokenId === token.id
               const opacity = isBeingDragged ? 0.5 : 1
 
+              // Create a minimal color map with just the token owner's color
+              const tokenColorMap = useMemo(() => {
+                if (!playerColorMap) return new Map()
+                const activePlayer = players?.find(p => p.id === activePlayerId)
+                const isDummy = activePlayer?.isDummy && activePlayerId !== null
+                const ownerId = isDummy ? activePlayerId : localPlayerId
+                if (!ownerId) return new Map()
+
+                const colorName = playerColorMap.get(ownerId)
+                return colorName ? new Map([[ownerId, colorName]]) : new Map()
+              }, [playerColorMap, players, activePlayerId, localPlayerId])
+
               return (
                 <div
                   key={token.id}
@@ -125,7 +152,7 @@ export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDr
                   data-interactive={canInteract}
                   className={`w-24 h-24 transition-all rounded-lg ${canInteract ? 'cursor-grab active:cursor-grabbing hover:scale-105' : 'cursor-not-allowed'} ${isBeingDragged ? 'scale-95' : ''}`}
                 >
-                  <Card card={token} isFaceUp={true} playerColorMap={new Map()} imageRefreshVersion={imageRefreshVersion} />
+                  <Card card={token} isFaceUp={true} playerColorMap={tokenColorMap} imageRefreshVersion={imageRefreshVersion} />
                 </div>
               )
             })}

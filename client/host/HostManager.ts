@@ -30,6 +30,8 @@ import { saveHostData, saveWebrtcState, clearWebrtcData } from './WebrtcStatePer
 import { logger } from '../utils/logger'
 import { PLAYER_COLOR_NAMES } from '../constants'
 import { DeckType } from '../types'
+import { createDeck } from '../hooks/core/gameCreators'
+import { getCardDefinition } from '../content'
 
 export interface HostManagerConfig extends HostConfig {
   onStateUpdate?: (newState: GameState) => void
@@ -578,7 +580,6 @@ export class HostManager {
     // For real players, use deck data from guest if provided
     if (isDummy || !receivedDeck || !Array.isArray(receivedDeck) || receivedDeck.length === 0) {
       // Create deck locally on host
-      const { createDeck } = require('../hooks/core/gameCreators')
       finalDeck = createDeck(deckType, playerId, targetPlayer.name)
 
       // Create compact version for broadcast (only essential data)
@@ -594,7 +595,6 @@ export class HostManager {
       logger.info(`[HostManager] Created deck for ${isDummy ? 'dummy' : 'real'} player ${playerId}: ${deckType}, ${finalDeck.length} cards`)
     } else {
       // Use deck data from guest (real player with custom deck data)
-      const { getCardDefinition } = require('../contentDatabase')
 
       const reconstructedDeck = receivedDeck.map((compactCard: any) => {
         if (compactCard.baseId) {
