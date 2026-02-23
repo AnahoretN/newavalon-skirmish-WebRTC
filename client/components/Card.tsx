@@ -662,7 +662,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
               onMouseDown={handleMouseDown}
               onClick={handleCardClick}
               style={innerGlowStyle}
-              className={`relative w-full h-full ${cardBg} rounded-md shadow-md ${borderClass} ${themeColor} ${textColor} flex-shrink-0 select-none overflow-hidden transition-all duration-300 ${shouldHighlight ? 'scale-[1.10] z-10' : ''}`}
+              className={`relative w-full h-full ${cardBg} rounded-md shadow-md ${borderClass} ${themeColor} ${textColor} flex-shrink-0 select-none overflow-hidden ${shouldHighlight ? 'scale-[1.10] z-10 transition-transform duration-300' : ''}`}
             >
               {currentImageSrc ? (
                 <>
