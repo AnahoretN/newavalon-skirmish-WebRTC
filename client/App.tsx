@@ -1240,6 +1240,25 @@ const AppInner = function AppInner() {
     }
   }, [cursorStack, abilityMode, playMode])
 
+  // Clear targetingMode when abilityMode transitions from active to null (Deploy ability completion)
+  // This ensures targeting highlights are cleared on all clients when Deploy finishes
+  const prevAbilityModeRef = useRef<AbilityAction | null>(null)
+  useEffect(() => {
+    const hadAbilityMode = prevAbilityModeRef.current !== null
+    const hasAbilityMode = abilityMode !== null
+
+    if (hadAbilityMode && !hasAbilityMode) {
+      // Ability mode was just cleared - check if it was a Deploy ability or any ability that set targeting mode
+      // Clear targeting mode if it belongs to local player (they own it)
+      if (gameState.targetingMode?.playerId === localPlayerId) {
+        clearTargetingMode()
+      }
+    }
+
+    prevAbilityModeRef.current = abilityMode
+  }, [abilityMode, gameState.targetingMode?.playerId, localPlayerId, clearTargetingMode])
+
+
   useEffect(() => {
     if (latestHighlight) {
       setHighlight(latestHighlight)

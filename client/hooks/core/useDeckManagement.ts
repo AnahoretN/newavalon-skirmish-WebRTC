@@ -211,9 +211,39 @@ export function useDeckManagement(props: UseDeckManagementProps) {
           logger.warn(`[changePlayerDeck] Guest mode but no sendWebrtcAction available`)
         }
       } else {
-        // Guest changing own deck: deck is already created locally, no need to send to host
-        // Host doesn't need to know about guest's deck - guest manages their own deck locally
-        logger.info(`[changePlayerDeck] Guest created own deck locally: player ${playerId}, deck ${deckType}`)
+        // Guest changing own deck: MUST send deck data to host!
+        // Host needs to know guest's deck because when game starts, host distributes cards from player.deck
+        // If host doesn't have the updated deck, guests will start with wrong cards
+        if (sendWebrtcAction) {
+          // Get the deck that was just created locally
+          let deckToSend: Card[] = []
+          updateState(currentState => {
+            const player = currentState.players.find(p => p.id === playerId)
+            if (player && player.deck) {
+              deckToSend = player.deck
+            }
+            return currentState
+          })
+
+          const compactDeckData = deckToSend.map(card => ({
+            id: card.id,
+            baseId: card.baseId || card.id,
+            power: card.power,
+            powerModifier: card.powerModifier || 0,
+            isFaceDown: card.isFaceDown || false,
+            statuses: card.statuses || []
+          }))
+
+          sendWebrtcAction('CHANGE_PLAYER_DECK', {
+            playerId,
+            deckType,
+            deck: compactDeckData,
+            deckSize: compactDeckData.length
+          })
+          logger.info(`[changePlayerDeck] Guest sending own deck data to host: player ${playerId}, deck ${deckType}, ${compactDeckData.length} cards`)
+        } else {
+          logger.warn(`[changePlayerDeck] Guest mode but no sendWebrtcAction available`)
+        }
       }
     }
   }, [updateState, createDeck, sendWebrtcAction, webrtcIsHostRef, webrtcManagerRef, localPlayerIdRef])

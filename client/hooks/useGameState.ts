@@ -1325,8 +1325,44 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                         return { id: compactCard.id, baseId: compactCard.baseId, name: 'Unknown', power: 0 }
                       }
 
+                      // Reconstruct hand from handCards (ultra-compact format with baseId)
                       const reconstructedHand = (guestPlayer.handCards || []).map(reconstructCard)
-                      const reconstructedDeck = (guestPlayer.deckCards || []).map(reconstructCard)
+
+                      // Reconstruct deck from deckCardRefs (ultra-compact format with index + baseId)
+                      let reconstructedDeck = p.deck || []  // Preserve existing deck if no refs
+                      if (guestPlayer.deckCardRefs && guestPlayer.deckCardRefs.length > 0) {
+                        // Map from baseId to existing card to preserve IDs
+                        const cardMap = new Map<string, any>()
+                        for (const card of (p.deck || [])) {
+                          const baseId = card.baseId || card.id
+                          cardMap.set(baseId, card)
+                        }
+
+                        // Reconstruct deck in order from refs
+                        reconstructedDeck = guestPlayer.deckCardRefs.map((ref: any) => {
+                          const existingCard = cardMap.get(ref.baseId)
+                          if (existingCard) {
+                            return existingCard
+                          }
+                          // Create new card from contentDatabase
+                          const cardDef = getCardDefinition(ref.baseId)
+                          if (cardDef) {
+                            return {
+                              ...cardDef,
+                              id: `${ref.baseId}_guest_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+                              baseId: ref.baseId,
+                              ownerId: guestPlayerId,
+                              isFaceDown: true,
+                              statuses: []
+                            }
+                          }
+                          return null
+                        }).filter((c: any) => c !== null)
+                      } else if (guestPlayer.deckCards && guestPlayer.deckCards.length > 0) {
+                        // Legacy format: full deck cards
+                        reconstructedDeck = guestPlayer.deckCards.map(reconstructCard)
+                      }
+
                       const reconstructedDiscard = (guestPlayer.discardCards || []).map(reconstructCard)
 
                       logger.info(`[STATE_UPDATE_COMPACT] Reconstructed guest ${guestPlayerId}: hand=${reconstructedHand.length}, deck=${reconstructedDeck.length}, discard=${reconstructedDiscard.length}, score=${guestPlayer.score || 0}`)
@@ -1352,9 +1388,13 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                     // CRITICAL: Check if this is a dummy player - accept full state updates
                     const isDummyPlayer = p.isDummy === true
 
-                    if (isDummyPlayer && ((guestPlayer.handCards && guestPlayer.handCards.length > 0) ||
-                                         (guestPlayer.deckCards && guestPlayer.deckCards.length > 0) ||
-                                         (guestPlayer.discardCards && guestPlayer.discardCards.length > 0))) {
+                    // Check for both legacy deckCards and new deckCardRefs format
+                    const hasCardData = (guestPlayer.handCards && guestPlayer.handCards.length > 0) ||
+                                       (guestPlayer.deckCards && guestPlayer.deckCards.length > 0) ||
+                                       (guestPlayer.deckCardRefs && guestPlayer.deckCardRefs.length > 0) ||
+                                       (guestPlayer.discardCards && guestPlayer.discardCards.length > 0)
+
+                    if (isDummyPlayer && hasCardData) {
                       // Dummy player - reconstruct full state from guest's compact data
                       const reconstructCard = (compactCard: any) => {
                         const cardDef = getCardDefinition(compactCard.baseId)
@@ -1374,7 +1414,42 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                       }
 
                       const reconstructedHand = (guestPlayer.handCards || []).map(reconstructCard)
-                      const reconstructedDeck = (guestPlayer.deckCards || []).map(reconstructCard)
+
+                      // Reconstruct deck from deckCardRefs (new ultra-compact format)
+                      let reconstructedDeck = p.deck || []
+                      if (guestPlayer.deckCardRefs && guestPlayer.deckCardRefs.length > 0) {
+                        // Map from baseId to existing card to preserve IDs
+                        const cardMap = new Map<string, any>()
+                        for (const card of (p.deck || [])) {
+                          const baseId = card.baseId || card.id
+                          cardMap.set(baseId, card)
+                        }
+
+                        // Reconstruct deck in order from refs
+                        reconstructedDeck = guestPlayer.deckCardRefs.map((ref: any) => {
+                          const existingCard = cardMap.get(ref.baseId)
+                          if (existingCard) {
+                            return existingCard
+                          }
+                          // Create new card from contentDatabase
+                          const cardDef = getCardDefinition(ref.baseId)
+                          if (cardDef) {
+                            return {
+                              ...cardDef,
+                              id: `${ref.baseId}_dummy_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+                              baseId: ref.baseId,
+                              ownerId: p.id,
+                              isFaceDown: true,
+                              statuses: []
+                            }
+                          }
+                          return null
+                        }).filter((c: any) => c !== null)
+                      } else if (guestPlayer.deckCards && guestPlayer.deckCards.length > 0) {
+                        // Legacy format: full deck cards
+                        reconstructedDeck = guestPlayer.deckCards.map(reconstructCard)
+                      }
+
                       const reconstructedDiscard = (guestPlayer.discardCards || []).map(reconstructCard)
 
                       logger.info(`[STATE_UPDATE_COMPACT] Host: Guest ${guestPlayerId} modified dummy player ${p.id}: hand=${reconstructedHand.length}, deck=${reconstructedDeck.length}, discard=${reconstructedDiscard.length}`)

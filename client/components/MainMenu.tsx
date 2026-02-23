@@ -122,7 +122,7 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
       ></div>
 
       <div className="z-10 text-center p-8 bg-black bg-opacity-60 rounded-xl shadow-2xl border border-gray-700 max-w-md w-full">
-        <h1 className="text-5xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600 drop-shadow-lg">
+        <h1 className="text-5xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-b from-purple-600 to-blue-400 drop-shadow-lg">
                     New Avalon
         </h1>
         <div className="flex items-center justify-center gap-3 mb-6">
