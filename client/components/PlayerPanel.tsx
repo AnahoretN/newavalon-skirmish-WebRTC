@@ -729,6 +729,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       activePlayerId={activePlayerId}
                       disableActiveHighlights={disableActiveHighlights}
                       preserveDeployAbilities={preserveDeployAbilities}
+                      disableImageTransition={true}
                     />
                   </div>
                 ) : <span className="text-[10px] sm:text-xs font-bold text-gray-500 select-none uppercase tracking-tight">{t('showcase')}</span>}
@@ -890,6 +891,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                               disableTooltip={true}
                               disableActiveHighlights={true}
                               preserveDeployAbilities={false}
+                              disableImageTransition={true}
                               playerColor={player.color}
                             />
                           ) : (
@@ -903,6 +905,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                               disableTooltip={true}
                               disableActiveHighlights={disableActiveHighlights}
                               preserveDeployAbilities={preserveDeployAbilities}
+                              disableImageTransition={true}
                               playerColor={player.color}
                             />
                           )}
@@ -1148,6 +1151,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         disableTooltip={false}
                         disableActiveHighlights={disableActiveHighlights}
                         preserveDeployAbilities={preserveDeployAbilities}
+                        disableImageTransition={true}
                         playerColor={player.color}
                       />
                     </div>
@@ -1336,6 +1340,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                           disableActiveHighlights={true}
                           smallStatusIcons={false}
                           preserveDeployAbilities={false}
+                          disableImageTransition={true}
                           playerColor={player.color}
                         />
                       ) : (
@@ -1350,6 +1355,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                           disableActiveHighlights={disableActiveHighlights}
                           smallStatusIcons={true}
                           preserveDeployAbilities={preserveDeployAbilities}
+                          disableImageTransition={true}
                           playerColor={player.color}
                         />
                       )}
