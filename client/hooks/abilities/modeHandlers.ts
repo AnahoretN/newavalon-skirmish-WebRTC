@@ -1006,7 +1006,7 @@ function handleRevealEnemy(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, setAbilityMode, setCursorStack, markAbilityUsed, gameState, localPlayerId } = props
+  const { abilityMode, setAbilityMode, setCursorStack, markAbilityUsed, gameState, localPlayerId, setTargetingMode } = props
 
   if (!abilityMode || abilityMode.mode !== 'REVEAL_ENEMY') {
     return false
@@ -1032,6 +1032,11 @@ function handleRevealEnemy(
 
   const ownerId = card.ownerId
 
+  // Validate ownerId - card must have an owner
+  if (ownerId === undefined || ownerId === null) {
+    return false
+  }
+
   // Use universal token targeting system to create cursorStack
   // Modifications: targetOwnerId restricts to selected card's owner's hand
   // onlyFaceDown: only target unrevealed cards
@@ -1052,6 +1057,35 @@ function handleRevealEnemy(
   }
 
   setCursorStack(createTokenCursorStack('Revealed', tokenOwnerId, null, modifications))
+
+  // Calculate hand targets for the targeted opponent's hand
+  // Revealed can be placed on cards that don't already have Revealed from this player
+  const handTargets: {playerId: number, cardIndex: number}[] = []
+  const targetPlayer = gameState.players.find(p => p.id === ownerId)
+  if (targetPlayer?.hand) {
+    targetPlayer.hand.forEach((handCard, index) => {
+      // Card is valid if it doesn't already have Revealed from this player
+      const alreadyHasRevealed = handCard.statuses?.some(s => s.type === 'Revealed' && s.addedByPlayerId === tokenOwnerId)
+      if (!alreadyHasRevealed) {
+        handTargets.push({ playerId: ownerId, cardIndex: index })
+      }
+    })
+  }
+
+  // Create a dummy action for setTargetingMode (required parameter)
+  const dummyAction: AbilityAction = {
+    type: 'CREATE_STACK',
+    mode: 'SELECT_TARGET',
+    payload: {
+      tokenType: 'Revealed',
+      filter: () => true,
+    },
+    sourceCoords: boardCoords,
+    sourceCard,
+  }
+
+  // Activate targeting mode so all players see the valid hand targets highlighted
+  setTargetingMode(dummyAction, tokenOwnerId, boardCoords, undefined, undefined, handTargets)
 
   markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
 

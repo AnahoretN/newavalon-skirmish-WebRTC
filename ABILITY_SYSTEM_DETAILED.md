@@ -6,6 +6,15 @@
 3. [Механика Stack Cursor](#stack-cursor-mechanics)
 4. [Механика Targeting Mode](#targeting-mode-mechanics)
 5. [Детальное описание всех способностей карт](#card-abilities-detail)
+6. [Резюме ограничений targeting](#targeting-restrictions-summary)
+7. [Обработка отсутствия целей](#no-target-handling)
+8. [Визуальные эффекты](#visual-effects)
+9. [WebRTC синхронизация](#webrtc-sync)
+10. [Отладка](#debugging)
+11. [Известные особенности](#known-features)
+12. [Система командных карт](#command-cards-system)
+13. [Полный список типов действий](#action-types-list)
+14. [Важные правила способностей](#ability-rules)
 
 ---
 
@@ -1365,6 +1374,7 @@ RIOT_MOVE режим:
 
 ---
 
+<a name="targeting-restrictions-summary"></a>
 ## 6. Резюме ограничений targeting
 
 ### Ограничения владельца
@@ -1391,6 +1401,7 @@ RIOT_MOVE режим:
 
 ---
 
+<a name="no-target-handling"></a>
 ## 7. Обработка отсутствия целей
 
 ### Порядок действий при отсутствии целей:
@@ -1416,6 +1427,7 @@ RIOT_MOVE режим:
 
 ---
 
+<a name="visual-effects"></a>
 ## 8. Визуальные эффекты
 
 ### Подсветка готовых способностей
@@ -1448,6 +1460,7 @@ RIOT_MOVE режим:
 
 ---
 
+<a name="webrtc-sync"></a>
 ## 9. WebRTC синхронизация
 
 ### Ability Mode
@@ -1475,6 +1488,7 @@ client -> setCursorStack()
 
 ---
 
+<a name="debugging"></a>
 ## 10. Отладка
 
 ### Логирование
@@ -1499,6 +1513,7 @@ calculateValidTargets(action, gameState, playerId, commandContext)
 
 ---
 
+<a name="known-features"></a>
 ## 11. Известные особенности
 
 ### Stale State в цепочках действий
@@ -1528,3 +1543,516 @@ const isTeammate = userPlayer?.teamId !== undefined &&
 ```
 
 Ограничения `onlyOpponents` исключают teammates.
+
+---
+
+<a name="command-cards-system"></a>
+## 12. Система командных карт
+
+Командные карты — это особый тип карт с несколькими вариантами выбора. Каждый вариант отделён символом `●` и даёт разный эффект.
+
+### Структура командной карты
+
+```typescript
+{
+  name: "Tactical Maneuver",
+  ability: "● Move one of your units to an empty cell in its line. Draw cards equal to that unit's power.\n● Move one of your units to an empty cell in its line. Gain points equal to that unit's power."
+}
+```
+
+### Поток выполнения командной карты
+
+#### 1. Розыгрыш командной карты
+```
+Игрок выбирает командную карту из руки
+  -> playCard() сannounce = true
+  -> Карта перемещается в showcase
+  -> Открывается CommandModal
+```
+
+#### 2. Парсинг опций (CommandModal.tsx)
+```typescript
+// Разделение текста способности по ●
+const options = card.ability.split('●').map(opt => opt.trim())
+
+// Создание кнопок для каждой опции
+{options.map((option, index) => (
+  <button key={index} onClick={() => onConfirm(index)}>
+    {index + 1}. {formatAbilityText(option)}
+  </button>
+))}
+```
+
+#### 3. Выбор опции
+```
+Игрок кликает на опцию (1, 2, 3, ...)
+  -> onConfirm(selectedIndex)
+  -> handleCommandOption(selectedIndex, card)
+  -> Определяется actionType для выбранной опции
+  -> Выполняется соответствующая логика
+```
+
+### Примеры командных карт
+
+#### Tactical Maneuver
+**Option 1**: "Move one of your units to an empty cell in its line. Draw cards equal to that unit's power."
+```
+1. Активируется targeting mode: SELECT_UNIT_FOR_MOVE
+2. Валидные цели:
+   - Карты на поле
+   - Владелец: activePlayerId
+3. Клик по карте:
+   - Переход в SELECT_CELL
+   - Валидные клетки: пустые клетки в той же строке ИЛИ столбце
+4. Клик по клетке:
+   - moveItem карты на выбранную клетку
+   - power = карта.power
+   - drawCard(activePlayerId, power) - дование power карт
+```
+
+**Option 2**: "Move one of your units to an empty cell in its line. Gain points equal to that unit's power."
+```
+1-3. То же самое для выбора и перемещения
+4. Клик по клетке:
+   - moveItem карты на выбранную клетку
+   - power = карта.power
+   - updatePlayerScore(activePlayerId, power)
+   - triggerFloatingText(+power)
+```
+
+#### Overwatch
+**Option 1**: "Place 1 Aim token on any card. Reveal 1 card from an opponent's hand for each of your Aim tokens on the battlefield."
+```
+1. Создается cursorStack: Aim x1 (любая карта на поле)
+2. После размещения Aim:
+   - Подсчёт Aim на поле с addedByPlayerId = activePlayerId
+   - aimCount = количество Aim
+   - Цикл aimCount раз:
+     - Открывается модал выбора карты из руки оппонента
+     - Добавляется статус Revealed
+```
+
+**Option 2**: "Place 1 Aim token on any card. Move any card with your Aim token 1 or 2 cells."
+```
+1. Создается cursorStack: Aim x1
+2. После размещения Aim:
+   - Переход в SELECT_UNIT_FOR_MOVE
+   - Валидные цели: карты с Aim от activePlayerId
+   - После выбора: SELECT_CELL (range: 1-2)
+```
+
+#### Enhanced Interrogation
+**Option 1**: "Place 1 Aim token on any card. Reveal 1 card from an opponent's hand for each of your Aim tokens on the battlefield."
+```
+Аналогично Overwatch Option 1
+```
+
+**Option 2**: "Place 1 Aim token on any card. Move any card with your Aim token 1 or 2 cells."
+```
+Аналогично Overwatch Option 2
+```
+
+#### Data Interception
+**Option 1**: "Place 1 Exploit token on any card. Reveal 1 card from an opponent's hand for each of your Exploit tokens on the battlefield."
+```
+Аналогично Overwatch Option 1, но с Exploit вместо Aim
+```
+
+**Option 2**: "Place 1 Exploit token on any card. Move a unit with your Exploit token 1 or 2 cells."
+```
+Аналогично Overwatch Option 2, но с Exploit вместо Aim
+```
+
+#### Inspiration
+**Option 1**: "Place 1 Shield token on one of your units. Draw 1 card."
+```
+1. Создается cursorStack: Shield x1
+2. Ограничения: targetOwnerId = activePlayerId
+3. После размещения:
+   - drawCard(activePlayerId, 1)
+```
+
+**Option 2**: "Place 1 Shield token on one of your units. Gain 2 points."
+```
+1-2. То же самое
+3. После размещения:
+   - updatePlayerScore(activePlayerId, 2)
+   - triggerFloatingText(+2)
+```
+
+#### Emergency Extraction
+**Option 1**: "Return one of your units to your hand. Draw 1 card."
+```
+1. Активируется targeting mode: SELECT_TARGET
+2. Валидные цели:
+   - Карты на поле
+   - Владелец: activePlayerId
+   - Тип: 'Unit'
+3. Клик по карте:
+   - returnCardToHand()
+   - drawCard(activePlayerId, 1)
+```
+
+**Option 2**: "Return one of your units to your hand. Gain 3 points."
+```
+1-2. То же самое
+3. Клик по карте:
+   - returnCardToHand()
+   - updatePlayerScore(activePlayerId, 3)
+```
+
+### Обработка командных карт в коде
+
+**client/utils/commandLogic.ts**:
+```typescript
+export const getCommandAction = (cardId: string): AbilityAction[] => {
+  // Возвращает массив действий для каждой опции командной карты
+  // Используется для определения валидных целей
+}
+```
+
+**client/components/CommandModal.tsx**:
+```typescript
+interface CommandModalProps {
+  isOpen: boolean
+  card: Card | null
+  onConfirm: (optionIndex: number) => void
+  onCancel: () => void
+}
+```
+
+**client/hooks/useAppCommand.ts**:
+```typescript
+const handleCommandOption = (optionIndex: number, card: Card) => {
+  // Определяет действие на основе выбранной опции
+  // Выполняет соответствующую логику
+}
+```
+
+### Особенности командных карт
+
+1. **Множественные эффекты**: Одна карта может дать совершенно разные эффекты
+2. **Стратегический выбор**: Игрок выбирает опцию на основе текущей ситуации
+3. **Синергия с токенами**: Многие опции усиливаются при наличии определённых токенов на поле
+4. **Комбо-потенциал**: Опции могут создавать цепочки действий (move → draw → score)
+
+### Полный список командных карт
+
+| Карта | ID | Опции | Описание |
+|-------|----|-------|----------|
+| **Overwatch** | `overwatch` | 2 | Aim → Reveal per Aim / Move unit with Aim |
+| **Tactical Maneuver** | `tacticalmaneuver` | 2 | Move → Draw = Power / Move → Score = Power |
+| **Inspiration** | `inspiration` | 2 | Remove counters → Draw per removed / Score per removed |
+| **Data Interception** | `datainterception` | 2 | Exploit → Reveal per Exploit / Move unit with Exploit |
+| **False Orders** | `falseorders` | 2 | Exploit opponent → Move + Reveal x2 / Move + Stun x2 |
+| **Experimental Stimulants** | `experimentalstimulants` | 2 | Reactivate Deploy / Move unit in line |
+| **Logistics Chain** | `logisticschain` | 2 | Score diagonal + points per Support / Score + draw per Support |
+| **Quick Response Team** | `quickresponseteam` | 2 | Deploy from hand / Search deck for Unit |
+| **Temporary Shelter** | `temporaryshelter` | 2 | Shield → Remove all Aim / Shield → Move range 2 |
+| **Enhanced Interrogation** | `enhancedinterrogation` | 2 | Aim → Reveal per Aim / Move unit with Aim |
+| **Line Breach** | `linebreach` | 1 | Gain points in a line |
+
+### Детальное описание командных карт
+
+#### Overwatch
+```
+Common: Place 1 Aim token on any card
+
+Option 0: Reveal X cards from opponent's hand (X = total Aim on battlefield)
+  - dynamicCount: { factor: 'Aim', ownerId: localPlayerId }
+  - targetOwnerId: -1 (opponents only)
+  - onlyFaceDown: true
+  - Создаётся стек Revealed токенов
+
+Option 1: Draw X cards (X = total Aim on battlefield)
+  - GLOBAL_AUTO_APPLY
+  - dynamicResource: { type: 'draw', factor: 'Aim', ownerId: localPlayerId }
+```
+
+#### Tactical Maneuver
+```
+Option 0: Move your unit to empty cell in its line. Draw cards equal to power.
+  - ENTER_MODE: SELECT_UNIT_FOR_MOVE
+  - range: 'line'
+  - filter: target.ownerId === localPlayerId
+  - chainedAction: GLOBAL_AUTO_APPLY with contextReward: 'DRAW_MOVED_POWER'
+
+Option 1: Move your unit to empty cell in its line. Gain points equal to power.
+  - То же самое, но contextReward: 'SCORE_MOVED_POWER'
+```
+
+#### Inspiration
+```
+Common: Select your unit → Open Counter Modal
+  - ENTER_MODE: SELECT_TARGET
+  - actionType: 'OPEN_COUNTER_MODAL'
+  - filter: target.ownerId === localPlayerId
+
+Option 0: Remove counters → Draw 1 per removed
+Option 1: Remove counters → Score 1 per removed
+```
+
+#### Data Interception
+```
+Common: Place 1 Exploit token on any card
+
+Option 0: Place X Revealed tokens (X = total Exploit on battlefield)
+  - dynamicCount: { factor: 'Exploit', ownerId: localPlayerId }
+  - onlyOpponents: true
+  - onlyFaceDown: true
+
+Option 1: Move a unit with your Exploit token 1-2 cells
+  - ENTER_MODE: SELECT_UNIT_FOR_MOVE
+  - range: 2
+  - filter: card has Exploit from localPlayerId
+```
+
+#### False Orders
+```
+Common: Place 1 Exploit on opponent's Unit (record context)
+
+Option 0: Move the unit (range 2) → Place 2 Revealed tokens
+  - ENTER_MODE: SELECT_CELL
+  - range: 2
+  - useContextCard: true (uses commandContext.lastMovedCardCoords)
+  - chainedAction: CREATE_STACK (Revealed x2, opponents only, face-down only)
+
+Option 1: Move the unit (range 2) → Place 2 Stun tokens
+  - ENTER_MODE: SELECT_CELL
+  - range: 2
+  - useContextCard: true
+  - chainedAction: GLOBAL_AUTO_APPLY (Stun x2, ownerId = localPlayerId)
+```
+
+#### Experimental Stimulants
+```
+Option 0: Reactivate Deploy ability of your unit
+  - ENTER_MODE: SELECT_TARGET
+  - actionType: 'RESET_DEPLOY'
+  - filter: target.ownerId === localPlayerId && target.types.includes('Unit')
+
+Option 1: Move your unit to empty cell in its line
+  - ENTER_MODE: SELECT_UNIT_FOR_MOVE
+  - range: 'line'
+  - filter: target.ownerId === localPlayerId
+```
+
+#### Logistics Chain
+```
+Option 0: Score diagonal + 1 point per Support
+  - ENTER_MODE: SELECT_DIAGONAL
+  - actionType: 'SCORE_DIAGONAL'
+  - bonusType: 'point_per_support'
+  - skipNextPhase: true
+
+Option 1: Score diagonal + Draw 1 per Support
+  - bonusType: 'draw_per_support'
+```
+
+#### Quick Response Team
+```
+Option 0: Deploy unit from hand
+  - ENTER_MODE: SELECT_TARGET
+  - actionType: 'SELECT_HAND_FOR_DEPLOY'
+  - filter: target.ownerId === localPlayerId && target.types.includes('Unit')
+
+Option 1: Search deck for Unit → Hand
+  - OPEN_MODAL: SEARCH_DECK
+  - filterType: 'Unit'
+```
+
+#### Temporary Shelter
+```
+Option 0: Place 1 Shield on your unit → Remove all Aim from that unit
+  - CREATE_STACK: Shield x1
+  - targetOwnerId: localPlayerId
+  - recordContext: true
+  - chainedAction: GLOBAL_AUTO_APPLY with customAction: 'REMOVE_ALL_AIM_FROM_CONTEXT'
+
+Option 1: Place 1 Shield on your unit → Move it 1-2 cells
+  - CREATE_STACK: Shield x1
+  - recordContext: true
+  - chainedAction: ENTER_MODE: SELECT_CELL (range: 2, useContextCard: true)
+```
+
+#### Enhanced Interrogation
+```
+Common: Place 1 Aim token on any card
+
+Option 0: Place X Revealed tokens (X = total Aim on battlefield)
+  - Аналогично Data Interception Option 0
+
+Option 1: Move a card with your Aim token 1-2 cells
+  - ENTER_MODE: SELECT_UNIT_FOR_MOVE
+  - range: 2
+  - filter: card has Aim from localPlayerId
+```
+
+#### Line Breach (Mobilization 1)
+```
+Common: Select line start → Gain points for completed line
+  - ENTER_MODE: SELECT_LINE_START
+  - actionType: 'SCORE_LINE'
+```
+
+### Специальные параметры командных карт
+
+#### dynamicCount
+```typescript
+dynamicCount: {
+  factor: 'Aim' | 'Exploit',    // Тип токена для подсчёта
+  ownerId: number               // Владелец токенов
+}
+```
+Используется для создания стека с количеством токенов, равным количеству указанных токенов на поле.
+
+#### dynamicResource
+```typescript
+dynamicResource: {
+  type: 'draw',                 // Тип ресурса
+  factor: 'Aim' | 'Exploit',    // Фактор для подсчёта
+  ownerId: number,              // Владелец
+  baseCount: number             // Базовое количество
+}
+```
+Используется для дования карт или начисления очков на основе токенов на поле.
+
+#### contextReward
+```typescript
+contextReward: 'DRAW_MOVED_POWER' | 'SCORE_MOVED_POWER'
+```
+Используется для награды после перемещения карты (записанной в commandContext).
+
+#### useContextCard
+```typescript
+useContextCard: true
+```
+Указывает, что для действия следует использовать карту из commandContext.lastMovedCardCoords вместо sourceCoords.
+
+#### originalOwnerId
+```typescript
+originalOwnerId: number
+```
+Сохраняет владельца командной карты для правильного определения цвета подсветки и принадлежности эффектов в многошаговых командах.
+
+---
+
+<a name="action-types-list"></a>
+## 13. Полный список типов действий (AbilityAction Types)
+
+| Тип | Описание | Примеры карт |
+|-----|----------|--------------|
+| `CREATE_STACK` | Создаёт стек токенов для размещения | IP Dept Agent, Tactical Agent |
+| `ENTER_MODE` | Активирует специальный режим | Riot Agent, Patrol Agent |
+| `OPEN_MODAL` | Открывает модальное окно выбора | Mr. Pearl, Falk PD |
+| `GLOBAL_AUTO_APPLY` | Немедленное применение эффекта | Code Keeper, Signal Prophet |
+| `ABILITY_COMPLETE` | Завершение способности | Конец цепочки действий |
+| `SELECT_TARGET` | Выбор цели с последующим действием | Centurion, Devout Synthetic |
+| `SELECT_CELL` | Выбор клетки для перемещения | Recon Drone, Finn |
+| `SELECT_UNIT_FOR_MOVE` | Выбор юнита для перемещения | Code Keeper, Signal Prophet |
+| `SPAWN_TOKEN` | Создаёт токен на поле | Inventive Maker |
+| `SWAP_POSITIONS` | Меняет местами две карты | Reckless Provocateur |
+| `TRANSFER_ALL_STATUSES` | Переносит все статусы | Reckless Provocateur |
+| `SELECT_DECK` | Выбор колоды для просмотра | Secret Informant |
+| `SACRIFICE_AND_BUFF_LINES` | Жертва + бафф линий | Centurion |
+| `MODIFY_POWER` | Изменяет power карты | Walking Turret, Cautious Avenger |
+| `DESTROY` | Уничтожает карту | Tactical Agent, Princeps |
+| `REVEAL_ENEMY` | Открывает карту врага | Recon Drone |
+| `PATROL_MOVE` | Перемещение в линии | Patrol Agent |
+| `RIOT_PUSH` | Толкает врага | Riot Agent |
+| `IP_AGENT_THREAT_SCORING` | Подсчёт Threat для очков | IP Dept Agent |
+| `INTEGRATOR_LINE_SELECT` | Подсчёт Exploit в линии | Unwavering Integrator |
+| `ZIUS_LINE_SELECT` | Подсчёт Exploit от цели | Zius IJ |
+| `FINN_SCORING` | Подсчёт Revealed для очков | Finn |
+| `REVEREND_SETUP_SCORE` | Подсчёт Exploit для очков | Reverend |
+| `REVEREND_DOUBLE_EXPLOIT` | Удвоение Exploit | Reverend |
+| `LUCIUS_SETUP` | Дiscard + поиск Command | Lucius |
+| `ZEALOUS_WEAKEN` | Ослабление цели | Zealous Missionary |
+| `SELECT_HAND_FOR_DISCARD_THEN_SPAWN` | Дiscard + spawn токена | Faber |
+| `IMMUNIS_RETRIEVE` | Воскрешение из discard | Immunis |
+| `REVEAL_ENEMY_CHAINED` | Reveal с последующим действием | Recon Drone |
+| `SHIELD_SELF_THEN_AIM` | Shield + Aim stack | Princeps, Gawain |
+| `SHIELD_SELF_THEN_SPAWN` | Shield + spawn токена | Edith Byron |
+| `SHIELD_SELF_THEN_RIOT_PUSH` | Shield + riot push | Reclaimed Gawain |
+| `GAWAIN_DEPLOY_SHIELD_AIM` | Shield + Aim (Gawain) | Gawain |
+| `ABR_DEPLOY_SHIELD_AIM` | Shield + Aim (ABR) | ABR Gawain |
+| `SEARCH_DECK` | Поиск карты в колоде | Mr. Pearl, Falk PD |
+| `RETRIEVE_FROM_DECK` | Извлечение из колоды | Mr. Pearl |
+| `RECOVER` | Восстановление из discard | Inventive Maker |
+| `RESURRECT` | Воскрешение на поле | Immunis |
+
+---
+
+<a name="ability-rules"></a>
+## 14. Важные правила способностей
+
+### Правило приоритета Deploy
+```
+Если у карты есть Deploy способность и другая способность (Setup/Commit):
+- Deploy ВСЕГДА показывается первой
+- После использования Deploy становится доступной другая способность
+- Это работает даже если Deploy был использован ранее и карта вернулась на поле
+```
+
+### Правило Support Required
+```
+Некоторые способности требуют статус Support на карте:
+- Проверка происходит в canActivateAbility()
+- Если Support отсутствует → способность неактивна
+- Support может быть добавлен другими картами
+```
+
+### Правило ready статусов
+```
+- readyDeploy: добавляется при входе на поле, удаляется после использования
+- readySetup: добавляется при входе, сбрасывается каждый ход в Preparation
+- readyCommit: добавляется при входе, сбрасывается каждый ход в Preparation
+```
+
+### Правило Stun
+```
+- Карта со статусом Stun НЕ может активировать способности
+- Проверка в canActivateAbility()
+- Stun можно снять определёнными эффектами
+```
+
+### Правило одной способности за клик
+```
+Каждый клик по карте:
+1. Проверяется какая способность доступна
+2. Активируется только ОДНА способность
+3. После использования ready статус удаляется
+4. Следующий клик активирует следующую способность (если есть)
+```
+
+### Правило отсутствия целей
+```
+Если у способности нет валидных целей:
+1. triggerNoTarget() показывает визуальный эффект
+2. Способность помечается использованной
+3. Если есть chainedAction → выполняется следующая действие
+```
+
+### Правило цепочечных действий (chainedAction)
+```
+После завершения основного действия:
+1. Проверяется наличие chainedAction
+2. setTimeout(() => handleActionExecution(chainedAction), 500)
+3. Новое действие выполняется как отдельная способность
+4. Используется для многошаговых способностей
+```
+
+### Правило targeting токенов на руки
+```
+Targeting токены (Aim, Exploit, Stun, Shield) НЕ могут быть размещены на картах в руке.
+Это реализовано в handCardHandlers.ts - клики игнорируются.
+```
+
+### Правило отмены режимов
+```
+Правая кнопка мыши (ПКМ) отменяет:
+- abilityMode (активная способность)
+- cursorStack (стек токенов)
+- playMode (размещение карты)
+- targetingMode (для всех игроков)
+```

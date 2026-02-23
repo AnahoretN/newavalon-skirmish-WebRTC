@@ -44,7 +44,8 @@ export function handleCardStateMessage(
     logger.info(`[WebRTCCodec] Received card state: ${decodedState.board?.length}x${decodedState.board?.[0]?.length || 0}, ${decodedState.players?.length || 0} players, activeGridSize=${decodedState.activeGridSize}`)
 
     // Use the mergeDecodedState utility for consistent merging
-    return mergeDecodedState(currentState, decodedState)
+    // Pass localPlayerId to preserve guest's deck choice
+    return mergeDecodedState(currentState, decodedState, localPlayerId)
   } catch (e) {
     logger.error('[WebRTCCodec] Failed to deserialize card state:', e)
     return currentState

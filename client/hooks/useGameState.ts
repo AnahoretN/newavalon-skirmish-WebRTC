@@ -765,12 +765,14 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       }
 
       // Create new player with guest's preferred deck
+      // IMPORTANT: Guest creates their own deck locally so they have cards when game starts
+      // The deck will be created when receiving JOIN_ACCEPT_MINIMAL message from host
       const newPlayer: Player = {
         id: newPlayerId,
         name: `Player ${newPlayerId}`,
         color: PLAYER_COLOR_NAMES[(newPlayerId - 1) % PLAYER_COLOR_NAMES.length],
         hand: [],
-        deck: [],
+        deck: [],  // Will be filled when receiving JOIN_ACCEPT_MINIMAL
         discard: [],
         announcedCard: null,
         score: 0,
@@ -1085,6 +1087,29 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             isSpectator: false,
           }
 
+          // CRITICAL: Save local player's selectedDeck preference before overwriting state
+          // This preserves the guest's deck choice when host sends a different selectedDeck
+          const localPlayerId = message.playerId
+          let localSelectedDeck: DeckType | null = null
+          if (localPlayerId !== undefined) {
+            // First try to get from existing gameState
+            const existingPlayer = gameStateRef.current?.players?.find(p => p.id === localPlayerId)
+            if (existingPlayer?.selectedDeck) {
+              localSelectedDeck = existingPlayer.selectedDeck
+            } else {
+              // If not in gameState, try localStorage (guest may have saved preference before joining)
+              try {
+                const savedDeck = localStorage.getItem('webrtc_preferred_deck')
+                if (savedDeck && savedDeck !== 'Random') {
+                  localSelectedDeck = savedDeck as DeckType
+                }
+              } catch (e) {
+                // Ignore localStorage errors
+              }
+            }
+            logger.info(`[JOIN_ACCEPT_MINIMAL] Preserving local selectedDeck: ${localSelectedDeck} (from state: ${!!existingPlayer?.selectedDeck}, from localStorage: ${localSelectedDeck})`)
+          }
+
           setGameState(minimalState)
           if (message.playerId !== undefined) {
             setLocalPlayerId(message.playerId)
@@ -1103,9 +1128,13 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                 const hasPlaceholders = player.deck.length === 0 || player.deck.some(c => c.isPlaceholder)
                 const needsDeck = hasPlaceholders || player.deck.length !== 30  // Standard deck size
 
-                if (playerInfo?.selectedDeck && needsDeck) {
-                  const deckData = createDeck(playerInfo.selectedDeck, player.id, player.name)
-                  logger.info(`[JOIN_ACCEPT_MINIMAL] Created local deck with ${deckData.length} cards from ${playerInfo.selectedDeck}`)
+                // Use locally preserved selectedDeck if available, otherwise use host's value
+                const deckTypeToUse = localSelectedDeck || playerInfo?.selectedDeck || DeckType.Random
+                logger.info(`[JOIN_ACCEPT_MINIMAL] Using deckType: ${deckTypeToUse} (local: ${localSelectedDeck}, host: ${playerInfo?.selectedDeck})`)
+
+                if (deckTypeToUse && needsDeck) {
+                  const deckData = createDeck(deckTypeToUse, player.id, player.name)
+                  logger.info(`[JOIN_ACCEPT_MINIMAL] Created local deck with ${deckData.length} cards from ${deckTypeToUse}`)
 
                   // Send deck data to host immediately after creating it
                   if (webrtcManagerRef.current && deckData.length > 0) {
@@ -1125,7 +1154,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                         deck: compactDeckData,
                         deckSize: compactDeckData.length
                       })
-                      logger.info(`[JOIN_ACCEPT_MINIMAL] Sent deck data to host: ${playerInfo.selectedDeck}, ${compactDeckData.length} cards`)
+                      logger.info(`[JOIN_ACCEPT_MINIMAL] Sent deck data to host: ${deckTypeToUse}, ${compactDeckData.length} cards`)
                     }, 0)
                   }
 
@@ -1150,7 +1179,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                     ...player,
                     deck: updatedDeck,
                     hand: updatedHand,
-                    selectedDeck: playerInfo.selectedDeck
+                    selectedDeck: deckTypeToUse
                   }
                 }
               }

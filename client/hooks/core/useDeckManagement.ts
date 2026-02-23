@@ -104,15 +104,30 @@ export function useDeckManagement(props: UseDeckManagementProps) {
 
       // WebRTC mode
       if (!isHost) {
-        // Guest mode: only update selectedDeck locally for now, don't update deck yet
-        // We'll receive the full deck data from host via CHANGE_PLAYER_DECK message
-        return {
-          ...currentState,
-          players: currentState.players.map(p =>
-            p.id === playerId
-              ? { ...p, selectedDeck: deckType } // Only update selectedDeck, deck will come from host
-              : p,
-          ),
+        // Guest mode: create deck locally for own use, also send request to host
+        // IMPORTANT: Each guest manages their own deck locally, so when game starts
+        // they have their selected deck to draw from
+        // For dummy players: we only update selectedDeck and wait for host to send deck data
+        if (isDummy) {
+          // Dummy players: only update selectedDeck, deck will come from host
+          return {
+            ...currentState,
+            players: currentState.players.map(p =>
+              p.id === playerId
+                ? { ...p, selectedDeck: deckType }
+                : p,
+            ),
+          }
+        } else {
+          // Real players (self): create deck locally so we have cards when game starts
+          return {
+            ...currentState,
+            players: currentState.players.map(p =>
+              p.id === playerId
+                ? { ...p, deck: newDeck, selectedDeck: deckType, hand: [], discard: [], announcedCard: null, boardHistory: [] }
+                : p,
+            ),
+          }
         }
       }
 
@@ -179,19 +194,26 @@ export function useDeckManagement(props: UseDeckManagementProps) {
         logger.warn(`[changePlayerDeck] Host mode but no webrtcManagerRef available`)
       }
     } else {
-      // Guest: send only the request (deckType) to host
-      // Host will create the deck and send back the full data
-      if (sendWebrtcAction) {
-        sendWebrtcAction('CHANGE_PLAYER_DECK', {
-          playerId,
-          deckType,
-          // Don't send deck data - let host create it
-          deck: undefined,
-          deckSize: 0
-        })
-        logger.info(`[changePlayerDeck] Guest sending deck change request to host: player ${playerId}, deck ${deckType}, isDummy=${playerIsDummy}`)
+      // Guest: handle differently based on whose deck is being changed
+      if (playerIsDummy) {
+        // Guest changing dummy's deck: send request to host
+        // Host will create the deck and broadcast to all guests
+        if (sendWebrtcAction) {
+          sendWebrtcAction('CHANGE_PLAYER_DECK', {
+            playerId,
+            deckType,
+            // Don't send deck data - let host create it
+            deck: undefined,
+            deckSize: 0
+          })
+          logger.info(`[changePlayerDeck] Guest sending dummy deck change request to host: player ${playerId}, deck ${deckType}`)
+        } else {
+          logger.warn(`[changePlayerDeck] Guest mode but no sendWebrtcAction available`)
+        }
       } else {
-        logger.warn(`[changePlayerDeck] Guest mode but no sendWebrtcAction available`)
+        // Guest changing own deck: deck is already created locally, no need to send to host
+        // Host doesn't need to know about guest's deck - guest manages their own deck locally
+        logger.info(`[changePlayerDeck] Guest created own deck locally: player ${playerId}, deck ${deckType}`)
       }
     }
   }, [updateState, createDeck, sendWebrtcAction, webrtcIsHostRef, webrtcManagerRef, localPlayerIdRef])

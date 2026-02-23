@@ -919,7 +919,8 @@ function getCardDefinitionFromLocal(baseId: string): { name: string, imageUrl: s
  */
 export function mergeDecodedState(
   existingState: GameState,
-  decodedState: Partial<GameState>
+  decodedState: Partial<GameState>,
+  localPlayerId: number | null = null
 ): GameState {
   const result = { ...existingState }
 
@@ -942,6 +943,11 @@ export function mergeDecodedState(
 
         if (useDecodedHandDeck) {
           // Use decoded hand/deck/discard (dummy player or recipient player)
+          // CRITICAL: For local player, always preserve existing.selectedDeck if it exists
+          // This prevents host from overwriting guest's deck choice with "Random"
+          const isLocalPlayer = player.id === localPlayerId
+          const preserveSelectedDeck = isLocalPlayer && existing.selectedDeck
+
           return {
             ...player,
             hand: player.hand || existing.hand,
@@ -950,7 +956,8 @@ export function mergeDecodedState(
             // Preserve other properties from existing if not in decoded
             announcedCard: player.announcedCard || existing.announcedCard,
             boardHistory: player.boardHistory || existing.boardHistory,
-            selectedDeck: player.selectedDeck || existing.selectedDeck,
+            // For local player, preserve existing selectedDeck; for others, use decoded
+            selectedDeck: preserveSelectedDeck ? existing.selectedDeck : (player.selectedDeck || existing.selectedDeck),
             // Preserve/update size metadata
             handSize: player.handSize ?? player.hand?.length ?? existing.handSize ?? existing.hand?.length,
             deckSize: player.deckSize ?? player.deck?.length ?? existing.deckSize ?? existing.deck?.length,
@@ -968,7 +975,7 @@ export function mergeDecodedState(
           // Preserve other properties from existing if not in decoded
           announcedCard: existing.announcedCard,
           boardHistory: existing.boardHistory,
-          selectedDeck: existing.selectedDeck,
+          selectedDeck: existing.selectedDeck,  // Always preserve existing for non-recipient players
           // Update size metadata from decoded state (this is the key fix!)
           handSize: player.handSize ?? existing.handSize ?? existing.hand?.length,
           deckSize: player.deckSize ?? existing.deckSize ?? existing.deck?.length,
