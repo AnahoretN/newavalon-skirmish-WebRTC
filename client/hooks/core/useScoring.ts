@@ -132,7 +132,7 @@ export function useScoring(props: UseScoringProps) {
     const shouldAutoPass = totalScore > 0 &&
       currentState.currentPhase === 4 &&
       currentState.activePlayerId === playerId &&
-      (!isWebRTCMode || webrtcIsHostRef?.current !== false) // In WebRTC, only host auto-passes
+      (!isWebRTCMode || webrtcIsHostRef?.current === true) // In WebRTC, only host auto-passes
 
     if (shouldAutoPass) {
       const gameId = currentState.gameId
@@ -263,7 +263,7 @@ export function useScoring(props: UseScoringProps) {
     const shouldAutoPass = totalScore > 0 &&
       currentState.currentPhase === 4 &&
       currentState.activePlayerId === playerId &&
-      (!isWebRTCMode || webrtcIsHostRef?.current !== false) // In WebRTC, only host auto-passes
+      (!isWebRTCMode || webrtcIsHostRef?.current === true) // In WebRTC, only host auto-passes
 
     if (shouldAutoPass) {
       const gameId = currentState.gameId

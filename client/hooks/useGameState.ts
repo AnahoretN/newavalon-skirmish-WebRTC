@@ -3691,9 +3691,10 @@ export const useGameState = (props: UseGameStateProps = {}) => {
       case 'CLEAR_TARGETING_MODE':
         // Clear targeting mode (P2P)
         // Both host and guests update their local state
-        // HostManager already handles broadcasting for host, so no need to rebroadcast
+        // IMPORTANT: Host MUST broadcast to all guests to ensure targeting mode is cleared everywhere
         logger.info('[TargetingMode] Received CLEAR_TARGETING_MODE via WebRTC', {
           isHost: webrtcIsHostRef.current,
+          senderId: message.senderId,
         })
         setGameState(prev => ({
           ...prev,
@@ -3703,16 +3704,16 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
         logger.info('[TargetingMode] Cleared targeting mode locally')
 
-        // Only guests need to broadcast (for old-style direct connections)
-        // Host uses HostManager which already handles broadcasting
-        if (!webrtcIsHostRef.current && webrtcManagerRef.current) {
+        // Host: Broadcast CLEAR_TARGETING_MODE to all other guests
+        // Guest: No need to rebroadcast (host already broadcasted)
+        if (webrtcIsHostRef.current && webrtcManagerRef.current) {
           webrtcManagerRef.current.broadcastToGuests({
             type: 'CLEAR_TARGETING_MODE',
             senderId: webrtcManagerRef.current.getPeerId?.() ?? undefined,
             data: { timestamp: Date.now() },
             timestamp: Date.now()
           })
-          logger.info('[TargetingMode] Host broadcasted CLEAR_TARGETING_MODE to guests')
+          logger.info('[TargetingMode] Host broadcasted CLEAR_TARGETING_MODE to all guests')
         }
         break
 
