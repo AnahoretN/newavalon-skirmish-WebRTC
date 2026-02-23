@@ -683,8 +683,13 @@ const Header = memo<HeaderProps>(({
           {isGameStarted && onResetGame && (
             <button
               onClick={onResetGame}
-              className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded text-sm"
-              title={isHost ? "Reset game to lobby (keeps players and decks)" : "Request reset game to lobby (only host can reset)"}
+              disabled={!isHost}
+              className={`font-bold py-2 px-4 rounded text-sm ${
+                isHost
+                  ? 'bg-yellow-600 hover:bg-yellow-700 text-white'
+                  : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+              } disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed`}
+              title={isHost ? "Reset game to lobby (keeps players and decks)" : "Only host can reset game"}
             >
               {t('resetGame')}
             </button>

@@ -2819,6 +2819,10 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                 return p
               })
             }))
+          } else if (actionType === 'REQUEST_GAME_RESET') {
+            // Guest requested game reset - only host can reset
+            logger.info('[ACTION] Guest requested game reset - only host can reset, ignoring')
+            // Optionally: show notification to host that guest requested reset
           } else {
             logger.warn(`[ACTION] Unknown action type: ${actionType}`)
           }
