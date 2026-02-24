@@ -243,6 +243,9 @@ export interface GameState {
   handCardSelections: HandCardSelectionData[]; // Array of hand card selection effects to display
   targetingMode: TargetingModeData | null; // Active targeting mode (shared across all clients)
   abilityMode?: AbilityAction; // Active ability mode (for P2P visual sync) - extends AbilityAction with sourceCard, sourceCoords, etc.
+  clickWaves?: ClickWave[]; // Array of click wave effects
+  // NEW: ID-based effects system (replaces old arrays)
+  visualEffects?: VisualEffectsState; // Map of effect ID -> effect data
 
   // Server-side auto-draw tracking for Setup phase
   autoDrawnPlayers?: number[]; // Player IDs who have already auto-drawn this Setup phase
@@ -430,6 +433,7 @@ export interface TargetingModeData {
 /**
  * Click wave effect - visual feedback when a player clicks on a card or cell
  * Shows a colored ripple animation at the clicked location
+ * @deprecated Use ID-based Effect system instead
  */
 export interface ClickWave {
     timestamp: number; // When the click occurred
@@ -439,6 +443,102 @@ export interface ClickWave {
     clickedByPlayerId: number; // The player who clicked
     playerColor: PlayerColor; // The color of the clicking player
 }
+
+// ============================================================================
+// ID-BASED VISUAL EFFECTS SYSTEM (NEW)
+// ============================================================================
+
+/**
+ * Visual effect types for ID-based synchronization
+ */
+export type VisualEffectType =
+  | 'highlight'      // Row/column/cell highlight
+  | 'floatingText'   // Floating text (damage, score, etc.)
+  | 'noTarget'       // Red X overlay for invalid target
+  | 'clickWave'      // Colored ripple on click
+  | 'targetingMode'  // Ability targeting mode
+
+/**
+ * Base interface for ID-based visual effects
+ */
+export interface BaseVisualEffect {
+  id: string              // 5-character unique ID
+  type: VisualEffectType  // Effect type
+  playerId: number        // Player who created the effect (determines color)
+  createdAt: number       // Timestamp when created
+  expiresAt?: number      // Auto-remove timestamp (optional)
+}
+
+/**
+ * Highlight effect (row/col/cell) with ID
+ */
+export interface HighlightEffect extends BaseVisualEffect {
+  type: 'highlight'
+  highlightType: 'row' | 'col' | 'cell'
+  row?: number            // Row index (for row/cell highlights)
+  col?: number            // Column index (for col/cell highlights)
+}
+
+/**
+ * Floating text effect with ID
+ */
+export interface FloatingTextEffect extends BaseVisualEffect {
+  type: 'floatingText'
+  row: number             // Board row position
+  col: number             // Board column position
+  text: string            // Text to display (e.g., "+3", "-2")
+  color?: string          // Custom color (overrides player color)
+}
+
+/**
+ * No-target overlay effect with ID
+ */
+export interface NoTargetEffect extends BaseVisualEffect {
+  type: 'noTarget'
+  row: number             // Board row position
+  col: number             // Board column position
+}
+
+/**
+ * Click wave effect with ID
+ */
+export interface ClickWaveEffect extends BaseVisualEffect {
+  type: 'clickWave'
+  location: 'board' | 'hand' | 'emptyCell'
+  row?: number            // Board row (if applicable)
+  col?: number            // Board column (if applicable)
+  handPlayerId?: number   // Player whose hand was clicked
+  handCardIndex?: number  // Card index in hand
+}
+
+/**
+ * Targeting mode effect with ID
+ */
+export interface TargetingModeEffect extends BaseVisualEffect {
+  type: 'targetingMode'
+  mode: string            // Ability mode (e.g., 'SELECT_TARGET', 'RIOT_PUSH')
+  sourceRow?: number      // Source card row
+  sourceCol?: number      // Source card column
+  boardTargets: string[]  // Array of "row,col" strings for valid targets
+  handTargets: string[]   // Array of "playerId,cardIndex" strings
+  isDeckSelectable: boolean
+}
+
+/**
+ * Union type of all ID-based effects
+ */
+export type VisualEffect =
+  | HighlightEffect
+  | FloatingTextEffect
+  | NoTargetEffect
+  | ClickWaveEffect
+  | TargetingModeEffect
+
+/**
+ * Visual effects state in game state
+ * Maps effect IDs to effect objects
+ */
+export type VisualEffectsState = Map<string, VisualEffect>
 
 /**
  * Compact state delta for WebRTC synchronization

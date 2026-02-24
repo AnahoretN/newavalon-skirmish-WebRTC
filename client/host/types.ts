@@ -68,10 +68,19 @@ export type WebrtcMessageType =
   // Ability activation messages
   | 'ABILITY_ACTIVATED'    // Player activated an ability (guest -> host)
   | 'ABILITY_MODE_SET'     // Host broadcasts ability mode to all
+  | 'ABILITY_MODE_CLEAR'   // Clear ability mode (local -> server/guest -> host)
+  | 'ABILITY_MODE_CLEARED' // Host broadcasts ability mode cleared to all
   | 'ABILITY_COMPLETED'    // Ability execution completed
   | 'ABILITY_TARGET_SELECTED' // Target selected for ability
   | 'ABILITY_CANCELLED'    // Ability was cancelled
   | 'ACTIVE_PLAYER_CHANGED' // Active player changed notification
+  | 'OPEN_SCORING_MODE'    // Guest requests host to open scoring mode
+  | 'SCORING_LINE_SELECTED' // Guest selected scoring line
+  | 'REQUEST_PASS_TURN'    // Guest requests to pass turn after scoring
+  // ID-based visual effects messages (NEW - replaces old trigger messages)
+  | 'EFFECT_ADD'           // Add a visual effect (compact format)
+  | 'EFFECT_REMOVE'        // Remove a visual effect by ID
+  | 'EFFECT_CLEAR_ALL'     // Clear all effects
   // Reconnection messages
   | 'RECONNECT_REQUEST'    // Guest requests reconnection after disconnect
   | 'RECONNECT_ACCEPT'     // Host accepts reconnection, sends current state

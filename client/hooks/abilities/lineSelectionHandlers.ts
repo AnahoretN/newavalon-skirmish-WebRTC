@@ -8,8 +8,6 @@ import type { AbilityAction, FloatingTextData } from '@/types'
 import { TIMING } from '@/utils/common'
 import { logger } from '@/utils/logger'
 
- 
-
 export interface LineSelectionProps {
   gameState: any
   localPlayerId: number | null
@@ -24,7 +22,6 @@ export interface LineSelectionProps {
   scoreLine: (r1: number, c1: number, r2: number, c2: number, pid: number) => void
   scoreDiagonal: (r1: number, c1: number, r2: number, c2: number, pid: number, bonusType?: 'point_per_support' | 'draw_per_support') => void
   commandContext: any
-  updateState?: (stateOrFn: any) => void  // For clearing isScoringStep locally before nextPhase
   isWebRTCMode?: boolean  // Whether WebRTC P2P mode is enabled
 }
 
@@ -50,7 +47,6 @@ export function handleLineSelection(
     scoreLine,
     scoreDiagonal,
     commandContext,
-    updateState,
     isWebRTCMode = false,
   } = props
 
@@ -59,6 +55,15 @@ export function handleLineSelection(
   }
 
   const { mode, sourceCard, sourceCoords, payload, isDeployAbility, readyStatusToRemove } = abilityMode
+
+  // Log for debugging
+  logger.info('[lineSelectionHandlers] handleLineSelection called', {
+    mode,
+    hasSourceCoords: !!sourceCoords,
+    sourceCoords,
+    clickedCoords: coords,
+    isWebRTCMode
+  })
 
   // SCORE_LAST_PLAYED_LINE (Integrator)
   if (mode === 'SCORE_LAST_PLAYED_LINE' && abilityMode.sourceCoords) {
@@ -76,7 +81,143 @@ export function handleLineSelection(
     // Lock interaction to prevent multiple clicks
     interactionLock.current = true
 
-    // Calculate score locally first
+    // Check if this is WebRTC guest mode
+    const hasWebrtcGlobal = typeof window !== 'undefined' && (window as any).webrtcManager
+    const isHostFlag = hasWebrtcGlobal ? (window as any).webrtcIsHost : true
+    const isWebRTCGuest = isWebRTCMode && hasWebrtcGlobal && !isHostFlag
+
+    logger.info('[lineSelectionHandlers] Checking WebRTC mode', {
+      isWebRTCMode,
+      hasWebrtcGlobal,
+      isHostFlag,
+      isWebRTCGuest,
+      mode,
+      r1, c1, r2, c2
+    })
+
+    if (isWebRTCGuest) {
+      // Guest: Calculate score locally, then send result to host
+      const playerId = localPlayerId ?? gameState.activePlayerId!
+      const gridSize = gameState.board.length
+      let rStart = r1, rEnd = r1, cStart = c1, cEnd = c1
+      if (r1 === r2) {
+        rStart = r1; rEnd = r1
+        cStart = 0; cEnd = gridSize - 1
+      } else if (c1 === c2) {
+        cStart = c2; cEnd = c2
+        rStart = 0; rEnd = gridSize - 1
+      } else {
+        interactionLock.current = false
+        return true
+      }
+
+      // Check for Data Liberator (allows scoring opponent's cards with Exploit)
+      const hasActiveLiberator = gameState.board.some((row: any[]) =>
+        row.some((cell: any) =>
+          cell.card?.ownerId === playerId &&
+          cell.card.name.toLowerCase().includes('data liberator') &&
+          cell.card.statuses?.some((s: any) => s.type === 'Support'),
+        ),
+      )
+
+      // Calculate score
+      let totalScore = 0
+      const scoreEvents: { row: number; col: number; text: string; playerId: number }[] = []
+
+      for (let r = rStart; r <= rEnd; r++) {
+        for (let c = cStart; c <= cEnd; c++) {
+          const cell = gameState.board[r][c]
+          const card = cell.card
+          if (card && !card.statuses?.some((s: any) => s.type === 'Stun')) {
+            const isOwner = card.ownerId === playerId
+            const hasExploit = card.statuses?.some((s: any) => s.type === 'Exploit' && s.addedByPlayerId === playerId)
+            if (isOwner || (hasActiveLiberator && hasExploit && card.ownerId !== playerId)) {
+              const points = Math.max(0, card.power + (card.powerModifier || 0) + (card.bonusPower || 0))
+              if (points > 0) {
+                totalScore += points
+                scoreEvents.push({ row: r, col: c, text: `+${points}`, playerId })
+              }
+            }
+          }
+        }
+      }
+
+      logger.info('[lineSelectionHandlers] Guest calculated score', { totalScore, scoreEventsCount: scoreEvents.length })
+
+      // Show floating texts locally (guest sees them immediately)
+      if (scoreEvents.length > 0) {
+        triggerFloatingText(scoreEvents)
+      }
+
+      // Update local score immediately so guest sees the updated score in their panel
+      const webrtcManager = (window as any).webrtcManager
+      if (totalScore > 0) {
+        // Get current player score from gameState
+        const currentPlayer = gameState.players.find((p: any) => p.id === playerId)
+        const currentScore = currentPlayer?.score ?? 0
+        const newScore = currentScore + totalScore
+
+        // Update local state with new score
+        updatePlayerScore(playerId, totalScore)
+
+        // Send new total score to host (host will broadcast to other guests)
+        // We send the NEW total score, not the delta, to avoid double-counting
+        webrtcManager.sendMessageToHost({
+          type: 'SCORING_LINE_SELECTED',
+          senderId: webrtcManager.getPeerId?.() ?? undefined,
+          playerId: localPlayerId ?? undefined,
+          data: {
+            sourceCoords: { row: r1, col: c1 },
+            selectedCoords: { row: r2, col: c2 },
+            mode: 'SCORE_LAST_PLAYED_LINE',
+            newScore,  // Send new total score, not delta
+            scoreEvents,
+          },
+          timestamp: Date.now()
+        })
+      } else {
+        // Even with zero score, send the message to close scoring mode
+        const currentPlayer = gameState.players.find((p: any) => p.id === playerId)
+        const currentScore = currentPlayer?.score ?? 0
+
+        webrtcManager.sendMessageToHost({
+          type: 'SCORING_LINE_SELECTED',
+          senderId: webrtcManager.getPeerId?.() ?? undefined,
+          playerId: localPlayerId ?? undefined,
+          data: {
+            sourceCoords: { row: r1, col: c1 },
+            selectedCoords: { row: r2, col: c2 },
+            mode: 'SCORE_LAST_PLAYED_LINE',
+            newScore: currentScore,  // Current score (no change)
+            scoreEvents: [],
+          },
+          timestamp: Date.now()
+        })
+      }
+
+      // Close mode immediately
+      setAbilityMode(null)
+
+      // Request pass turn - host will transition to next player with Preparation phase
+      // This is done after sending the score so host has the updated score
+      setTimeout(() => {
+        webrtcManager.sendMessageToHost({
+          type: 'REQUEST_PASS_TURN',
+          senderId: webrtcManager.getPeerId?.() ?? undefined,
+          playerId: localPlayerId ?? undefined,
+          timestamp: Date.now()
+        })
+      }, 100) // Small delay to ensure score update is processed first
+
+      // Unlock after delay
+      setTimeout(() => {
+        interactionLock.current = false
+      }, TIMING.MODE_CLEAR_DELAY)
+
+      return true
+    }
+
+    // Host (or non-WebRTC): Process scoring locally
     const playerId = gameState.activePlayerId!
     const gridSize = gameState.board.length
     let rStart = r1, rEnd = r1, cStart = c1, cEnd = c1
@@ -120,31 +261,69 @@ export function handleLineSelection(
       }
     }
 
-    // Clear ability mode immediately to prevent further interactions
-    setAbilityMode(null)
-
     // Send floating texts for all players to see
     if (scoreEvents.length > 0) {
       triggerFloatingText(scoreEvents)
     }
 
-    // Update score using updatePlayerScore which handles both local update and server sync
-    if (totalScore > 0) {
-      updatePlayerScore(playerId, totalScore)
+    // For WebRTC host: calculate new score and update directly (bypass updatePlayerScore to avoid double-counting)
+    if (isWebRTCMode && (window as any).webrtcIsHost) {
+      const currentPlayer = gameState.players.find((p: any) => p.id === playerId)
+      const currentScore = currentPlayer?.score ?? 0
+      const newScore = currentScore + totalScore
+
+      // Update local score directly through gameState update
+      if (totalScore > 0) {
+        // Update the gameState through HostManager
+        const webrtcManager = (window as any).webrtcManager
+        if (webrtcManager?.updateHostPlayerScore) {
+          webrtcManager.updateHostPlayerScore(playerId, newScore)
+        } else {
+          // Fallback to updatePlayerScore
+          updatePlayerScore(playerId, totalScore)
+        }
+      }
+
+      // Broadcast ability mode clear and new score to guests
+      const webrtcManager = (window as any).webrtcManager
+      if (webrtcManager?.broadcastToGuests) {
+        webrtcManager.broadcastToGuests({
+          type: 'ABILITY_MODE_CLEARED',
+          senderId: webrtcManager.getPeerId?.() ?? undefined,
+          data: {
+            mode: 'SCORE_LAST_PLAYED_LINE',
+            playerId,
+            newScore,
+            scoreEvents,
+          },
+          timestamp: Date.now()
+        })
+      }
+    } else {
+      // Non-WebRTC mode: use standard updatePlayerScore
+      if (totalScore > 0) {
+        updatePlayerScore(playerId, totalScore)
+      }
     }
 
-    // Clear isScoringStep locally
-    if (updateState) {
-      updateState((prev: any) => ({
-        ...prev,
-        isScoringStep: false
-      }))
+    // Pass turn after scoring
+    if (nextPhase) {
+      nextPhase(true) // forceTurnPass=true to pass to next player
     }
+
+    // Mark ability as used and close mode (same pattern as other modes)
+    if (sourceCoords && sourceCoords.row >= 0) {
+      markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    }
+
+    // Clear mode with standard delay (like all other ability modes)
+    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
 
     // Unlock interaction after a short delay
     setTimeout(() => {
       interactionLock.current = false
-    }, 200)
+    }, TIMING.MODE_CLEAR_DELAY + 100)
+
     return true
   }
 

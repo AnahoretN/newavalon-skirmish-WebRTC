@@ -14,7 +14,7 @@ import type {
   PhaseSystemCallbacks,
   ScoringLine
 } from './phase/PhaseTypes'
-import { PhaseManager, type PhaseActionRequest } from './phase/PhaseManager'
+import { PhaseManager } from './phase/PhaseManager'
 import { PhaseSyncManager, gameStateToPhaseState } from './phase/PhaseSyncManager'
 import { logger } from '../utils/logger'
 
@@ -58,6 +58,9 @@ export function initializePhaseSystem(
         phaseSyncManager.broadcastPhaseState(phaseState)
       }
 
+      // Broadcast phase transition to all guests
+      phaseSyncManager.broadcastPhaseTransition(result)
+
       // Call external callback
       config?.onPhaseChanged?.(result)
     },
@@ -99,6 +102,9 @@ export function initializePhaseSystem(
       if (hm.config?.onStateUpdate) {
         hm.config.onStateUpdate(newState)
       }
+      // Broadcast updated state to all guests
+      hm.stateManager.setInitialState(newState)
+      hm.connectionManager.broadcastGameState(newState)
     },
   }
 

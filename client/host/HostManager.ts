@@ -10,7 +10,7 @@
  * - Host is also a player, so their actions go through the same pipeline
  */
 
-import type { GameState, StateDelta, HighlightData, FloatingTextData, TargetingModeData } from '../types'
+import type { GameState, StateDelta, HighlightData, FloatingTextData, TargetingModeData, AbilityAction } from '../types'
 import type { HostConfig, WebrtcEvent } from './types'
 import { HostConnectionManager } from './HostConnectionManager'
 import { HostStateManager } from './HostStateManager'
@@ -447,6 +447,42 @@ export class HostManager {
         }
         break
 
+      // NEW: ID-based visual effects messages
+      case 'EFFECT_ADD':
+        // Guest sent an effect to add - rebroadcast to all guests (excluding sender)
+        if (message.data) {
+          logger.debug(`[HostManager] EFFECT_ADD from ${fromPeerId}:`, message.data)
+          this.connectionManager.broadcast({
+            type: 'EFFECT_ADD',
+            senderId: this.connectionManager.getPeerId(),
+            data: message.data,
+            timestamp: Date.now()
+          }, fromPeerId) // Exclude sender
+        }
+        break
+
+      case 'EFFECT_REMOVE':
+        // Guest sent an effect to remove - rebroadcast to all guests (excluding sender)
+        if (message.data) {
+          logger.debug(`[HostManager] EFFECT_REMOVE from ${fromPeerId}:`, message.data)
+          this.connectionManager.broadcast({
+            type: 'EFFECT_REMOVE',
+            senderId: this.connectionManager.getPeerId(),
+            data: message.data,
+            timestamp: Date.now()
+          }, fromPeerId) // Exclude sender
+        }
+        break
+
+      case 'EFFECT_CLEAR_ALL':
+        // Guest requested to clear all effects - rebroadcast to all
+        this.connectionManager.broadcast({
+          type: 'EFFECT_CLEAR_ALL',
+          senderId: this.connectionManager.getPeerId(),
+          timestamp: Date.now()
+        })
+        break
+
       // Ability activation messages
       case 'ABILITY_ACTIVATED':
         if (message.data) {
@@ -464,9 +500,19 @@ export class HostManager {
             boardTargetsCount: message.data.abilityMode.boardTargets?.length || 0,
             handTargetsCount: message.data.abilityMode.handTargets?.length || 0,
           })
-          // Update host's internal state
+
+          // Check if scoring mode is still active before broadcasting
           const currentState = this.stateManager.getState()
           if (currentState) {
+            const isScoringMode = message.data.abilityMode.mode === 'SCORE_LAST_PLAYED_LINE'
+
+            // Don't broadcast SCORING mode if isScoringStep is false
+            if (isScoringMode && !currentState.isScoringStep) {
+              logger.info('[HostManager] Ignoring ABILITY_MODE_SET for SCORING mode - isScoringStep is false')
+              break
+            }
+
+            // Update host's internal state
             const newState = {
               ...currentState,
               abilityMode: message.data.abilityMode
@@ -569,6 +615,90 @@ export class HostManager {
         }
         break
 
+      case 'SCORING_LINE_SELECTED':
+        // Guest selected a scoring line - host processes it and broadcasts result
+        if (message.data) {
+          const { sourceCoords, selectedCoords, mode } = message.data
+          logger.info('[HostManager] Guest selected scoring line', { guestPlayerId, sourceCoords, selectedCoords, mode })
+
+          this.handleScoringLineSelection(message.data, guestPlayerId, fromPeerId)
+        }
+        break
+
+      case 'REQUEST_PASS_TURN':
+        // Guest requests to pass turn after scoring
+        // Host uses phase manager to properly transition to next player with Preparation phase
+        if (guestPlayerId === undefined) {
+          logger.warn('[HostManager] No player ID for pass turn request')
+          break
+        }
+
+        const stateForPass = this.stateManager.getState()
+        if (!stateForPass) {
+          logger.warn('[HostManager] No game state for pass turn')
+          break
+        }
+
+        // Verify the requesting player is the active player
+        if (stateForPass.activePlayerId !== guestPlayerId) {
+          logger.warn(`[HostManager] Player ${guestPlayerId} requested pass turn but active player is ${stateForPass.activePlayerId}`)
+          break
+        }
+
+        logger.info(`[HostManager] Guest ${guestPlayerId} requested pass turn`)
+
+        // Use phase manager to pass turn (includes Preparation phase for next player)
+        if ((this as any)._phaseManager) {
+          try {
+            // CRITICAL: Update phase manager state before handling action
+            (this as any)._phaseManager.setState(stateForPass)
+
+            const result = (this as any)._phaseManager.handleAction({
+              action: 'PASS_TURN',
+              playerId: guestPlayerId,
+              data: { reason: 'scoring_complete' }
+            })
+            if (result) {
+              logger.info('[HostManager] Phase manager passed turn after guest scoring', result)
+            }
+          } catch (error) {
+            logger.error('[HostManager] Error passing turn via phase manager:', error)
+          }
+        }
+        break
+
+      case 'ABILITY_MODE_CLEAR':
+        // Ability mode clear - specifically for closing scoring mode after completion
+        // This is broadcast by host after scoring is done to close all guests' scoring modes
+        this.visualEffects.clearTargetingMode()
+
+        // Clear ability mode and set isScoringStep=false on host state
+        const stateForClear = this.stateManager.getState()
+        if (stateForClear) {
+          const newState: GameState = {
+            ...stateForClear,
+            abilityMode: undefined,
+            targetingMode: null,
+            isScoringStep: false  // Important: mark scoring as complete
+          }
+          this.stateManager.setInitialState(newState)
+          // Update host's UI
+          if (this.config.onStateUpdate) {
+            this.config.onStateUpdate(newState)
+          }
+          // Broadcast to all guests (if sent by a guest, rebroadcast to everyone)
+          this.connectionManager.broadcast({
+            type: 'ABILITY_MODE_CLEAR',
+            senderId: this.connectionManager.getPeerId(),
+            timestamp: Date.now(),
+            data: {
+              isScoringStep: false
+            }
+          })
+          logger.info('[HostManager] ABILITY_MODE_CLEAR - cleared abilityMode and set isScoringStep=false')
+        }
+        break
+
       // Phase system messages
       case 'PHASE_STATE_UPDATE':
       case 'PHASE_TRANSITION':
@@ -626,6 +756,7 @@ export class HostManager {
       // Process the phase action
       let newPhase = state.currentPhase
       let newActivePlayer = state.activePlayerId
+      let newIsScoringStep = state.isScoringStep || false
 
       switch (phaseAction.action) {
         case 1: // NEXT_PHASE
@@ -661,31 +792,59 @@ export class HostManager {
           return
       }
 
+      // Handle isScoringStep flag:
+      // - Set to true when entering Scoring phase (4)
+      // - Set to false when leaving Scoring phase (was 4, now not 4)
+      // - Also set to false when passing turn (action 3) regardless of phase
+      const enteringScoringPhase = newPhase === 4 && state.currentPhase !== 4
+      const leavingScoringPhase = state.currentPhase === 4 && newPhase !== 4
+      const isPassTurn = phaseAction.action === 3
+
+      if (enteringScoringPhase) {
+        newIsScoringStep = true
+        logger.info('[HostManager] Entering Scoring phase - setting isScoringStep=true')
+      } else if (leavingScoringPhase || isPassTurn) {
+        newIsScoringStep = false
+        logger.info(`[HostManager] Leaving Scoring phase or passing turn - setting isScoringStep=false (leaving=${leavingScoringPhase}, passTurn=${isPassTurn})`)
+      }
+
       // Update state - create new object to trigger React re-render
       const updatedState = {
         ...state,
         currentPhase: newPhase,
-        activePlayerId: newActivePlayer
+        activePlayerId: newActivePlayer,
+        isScoringStep: newIsScoringStep
       }
 
       // Update the actual state object
       state.currentPhase = newPhase
       state.activePlayerId = newActivePlayer
+      state.isScoringStep = newIsScoringStep
 
       // Broadcast updated state to all
       this.connectionManager.broadcast({
         type: 'STATE_UPDATE_COMPACT_JSON',
-        data: { currentPhase: newPhase, activePlayerId: newActivePlayer },
+        data: {
+          currentPhase: newPhase,
+          activePlayerId: newActivePlayer,
+          isScoringStep: newIsScoringStep
+        },
         senderId: this.connectionManager.getPeerId(),
         timestamp: Date.now()
       })
+
+      // IMPORTANT: When entering scoring phase, host broadcasts ABILITY_MODE_SET to all guests
+      // This ensures all players see the scoring mode, regardless of whose turn it is
+      if (enteringScoringPhase && newIsScoringStep) {
+        this.broadcastScoringMode(updatedState)
+      }
 
       // Update host's React state with new object
       if (this.config.onStateUpdate) {
         this.config.onStateUpdate(updatedState)
       }
 
-      logger.info(`[HostManager] Phase action: ${phaseAction.action} by player ${playerId}, phase=${newPhase}, activePlayer=${newActivePlayer}`)
+      logger.info(`[HostManager] Phase action: ${phaseAction.action} by player ${playerId}, phase=${newPhase}, activePlayer=${newActivePlayer}, isScoringStep=${newIsScoringStep}`)
     } catch (e) {
       logger.error('[HostManager] Failed to handle phase message:', e)
     }
@@ -705,9 +864,47 @@ export class HostManager {
 
     logger.info(`[HostManager] handlePhaseAction called: actionType=${actionType}, playerId=${playerId}, currentPhase=${state.currentPhase}, activePlayerId=${state.activePlayerId}`)
 
+    // Map actionType to PhaseManager action string
+    const actionMap: Record<number, string> = {
+      1: 'NEXT_PHASE',
+      2: 'PREVIOUS_PHASE',
+      3: 'PASS_TURN',
+      4: 'START_SCORING',
+      5: 'SELECT_LINE',
+      6: 'ROUND_COMPLETE',
+      7: 'START_NEXT_ROUND',
+      8: 'START_NEW_MATCH',
+    }
+
+    const action = actionMap[actionType]
+
+    // Use PhaseManager if available and action is mapped
+    if (action && (this as any)._phaseManager) {
+      try {
+        // Update phase manager state before handling action
+        (this as any)._phaseManager.setState(state)
+
+        const result = (this as any)._phaseManager.handleAction({
+          action,
+          playerId,
+          data
+        })
+
+        if (result && result.success) {
+          logger.info(`[HostManager] PhaseManager handled ${action}: phase=${result.newPhase}, activePlayer=${result.newActivePlayer}`)
+          // PhaseManager already broadcasted state via onStateUpdateRequired callback
+          return
+        }
+      } catch (error) {
+        logger.error('[HostManager] Error in PhaseManager:', error)
+      }
+    }
+
+    // Fallback to legacy logic for unsupported actions or if PhaseManager is not available
     // Process the phase action
     let newPhase = state.currentPhase
     let newActivePlayer = state.activePlayerId
+    let newIsScoringStep = state.isScoringStep || false
 
     logger.info(`[HostManager] Before switch: actionType=${actionType}, currentPhase=${newPhase}, activePlayerId=${newActivePlayer}`)
 
@@ -745,31 +942,59 @@ export class HostManager {
         return
     }
 
+    // Handle isScoringStep flag:
+    // - Set to true when entering Scoring phase (4)
+    // - Set to false when leaving Scoring phase (was 4, now not 4)
+    // - Also set to false when passing turn (action 3) regardless of phase
+    const enteringScoringPhase = newPhase === 4 && state.currentPhase !== 4
+    const leavingScoringPhase = state.currentPhase === 4 && newPhase !== 4
+    const isPassTurn = actionType === 3
+
+    if (enteringScoringPhase) {
+      newIsScoringStep = true
+      logger.info('[HostManager] Entering Scoring phase - setting isScoringStep=true')
+    } else if (leavingScoringPhase || isPassTurn) {
+      newIsScoringStep = false
+      logger.info(`[HostManager] Leaving Scoring phase or passing turn - setting isScoringStep=false (leaving=${leavingScoringPhase}, passTurn=${isPassTurn})`)
+    }
+
     // Update state - create new object to trigger React re-render
     const updatedState = {
       ...state,
       currentPhase: newPhase,
-      activePlayerId: newActivePlayer
+      activePlayerId: newActivePlayer,
+      isScoringStep: newIsScoringStep
     }
 
     // Update the actual state object
     state.currentPhase = newPhase
     state.activePlayerId = newActivePlayer
+    state.isScoringStep = newIsScoringStep
 
     // Broadcast updated state to all
     this.connectionManager.broadcast({
       type: 'STATE_UPDATE_COMPACT_JSON',
-      data: { currentPhase: newPhase, activePlayerId: newActivePlayer },
+      data: {
+        currentPhase: newPhase,
+        activePlayerId: newActivePlayer,
+        isScoringStep: newIsScoringStep
+      },
       senderId: this.connectionManager.getPeerId(),
       timestamp: Date.now()
     })
+
+    // IMPORTANT: When entering scoring phase, host broadcasts ABILITY_MODE_SET to all guests
+    // This ensures all players see the scoring mode, regardless of whose turn it is
+    if (enteringScoringPhase && newIsScoringStep) {
+      this.broadcastScoringMode(updatedState)
+    }
 
     // Update host's React state with new object
     if (this.config.onStateUpdate) {
       this.config.onStateUpdate(updatedState)
     }
 
-    logger.info(`[HostManager] Phase action: ${actionType} by player ${playerId}, phase=${newPhase}, activePlayer=${newActivePlayer}`)
+    logger.info(`[HostManager] Phase action: ${actionType} by player ${playerId}, phase=${newPhase}, activePlayer=${newActivePlayer}, isScoringStep=${newIsScoringStep}`)
   }
 
   /**
@@ -1137,6 +1362,91 @@ export class HostManager {
   }
 
   /**
+   * Handle scoring line selection from guest
+   * Guest calculated their score locally and sent the result
+   * Host validates and broadcasts the score update to all guests
+   */
+  private handleScoringLineSelection(data: any, guestPlayerId: number | undefined, _fromPeerId: string): void {
+    if (guestPlayerId === undefined) {
+      logger.warn('[HostManager] No player ID for scoring line selection')
+      return
+    }
+
+    const state = this.stateManager.getState()
+    if (!state) {
+      logger.warn('[HostManager] No game state for scoring')
+      return
+    }
+
+    // Verify we're in scoring phase
+    if (!state.isScoringStep || state.currentPhase !== 4) {
+      logger.warn('[HostManager] Not in scoring phase, ignoring line selection')
+      return
+    }
+
+    const { sourceCoords, selectedCoords, newScore, scoreEvents } = data
+    if (!sourceCoords || !selectedCoords) {
+      logger.warn('[HostManager] Invalid coords for scoring line selection')
+      return
+    }
+
+    // Use the new total score from the guest (guest calculated it themselves)
+    const player = state.players.find(p => p.id === guestPlayerId)
+    if (!player) {
+      logger.warn('[HostManager] Player not found for scoring')
+      return
+    }
+
+    const oldScore = player.score
+    logger.info(`[HostManager] Guest ${guestPlayerId} score: ${oldScore} -> ${newScore}`)
+
+    // Broadcast floating texts to all guests
+    if (scoreEvents && scoreEvents.length > 0) {
+      const now = Date.now()
+      const floatingTexts: FloatingTextData[] = scoreEvents.map((event: any) => ({
+        ...event,
+        timestamp: now
+      }))
+      this.visualEffects.broadcastFloatingTextBatch(floatingTexts)
+    }
+
+    // Clear targeting mode on host
+    this.visualEffects.clearTargetingMode()
+
+    // Update player score with the new total score from guest (not adding delta)
+    const updatedPlayers = state.players.map(p =>
+      p.id === guestPlayerId ? { ...p, score: newScore } : p
+    )
+    const updatedState: GameState = {
+      ...state,
+      players: updatedPlayers
+    }
+    this.stateManager.setInitialState(updatedState)
+    if (this.config.onStateUpdate) {
+      this.config.onStateUpdate(updatedState)
+    }
+    // CRITICAL: Broadcast the updated state to all guests so they see the score change
+    this.connectionManager.broadcastGameState(updatedState)
+
+    // Broadcast ABILITY_MODE_CLEARED to all guests to close scoring mode
+    this.connectionManager.broadcast({
+      type: 'ABILITY_MODE_CLEARED',
+      senderId: this.connectionManager.getPeerId(),
+      timestamp: Date.now(),
+      data: {
+        mode: 'SCORE_LAST_PLAYED_LINE',
+        playerId: guestPlayerId,
+        newScore,
+        scoreEvents
+      }
+    })
+
+    // Note: Turn passing is now handled by the guest sending REQUEST_PASS_TURN
+    // This allows the guest to control when to pass turn after updating their score
+    logger.info(`[HostManager] Scoring complete for guest ${guestPlayerId}, waiting for REQUEST_PASS_TURN`)
+  }
+
+  /**
    * Handle guest join request
    */
   private handleJoinRequest(guestPeerId: string, joinData?: any): void {
@@ -1423,6 +1733,39 @@ export class HostManager {
    */
   clearTargetingMode(): void {
     this.visualEffects.clearTargetingMode()
+  }
+
+  /**
+   * Update host player's score and broadcast to all guests
+   * This is used when host scores points in scoring phase
+   * The host calculates their own score and updates it directly (not adding delta)
+   */
+  updateHostPlayerScore(playerId: number, newScore: number): void {
+    const state = this.stateManager.getState()
+    if (!state) return
+
+    const player = state.players.find(p => p.id === playerId)
+    if (!player) return
+
+    logger.info(`[HostManager] Updating host player ${playerId} score: ${player.score} -> ${newScore}`)
+
+    // Update player score with new total (not adding delta)
+    const updatedPlayers = state.players.map(p =>
+      p.id === playerId ? { ...p, score: newScore } : p
+    )
+    const updatedState: GameState = {
+      ...state,
+      players: updatedPlayers
+    }
+    this.stateManager.setInitialState(updatedState)
+
+    // Update host's UI
+    if (this.config.onStateUpdate) {
+      this.config.onStateUpdate(updatedState)
+    }
+
+    // Broadcast to all guests
+    this.connectionManager.broadcastGameState(updatedState)
   }
 
   /**
@@ -1869,6 +2212,111 @@ export class HostManager {
     })
 
     logger.info('[HostManager] Broadcasted GAME_RESET to all guests')
+  }
+
+  /**
+   * Broadcast scoring mode to all guests when entering scoring phase
+   * This ensures all players see the scoring line selection mode, regardless of whose turn it is
+   * @param state - The current game state
+   */
+  private broadcastScoringMode(state: GameState): void {
+    try {
+      const activePlayerId = state.activePlayerId
+      if (activePlayerId === null) {
+        logger.warn('[HostManager] Cannot broadcast scoring mode - no active player')
+        return
+      }
+
+      const gridSize = state.activeGridSize || 5
+      let lastPlayedCoords = null
+      let found = false
+
+      // Find the card with LastPlayed status owned by ACTIVE PLAYER
+      for (let r = 0; r < gridSize; r++) {
+        for (let c = 0; c < gridSize; c++) {
+          const cell = state.board[r]?.[c]
+          const card = cell?.card
+          if (card?.statuses?.some((s: any) => s.type === 'LastPlayed' && s.addedByPlayerId === activePlayerId)) {
+            lastPlayedCoords = { row: r, col: c }
+            found = true
+            break
+          }
+        }
+        if (found) break
+      }
+
+      if (!found || !lastPlayedCoords) {
+        logger.info('[HostManager] No LastPlayed card found for scoring mode broadcast')
+        return
+      }
+
+      // Calculate boardTargets for the line selection
+      const boardTargets: {row: number, col: number}[] = []
+      // Highlight horizontal line (same row)
+      for (let c = 0; c < gridSize; c++) {
+        boardTargets.push({ row: lastPlayedCoords.row, col: c })
+      }
+      // Highlight vertical line (same column)
+      for (let r = 0; r < gridSize; r++) {
+        boardTargets.push({ row: r, col: lastPlayedCoords.col })
+      }
+
+      // Create scoring action
+      const scoringAction: AbilityAction = {
+        type: 'ENTER_MODE',
+        mode: 'SCORE_LAST_PLAYED_LINE',
+        sourceCoords: lastPlayedCoords,
+      }
+
+      // CRITICAL: Only update host's abilityMode if HOST is the active player
+      // Host should NOT see scoring mode UI for other players' turns
+      const hostPlayerId = this.stateManager.getLocalPlayerId()
+      if (activePlayerId === hostPlayerId) {
+        const updatedState: GameState = {
+          ...state,
+          abilityMode: scoringAction,
+          targetingMode: {
+            playerId: activePlayerId,
+            action: { type: 'ENTER_MODE', mode: 'SCORE_LAST_PLAYED_LINE' },
+            sourceCoords: lastPlayedCoords,
+            timestamp: Date.now(),
+            boardTargets,
+          }
+        }
+        this.stateManager.setInitialState(updatedState)
+
+        // Update host's UI
+        if (this.config.onStateUpdate) {
+          this.config.onStateUpdate(updatedState)
+        }
+        logger.info('[HostManager] Set scoring mode for HOST (active player)')
+      } else {
+        logger.info(`[HostManager] Skipping scoring mode for host - active player is ${activePlayerId}`)
+      }
+
+      // Broadcast ABILITY_MODE_SET to all guests
+      this.connectionManager.broadcast({
+        type: 'ABILITY_MODE_SET',
+        senderId: this.connectionManager.getPeerId(),
+        data: {
+          abilityMode: {
+            ...scoringAction,
+            playerId: activePlayerId,
+            boardTargets,
+            timestamp: Date.now()
+          }
+        },
+        timestamp: Date.now()
+      })
+
+      logger.info('[HostManager] Broadcasted ABILITY_MODE_SET for scoring phase', {
+        activePlayerId,
+        lastPlayedCoords,
+        boardTargetsCount: boardTargets.length
+      })
+    } catch (e) {
+      logger.error('[HostManager] Failed to broadcast scoring mode:', e)
+    }
   }
 
   /**

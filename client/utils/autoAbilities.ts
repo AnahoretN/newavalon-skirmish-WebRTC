@@ -214,10 +214,12 @@ export function recalculateAllReadyStatuses(gameState: GameState): void {
 
   logger.info(`[recalculateAllReadyStatuses] Phase ${gameState.currentPhase}, activePlayerId=${activePlayerId}`)
 
-  // Only recalculate if we're in a phase where phase-specific statuses matter
-  // Phase-specific statuses only exist in phases 1 (Setup) and 3 (Commit)
+  // Recalculate in phases where phase-specific statuses matter:
+  // - Phase 0 (Preparation): Set up ready statuses for new active player
+  // - Phase 1 (Setup): Cards with readySetup can activate
+  // - Phase 3 (Commit): Cards with readyCommit can activate
   const currentPhase = gameState.currentPhase
-  if (currentPhase !== 1 && currentPhase !== 3) {
+  if (currentPhase !== 0 && currentPhase !== 1 && currentPhase !== 3) {
     // In other phases, phase-specific statuses should be removed
     // But readyDeploy should be kept (it's synchronized from host)
     return

@@ -150,6 +150,7 @@ export function createInitialState(): GameState {
     deckSelections: [],
     handCardSelections: [],
     targetingMode: null,
+    visualEffects: new Map(), // NEW: ID-based visual effects
     localPlayerId: null,
     isSpectator: false,
   }

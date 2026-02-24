@@ -147,10 +147,8 @@ export const useAppAbilities = ({
       scoreLine,
       scoreDiagonal,
       commandContext,
-      updateState,
-      isWebRTCMode,
     })
-  }, [abilityMode, gameState, localPlayerId, interactionLock, setAbilityMode, markAbilityUsed, updatePlayerScore, triggerFloatingText, nextPhase, modifyBoardCardPower, scoreLine, scoreDiagonal, commandContext, updateState])
+  }, [abilityMode, gameState, localPlayerId, interactionLock, setAbilityMode, markAbilityUsed, updatePlayerScore, triggerFloatingText, nextPhase, modifyBoardCardPower, scoreLine, scoreDiagonal, commandContext])
 
   // Update ref whenever handleLineSelection changes
   lineSelectionRef.current = handleLineSelection
@@ -460,6 +458,8 @@ export const useAppAbilities = ({
    * Handle click on empty cell
    */
   const handleEmptyCellClick = useCallback((boardCoords: { row: number; col: number }) => {
+    const isWebRTCMode = getWebRTCEnabled()
+
     // Use modular handler
     handleEmptyCellClickModule(boardCoords, {
       gameState,
@@ -490,6 +490,7 @@ export const useAppAbilities = ({
       scoreDiagonal,
       openContextMenu: () => {},
       triggerDeckSelection: () => {},
+      isWebRTCMode,
     })
 
     // All empty cell handling is now done in the modular handler

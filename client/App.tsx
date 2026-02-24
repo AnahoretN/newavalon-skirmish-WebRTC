@@ -306,6 +306,9 @@ const AppInner = function AppInner() {
   const prevHadTargetingModeRef = useRef(false)
   const prevTargetingModePlayerIdRef = useRef<number | undefined>(undefined)
 
+  // Track previous gameState.abilityMode for WebRTC host sync (separate from local abilityMode tracking)
+  const prevGameStateAbilityModeRef = useRef<AbilityAction | null>(null)
+
   // Lifted state for cursor stack to resolve circular dependency
   const [cursorStack, setCursorStack] = useState<CursorStackState | null>(null)
 
@@ -1344,19 +1347,9 @@ const AppInner = function AppInner() {
 
   // Scoring Phase Logic
   useEffect(() => {
-    // NOTE: Removed the check that cleared SCORE_LAST_PLAYED_LINE when !isScoringStep
-    // This was causing a race condition in WebRTC mode where guests would receive
-    // ABILITY_MODE_SET before receiving the isScoringStep=true state update.
-    // The host is authoritative for scoring mode - guests should trust the host's
-    // ABILITY_MODE_SET message and not clear it based on local isScoringStep state.
-
-    logger.info('[App.tsx] Scoring Phase useEffect triggered', {
-      isScoringStep: gameState.isScoringStep,
-      abilityMode: abilityMode,
-      activePlayerId: gameState.activePlayerId,
-      localPlayerId,
-      boardSize,
-    })
+    // Simplified approach: when entering scoring phase, open the scoring mode
+    // After player scores, nextPhase passes turn and phase changes to Preparation
+    // The phase change naturally closes the scoring mode - no complex tracking needed!
 
     if (gameState.isScoringStep && !abilityMode) {
       const activePlayerId = gameState.activePlayerId
@@ -1391,32 +1384,32 @@ const AppInner = function AppInner() {
             mode: 'SCORE_LAST_PLAYED_LINE',
             sourceCoords: lastPlayedCoords,
           }
-          // Set ability mode locally
-          // NOTE: For scoring line selection, we use abilityMode, NOT targetingMode
-          // The handleLineSelection function in lineSelectionHandlers.ts handles this mode
-          setAbilityMode(scoringAction)
 
-          // In WebRTC mode, broadcast to guests so they see the scoring selection
-          // Include boardTargets so guests can see the highlighted lines
+          // Check if WebRTC mode
           const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
-          if (isWebRTCMode && activePlayerId !== null) {
-            // Calculate boardTargets for the line selection
-            const gridSize = boardSize
-            const boardTargets: {row: number, col: number}[] = []
-            // Highlight horizontal line (same row)
-            for (let c = 0; c < gridSize; c++) {
-              boardTargets.push({ row: lastPlayedCoords.row, col: c })
-            }
-            // Highlight vertical line (same column)
-            for (let r = 0; r < gridSize; r++) {
-              boardTargets.push({ row: r, col: lastPlayedCoords.col })
-            }
 
+          if (isWebRTCMode) {
+            // In WebRTC mode, host controls scoring mode for all players
             const webrtcManager = (window as any).webrtcManager
             const isHost = (window as any).webrtcIsHost
 
             if (isHost && webrtcManager?.broadcastToGuests) {
-              // Host broadcasts directly to all guests
+              // Host: set local abilityMode AND broadcast to guests
+              setAbilityMode(scoringAction)
+
+              // Calculate boardTargets for the line selection
+              const gridSize = boardSize
+              const boardTargets: {row: number, col: number}[] = []
+              // Highlight horizontal line (same row)
+              for (let c = 0; c < gridSize; c++) {
+                boardTargets.push({ row: lastPlayedCoords.row, col: c })
+              }
+              // Highlight vertical line (same column)
+              for (let r = 0; r < gridSize; r++) {
+                boardTargets.push({ row: r, col: lastPlayedCoords.col })
+              }
+
+              // Host broadcasts ABILITY_MODE_SET to all guests
               webrtcManager.broadcastToGuests({
                 type: 'ABILITY_MODE_SET',
                 senderId: webrtcManager.getPeerId(),
@@ -1429,21 +1422,14 @@ const AppInner = function AppInner() {
                 },
                 timestamp: Date.now()
               })
-            } else if (!isHost && webrtcManager?.sendMessageToHost) {
-              // Guest sends to host
-              webrtcManager.sendMessageToHost({
-                type: 'ABILITY_MODE_SET',
-                senderId: webrtcManager.getPeerId?.() ?? undefined,
-                data: {
-                  abilityMode: {
-                    ...scoringAction,
-                    playerId: activePlayerId,
-                    boardTargets,
-                  }
-                },
-                timestamp: Date.now()
-              })
             }
+            // Guest: Do NOT set abilityMode locally and do NOT request from host
+            // The host's phase manager will automatically broadcast ABILITY_MODE_SET
+            // when any player (including guest) enters scoring phase
+            // Guest just waits for ABILITY_MODE_SET from host
+          } else {
+            // Non-WebRTC mode (WebSocket server): set local abilityMode
+            setAbilityMode(scoringAction)
           }
         } else {
           // No LastPlayed card found (e.g. destroyed), skip scoring.
@@ -1454,7 +1440,50 @@ const AppInner = function AppInner() {
         }
       }
     }
-  }, [gameState?.isScoringStep, gameState?.activePlayerId, localPlayerId, gameState?.board, abilityMode, nextPhase, gameState?.players, boardSize])
+  }, [gameState?.isScoringStep, gameState?.activePlayerId, localPlayerId, gameState?.board, abilityMode, nextPhase, gameState?.players, boardSize, gameState?.currentRound, gameState?.turnNumber])
+
+  // Sync local abilityMode with gameState.abilityMode in WebRTC mode (for host)
+  // This ensures host sees scoring mode visuals when guest enters scoring phase
+  // Use separate ref to avoid infinite loops
+  useEffect(() => {
+    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+    const isHost = (window as any).webrtcIsHost
+
+    if (isWebRTCMode && isHost) {
+      const currentAbilityMode = gameState.abilityMode
+      const prevAbilityMode = prevGameStateAbilityModeRef.current
+
+      // Only update if gameState.abilityMode actually changed
+      // Compare by stringified JSON to detect actual changes
+      const currentModeStr = currentAbilityMode ? JSON.stringify(currentAbilityMode) : ''
+      const prevModeStr = prevAbilityMode ? JSON.stringify(prevAbilityMode) : ''
+
+      if (currentModeStr !== prevModeStr) {
+        if (currentAbilityMode) {
+          // gameState has abilityMode - sync it to local state
+          logger.info('[App.tsx] Host syncing abilityMode from gameState', {
+            mode: currentAbilityMode.mode,
+            sourceCoords: currentAbilityMode.sourceCoords,
+          })
+          setAbilityMode(currentAbilityMode)
+        } else if (abilityMode?.mode === 'SCORE_LAST_PLAYED_LINE') {
+          // gameState doesn't have abilityMode but local does - clear it
+          logger.info('[App.tsx] Host clearing abilityMode - gameState has none')
+          setAbilityMode(null)
+        }
+        // Update ref after handling
+        prevGameStateAbilityModeRef.current = currentAbilityMode ?? null
+      }
+    }
+  }, [gameState.abilityMode, abilityMode])
+
+  // Close scoring mode when isScoringStep becomes false
+  useEffect(() => {
+    if (!gameState.isScoringStep && abilityMode?.mode === 'SCORE_LAST_PLAYED_LINE') {
+      logger.info('[App.tsx] Closing scoring mode - isScoringStep is false')
+      setAbilityMode(null)
+    }
+  }, [gameState?.isScoringStep, abilityMode])
 
   // Close scoring mode when leaving Scoring phase (4)
   useEffect(() => {
@@ -2641,6 +2670,7 @@ const AppInner = function AppInner() {
               abilityMode={abilityMode}
               clickWaves={clickWaves}
               triggerClickWave={triggerClickWave}
+              visualEffects={gameState.visualEffects}
               onCancelAllModes={handleCancelAllModes}
             />
           </div>

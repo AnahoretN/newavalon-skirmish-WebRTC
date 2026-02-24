@@ -27,7 +27,7 @@ interface UsePhaseActionsProps {
 
 interface PhaseActionsResult {
   // Action methods
-  nextPhase: () => void
+  nextPhase: (forceTurnPass?: boolean) => void
   previousPhase: () => void
   passTurn: () => void
   startScoring: () => void
@@ -202,10 +202,16 @@ export function usePhaseActions(props: UsePhaseActionsProps): PhaseActionsResult
 
   /**
    * Move to next phase
+   * @param forceTurnPass - If true, pass turn to next player instead of advancing phase
    */
-  const nextPhase = useCallback(() => {
-    console.log('[usePhaseActions] nextPhase called - will send NEXT_PHASE action')
-    sendPhaseAction('NEXT_PHASE')
+  const nextPhase = useCallback((forceTurnPass?: boolean) => {
+    if (forceTurnPass) {
+      console.log('[usePhaseActions] nextPhase called with forceTurnPass=true - will send PASS_TURN action')
+      sendPhaseAction('PASS_TURN', { reason: 'scoring_complete' })
+    } else {
+      console.log('[usePhaseActions] nextPhase called - will send NEXT_PHASE action')
+      sendPhaseAction('NEXT_PHASE')
+    }
   }, [sendPhaseAction])
 
   /**

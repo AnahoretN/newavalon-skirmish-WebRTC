@@ -178,6 +178,13 @@ export class HostStateManager {
   }
 
   /**
+   * Get the local player (host's player) ID
+   */
+  getLocalPlayerId(): number | null {
+    return this.localPlayerId
+  }
+
+  /**
    * Update state from local (host) action
    * Called when host (as a player) makes an action
    */
@@ -195,14 +202,23 @@ export class HostStateManager {
     }
 
     const oldState = this.currentState
-    const delta = createDeltaFromStates(oldState, newState, this.localPlayerId || 0)
-    this.currentState = newState
+
+    // CRITICAL: Preserve abilityMode and targetingMode from current state
+    // These are set by abilities/scoring mode and should persist across local updates
+    const mergedState: GameState = {
+      ...newState,
+      abilityMode: newState.abilityMode ?? oldState.abilityMode,
+      targetingMode: newState.targetingMode ?? oldState.targetingMode,
+    }
+
+    const delta = createDeltaFromStates(oldState, mergedState, this.localPlayerId || 0)
+    this.currentState = mergedState
 
     // Broadcast to all guests
     if (!isDeltaEmpty(delta)) {
       this.broadcastDelta(delta, excludePeerId)
     } else {
-      this.connectionManager.broadcastGameState(newState, excludePeerId)
+      this.connectionManager.broadcastGameState(mergedState, excludePeerId)
     }
   }
 
@@ -307,6 +323,10 @@ export class HostStateManager {
       players: mergedPlayers,
       // Use guest's board - it contains the latest changes
       board: guestState.board,
+      // CRITICAL: Preserve abilityMode and targetingMode from current state
+      // Guest doesn't send these in STATE_UPDATE_COMPACT, so we must preserve them
+      abilityMode: oldState.abilityMode,
+      targetingMode: oldState.targetingMode,
     }
 
     // Create delta and broadcast

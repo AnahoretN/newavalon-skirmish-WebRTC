@@ -32,6 +32,9 @@ import {
   DEFAULT_PHASE_CONFIG
 } from './PhaseTypes'
 import { logger } from '../../utils/logger'
+// Import ready status system to update card ready statuses on turn change
+import { updateReadyStatuses } from '@shared/abilities/index.js'
+import { getCardAbilityInfo } from '../../utils/autoAbilities'
 
 /**
  * Phase action request from a player
@@ -260,8 +263,10 @@ export class PhaseManager {
 
   /**
    * Handle pass turn request
+   * Note: playerId is the requester. For guests, only active player can request.
+   * For host, host can pass turn on behalf of any player (when guest sends REQUEST_PASS_TURN).
    */
-  private handlePassTurn(_playerId: number, reason?: string): PhaseTransitionResult | null {
+  private handlePassTurn(playerId: number, reason?: string): PhaseTransitionResult | null {
     if (!this.state) return null
 
     // Can only pass turn from Commit or Scoring
@@ -269,6 +274,12 @@ export class PhaseManager {
     if (currentPhase !== GamePhase.COMMIT && currentPhase !== GamePhase.SCORING) {
       logger.warn(`[PhaseManager] Cannot pass turn from phase ${currentPhase}`)
       return null
+    }
+
+    // If the requester is not the active player, this might be a host acting on behalf of a guest
+    // Allow it but log a warning
+    if (playerId !== this.state.activePlayerId) {
+      logger.warn(`[PhaseManager] Player ${playerId} requesting pass turn but active player is ${this.state.activePlayerId}. Allowing for host proxy.`)
     }
 
     return this.passTurnToNextPlayer(reason || 'manual')
@@ -603,6 +614,15 @@ export class PhaseManager {
       return { newPhase: GamePhase.SETUP }
     }
 
+    // CRITICAL: Update ready statuses for the new active player
+    // This ensures cards gain their phase-specific ready statuses (readySetup/readyCommit)
+    // when it becomes their turn
+    updateReadyStatuses(
+      { gameState: this.state, playerId },
+      (card: Card) => getCardAbilityInfo(card)
+    )
+    logger.debug(`[PhaseManager] Updated ready statuses for player ${playerId} in Preparation phase`)
+
     // 1. Auto-draw if enabled and hasn't drawn yet this turn
     if (this.config.autoDrawEnabled && !this.autoDrawnThisTurn.has(playerId)) {
       this.performAutoDraw(playerId)
@@ -846,14 +866,16 @@ export class PhaseManager {
 
   /**
    * Notify phase change callbacks
+   * Order matters: state update first, then phase change broadcast
    */
   private notifyPhaseChange(result: PhaseTransitionResult): void {
-    this.callbacks.onPhaseChanged?.(result)
-
-    // Trigger state update callback
+    // First: Update the state (this ensures stateManager has latest state)
     if (this.state && this.callbacks.onStateUpdateRequired) {
       this.callbacks.onStateUpdateRequired(this.state)
     }
+
+    // Second: Broadcast phase transition (uses updated state from stateManager)
+    this.callbacks.onPhaseChanged?.(result)
   }
 
   /**

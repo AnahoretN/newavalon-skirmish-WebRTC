@@ -2325,6 +2325,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         logger.info('[STATE_UPDATE_COMPACT_JSON] Phase update from host:', {
           currentPhase: message.data?.currentPhase,
           activePlayerId: message.data?.activePlayerId,
+          isScoringStep: message.data?.isScoringStep,
           fullData: message.data
         })
         if (message.data) {
@@ -2332,13 +2333,16 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             const newState = {
               ...currentState,
               ...(message.data.currentPhase !== undefined && { currentPhase: message.data.currentPhase }),
-              ...(message.data.activePlayerId !== undefined && { activePlayerId: message.data.activePlayerId })
+              ...(message.data.activePlayerId !== undefined && { activePlayerId: message.data.activePlayerId }),
+              ...(message.data.isScoringStep !== undefined && { isScoringStep: message.data.isScoringStep })
             }
             logger.info('[STATE_UPDATE_COMPACT_JSON] Updated state:', {
               oldPhase: currentState.currentPhase,
               newPhase: newState.currentPhase,
               oldActivePlayer: currentState.activePlayerId,
-              newActivePlayer: newState.activePlayerId
+              newActivePlayer: newState.activePlayerId,
+              oldIsScoringStep: currentState.isScoringStep,
+              newIsScoringStep: newState.isScoringStep
             })
             return newState
           })
@@ -3417,6 +3421,15 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         if (message.data?.abilityMode) {
           const { playerId, sourceCoords, mode, actionType, boardTargets, handTargets } = message.data.abilityMode
 
+          logger.info('[AbilityMode] Received ABILITY_MODE_SET from host', {
+            mode,
+            hasSourceCoords: !!sourceCoords,
+            sourceCoords,
+            boardTargetsCount: boardTargets?.length || 0,
+            handTargetsCount: handTargets?.length || 0,
+            fullAbilityMode: message.data.abilityMode
+          })
+
           // Build targeting mode data from ability mode
           const targetingModeData = {
             playerId,
@@ -3427,17 +3440,30 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             handTargets: handTargets || []
           }
 
-          setGameState(prev => ({
-            ...prev,
-            abilityMode: message.data.abilityMode,
-            targetingMode: targetingModeData,
-          }))
-          logger.info('[AbilityMode] Received ability mode from host', {
-            playerId,
-            mode,
-            boardTargetsCount: boardTargets?.length || 0,
-            handTargetsCount: handTargets?.length || 0,
-          })
+          // CRITICAL: Also update local abilityMode state for GUESTS only (not host)
+          // This ensures click handlers (which use local abilityMode) work correctly for guests
+          // Host should NOT update local abilityMode here - they manage it themselves
+          if (setAbilityMode && !webrtcIsHostRef.current) {
+            setAbilityMode(message.data.abilityMode)
+          }
+
+          // CRITICAL: Host should NOT update targetingMode or abilityMode when receiving broadcast
+          // Host manages these locally and should not see other players' targeting modes
+          if (!webrtcIsHostRef.current) {
+            setGameState(prev => ({
+              ...prev,
+              abilityMode: message.data.abilityMode,
+              targetingMode: targetingModeData,
+            }))
+            logger.info('[AbilityMode] Guest received ability mode from host', {
+              playerId,
+              mode,
+              boardTargetsCount: boardTargets?.length || 0,
+              handTargetsCount: handTargets?.length || 0,
+            })
+          } else {
+            logger.info('[AbilityMode] Host skipping abilityMode update - manages locally')
+          }
         }
         break
 
@@ -3448,6 +3474,10 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       case 'ABILITY_COMPLETED':
         // Ability completed - clear mode and targeting
+        // Only update local abilityMode for guests (host manages their own state)
+        if (setAbilityMode && !webrtcIsHostRef.current) {
+          setAbilityMode(null)
+        }
         setGameState(prev => ({
           ...prev,
           abilityMode: undefined,
@@ -3458,12 +3488,62 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       case 'ABILITY_CANCELLED':
         // Ability cancelled - clear mode and targeting
+        if (setAbilityMode && !webrtcIsHostRef.current) {
+          setAbilityMode(null)
+        }
         setGameState(prev => ({
           ...prev,
           abilityMode: undefined,
           targetingMode: null,
         }))
         logger.info('[Ability] Ability cancelled')
+        break
+
+      case 'ABILITY_MODE_CLEAR':
+        // Ability mode clear - specifically for closing scoring mode after completion
+        if (setAbilityMode && !webrtcIsHostRef.current) {
+          setAbilityMode(null)
+        }
+        setGameState(prev => ({
+          ...prev,
+          abilityMode: undefined,
+          ...(message.data?.isScoringStep !== undefined && { isScoringStep: message.data.isScoringStep }),
+        }))
+        logger.info('[Ability] Ability mode cleared (scoring complete)', { isScoringStep: message.data?.isScoringStep })
+        break
+
+      case 'ABILITY_MODE_CLEARED':
+        // Ability mode cleared by host after scoring complete
+        if (setAbilityMode && !webrtcIsHostRef.current) {
+          setAbilityMode(null)
+        }
+        setGameState(prev => ({
+          ...prev,
+          abilityMode: undefined,
+          targetingMode: null,
+        }))
+
+        // Sync player scores from host's broadcast
+        // For scoring mode, host sends the new total score
+        if (message.data?.mode === 'SCORE_LAST_PLAYED_LINE' && message.data?.newScore !== undefined) {
+          const scoringPlayerId = message.data.playerId
+          if (scoringPlayerId !== undefined && scoringPlayerId !== localPlayerId) {
+            // This is another player's score - update our state to match
+            // We don't update our own score here because we already did it locally
+            logger.info('[Ability] Syncing other player score from host', {
+              scoringPlayerId,
+              newScore: message.data.newScore
+            })
+            setGameState(prev => {
+              const updatedPlayers = prev.players.map(p =>
+                p.id === scoringPlayerId ? { ...p, score: message.data.newScore } : p
+              )
+              return { ...prev, players: updatedPlayers }
+            })
+          }
+        }
+
+        logger.info('[Ability] Ability mode cleared by host after scoring')
         break
 
       case 'ABILITY_ACTIVATED':
@@ -3807,6 +3887,48 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         logger.info('[TargetingMode] Cleared targeting mode locally')
 
         // NO rebroadcasting - HostManager handles all broadcasting
+        break
+
+      // NEW: ID-based visual effects messages
+      case 'EFFECT_ADD':
+        // Add effect from host/guest
+        if (message.data) {
+          // Decode effect from compact format
+          const { decodeEffect } = require('../host/EffectsManager')
+          const effect = decodeEffect(message.data)
+
+          if (effect) {
+            logger.debug('[Effects] Received EFFECT_ADD:', effect.id, effect.type)
+            setGameState(prev => {
+              const effects = prev.visualEffects || new Map()
+              effects.set(effect.id, effect)
+              return { ...prev, visualEffects: new Map(effects) }
+            })
+          } else {
+            logger.warn('[Effects] Failed to decode EFFECT_ADD:', message.data)
+          }
+        }
+        break
+
+      case 'EFFECT_REMOVE':
+        // Remove effect by ID
+        if (message.data?.i) {
+          logger.debug('[Effects] Received EFFECT_REMOVE:', message.data.i)
+          setGameState(prev => {
+            const effects = prev.visualEffects || new Map()
+            effects.delete(message.data.i)
+            return { ...prev, visualEffects: new Map(effects) }
+          })
+        }
+        break
+
+      case 'EFFECT_CLEAR_ALL':
+        // Clear all effects
+        logger.debug('[Effects] Received EFFECT_CLEAR_ALL')
+        setGameState(prev => ({
+          ...prev,
+          visualEffects: new Map(),
+        }))
         break
 
       case 'SCORING_COMPLETE_AND_TURN_PASS':

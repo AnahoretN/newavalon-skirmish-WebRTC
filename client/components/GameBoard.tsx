@@ -1,5 +1,5 @@
 import React, { memo, useMemo, useCallback, useState } from 'react'
-import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerColor, HighlightData, FloatingTextData, TargetingModeData, ClickWave, CursorStackState, AbilityAction } from '@/types'
+import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerColor, HighlightData, FloatingTextData, TargetingModeData, ClickWave, CursorStackState, AbilityAction, VisualEffect, VisualEffectsState, FloatingTextEffect, NoTargetEffect, ClickWaveEffect } from '@/types'
 import { ClickWave as ClickWaveComponent } from './ClickWave'
 import { Card } from './Card'
 import { PLAYER_COLORS, FLOATING_TEXT_COLORS, PLAYER_COLOR_RGB } from '@/constants'
@@ -38,6 +38,8 @@ interface GameBoardProps {
   abilityMode?: AbilityAction | null; // For line selection mode highlight color
   clickWaves?: ClickWave[];
   triggerClickWave?: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
+  // NEW: ID-based visual effects
+  visualEffects?: VisualEffectsState;
   // Mode cancellation props (right-click to cancel)
   setCursorStack?: (value: CursorStackState | null) => void;
   onCancelAllModes?: () => void;
@@ -367,6 +369,68 @@ const FloatingTextOverlay = memo<{ textData: FloatingTextData; playerColorMap: M
 
 FloatingTextOverlay.displayName = 'FloatingTextOverlay'
 
+/**
+ * VisualEffectOverlay - Renders ID-based visual effects
+ * Supports: highlight, floatingText, noTarget, clickWave, targetingMode
+ */
+const VisualEffectOverlay = memo<{ effect: VisualEffect; playerColorMap: Map<number, PlayerColor>; }>(({ effect, playerColorMap }) => {
+  const playerColor = playerColorMap.get(effect.playerId)
+  const colorRgb = playerColor ? PLAYER_COLOR_RGB[playerColor] : '255, 255, 255'
+
+  switch (effect.type) {
+    case 'floatingText': {
+      const ft = effect as FloatingTextEffect
+      return (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[60] animate-float-up">
+          <span
+            className="text-4xl font-black"
+            style={{
+              color: ft.color || `rgb(${colorRgb})`,
+              textShadow: '2px 2px 0 #000'
+            }}
+          >
+            {ft.text}
+          </span>
+        </div>
+      )
+    }
+
+    case 'noTarget': {
+      const nt = effect as NoTargetEffect
+      return (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[50]">
+          <div className="text-6xl font-black text-red-500" style={{ textShadow: '2px 2px 0 #000' }}>
+            ✕
+          </div>
+        </div>
+      )
+    }
+
+    case 'clickWave': {
+      const cw = effect as ClickWaveEffect
+      return (
+        <ClickWaveComponent
+          timestamp={cw.createdAt}
+          playerColor={playerColor || 'blue' as PlayerColor}
+        />
+      )
+    }
+
+    case 'highlight':
+      // Highlights are handled at row/column level, not cell level
+      return null
+
+    case 'targetingMode':
+      // Targeting mode is handled via targetingMode prop
+      return null
+
+    default:
+      return null
+  }
+})
+
+VisualEffectOverlay.displayName = 'VisualEffectOverlay'
+
 export const GameBoard = memo<GameBoardProps>(({
   board,
   isGameStarted,
@@ -398,6 +462,7 @@ export const GameBoard = memo<GameBoardProps>(({
   targetingMode,
   abilityMode = null,
   clickWaves,
+  visualEffects,
 }) => {
 
   const activeBoard = useMemo(() => {
@@ -472,6 +537,9 @@ export const GameBoard = memo<GameBoardProps>(({
     const boardTargetsArray = Array.isArray(targetingMode?.boardTargets) ? targetingMode.boardTargets : []
     const targetingModeTargetsSet = new Set(boardTargetsArray.map((t: {row: number, col: number}) => `${t.row}-${t.col}`))
 
+    // Convert visualEffects Map to array for filtering
+    const visualEffectsArray = visualEffects ? Array.from(visualEffects.values()) : []
+
     // A cell is valid if it's in either local targets OR targeting mode targets
     const isValidTargetCell = (row: number, col: number) => {
       return localTargetsSet.has(`${row}-${col}`) || targetingModeTargetsSet.has(`${row}-${col}`)
@@ -485,6 +553,17 @@ export const GameBoard = memo<GameBoardProps>(({
 
         const isTargetingModeValidTarget = targetingModeTargetsSet.has(cellKey)
 
+        // Filter new ID-based visual effects for this cell
+        const cellVisualEffects = visualEffectsArray.filter(effect => {
+          if (effect.type === 'floatingText' || effect.type === 'noTarget') {
+            return effect.row === originalRowIndex && effect.col === originalColIndex
+          }
+          if (effect.type === 'clickWave') {
+            return effect.location === 'board' && effect.row === originalRowIndex && effect.col === originalColIndex
+          }
+          return false
+        })
+
         return {
           cellKey,
           originalRowIndex,
@@ -496,10 +575,11 @@ export const GameBoard = memo<GameBoardProps>(({
           isNoTarget: noTargetOverlay?.row === originalRowIndex && noTargetOverlay.col === originalColIndex,
           cellFloatingTexts: activeFloatingTexts?.filter(t => t.row === originalRowIndex && t.col === originalColIndex) || [],
           cellClickWaves: clickWaves?.filter(e => e.location === 'board' && e.boardCoords?.row === originalRowIndex && e.boardCoords?.col === originalColIndex) || [],
+          cellVisualEffects, // NEW: ID-based effects for this cell
         }
       }),
     )
-  }, [activeBoard, board.length, activeGridSize, validTargets, targetingMode, noTargetOverlay, activeFloatingTexts, clickWaves])
+  }, [activeBoard, board.length, activeGridSize, validTargets, targetingMode, noTargetOverlay, activeFloatingTexts, clickWaves, visualEffects])
 
   return (
     <div className="relative p-2 bg-board-bg rounded-xl h-full aspect-square transition-all duration-300">
@@ -508,7 +588,7 @@ export const GameBoard = memo<GameBoardProps>(({
           rowCells.map(({
             cellKey, originalRowIndex, originalColIndex, cell, isValidTarget,
             isTargetingModeValidTarget, targetingModeActionMode, isNoTarget, cellFloatingTexts,
-            cellClickWaves,
+            cellClickWaves, cellVisualEffects,
           }) => (
             <div key={cellKey} className="relative w-full h-full">
               <GridCell
@@ -544,10 +624,19 @@ export const GameBoard = memo<GameBoardProps>(({
                 abilityCheckKey={abilityCheckKey}
                 abilityMode={abilityMode}
               />
+              {/* Legacy floating texts (for backward compatibility) */}
               {cellFloatingTexts.map(ft => (
                 <FloatingTextOverlay
                   key={ft.id || `${ft.row}-${ft.col}-${ft.timestamp}`}
                   textData={ft}
+                  playerColorMap={playerColorMap}
+                />
+              ))}
+              {/* NEW: ID-based visual effects */}
+              {cellVisualEffects.map(effect => (
+                <VisualEffectOverlay
+                  key={effect.id}
+                  effect={effect}
                   playerColorMap={playerColorMap}
                 />
               ))}

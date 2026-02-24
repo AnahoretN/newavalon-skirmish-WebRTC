@@ -38,6 +38,7 @@ export interface EmptyCellClickProps {
   scoreDiagonal?: (r1: number, c1: number, r2: number, c2: number, pid: number, bonusType?: 'point_per_support' | 'draw_per_support') => void
   openContextMenu: (e: React.MouseEvent, type: string, data: any) => void
   triggerDeckSelection: (playerId: number, selectedByPlayerId: number) => void
+  isWebRTCMode?: boolean
 }
 
 /**
@@ -535,6 +536,7 @@ export function handleEmptyCellClick(
       scoreDiagonal: scoreDiagonal || (() => {}),
       commandContext,
       updateState,
+      isWebRTCMode: props.isWebRTCMode,
     })
     return true
   }
