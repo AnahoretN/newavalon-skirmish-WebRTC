@@ -4927,6 +4927,21 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         ),
       }))
 
+      // CRITICAL: For host, also directly update HostStateManager state
+      // This ensures handlePhaseAction (called immediately after) has the correct score
+      if (webrtcIsHostRef.current && webrtcManagerRef.current) {
+        const stateManager = webrtcManagerRef.current.getStateManager?.()
+        if (stateManager && stateManager.getState()) {
+          const currentState = stateManager.getState()
+          const currentPlayer = currentState.players.find((p: any) => p.id === playerId)
+          if (currentPlayer) {
+            const newScore = Math.max(0, currentPlayer.score + delta)
+            logger.info(`[ScoreUpdate] Host directly updating HostStateManager: player ${playerId}, ${currentPlayer.score} -> ${newScore}`)
+            stateManager.updatePlayerProperty(playerId, { score: newScore })
+          }
+        }
+      }
+
       // CRITICAL: In WebRTC mode, send score update to host immediately
       // Host is authoritative and must sync scores to all players
       if (webrtcManagerRef.current?.sendMessageToHost) {

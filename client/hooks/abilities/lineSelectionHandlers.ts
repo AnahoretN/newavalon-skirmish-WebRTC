@@ -266,25 +266,15 @@ export function handleLineSelection(
       triggerFloatingText(scoreEvents)
     }
 
-    // For WebRTC host: calculate new score and update directly (bypass updatePlayerScore to avoid double-counting)
+    // For WebRTC host: use updatePlayerScore to update UI immediately
+    // updatePlayerScore will call through to HostManager's updateHostPlayerScore
     if (isWebRTCMode && (window as any).webrtcIsHost) {
-      const currentPlayer = gameState.players.find((p: any) => p.id === playerId)
-      const currentScore = currentPlayer?.score ?? 0
-      const newScore = currentScore + totalScore
-
-      // Update local score directly through gameState update
       if (totalScore > 0) {
-        // Update the gameState through HostManager
-        const webrtcManager = (window as any).webrtcManager
-        if (webrtcManager?.updateHostPlayerScore) {
-          webrtcManager.updateHostPlayerScore(playerId, newScore)
-        } else {
-          // Fallback to updatePlayerScore
-          updatePlayerScore(playerId, totalScore)
-        }
+        // This will update UI and broadcast to guests
+        updatePlayerScore(playerId, totalScore)
       }
 
-      // Broadcast ability mode clear and new score to guests
+      // Broadcast ability mode clear to guests
       const webrtcManager = (window as any).webrtcManager
       if (webrtcManager?.broadcastToGuests) {
         webrtcManager.broadcastToGuests({
@@ -293,22 +283,29 @@ export function handleLineSelection(
           data: {
             mode: 'SCORE_LAST_PLAYED_LINE',
             playerId,
-            newScore,
             scoreEvents,
           },
           timestamp: Date.now()
         })
+      }
+
+      // CRITICAL: For host, delay nextPhase to allow React state update to propagate
+      // This ensures the score update is visible before the phase changes
+      if (nextPhase) {
+        setTimeout(() => {
+          nextPhase(true) // forceTurnPass=true to pass to next player
+        }, 50) // Small delay to let React render the updated score
       }
     } else {
       // Non-WebRTC mode: use standard updatePlayerScore
       if (totalScore > 0) {
         updatePlayerScore(playerId, totalScore)
       }
-    }
 
-    // Pass turn after scoring
-    if (nextPhase) {
-      nextPhase(true) // forceTurnPass=true to pass to next player
+      // Pass turn after scoring
+      if (nextPhase) {
+        nextPhase(true) // forceTurnPass=true to pass to next player
+      }
     }
 
     // Mark ability as used and close mode (same pattern as other modes)
