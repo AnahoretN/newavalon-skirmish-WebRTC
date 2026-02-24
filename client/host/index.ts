@@ -10,7 +10,6 @@
  * - HostStateManager: Centralized state management for host
  * - GuestStateSync: Sends state changes from guest to host
  * - HostManager: Combines everything for easy use
- * - PhaseManagement: Phase transitions, round management
  * - VisualEffects: Broadcasts visual effects to guests
  * - TimerSystem: Handles disconnect/inactivity timers
  * - GameLogger: Logs game actions
@@ -62,18 +61,9 @@ export { GameLogger } from './GameLogger'
 export { HostManager } from './HostManager'
 export type { HostManagerConfig } from './HostManager'
 
-// Phase Management (utility functions)
-export {
-  PHASES,
-  getPhaseName,
-  performPreparationPhase,
-  setPhase,
-  nextPhase,
-  prevPhase,
-  toggleActivePlayer,
-  toggleAutoDraw,
-  resetDeployStatus,
-  getNextPlayerId,
-  playerHasCardsOnBoard,
-  passTurnToNextPlayer
-} from './PhaseManagement'
+// Phase System - Complete phase and turn management for WebRTC P2P
+export * from './phase'
+
+// Phase Integration Modules
+export { initializePhaseSystem, startGameWithPhaseSystem, extendHostManagerPrototype } from './HostPhaseIntegration'
+export { initializePhaseSystemForGuest, requestPhaseAction, extendGuestConnectionPrototype } from './GuestPhaseIntegration'

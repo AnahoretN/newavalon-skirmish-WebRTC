@@ -7,6 +7,7 @@
 import type { AbilityAction, CursorStackState, CommandContext, Card } from '@/types'
 import { validateTarget } from '@shared/utils/targeting'
 import { TIMING } from '@/utils/common'
+import { handleLineSelection as handleLineSelectionModule } from './lineSelectionHandlers.js'
 
 export interface EmptyCellClickProps {
   gameState: any
@@ -30,8 +31,13 @@ export interface EmptyCellClickProps {
   updatePlayerScore: (playerId: number, delta: number) => void
   triggerFloatingText: (data: any) => void
   handleLineSelection: (coords: {row: number, col: number}) => void
+  updateState?: (stateOrFn: any) => void
+  nextPhase?: (forceTurnPass?: boolean) => void
+  modifyBoardCardPower?: (coords: any, delta: number) => void
+  scoreLine?: (r1: number, c1: number, r2: number, c2: number, pid: number) => void
+  scoreDiagonal?: (r1: number, c1: number, r2: number, c2: number, pid: number, bonusType?: 'point_per_support' | 'draw_per_support') => void
   openContextMenu: (e: React.MouseEvent, type: string, data: any) => void
-  triggerDeckSelection: (playerId: number) => void
+  triggerDeckSelection: (playerId: number, selectedByPlayerId: number) => void
 }
 
 /**
@@ -60,8 +66,16 @@ export function handleEmptyCellClick(
     resurrectDiscardedCard,
     updatePlayerScore,
     triggerFloatingText,
-    handleLineSelection,
+    handleLineSelection: _handleLineSelection,
+    updateState,
+    nextPhase,
+    modifyBoardCardPower,
+    scoreLine,
+    scoreDiagonal,
   } = props
+
+  // Alias for backward compatibility
+  const modifyBoardPower = modifyBoardCardPower
 
   // Ignore if interaction is locked
   if (interactionLock.current) {
@@ -506,7 +520,22 @@ export function handleEmptyCellClick(
 
   // === ABILITY MODE - LINE SELECTION MODES ===
   if (abilityMode?.mode && ['SCORE_LAST_PLAYED_LINE', 'SELECT_LINE_END', 'SELECT_LINE_START', 'SELECT_DIAGONAL'].includes(abilityMode.mode)) {
-    handleLineSelection(boardCoords)
+    handleLineSelectionModule(boardCoords, {
+      gameState,
+      localPlayerId,
+      abilityMode,
+      interactionLock,
+      setAbilityMode,
+      markAbilityUsed,
+      updatePlayerScore,
+      triggerFloatingText,
+      nextPhase: nextPhase || (() => {}),
+      modifyBoardCardPower: modifyBoardPower || (() => {}),
+      scoreLine: scoreLine || (() => {}),
+      scoreDiagonal: scoreDiagonal || (() => {}),
+      commandContext,
+      updateState,
+    })
     return true
   }
 

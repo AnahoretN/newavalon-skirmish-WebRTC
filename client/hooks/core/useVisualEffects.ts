@@ -376,20 +376,53 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
         targetingMode: targetingModeData,
       }))
     } else if (webrtcManager.current) {
-      const webrtcMessage = {
-        type: 'SET_TARGETING_MODE' as const,
-        senderId: webrtcManager.current.getPeerId(),
-        data: targetingModeData,
-        timestamp: Date.now()
-      }
-
       if (webrtcIsHostRef.current) {
+        // Host broadcasts directly to all guests with SET_TARGETING_MODE
+        const webrtcMessage = {
+          type: 'SET_TARGETING_MODE' as const,
+          senderId: webrtcManager.current.getPeerId(),
+          data: targetingModeData,
+          timestamp: Date.now()
+        }
         webrtcManager.current.broadcastToGuests(webrtcMessage)
       } else {
-        webrtcManager.current.sendMessageToHost(webrtcMessage)
+        // Guest sends ABILITY_ACTIVATED to host - host will infer targeting mode
+        let cardId = ''
+        let cardName = ''
+        let abilityType = 'deploy'
+
+        if (sourceCoords) {
+          const card = currentGameState.board[sourceCoords.row]?.[sourceCoords.col]?.card
+          if (card) {
+            cardId = card.id || ''
+            cardName = card.name || ''
+          }
+        }
+
+        const phase = currentGameState.currentPhase
+        if (phase === 0) abilityType = 'setup'
+        else if (phase === 2) abilityType = 'commit'
+
+        webrtcManager.current.sendMessageToHost({
+          type: 'ABILITY_ACTIVATED',
+          senderId: webrtcManager.current.getPeerId(),
+          playerId: localPlayerIdRef.current ?? undefined,
+          data: {
+            coords: sourceCoords,
+            cardId,
+            cardName,
+            abilityType,
+            mode: action.mode,
+            actionType: action.payload?.actionType,
+            action,
+            boardTargets,
+            handTargets: preCalculatedHandTargets
+          },
+          timestamp: Date.now()
+        })
       }
     }
-  }, [ws, webrtcManager, gameStateRef, webrtcIsHostRef, setGameState])
+  }, [ws, webrtcManager, gameStateRef, webrtcIsHostRef, setGameState, localPlayerIdRef])
 
   /**
    * Clear targeting mode for all clients
@@ -410,20 +443,27 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
         gameId: currentGameState.gameId,
       }))
     } else if (webrtcManager.current) {
-      const webrtcMessage = {
-        type: 'CLEAR_TARGETING_MODE' as const,
-        senderId: webrtcManager.current.getPeerId(),
-        data: {},
-        timestamp: Date.now()
-      }
-
       if (webrtcIsHostRef.current) {
+        // Host broadcasts directly to all guests
+        const webrtcMessage = {
+          type: 'CLEAR_TARGETING_MODE' as const,
+          senderId: webrtcManager.current.getPeerId(),
+          data: {},
+          timestamp: Date.now()
+        }
         webrtcManager.current.broadcastToGuests(webrtcMessage)
       } else {
-        webrtcManager.current.sendMessageToHost(webrtcMessage)
+        // Guest sends ABILITY_CANCELLED to host
+        webrtcManager.current.sendMessageToHost({
+          type: 'ABILITY_CANCELLED',
+          senderId: webrtcManager.current.getPeerId(),
+          playerId: localPlayerIdRef.current ?? undefined,
+          data: { timestamp: Date.now() },
+          timestamp: Date.now()
+        })
       }
     }
-  }, [ws, webrtcManager, gameStateRef, webrtcIsHostRef, setGameState])
+  }, [ws, webrtcManager, gameStateRef, webrtcIsHostRef, setGameState, localPlayerIdRef])
 
   return {
     triggerHighlight,

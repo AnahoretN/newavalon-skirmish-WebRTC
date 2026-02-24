@@ -6,6 +6,7 @@
 
 import type { AbilityAction, FloatingTextData } from '@/types'
 import { TIMING } from '@/utils/common'
+import { logger } from '@/utils/logger'
 
  
 
@@ -18,11 +19,13 @@ export interface LineSelectionProps {
   markAbilityUsed: (coords: { row: number; col: number }, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void
   updatePlayerScore: (playerId: number, delta: number) => void
   triggerFloatingText: (data: Omit<FloatingTextData, 'timestamp'> | Omit<FloatingTextData, 'timestamp'>[]) => void
-  nextPhase: () => void
+  nextPhase: (forceTurnPass?: boolean) => void
   modifyBoardCardPower: (coords: { row: number; col: number }, delta: number) => void
   scoreLine: (r1: number, c1: number, r2: number, c2: number, pid: number) => void
   scoreDiagonal: (r1: number, c1: number, r2: number, c2: number, pid: number, bonusType?: 'point_per_support' | 'draw_per_support') => void
   commandContext: any
+  updateState?: (stateOrFn: any) => void  // For clearing isScoringStep locally before nextPhase
+  isWebRTCMode?: boolean  // Whether WebRTC P2P mode is enabled
 }
 
 /**
@@ -47,6 +50,8 @@ export function handleLineSelection(
     scoreLine,
     scoreDiagonal,
     commandContext,
+    updateState,
+    isWebRTCMode = false,
   } = props
 
   if (!abilityMode) {
@@ -128,8 +133,13 @@ export function handleLineSelection(
       updatePlayerScore(playerId, totalScore)
     }
 
-    // Pass turn after scoring - nextPhase will send NEXT_PHASE to server
-    nextPhase()
+    // Clear isScoringStep locally
+    if (updateState) {
+      updateState((prev: any) => ({
+        ...prev,
+        isScoringStep: false
+      }))
+    }
 
     // Unlock interaction after a short delay
     setTimeout(() => {

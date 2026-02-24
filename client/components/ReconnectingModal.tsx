@@ -70,22 +70,12 @@ export const ReconnectingModal: React.FC<ReconnectingModalProps> = ({ isOpen, me
         </h2>
 
         {/* Dynamic status message */}
-        <p className="text-blue-300 mb-4 min-h-[24px] flex items-center justify-center">
+        <p className="text-blue-300 mb-8 min-h-[24px] flex items-center justify-center">
           {message || statusMessage}
         </p>
 
-        {/* Subtitle */}
-        <p className="text-sm text-gray-400">
-          {t('pleaseWait')}
-        </p>
-
-        {/* Info text */}
-        <p className="text-xs text-gray-500 mt-4">
-          {t('doNotClose') || 'Do not close this window while reconnecting'}
-        </p>
-
         {/* Pulsing dot indicator */}
-        <div className="flex justify-center gap-2 mt-6 mb-6">
+        <div className="flex justify-center gap-2 mb-6">
           <span className="w-3 h-3 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></span>
           <span className="w-3 h-3 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '200ms' }}></span>
           <span className="w-3 h-3 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '400ms' }}></span>

@@ -60,22 +60,33 @@ const StatusIndicator = memo<{
   isReconnecting?: boolean
   reconnectProgress?: { attempt: number; maxAttempts: number; timeRemaining: number } | null
 }>(({ connectionStatus, isReconnecting, reconnectProgress }) => {
+  // Check if WebRTC P2P mode is enabled
+  const isWebRTCMode = getWebRTCEnabled()
+
   return (
     <div className="flex items-center gap-2">
-      <span className="relative flex h-3 w-3" title={connectionStatus}>
-        {connectionStatus === 'Connected' && !isReconnecting && (
+      <span className="relative flex h-3 w-3" title={isWebRTCMode ? 'WebRTC P2P' : connectionStatus}>
+        {/* WebRTC P2P mode - blue indicator */}
+        {isWebRTCMode && (
+          <>
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+          </>
+        )}
+        {/* Standard server mode - green/yellow/red based on status */}
+        {!isWebRTCMode && connectionStatus === 'Connected' && !isReconnecting && (
           <>
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
           </>
         )}
-        {(connectionStatus === 'Connecting' || isReconnecting) && (
+        {!isWebRTCMode && (connectionStatus === 'Connecting' || isReconnecting) && (
           <>
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
           </>
         )}
-        {connectionStatus === 'Disconnected' && !isReconnecting && (
+        {!isWebRTCMode && connectionStatus === 'Disconnected' && !isReconnecting && (
           <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
         )}
       </span>
@@ -595,7 +606,7 @@ const Header = memo<HeaderProps>(({
         <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center z-10">
           <div className={`flex items-center bg-gray-800 rounded-lg p-1 border border-gray-700 shadow-md ${!isGameStarted ? 'opacity-50' : ''}`}>
             <button
-              onClick={onPrevPhase}
+              onClick={() => onPrevPhase()}
               disabled={!isGameStarted}
               className="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded transition-colors disabled:cursor-not-allowed disabled:opacity-50 mr-1"
             >
@@ -637,7 +648,7 @@ const Header = memo<HeaderProps>(({
               )
             })}
             <button
-              onClick={onNextPhase}
+              onClick={() => onNextPhase()}
               disabled={!isGameStarted}
               className="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded transition-colors disabled:cursor-not-allowed disabled:opacity-50 ml-1"
             >

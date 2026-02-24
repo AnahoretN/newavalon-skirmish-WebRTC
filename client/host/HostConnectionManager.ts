@@ -128,6 +128,15 @@ export class HostConnectionManager {
     })
 
     conn.on('data', (data: unknown) => {
+      // CRITICAL: Log ALL incoming data at PeerJS level to trace all messages
+      console.log('[HostConnectionManager] PeerJS RAW DATA EVENT:', {
+        peerId,
+        dataType: typeof data,
+        hasType: !!(data && typeof data === 'object' && 'type' in data),
+        messageType: data && typeof data === 'object' && 'type' in data ? (data as any).type : 'N/A',
+        isArray: Array.isArray(data),
+        keys: data && typeof data === 'object' ? Object.keys(data as object) : []
+      })
       this.handleMessage(data as WebrtcMessage, peerId)
     })
 
@@ -163,11 +172,13 @@ export class HostConnectionManager {
     const playerId = guest?.playerId ?? message.playerId ?? 'unknown'
 
     // Log important messages for debugging
-    if (message.type === 'SET_TARGETING_MODE' || message.type === 'CLEAR_TARGETING_MODE') {
+    if (message.type === 'SET_TARGETING_MODE' || message.type === 'CLEAR_TARGETING_MODE' || message.type === 'REQUEST_TURN_PASS') {
       logger.info(`[HostConnectionManager] Received ${message.type} from peer ${fromPeerId} (player ${playerId})`, {
         hasData: !!message.data,
         hasTargetingMode: !!message.data?.targetingMode,
         targetingModePlayerId: message.data?.targetingMode?.playerId,
+        playerId: message.data?.playerId,
+        reason: message.data?.reason,
         timestamp: message.timestamp
       })
     } else {

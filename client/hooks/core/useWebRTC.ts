@@ -30,6 +30,8 @@ export interface UseWebRTCProps {
   // Game state refs
   gameStateRef: React.MutableRefObject<{ gameId: string | null; players?: Array<{ id: number; name: string }> }>
   localPlayerIdRef: React.MutableRefObject<number | null>
+  // Game state setter - used for host's onStateUpdate callback
+  setGameState?: React.Dispatch<React.SetStateAction<any>>
 }
 
 export function useWebRTC(props: UseWebRTCProps) {
@@ -41,6 +43,7 @@ export function useWebRTC(props: UseWebRTCProps) {
     setWebrtcHostId,
     gameStateRef,
     localPlayerIdRef,
+    setGameState,
   } = props
 
   /**
@@ -54,6 +57,23 @@ export function useWebRTC(props: UseWebRTCProps) {
       // Use HostManager directly
       const hostManager = getHostManager()
       webrtcManagerRef.current = hostManager
+
+      // Make webrtcManager available globally for App.tsx to access
+      // This is used for broadcasting ABILITY_MODE_SET during scoring
+      ;(window as any).webrtcManager = hostManager
+      ;(window as any).webrtcIsHost = true
+
+      // CRITICAL: Configure the host manager with the onStateUpdate callback
+      // This ensures that when the host processes guest requests (like NEXT_PHASE),
+      // the host's own React state is updated along with broadcasting to guests
+      if (setGameState) {
+        hostManager.configure({
+          onStateUpdate: (newState: any) => {
+            setGameState(newState)
+          }
+        })
+        logger.info('[initializeWebrtcHost] Configured HostManager with onStateUpdate callback')
+      }
 
       const peerId = await hostManager.initialize()
       setWebrtcHostId(peerId)  // Store host peer ID for invite links
@@ -80,7 +100,7 @@ export function useWebRTC(props: UseWebRTCProps) {
       setConnectionStatus('Disconnected')
       return null
     }
-  }, [setWebrtcIsHost, setConnectionStatus, setWebrtcHostId, gameStateRef, localPlayerIdRef, webrtcManagerRef])
+  }, [setWebrtcIsHost, setConnectionStatus, setWebrtcHostId, gameStateRef, localPlayerIdRef, webrtcManagerRef, setGameState])
 
   /**
    * Connect as guest to host via WebRTC
@@ -108,6 +128,11 @@ export function useWebRTC(props: UseWebRTCProps) {
         }
       })
       webrtcManagerRef.current = guestManager
+
+      // Make webrtcManager available globally for App.tsx to access
+      // This is used for broadcasting ABILITY_MODE_SET during scoring
+      ;(window as any).webrtcManager = guestManager
+      ;(window as any).webrtcIsHost = false
 
       await guestManager.connect(hostId)
       setConnectionStatus('Connected')

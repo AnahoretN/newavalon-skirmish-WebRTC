@@ -385,12 +385,13 @@ export function encodeCardState(
     dataParts.push(encodeCardRef(card))
   }
 
-  // Phase info: [currentPhase: 1 byte] [activePlayerId: 1 byte] [currentRound: 1 byte]
+  // Phase info: [currentPhase: 1 byte] [activePlayerId: 1 byte] [currentRound: 1 byte] [isScoringStep: 1 byte]
   // Use 255 to indicate undefined/null values
   dataParts.push(new Uint8Array([
     gameState.currentPhase === undefined ? 255 : Math.clamp(gameState.currentPhase, 0, 254),
     (gameState.activePlayerId ?? 255) & 0xFF,
-    gameState.currentRound === undefined ? 255 : Math.clamp(gameState.currentRound, 0, 254)
+    gameState.currentRound === undefined ? 255 : Math.clamp(gameState.currentRound, 0, 254),
+    gameState.isScoringStep ? 1 : 0
   ]))
 
   // Game flags: [isGameStarted: 1 byte] (0 = false, 1 = true)
@@ -620,10 +621,12 @@ export function decodeCardState(
   const phaseByte = data[offset++]
   const activePlayerByte = data[offset++]
   const roundByte = data[offset++]
+  const scoringStepByte = data[offset++]
 
   const currentPhase = phaseByte === 255 ? undefined : phaseByte
   const activePlayerId = activePlayerByte === 255 ? null : activePlayerByte
   const currentRound = roundByte === 255 ? undefined : roundByte
+  const isScoringStep = scoringStepByte === 1
 
   // Read game flags
   const gameFlags = data[offset++]
@@ -894,7 +897,7 @@ export function decodeCardState(
     }
   }
 
-  logger.info(`[GameCodec] Decoded: ${boardCardCount} board cards, ${playerCount} players, ${dummyCount} dummies, ${otherPlayerDeckCount} other player hands/decks, hasRecipientPlayer=${hasRecipientPlayer === 1}, phase=${currentPhase}, isGameStarted=${isGameStarted}, activeGridSize=${activeGridSize}`)
+  logger.info(`[GameCodec] Decoded: ${boardCardCount} board cards, ${playerCount} players, ${dummyCount} dummies, ${otherPlayerDeckCount} other player hands/decks, hasRecipientPlayer=${hasRecipientPlayer === 1}, phase=${currentPhase}, isGameStarted=${isGameStarted}, activeGridSize=${activeGridSize}, isScoringStep=${isScoringStep}`)
 
   return {
     players,
@@ -903,6 +906,7 @@ export function decodeCardState(
     activePlayerId,
     currentRound,
     isGameStarted,
+    isScoringStep,
     activeGridSize: activeGridSize as any // number to GridSize conversion
   }
 }
@@ -1191,6 +1195,10 @@ export function mergeDecodedState(
 
   if (decodedState.isGameStarted !== undefined) {
     result.isGameStarted = decodedState.isGameStarted
+  }
+
+  if (decodedState.isScoringStep !== undefined) {
+    result.isScoringStep = decodedState.isScoringStep
   }
 
   if (decodedState.activeGridSize !== undefined) {

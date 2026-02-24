@@ -17,21 +17,14 @@ import { HostStateManager } from './HostStateManager'
 import { VisualEffectsManager } from './VisualEffects'
 import { TimerSystem, TIMER_CONFIG } from './TimerSystem'
 import { GameLogger } from './GameLogger'
-import {
-  nextPhase,
-  prevPhase,
-  setPhase,
-  toggleActivePlayer,
-  toggleAutoDraw,
-  resetDeployStatus
-} from './PhaseManagement'
-import { checkRoundEnd, endRound, startNextRound } from './RoundManagement'
 import { saveHostData, saveWebrtcState, clearWebrtcData } from './WebrtcStatePersistence'
 import { logger } from '../utils/logger'
 import { PLAYER_COLOR_NAMES } from '../constants'
 import { DeckType } from '../types'
 import { createDeck } from '../hooks/core/gameCreators'
 import { getCardDefinition } from '../content'
+import { calculateValidTargets } from '@shared/utils/targeting'
+import { decodePhaseAction, parsePhaseMessage } from './phase/PhaseMessageCodec'
 
 export interface HostManagerConfig extends HostConfig {
   onStateUpdate?: (newState: GameState) => void
@@ -54,6 +47,10 @@ export class HostManager {
   private initialized: boolean = false
   private localPlayerId: number | null = null
   private config: HostManagerConfig
+
+  // Phase system (initialized via HostPhaseIntegration)
+  public _phaseManager?: any
+  public _phaseSyncManager?: any
 
   constructor(config: HostManagerConfig = {}) {
     this.config = config
@@ -288,6 +285,13 @@ export class HostManager {
       return
     }
 
+    // Ignore messages from host (loopback prevention)
+    const hostPeerId = this.connectionManager.getPeerId()
+    if (message.senderId === hostPeerId || fromPeerId === hostPeerId) {
+      logger.debug(`[HostManager] Ignoring loopback message from self: ${message.type}`)
+      return
+    }
+
     const guest = this.connectionManager.getGuest(fromPeerId)
     const guestPlayerId = guest?.playerId || message.playerId
 
@@ -372,7 +376,12 @@ export class HostManager {
         // Guest sends compact state (with card IDs) for efficiency
         // This is the main way guests sync their state changes (like score)
         if (message.data?.gameState && guestPlayerId !== undefined) {
-          this.stateManager.updateFromGuest(guestPlayerId, message.data.gameState, fromPeerId)
+          const finalState = this.stateManager.updateFromGuest(guestPlayerId, message.data.gameState, fromPeerId)
+          // CRITICAL: Call onStateUpdate to update host's React state
+          // This is especially important when guestCompletedScoringStep triggers a turn pass
+          if (finalState && this.config.onStateUpdate) {
+            this.config.onStateUpdate(finalState)
+          }
         }
         break
 
@@ -384,35 +393,10 @@ export class HostManager {
         }
         break
 
-      // Phase management messages
-      case 'NEXT_PHASE':
-        this.advancePhase()
-        break
-
-      case 'PREV_PHASE':
-        this.regressPhase()
-        break
-
-      case 'SET_PHASE':
-        if (message.data?.phaseIndex !== undefined) {
-          this.changePhase(message.data.phaseIndex, message.data.activePlayerId, fromPeerId)
-        }
-        break
-
-      case 'TOGGLE_ACTIVE_PLAYER':
-        if (message.data?.playerId !== undefined) {
-          this.toggleActivePlayer(message.data.playerId)
-        }
-        break
-
-      case 'TOGGLE_AUTO_DRAW':
-        if (guestPlayerId !== undefined) {
-          this.togglePlayerAutoDraw(guestPlayerId)
-        }
-        break
-
-      case 'START_NEXT_ROUND':
-        this.proceedToNextRound()
+      case 'REQUEST_GAME_RESET':
+        // Guest requests game reset from host
+        logger.info('[HostManager] Guest requested game reset')
+        this.resetGame()
         break
 
       // Visual effects messages (rebroadcast to all)
@@ -444,6 +428,11 @@ export class HostManager {
         if (message.data?.targetingMode) {
           // Update host's internal state and broadcast to all guests (excluding sender)
           this.stateManager.setTargetingMode(message.data.targetingMode, fromPeerId)
+          // Also update host's UI
+          const currentState = this.stateManager.getState()
+          if (currentState && this.config.onStateUpdate) {
+            this.config.onStateUpdate(currentState)
+          }
         }
         break
 
@@ -451,6 +440,11 @@ export class HostManager {
         // Update host's internal state and broadcast to all guests (excluding sender)
         logger.info(`[HostManager] Processing CLEAR_TARGETING_MODE from ${fromPeerId} (player ${guestPlayerId})`)
         this.stateManager.clearTargetingMode(fromPeerId)
+        // Also update host's UI
+        const currentStateForClear = this.stateManager.getState()
+        if (currentStateForClear && this.config.onStateUpdate) {
+          this.config.onStateUpdate(currentStateForClear)
+        }
         break
 
       // Ability activation messages
@@ -461,31 +455,79 @@ export class HostManager {
         break
 
       case 'ABILITY_MODE_SET':
-        // Rebroadcast ability mode to all guests
+        // Set ability mode and rebroadcast to all guests
         if (message.data?.abilityMode) {
-          this.connectionManager.broadcast({
+          logger.info('[HostManager] ABILITY_MODE_SET received from guest', {
+            fromPeerId,
+            guestPlayerId,
+            mode: message.data.abilityMode.mode,
+            boardTargetsCount: message.data.abilityMode.boardTargets?.length || 0,
+            handTargetsCount: message.data.abilityMode.handTargets?.length || 0,
+          })
+          // Update host's internal state
+          const currentState = this.stateManager.getState()
+          if (currentState) {
+            const newState = {
+              ...currentState,
+              abilityMode: message.data.abilityMode
+            }
+            this.stateManager.setInitialState(newState)
+            // Update host's UI
+            if (this.config.onStateUpdate) {
+              this.config.onStateUpdate(newState)
+            }
+          }
+
+          // Broadcast to all OTHER guests (exclude sender to prevent echo)
+          const successCount = this.connectionManager.broadcast({
             type: 'ABILITY_MODE_SET',
             senderId: this.connectionManager.getPeerId(),
             data: { abilityMode: message.data.abilityMode },
             timestamp: Date.now()
-          })
+          }, fromPeerId) // Exclude the original sender
+          logger.info(`[HostManager] Broadcast ABILITY_MODE_SET to ${successCount} other guests`)
         }
         break
 
       case 'ABILITY_TARGET_SELECTED':
-        // Rebroadcast target selection to all guests
+        // Rebroadcast target selection to all guests WITH click wave effect
         if (message.data) {
+          const { targetCoords, playerId } = message.data
+
+          // First broadcast the target selection
           this.connectionManager.broadcast({
             type: 'ABILITY_TARGET_SELECTED',
             senderId: this.connectionManager.getPeerId(),
             data: message.data,
             timestamp: Date.now()
           })
+
+          // Then broadcast click wave effect for visual feedback
+          if (targetCoords) {
+            const state = this.stateManager.getState()
+            const player = state?.players.find(p => p.id === playerId)
+            const wave = {
+              timestamp: Date.now(),
+              location: 'board',
+              boardCoords: targetCoords,
+              clickedByPlayerId: playerId,
+              playerColor: player?.color || '#ffffff'
+            }
+
+            this.connectionManager.broadcast({
+              type: 'CLICK_WAVE_TRIGGERED',
+              senderId: this.connectionManager.getPeerId(),
+              data: wave,
+              timestamp: Date.now()
+            })
+
+            logger.info(`[HostManager] Player ${playerId} selected target at (${targetCoords.row}, ${targetCoords.col})`)
+          }
         }
         break
 
       case 'ABILITY_COMPLETED':
-        // Rebroadcast ability completion to all guests
+        // Rebroadcast ability completion to all guests and clear targeting mode
         if (message.data) {
           this.connectionManager.broadcast({
             type: 'ABILITY_COMPLETED',
@@ -493,18 +535,241 @@ export class HostManager {
             data: message.data,
             timestamp: Date.now()
           })
+
+          // Clear targeting mode AND abilityMode on host
+          const state = this.stateManager.getState()
+          if (state) {
+            const newState: GameState = {
+              ...state,
+              targetingMode: null,
+              abilityMode: undefined
+            }
+            this.stateManager.setInitialState(newState)
+            // Update host's UI
+            if (this.config.onStateUpdate) {
+              this.config.onStateUpdate(newState)
+            }
+          }
+          logger.info('[HostManager] ABILITY_COMPLETED - cleared abilityMode and targetingMode')
         }
         break
 
       case 'ABILITY_CANCELLED':
-        // Rebroadcast ability cancellation to all guests
+        // Rebroadcast ability cancellation and clear targeting mode
         this.visualEffects.clearTargetingMode()
+
+        // Clear targeting mode on host state
+        const state = this.stateManager.getState()
+        if (state) {
+          const newState: GameState = {
+            ...state,
+            targetingMode: null
+          }
+          this.stateManager.setInitialState(newState)
+        }
+        break
+
+      // Phase system messages
+      case 'PHASE_STATE_UPDATE':
+      case 'PHASE_TRANSITION':
+      case 'TURN_CHANGE':
+      case 'ROUND_END':
+      case 'MATCH_END':
+      case 'SCORING_MODE_START':
+      case 'SCORING_MODE_COMPLETE':
+      case 'PHASE_ACTION_REQUEST':
+        // Forward to phase system if initialized
+        if ((this as any)._phaseManager && (this as any)._phaseSyncManager) {
+          this.handlePhaseMessage(message, fromPeerId)
+        } else {
+          logger.debug(`[HostManager] Phase system not initialized, ignoring ${message.type}`)
+        }
         break
 
       default:
         logger.debug(`[HostManager] Unhandled message type: ${message.type}`)
         break
     }
+  }
+
+  /**
+   * Handle phase-related message from guest
+   * Simple direct handling without complex PhaseManager
+   */
+  private handlePhaseMessage(message: any, fromPeerId: string): void {
+    try {
+      // Decode the phase action from binary message
+      const binaryData = parsePhaseMessage(message)
+      const phaseAction = decodePhaseAction(binaryData)
+
+      if (!phaseAction) {
+        logger.warn('[HostManager] Invalid phase action message')
+        return
+      }
+
+      // Get player ID from guest connection
+      const guest = this.connectionManager.getGuest(fromPeerId)
+      if (!guest || !guest.playerId) {
+        logger.warn('[HostManager] Unknown peer for phase action:', fromPeerId)
+        return
+      }
+
+      const playerId = guest.playerId
+
+      // Get state - any player can change phases
+      const state = this.stateManager.getState()
+      if (!state) return
+
+      // Debug logging
+      logger.info(`[HostManager] Phase action: ${phaseAction.action} by player ${playerId}, phase=${state.currentPhase}, activePlayer=${state.activePlayerId}`)
+
+      // Process the phase action
+      let newPhase = state.currentPhase
+      let newActivePlayer = state.activePlayerId
+
+      switch (phaseAction.action) {
+        case 1: // NEXT_PHASE
+          if (newPhase < 4) {
+            newPhase = newPhase + 1
+          }
+          break
+        case 2: // PREVIOUS_PHASE
+          if (newPhase > 0) {
+            newPhase = newPhase - 1
+          }
+          break
+        case 3: // PASS_TURN
+          // Pass to next player
+          const activePlayers = state.players.filter(p => !p.isDisconnected)
+          const currentPlayerIndex = activePlayers.findIndex(p => p.id === state.activePlayerId)
+          if (currentPlayerIndex >= 0 && activePlayers.length > 0) {
+            const nextPlayer = activePlayers[(currentPlayerIndex + 1) % activePlayers.length]
+            newActivePlayer = nextPlayer.id
+            newPhase = 0 // Preparation
+          }
+          break
+        case 4: // START_SCORING
+          newPhase = 4 // Scoring
+          break
+        case 9: // SET_PHASE - Direct phase setting from guest (PhaseActionType.SET_PHASE = 0x09)
+          if (phaseAction.data && phaseAction.data.phase !== undefined) {
+            newPhase = Math.max(0, Math.min(4, phaseAction.data.phase))
+          }
+          break
+        default:
+          logger.warn('[HostManager] Unknown phase action type:', phaseAction.action)
+          return
+      }
+
+      // Update state - create new object to trigger React re-render
+      const updatedState = {
+        ...state,
+        currentPhase: newPhase,
+        activePlayerId: newActivePlayer
+      }
+
+      // Update the actual state object
+      state.currentPhase = newPhase
+      state.activePlayerId = newActivePlayer
+
+      // Broadcast updated state to all
+      this.connectionManager.broadcast({
+        type: 'STATE_UPDATE_COMPACT_JSON',
+        data: { currentPhase: newPhase, activePlayerId: newActivePlayer },
+        senderId: this.connectionManager.getPeerId(),
+        timestamp: Date.now()
+      })
+
+      // Update host's React state with new object
+      if (this.config.onStateUpdate) {
+        this.config.onStateUpdate(updatedState)
+      }
+
+      logger.info(`[HostManager] Phase action: ${phaseAction.action} by player ${playerId}, phase=${newPhase}, activePlayer=${newActivePlayer}`)
+    } catch (e) {
+      logger.error('[HostManager] Failed to handle phase message:', e)
+    }
+  }
+
+  /**
+   * Public method to handle phase action (for host's own actions)
+   * Called by usePhaseActions when host clicks phase buttons
+   * Any player can change phases at any time
+   */
+  handlePhaseAction(actionType: number, playerId: number, data?: any): void {
+    const state = this.stateManager.getState()
+    if (!state) {
+      logger.warn('[HostManager] handlePhaseAction: No state')
+      return
+    }
+
+    logger.info(`[HostManager] handlePhaseAction called: actionType=${actionType}, playerId=${playerId}, currentPhase=${state.currentPhase}, activePlayerId=${state.activePlayerId}`)
+
+    // Process the phase action
+    let newPhase = state.currentPhase
+    let newActivePlayer = state.activePlayerId
+
+    logger.info(`[HostManager] Before switch: actionType=${actionType}, currentPhase=${newPhase}, activePlayerId=${newActivePlayer}`)
+
+    switch (actionType) {
+      case 1: // NEXT_PHASE
+        if (newPhase < 4) {
+          newPhase = newPhase + 1
+        }
+        break
+      case 2: // PREVIOUS_PHASE
+        if (newPhase > 0) {
+          newPhase = newPhase - 1
+        }
+        break
+      case 3: // PASS_TURN
+        // Pass to next player
+        const activePlayers = state.players.filter(p => !p.isDisconnected)
+        const currentPlayerIndex = activePlayers.findIndex(p => p.id === state.activePlayerId)
+        if (currentPlayerIndex >= 0 && activePlayers.length > 0) {
+          const nextPlayer = activePlayers[(currentPlayerIndex + 1) % activePlayers.length]
+          newActivePlayer = nextPlayer.id
+          newPhase = 0 // Preparation
+        }
+        break
+      case 4: // START_SCORING
+        newPhase = 4 // Scoring
+        break
+      case 9: // SET_PHASE - Direct phase setting (PhaseActionType.SET_PHASE = 0x09)
+        if (data && data.phase !== undefined) {
+          newPhase = Math.max(0, Math.min(4, data.phase))
+        }
+        break
+      default:
+        logger.warn('[HostManager] Unknown phase action type:', actionType)
+        return
+    }
+
+    // Update state - create new object to trigger React re-render
+    const updatedState = {
+      ...state,
+      currentPhase: newPhase,
+      activePlayerId: newActivePlayer
+    }
+
+    // Update the actual state object
+    state.currentPhase = newPhase
+    state.activePlayerId = newActivePlayer
+
+    // Broadcast updated state to all
+    this.connectionManager.broadcast({
+      type: 'STATE_UPDATE_COMPACT_JSON',
+      data: { currentPhase: newPhase, activePlayerId: newActivePlayer },
+      senderId: this.connectionManager.getPeerId(),
+      timestamp: Date.now()
+    })
+
+    // Update host's React state with new object
+    if (this.config.onStateUpdate) {
+      this.config.onStateUpdate(updatedState)
+    }
+
+    logger.info(`[HostManager] Phase action: ${actionType} by player ${playerId}, phase=${newPhase}, activePlayer=${newActivePlayer}`)
   }
 
   /**
@@ -519,7 +784,11 @@ export class HostManager {
     switch (actionType) {
       case 'STATE_UPDATE':
         if (actionData?.gameState) {
-          this.stateManager.updateFromGuest(guestPlayerId, actionData.gameState, fromPeerId)
+          const finalState = this.stateManager.updateFromGuest(guestPlayerId, actionData.gameState, fromPeerId)
+          // CRITICAL: Call onStateUpdate to update host's React state
+          if (finalState && this.config.onStateUpdate) {
+            this.config.onStateUpdate(finalState)
+          }
         }
         break
 
@@ -538,19 +807,16 @@ export class HostManager {
         }
         break
 
-      case 'REQUEST_GAME_RESET':
-        // Guest requests game reset from host
-        logger.info(`[handleAction] Player ${guestPlayerId} requested game reset`)
-        // Trigger reset - this will broadcast to all guests
-        this.resetGame()
-        break
-
       default:
         logger.debug(`[HostManager] Unhandled action type: ${actionType}`)
         break
     }
   }
 
+  /**
+   * Handle turn pass request from guest
+   * Called when guest has no cards on board or wants to auto-pass turn (e.g., after scoring)
+   */
   /**
    * Handle player deck change
    *
@@ -730,6 +996,9 @@ export class HostManager {
   /**
    * Handle ability activation from guest
    * Guest activates ability -> Host broadcasts ability mode to all clients
+   *
+   * SPECIAL CASE: Scoring abilities (SCORE_LAST_PLAYED_LINE, etc.)
+   * When in Scoring phase (4) and guest selects a scoring line, process it directly
    */
   private handleAbilityActivated(data: any, guestPlayerId: number | undefined, _fromPeerId: string): void {
     if (guestPlayerId === undefined) {
@@ -744,13 +1013,16 @@ export class HostManager {
     }
 
     // Verify it's this player's turn
-    if (state.activePlayerId !== guestPlayerId) {
+    // NOTE: For dummy players, allow any guest to activate
+    const player = state.players.find(p => p.id === guestPlayerId)
+    const isDummy = player?.isDummy || false
+    if (state.activePlayerId !== guestPlayerId && !isDummy) {
       logger.warn(`[HostManager] Player ${guestPlayerId} tried to activate ability but it's player ${state.activePlayerId}'s turn`)
       return
     }
 
-    // Find the card and verify it exists and is owned by the activating player
-    const { coords, cardId, cardName } = data
+    // Find the card and verify it exists
+    const { coords, cardId, cardName, abilityType: _abilityType, action, boardTargets, handTargets, mode } = data
     const card = state.board[coords.row]?.[coords.col]?.card
     if (!card) {
       logger.warn(`[HostManager] No card at coords (${coords.row}, ${coords.col})`)
@@ -761,14 +1033,96 @@ export class HostManager {
       return
     }
 
-    // Broadcast ability mode to all guests (including the sender for confirmation)
+    // SPECIAL CASE: Scoring line selection in Scoring phase
+    // Modes like: SCORE_LAST_PLAYED_LINE, INTEGRATOR_LINE_SELECT, ZIUS_LINE_SELECT, IP_AGENT_THREAT_SCORING
+    const isScoringMode = mode && (
+      mode === 'SCORE_LAST_PLAYED_LINE' ||
+      mode === 'INTEGRATOR_LINE_SELECT' ||
+      mode === 'ZIUS_LINE_SELECT' ||
+      mode === 'IP_AGENT_THREAT_SCORING' ||
+      mode.includes('SCORING') ||
+      mode.includes('LINE_SELECT')
+    )
+
+    if (isScoringMode && state.currentPhase === 4 && state.isScoringStep) {
+      logger.info(`[HostManager] Player ${guestPlayerId} selected scoring line with mode: ${mode}, data:`, data)
+
+      // For scoring in WebRTC mode, we need to:
+      // 1. Score the line (add points to player)
+      // 2. Clear isScoringStep
+      // 3. Pass turn to next player
+
+      // Process scoring - update player score based on line
+      // For now, we'll pass the turn since the actual scoring should be handled by the guest's local state
+      // and synced via STATE_UPDATE_COMPACT
+
+      // Clear scoring step - turn passing logic removed
+      let updatedState = {
+        ...state,
+        isScoringStep: false
+      }
+
+      // Update host state
+      this.stateManager.setInitialState(updatedState)
+
+      // Broadcast to all guests
+      this.connectionManager.broadcast({
+        type: 'SCORING_MODE_COMPLETE',
+        senderId: this.connectionManager.getPeerId(),
+        data: {
+          activePlayerId: updatedState.activePlayerId,
+          currentPhase: updatedState.currentPhase
+        },
+        timestamp: Date.now()
+      })
+
+      // Call onStateUpdate to update host's React state
+      if (this.config.onStateUpdate) {
+        this.config.onStateUpdate(updatedState)
+      }
+
+      logger.info(`[HostManager] Scoring complete, passed turn to player ${updatedState.activePlayerId}`)
+      return
+    }
+
+    // Calculate valid targets if not provided by guest
+    let finalBoardTargets = boardTargets
+    if (!finalBoardTargets && action) {
+      try {
+        finalBoardTargets = calculateValidTargets(action, state, guestPlayerId)
+      } catch (e) {
+        logger.warn('[HostManager] Failed to calculate targets:', e)
+        finalBoardTargets = []
+      }
+    }
+
+    // Build targeting mode data for state
+    const targetingModeData = {
+      playerId: guestPlayerId,
+      action: action || { type: 'ENTER_MODE' as const, mode: mode || 'SELECT_TARGET' },
+      sourceCoords: coords,
+      timestamp: Date.now(),
+      boardTargets: finalBoardTargets || [],
+      handTargets: handTargets || []
+    }
+
+    // Update host's targeting mode state
+    const newState: GameState = {
+      ...state,
+      targetingMode: targetingModeData
+    }
+    this.stateManager.setInitialState(newState)
+
+    // Broadcast ability mode with targeting info to all guests
     const abilityMode: any = {
       playerId: guestPlayerId,
       sourceCardId: cardId,
       sourceCardName: cardName || card.name,
       sourceCoords: coords,
-      mode: data.mode,
-      actionType: data.actionType,
+      mode: mode || 'SELECT_TARGET',
+      actionType: action?.payload?.actionType || data.actionType,
+      boardTargets: finalBoardTargets || [],
+      handTargets: handTargets || [],
       timestamp: Date.now()
     }
 
@@ -779,7 +1133,7 @@ export class HostManager {
       timestamp: Date.now()
     })
 
-    logger.info(`[HostManager] Player ${guestPlayerId} activated ${cardName} ability: ${data.mode}`)
+    logger.info(`[HostManager] Player ${guestPlayerId} activated ${cardName} ability: ${mode}, targets: ${finalBoardTargets?.length || 0}`)
   }
 
   /**
@@ -1032,170 +1386,6 @@ export class HostManager {
     if (this.config.onStateUpdate) {
       this.config.onStateUpdate(newState)
     }
-  }
-
-  // ==================== Phase Management ====================
-
-  /**
-   * Advance to next phase
-   */
-  advancePhase(): void {
-    const state = this.stateManager.getState()
-    if (!state) {return}
-
-    const oldPhase = state.currentPhase
-    const newState = nextPhase(state)
-
-    if (oldPhase !== newState.currentPhase) {
-      this.gameLogger.logPhaseTransition(oldPhase, newState.currentPhase)
-    }
-
-    // Check for round end when entering Setup phase
-    if (newState.currentPhase === 1) { // Setup phase
-      const { shouldEnd, roundWinners } = checkRoundEnd(newState)
-      if (shouldEnd) {
-        const endState = endRound(newState)
-        this.updateFromLocal(endState)
-
-        if (this.config.onRoundEnd) {
-          this.config.onRoundEnd(roundWinners, endState.currentRound || 1)
-        }
-
-        if (endState.gameWinner && this.config.onGameEnd) {
-          this.config.onGameEnd(endState.gameWinner)
-        }
-
-        return
-      }
-    }
-
-    this.updateFromLocal(newState)
-  }
-
-  /**
-   * Regress to previous phase
-   */
-  regressPhase(): void {
-    const state = this.stateManager.getState()
-    if (!state) {return}
-
-    const oldPhase = state.currentPhase
-    const newState = prevPhase(state)
-
-    if (oldPhase !== newState.currentPhase) {
-      this.gameLogger.logPhaseTransition(oldPhase, newState.currentPhase)
-    }
-
-    this.updateFromLocal(newState)
-  }
-
-  /**
-   * Set specific phase
-   */
-  changePhase(phaseIndex: number, activePlayerId?: number, excludePeerId?: string): void {
-    const state = this.stateManager.getState()
-    if (!state) {return}
-
-    const oldPhase = state.currentPhase
-    const newState = setPhase(state, phaseIndex)
-
-    // If guest provided activePlayerId, use it (for consistency)
-    if (activePlayerId !== undefined && activePlayerId !== null) {
-      newState.activePlayerId = activePlayerId
-    }
-
-    if (oldPhase !== newState.currentPhase) {
-      this.gameLogger.logPhaseTransition(oldPhase, newState.currentPhase)
-    }
-
-    this.updateFromLocal(newState, excludePeerId)
-  }
-
-  /**
-   * Toggle active player (select/deselect)
-   * Matches server behavior: clicking same player deselects, clicking different player selects
-   */
-  toggleActivePlayer(playerId: number): void {
-    const state = this.stateManager.getState()
-    if (!state) {return}
-
-    const oldPlayerId = state.activePlayerId
-    const newState = toggleActivePlayer(state, playerId)
-
-    this.gameLogger.logAction('ACTIVE_PLAYER_TOGGLED', {
-      from: oldPlayerId,
-      to: newState.activePlayerId,
-      targetPlayer: playerId
-    })
-
-    if (oldPlayerId !== newState.activePlayerId) {
-      // Cancel old turn timer, start new one if new player is selected
-      if (this.config.enableTimers !== false) {
-        if (oldPlayerId) {this.timerSystem.cancelTurnTimer(oldPlayerId)}
-        if (newState.activePlayerId) {
-          this.timerSystem.startTurnTimer(newState.activePlayerId)
-        }
-      }
-    }
-
-    this.updateFromLocal(newState)
-  }
-
-  /**
-   * Advance to next turn (for auto-cycle, not manual toggle)
-   * This is used when automatically moving to the next player in sequence
-   */
-  advanceTurn(): void {
-    const state = this.stateManager.getState()
-    if (!state) {return}
-
-    // Get all connected players (including dummies)
-    const allPlayers = state.players.filter(p => !p.isDisconnected)
-    if (allPlayers.length === 0) {return}
-
-    // Find current active player index
-    const currentIndex = allPlayers.findIndex(p => p.id === state.activePlayerId)
-
-    // Move to next player in sequence
-    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % allPlayers.length : 0
-    const nextPlayerId = allPlayers[nextIndex].id
-
-    this.toggleActivePlayer(nextPlayerId)
-  }
-
-  /**
-   * Toggle auto-draw for a player
-   */
-  togglePlayerAutoDraw(playerId: number): void {
-    const state = this.stateManager.getState()
-    if (!state) {return}
-
-    const newState = toggleAutoDraw(state, playerId)
-    this.updateFromLocal(newState)
-  }
-
-  /**
-   * Reset deploy status for all cards
-   */
-  clearDeployStatus(): void {
-    const state = this.stateManager.getState()
-    if (!state) {return}
-
-    const newState = resetDeployStatus(state)
-    this.updateFromLocal(newState)
-  }
-
-  /**
-   * Proceed to next round
-   */
-  proceedToNextRound(): void {
-    const state = this.stateManager.getState()
-    if (!state) {return}
-
-    const newState = startNextRound(state)
-    this.updateFromLocal(newState)
-
-    this.gameLogger.logRoundStart(newState.currentRound || 1)
   }
 
   // ==================== Visual Effects ====================
@@ -1551,6 +1741,17 @@ export class HostManager {
   cleanup(): void {
     logger.info('[HostManager] Cleaning up...')
 
+    // Cleanup phase system if initialized
+    if (this._phaseSyncManager) {
+      try {
+        this._phaseSyncManager.cleanup()
+      } catch (e) {
+        logger.warn('[HostManager] Failed to cleanup phase sync manager:', e)
+      }
+    }
+    this._phaseManager = undefined
+    this._phaseSyncManager = undefined
+
     this.gameLogger.cleanup()
     this.timerSystem.cleanup()
     this.stateManager.cleanup()
@@ -1668,6 +1869,15 @@ export class HostManager {
     })
 
     logger.info('[HostManager] Broadcasted GAME_RESET to all guests')
+  }
+
+  /**
+   * Configure or update callbacks after initialization
+   * This allows setting the onStateUpdate callback after the singleton is created
+   */
+  configure(config: Partial<HostManagerConfig>): void {
+    this.config = { ...this.config, ...config }
+    logger.info('[HostManager] Configuration updated')
   }
 
   /**

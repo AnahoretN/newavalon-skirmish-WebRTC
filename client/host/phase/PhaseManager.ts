@@ -1,0 +1,887 @@
+/**
+ * Phase Manager
+ *
+ * Core phase and turn management system for WebRTC P2P mode.
+ * The host controls all phase transitions and broadcasts updates to guests.
+ *
+ * Phase flow:
+ * 0. Preparation (invisible) -> Auto-draw + Round victory check -> Setup
+ * 1. Setup -> Card played -> Main
+ * 2. Main -> Next phase button -> Commit
+ * 3. Commit -> Next phase button (no cards on board) -> Pass turn OR Next phase button -> Scoring
+ * 4. Scoring -> Select line -> Score points -> Pass turn -> Preparation (next player)
+ */
+
+import type { GameState, Card } from '../../types'
+import type {
+  PhaseState,
+  PhaseTransitionResult,
+  PhaseTransitionReason,
+  PhaseSystemConfig,
+  RoundEndInfo,
+  ScoringLine,
+  ScoringSelectionMode
+} from './PhaseTypes'
+import {
+  GamePhase,
+  getNextPlayer,
+  getActivePlayerIds,
+  shouldRoundEnd,
+  determineRoundWinners,
+  checkMatchOver,
+  DEFAULT_PHASE_CONFIG
+} from './PhaseTypes'
+import { logger } from '../../utils/logger'
+
+/**
+ * Phase action request from a player
+ */
+export interface PhaseActionRequest {
+  action: string
+  playerId: number
+  data?: any
+}
+
+/**
+ * Callbacks for phase system events
+ */
+export interface PhaseSystemCallbacks {
+  onPhaseChanged?: (result: PhaseTransitionResult) => void
+  onRoundEnded?: (info: RoundEndInfo) => void
+  onMatchEnded?: (winnerId: number | null) => void
+  onScoringModeStarted?: (mode: ScoringSelectionMode) => void
+  onScoringModeCompleted?: (playerId: number, line: ScoringLine, points: number) => void
+  onCardDrawn?: (playerId: number, card: Card) => void
+  onStateUpdateRequired?: (newState: GameState) => void
+}
+
+/**
+ * Phase Manager - Controls all phase transitions on the host
+ */
+export class PhaseManager {
+  private state: GameState | null = null
+  private config: PhaseSystemConfig
+  private callbacks: PhaseSystemCallbacks
+
+  // Scoring selection mode
+  private scoringMode: ScoringSelectionMode = {
+    isActive: false,
+    activePlayerId: -1,
+    validLines: [],
+    selectedLine: null
+  }
+
+  // Track which players have auto-drawn in current turn
+  private autoDrawnThisTurn: Set<number> = new Set()
+
+  constructor(
+    config: Partial<PhaseSystemConfig> = {},
+    callbacks: PhaseSystemCallbacks = {}
+  ) {
+    this.config = { ...DEFAULT_PHASE_CONFIG, ...config }
+    this.callbacks = callbacks
+  }
+
+  /**
+   * Set the game state
+   */
+  setState(state: GameState): void {
+    this.state = state
+    this.config.autoDrawEnabled = state.autoDrawEnabled ?? true
+  }
+
+  /**
+   * Get current phase state
+   */
+  getPhaseState(): PhaseState {
+    if (!this.state) {
+      return {
+        currentPhase: GamePhase.PREPARATION,
+        activePlayerId: null,
+        startingPlayerId: null,
+        currentRound: 1,
+        turnNumber: 1,
+        isScoringStep: false,
+        isRoundEndModalOpen: false,
+        roundWinners: {},
+        gameWinner: null,
+        autoDrawEnabled: true,
+      }
+    }
+
+    return {
+      currentPhase: this.state.currentPhase as GamePhase,
+      activePlayerId: this.state.activePlayerId,
+      startingPlayerId: this.state.startingPlayerId,
+      currentRound: this.state.currentRound,
+      turnNumber: this.state.turnNumber,
+      isScoringStep: this.state.isScoringStep || false,
+      isRoundEndModalOpen: this.state.isRoundEndModalOpen || false,
+      roundWinners: this.state.roundWinners || {},
+      gameWinner: this.state.gameWinner || null,
+      autoDrawEnabled: this.state.autoDrawEnabled ?? true,
+    }
+  }
+
+  /**
+   * Handle phase action from a player
+   */
+  handleAction(request: PhaseActionRequest): PhaseTransitionResult | null {
+    if (!this.state) {
+      logger.warn('[PhaseManager] No state, ignoring action')
+      return null
+    }
+
+    const { action, playerId, data } = request
+
+    // Verify it's this player's turn (unless they're controlling a dummy)
+    const player = this.state.players.find(p => p.id === playerId)
+    if (!player) {
+      logger.warn(`[PhaseManager] Player ${playerId} not found`)
+      return null
+    }
+
+    const isDummyAction = player.isDummy || this.state.players.find(p => p.id === this.state?.activePlayerId)?.isDummy
+    if (this.state.activePlayerId !== playerId && !isDummyAction) {
+      logger.warn(`[PhaseManager] Player ${playerId} tried to act but it's player ${this.state.activePlayerId}'s turn`)
+      return null
+    }
+
+    // Handle different actions
+    switch (action) {
+      case 'NEXT_PHASE':
+        return this.handleNextPhase(playerId)
+
+      case 'PREVIOUS_PHASE':
+        return this.handlePreviousPhase(playerId)
+
+      case 'PASS_TURN':
+        return this.handlePassTurn(playerId, data?.reason)
+
+      case 'START_SCORING':
+        return this.handleStartScoring(playerId)
+
+      case 'SELECT_LINE':
+        return this.handleSelectLine(playerId, data?.line)
+
+      case 'ROUND_COMPLETE':
+        return this.handleRoundComplete(playerId)
+
+      case 'START_NEXT_ROUND':
+        return this.handleStartNextRound(playerId)
+
+      case 'START_NEW_MATCH':
+        return this.handleStartNewMatch(playerId)
+
+      default:
+        logger.warn(`[PhaseManager] Unknown action: ${action}`)
+        return null
+    }
+  }
+
+  /**
+   * Start the game - transition from lobby to first player's Preparation phase
+   */
+  startGame(startingPlayerId: number): PhaseTransitionResult {
+    if (!this.state) {
+      throw new Error('[PhaseManager] Cannot start game without state')
+    }
+
+    logger.info(`[PhaseManager] Starting game with player ${startingPlayerId}`)
+
+    const oldPhase = this.state.currentPhase as GamePhase
+    const oldActivePlayer = this.state.activePlayerId
+
+    // Update state
+    this.state.isGameStarted = true
+    this.state.currentPhase = GamePhase.PREPARATION
+    this.state.activePlayerId = startingPlayerId
+    this.state.startingPlayerId = startingPlayerId
+    this.state.currentRound = 1
+    this.state.turnNumber = 1
+
+    // Clear auto-drawn tracking
+    this.autoDrawnThisTurn.clear()
+
+    // Execute Preparation phase actions (auto-draw + victory check)
+    const prepResult = this.executePreparationPhase(startingPlayerId)
+
+    const result: PhaseTransitionResult = {
+      success: true,
+      oldPhase,
+      newPhase: prepResult.newPhase,
+      oldActivePlayer,
+      newActivePlayer: startingPlayerId,
+      reason: 'game_started' as PhaseTransitionReason,
+      ...(prepResult.roundEndInfo ? { roundEndInfo: prepResult.roundEndInfo } : {})
+    }
+
+    this.notifyPhaseChange(result)
+    return result
+  }
+
+  /**
+   * Handle next phase button
+   */
+  private handleNextPhase(playerId: number): PhaseTransitionResult | null {
+    if (!this.state) return null
+
+    const currentPhase = this.state.currentPhase as GamePhase
+
+    // If in Commit phase with no cards on board, auto-pass turn
+    if (currentPhase === GamePhase.COMMIT) {
+      const hasCardsOnBoard = this.hasPlayerCardsOnBoard(playerId)
+      if (!hasCardsOnBoard) {
+        return this.passTurnToNextPlayer('no_cards_on_board')
+      }
+    }
+
+    // Transition to next phase
+    return this.transitionToNextPhase(playerId)
+  }
+
+  /**
+   * Handle previous phase button
+   */
+  private handlePreviousPhase(playerId: number): PhaseTransitionResult | null {
+    if (!this.state) return null
+
+    const currentPhase = this.state.currentPhase as GamePhase
+
+    // Can't go back from Preparation or Setup
+    if (currentPhase <= GamePhase.SETUP) {
+      return null
+    }
+
+    // Go back one phase
+    const newPhase = currentPhase - 1 as GamePhase
+    return this.setPhase(newPhase, playerId, 'previous_phase' as PhaseTransitionReason)
+  }
+
+  /**
+   * Handle pass turn request
+   */
+  private handlePassTurn(_playerId: number, reason?: string): PhaseTransitionResult | null {
+    if (!this.state) return null
+
+    // Can only pass turn from Commit or Scoring
+    const currentPhase = this.state.currentPhase as GamePhase
+    if (currentPhase !== GamePhase.COMMIT && currentPhase !== GamePhase.SCORING) {
+      logger.warn(`[PhaseManager] Cannot pass turn from phase ${currentPhase}`)
+      return null
+    }
+
+    return this.passTurnToNextPlayer(reason || 'manual')
+  }
+
+  /**
+   * Handle start scoring (entering Scoring phase)
+   */
+  private handleStartScoring(playerId: number): PhaseTransitionResult | null {
+    if (!this.state) return null
+
+    // Must be in Commit phase to start scoring
+    const currentPhase = this.state.currentPhase as GamePhase
+    if (currentPhase !== GamePhase.COMMIT) {
+      logger.warn(`[PhaseManager] Cannot start scoring from phase ${currentPhase}`)
+      return null
+    }
+
+    // Transition to Scoring phase
+    const oldPhase = currentPhase
+    const oldActivePlayer = this.state.activePlayerId
+
+    this.state.currentPhase = GamePhase.SCORING
+    this.state.isScoringStep = true
+
+    // Calculate valid scoring lines
+    const validLines = this.calculateScoringLines(playerId)
+
+    // Activate scoring mode
+    this.scoringMode = {
+      isActive: true,
+      activePlayerId: playerId,
+      validLines,
+      selectedLine: null
+    }
+
+    const result: PhaseTransitionResult = {
+      success: true,
+      oldPhase,
+      newPhase: GamePhase.SCORING,
+      oldActivePlayer,
+      newActivePlayer: playerId,
+      reason: 'next_phase' as PhaseTransitionReason,
+      scoringStarted: true
+    }
+
+    this.notifyPhaseChange(result)
+    this.callbacks.onScoringModeStarted?.(this.scoringMode)
+
+    return result
+  }
+
+  /**
+   * Handle line selection in scoring mode
+   */
+  private handleSelectLine(playerId: number, line: ScoringLine | null): PhaseTransitionResult | null {
+    if (!this.state) return null
+    if (!this.scoringMode.isActive) {
+      logger.warn('[PhaseManager] No active scoring mode')
+      return null
+    }
+    if (this.scoringMode.activePlayerId !== playerId) {
+      logger.warn(`[PhaseManager] Player ${playerId} not the active scoring player`)
+      return null
+    }
+    if (!line) {
+      logger.warn('[PhaseManager] No line selected')
+      return null
+    }
+
+    // Calculate points from this line
+    const points = this.calculateLinePoints(line)
+
+    // Add points to player
+    const player = this.state.players.find(p => p.id === playerId)
+    if (player) {
+      player.score += points
+    }
+
+    // Clear scoring mode
+    this.scoringMode.isActive = false
+    this.state.isScoringStep = false
+
+    // Notify callback
+    this.callbacks.onScoringModeCompleted?.(playerId, line, points)
+
+    // Pass turn to next player
+    return this.passTurnToNextPlayer('scoring_complete')
+  }
+
+  /**
+   * Handle round complete (after round end modal)
+   */
+  private handleRoundComplete(playerId: number): PhaseTransitionResult | null {
+    if (!this.state) return null
+
+    // Only host/active player can confirm round end
+    if (this.state.activePlayerId !== playerId) {
+      return null
+    }
+
+    this.state.isRoundEndModalOpen = false
+
+    // Check if match is over
+    const matchCheck = checkMatchOver(this.state.roundWinners)
+    if (matchCheck.isOver) {
+      this.state.gameWinner = matchCheck.winner
+      this.callbacks.onMatchEnded?.(matchCheck.winner)
+    }
+
+    return null
+  }
+
+  /**
+   * Handle start next round (after round end)
+   */
+  private handleStartNextRound(playerId: number): PhaseTransitionResult | null {
+    if (!this.state) return null
+
+    // Only active player can start next round
+    if (this.state.activePlayerId !== playerId) {
+      return null
+    }
+
+    // Reset for next round
+    this.state.currentRound += 1
+    this.state.turnNumber += 1
+    this.state.currentPhase = GamePhase.PREPARATION
+    this.state.isScoringStep = false
+
+    // Reset all player scores
+    this.state.players.forEach(p => {
+      p.score = 0
+    })
+
+    // Same starting player continues
+    const nextPlayerId = this.state.startingPlayerId || playerId
+    this.state.activePlayerId = nextPlayerId
+
+    // Clear auto-drawn tracking
+    this.autoDrawnThisTurn.clear()
+
+    // Execute Preparation phase
+    const prepResult = this.executePreparationPhase(nextPlayerId)
+
+    const result: PhaseTransitionResult = {
+      success: true,
+      oldPhase: GamePhase.SCORING,
+      newPhase: prepResult.newPhase,
+      oldActivePlayer: playerId,
+      newActivePlayer: nextPlayerId,
+      reason: 'game_started' as PhaseTransitionReason,
+      ...(prepResult.roundEndInfo ? { roundEndInfo: prepResult.roundEndInfo } : {})
+    }
+
+    this.notifyPhaseChange(result)
+    return result
+  }
+
+  /**
+   * Handle start new match (after game over)
+   */
+  private handleStartNewMatch(playerId: number): PhaseTransitionResult | null {
+    if (!this.state) return null
+
+    // Reset match state
+    this.state.currentRound = 1
+    this.state.turnNumber = 1
+    this.state.currentPhase = GamePhase.PREPARATION
+    this.state.isScoringStep = false
+    this.state.roundWinners = {}
+    this.state.gameWinner = null
+    this.state.isRoundEndModalOpen = false
+
+    // Reset all player scores
+    this.state.players.forEach(p => {
+      p.score = 0
+    })
+
+    // Clear board
+    const gridSize = this.state.activeGridSize || 4
+    this.state.board = Array(gridSize).fill(null).map(() =>
+      Array(gridSize).fill(null).map(() => ({ card: null }))
+    )
+
+    // Random new starting player
+    const activePlayers = getActivePlayerIds(this.state.players)
+    const randomIndex = Math.floor(Math.random() * activePlayers.length)
+    const newStartingPlayerId = activePlayers[randomIndex]
+
+    this.state.activePlayerId = newStartingPlayerId
+    this.state.startingPlayerId = newStartingPlayerId
+
+    // Clear auto-drawn tracking
+    this.autoDrawnThisTurn.clear()
+
+    // Execute Preparation phase
+    const prepResult = this.executePreparationPhase(newStartingPlayerId)
+
+    const result: PhaseTransitionResult = {
+      success: true,
+      oldPhase: GamePhase.SCORING,
+      newPhase: prepResult.newPhase,
+      oldActivePlayer: playerId,
+      newActivePlayer: newStartingPlayerId,
+      reason: 'game_started' as PhaseTransitionReason,
+      ...(prepResult.roundEndInfo ? { roundEndInfo: prepResult.roundEndInfo } : {})
+    }
+
+    this.notifyPhaseChange(result)
+    return result
+  }
+
+  /**
+   * Transition to next phase
+   */
+  private transitionToNextPhase(playerId: number): PhaseTransitionResult | null {
+    if (!this.state) return null
+
+    const currentPhase = this.state.currentPhase as GamePhase
+
+    // Scoring phase is handled separately (select line -> auto-pass)
+    if (currentPhase === GamePhase.SCORING) {
+      return null
+    }
+
+    // Commit -> Scoring (or pass turn if no cards)
+    if (currentPhase === GamePhase.COMMIT) {
+      return this.handleStartScoring(playerId)
+    }
+
+    // Otherwise just increment phase
+    const nextPhase = (currentPhase + 1) as GamePhase
+
+    // Main -> Commit is just phase change
+    // Setup -> Main happens when card is played
+    // Preparation -> Setup happens automatically after prep actions
+    return this.setPhase(nextPhase, playerId, 'next_phase' as PhaseTransitionReason)
+  }
+
+  /**
+   * Set specific phase
+   */
+  private setPhase(
+    newPhase: GamePhase,
+    activePlayerId: number | null,
+    reason: PhaseTransitionReason
+  ): PhaseTransitionResult {
+    if (!this.state) {
+      throw new Error('[PhaseManager] No state')
+    }
+
+    const oldPhase = this.state.currentPhase as GamePhase
+    const oldActivePlayer = this.state.activePlayerId
+
+    this.state.currentPhase = newPhase
+
+    const result: PhaseTransitionResult = {
+      success: true,
+      oldPhase,
+      newPhase,
+      oldActivePlayer,
+      newActivePlayer: activePlayerId,
+      reason
+    }
+
+    this.notifyPhaseChange(result)
+    return result
+  }
+
+  /**
+   * Pass turn to next player in order
+   */
+  private passTurnToNextPlayer(_reason: string): PhaseTransitionResult {
+    if (!this.state) {
+      throw new Error('[PhaseManager] No state')
+    }
+
+    const oldActivePlayer = this.state.activePlayerId
+    const oldPhase = this.state.currentPhase as GamePhase
+
+    // Get next player
+    const activePlayerIds = getActivePlayerIds(this.state.players)
+    if (activePlayerIds.length === 0) {
+      logger.warn('[PhaseManager] No active players to pass turn to')
+      throw new Error('[PhaseManager] No active players')
+    }
+
+    const nextPlayerId = getNextPlayer(oldActivePlayer || 1, activePlayerIds)
+
+    // Check if we've completed a full orbit (back to starting player)
+    if (nextPlayerId === this.state.startingPlayerId) {
+      this.state.turnNumber += 1
+    }
+
+    // Set new active player
+    this.state.activePlayerId = nextPlayerId
+    this.state.currentPhase = GamePhase.PREPARATION
+    this.state.isScoringStep = false
+
+    // Clear auto-drawn tracking
+    this.autoDrawnThisTurn.clear()
+
+    // Execute Preparation phase for new player
+    const prepResult = this.executePreparationPhase(nextPlayerId)
+
+    const result: PhaseTransitionResult = {
+      success: true,
+      oldPhase,
+      newPhase: prepResult.newPhase,
+      oldActivePlayer,
+      newActivePlayer: nextPlayerId,
+      reason: 'turn_started' as PhaseTransitionReason,
+      ...(prepResult.roundEndInfo ? { roundEndInfo: prepResult.roundEndInfo } : {})
+    }
+
+    this.notifyPhaseChange(result)
+    return result
+  }
+
+  /**
+   * Execute Preparation phase actions
+   * - Auto-draw card if enabled
+   * - Check round victory
+   * - Auto-transition to Setup
+   */
+  private executePreparationPhase(playerId: number): {
+    roundEndInfo?: RoundEndInfo
+    newPhase: GamePhase
+  } {
+    if (!this.state) {
+      return { newPhase: GamePhase.SETUP }
+    }
+
+    // 1. Auto-draw if enabled and hasn't drawn yet this turn
+    if (this.config.autoDrawEnabled && !this.autoDrawnThisTurn.has(playerId)) {
+      this.performAutoDraw(playerId)
+      this.autoDrawnThisTurn.add(playerId)
+    }
+
+    // 2. Check round victory
+    if (shouldRoundEnd(this.state.players, this.state.currentRound)) {
+      const winners = determineRoundWinners(this.state.players)
+
+      // Update round winners
+      this.state.roundWinners[this.state.currentRound] = winners
+
+      // Check match victory
+      const matchCheck = checkMatchOver(this.state.roundWinners)
+
+      const roundEndInfo: RoundEndInfo = {
+        roundNumber: this.state.currentRound,
+        winners,
+        roundWinners: { ...this.state.roundWinners },
+        isMatchOver: matchCheck.isOver,
+        matchWinner: matchCheck.winner
+      }
+
+      // Open round end modal
+      this.state.isRoundEndModalOpen = true
+      this.state.gameWinner = matchCheck.winner
+
+      // Notify callbacks
+      this.callbacks.onRoundEnded?.(roundEndInfo)
+      if (matchCheck.isOver) {
+        this.callbacks.onMatchEnded?.(matchCheck.winner)
+      }
+
+      // Stay in Preparation (modal open)
+      return { roundEndInfo, newPhase: GamePhase.PREPARATION }
+    }
+
+    // 3. Auto-transition to Setup
+    this.state.currentPhase = GamePhase.SETUP
+    return { newPhase: GamePhase.SETUP }
+  }
+
+  /**
+   * Perform auto-draw for a player
+   */
+  private performAutoDraw(playerId: number): void {
+    if (!this.state) return
+
+    const player = this.state.players.find(p => p.id === playerId)
+    if (!player || !player.deck || player.deck.length === 0) {
+      return
+    }
+
+    // Draw top card
+    const drawnCard = player.deck.shift()
+    if (drawnCard) {
+      player.hand.push(drawnCard)
+      player.deckSize = player.deck.length
+      player.handSize = player.hand.length
+
+      this.callbacks.onCardDrawn?.(playerId, drawnCard)
+      logger.info(`[PhaseManager] Auto-drew card for player ${playerId}`)
+    }
+  }
+
+  /**
+   * Calculate valid scoring lines for a player
+   */
+  private calculateScoringLines(playerId: number): ScoringLine[] {
+    const lines: ScoringLine[] = []
+    if (!this.state) return lines
+
+    const board = this.state.board
+    const size = board.length
+
+    // Find all cells with player's "last played" cards
+    const playerCells: Array<{ row: number; col: number; card: Card }> = []
+
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) {
+        const cell = board[row]?.[col]
+        const card = cell?.card
+        if (card && card.ownerId === playerId) {
+          // Check if this is the last played card (in boardHistory)
+          const player = this.state.players.find(p => p.id === playerId)
+          const boardHistory = player?.boardHistory
+          if (boardHistory && boardHistory.length > 0) {
+            const lastCardId = boardHistory[boardHistory.length - 1]
+            if (card.id === lastCardId) {
+              playerCells.push({ row, col, card })
+            }
+          }
+        }
+      }
+    }
+
+    // If no last played cards, can't score
+    if (playerCells.length === 0) {
+      return lines
+    }
+
+    // For each cell with player's last played card, find valid lines
+    for (const { row, col } of playerCells) {
+      // Row
+      const rowCells: Array<{ row: number; col: number }> = []
+      for (let c = 0; c < size; c++) {
+        rowCells.push({ row, col: c })
+      }
+      const rowLine: ScoringLine = {
+        type: 'row',
+        index: row,
+        cells: rowCells,
+        scoringPlayerId: playerId,
+        potentialPoints: this.calculateLinePoints({ type: 'row', index: row, cells: rowCells, scoringPlayerId: playerId })
+      }
+      if (rowLine.potentialPoints > 0 && !lines.some(l => l.type === 'row' && l.index === row)) {
+        lines.push(rowLine)
+      }
+
+      // Column
+      const colCells: Array<{ row: number; col: number }> = []
+      for (let r = 0; r < size; r++) {
+        colCells.push({ row: r, col })
+      }
+      const colLine: ScoringLine = {
+        type: 'col',
+        index: col,
+        cells: colCells,
+        scoringPlayerId: playerId,
+        potentialPoints: this.calculateLinePoints({ type: 'col', index: col, cells: colCells, scoringPlayerId: playerId })
+      }
+      if (colLine.potentialPoints > 0 && !lines.some(l => l.type === 'col' && l.index === col)) {
+        lines.push(colLine)
+      }
+
+      // Diagonal (if on main diagonal)
+      if (row === col) {
+        const diagCells: Array<{ row: number; col: number }> = []
+        for (let i = 0; i < size; i++) {
+          diagCells.push({ row: i, col: i })
+        }
+        const diagLine: ScoringLine = {
+          type: 'diagonal',
+          index: 0,
+          cells: diagCells,
+          scoringPlayerId: playerId,
+          potentialPoints: this.calculateLinePoints({ type: 'diagonal', index: 0, cells: diagCells, scoringPlayerId: playerId })
+        }
+        if (diagLine.potentialPoints > 0 && !lines.some(l => l.type === 'diagonal')) {
+          lines.push(diagLine)
+        }
+      }
+
+      // Anti-diagonal (if on anti-diagonal)
+      if (row + col === size - 1) {
+        const antiDiagCells: Array<{ row: number; col: number }> = []
+        for (let i = 0; i < size; i++) {
+          antiDiagCells.push({ row: i, col: size - 1 - i })
+        }
+        const antiDiagLine: ScoringLine = {
+          type: 'anti-diagonal',
+          index: 0,
+          cells: antiDiagCells,
+          scoringPlayerId: playerId,
+          potentialPoints: this.calculateLinePoints({ type: 'anti-diagonal', index: 0, cells: antiDiagCells, scoringPlayerId: playerId })
+        }
+        if (antiDiagLine.potentialPoints > 0 && !lines.some(l => l.type === 'anti-diagonal')) {
+          lines.push(antiDiagLine)
+        }
+      }
+    }
+
+    return lines
+  }
+
+  /**
+   * Calculate points from a scoring line
+   */
+  private calculateLinePoints(line: Omit<ScoringLine, 'potentialPoints'>): number {
+    if (!this.state) return 0
+
+    let points = 0
+    const playerId = line.scoringPlayerId
+
+    for (const { row, col } of line.cells) {
+      const cell = this.state.board[row]?.[col]
+      const card = cell?.card
+      if (card && card.ownerId === playerId) {
+        points += card.power + (card.powerModifier || 0)
+      }
+    }
+
+    return points
+  }
+
+  /**
+   * Check if player has cards on board
+   */
+  private hasPlayerCardsOnBoard(playerId: number): boolean {
+    if (!this.state) return false
+
+    for (const row of this.state.board) {
+      for (const cell of row) {
+        const card = cell?.card
+        if (card && card.ownerId === playerId) {
+          return true
+        }
+      }
+    }
+
+    return false
+  }
+
+  /**
+   * Get current scoring mode
+   */
+  getScoringMode(): ScoringSelectionMode {
+    return this.scoringMode
+  }
+
+  /**
+   * Check if player can perform an action
+   */
+  canPlayerAct(playerId: number): boolean {
+    if (!this.state) return false
+
+    // Active player can always act
+    if (this.state.activePlayerId === playerId) {
+      return true
+    }
+
+    // Anyone can act for dummy players
+    const activePlayer = this.state.players.find(p => p.id === this.state?.activePlayerId)
+    if (activePlayer?.isDummy) {
+      return true
+    }
+
+    return false
+  }
+
+  /**
+   * Notify phase change callbacks
+   */
+  private notifyPhaseChange(result: PhaseTransitionResult): void {
+    this.callbacks.onPhaseChanged?.(result)
+
+    // Trigger state update callback
+    if (this.state && this.callbacks.onStateUpdateRequired) {
+      this.callbacks.onStateUpdateRequired(this.state)
+    }
+  }
+
+  /**
+   * Update configuration
+   */
+  updateConfig(config: Partial<PhaseSystemConfig>): void {
+    this.config = { ...this.config, ...config }
+  }
+
+  /**
+   * Update callbacks
+   */
+  updateCallbacks(callbacks: Partial<PhaseSystemCallbacks>): void {
+    this.callbacks = { ...this.callbacks, ...callbacks }
+  }
+
+  /**
+   * Reset manager state
+   */
+  reset(): void {
+    this.scoringMode = {
+      isActive: false,
+      activePlayerId: -1,
+      validLines: [],
+      selectedLine: null
+    }
+    this.autoDrawnThisTurn.clear()
+  }
+}
+
+export default PhaseManager

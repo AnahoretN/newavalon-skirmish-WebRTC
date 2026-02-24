@@ -43,6 +43,16 @@ export type WebrtcMessageType =
   | 'TOGGLE_AUTO_DRAW'     // Toggle auto draw
   | 'START_NEXT_ROUND'     // Start next round
   | 'RESET_DEPLOY_STATUS'  // Reset deploy status
+  // Phase system messages (ultra-compact binary encoding)
+  | 'PHASE_STATE_UPDATE'   // Full phase state broadcast (10 bytes)
+  | 'PHASE_TRANSITION'     // Phase transition notification (5 bytes)
+  | 'TURN_CHANGE'          // Turn changed notification (3 bytes)
+  | 'ROUND_END'            // Round ended notification
+  | 'MATCH_END'            // Match ended notification
+  | 'SCORING_MODE_START'   // Scoring line selection started
+  | 'SCORING_MODE_COMPLETE'// Scoring line selected, points awarded
+  | 'PHASE_ACTION_REQUEST' // Guest requests phase action
+  | 'PHASE_ACTION_RESULT'  // Host responds to phase action request
   // Visual effects messages (rebroadcast by host to all guests)
   | 'TRIGGER_HIGHLIGHT'    // Highlight a cell on the board
   | 'TRIGGER_FLOATING_TEXT'// Show floating text
@@ -97,6 +107,9 @@ export type WebrtcMessageType =
   | 'CARD_STATUS_SYNC'     // Sync card status changes (readyDeploy, setupUsedThisTurn, etc.)
   // Board card synchronization (optimized - only card data on board)
   | 'BOARD_CARD_SYNC'      // Sync board cards (cardId, row, col, statuses, power, etc.)
+  | 'REQUEST_TURN_PASS'    // Guest requests to auto-pass turn (no cards on board, etc.)
+  | 'SCORING_COMPLETE_AND_TURN_PASS' // Host completed scoring and passed turn
+  | 'REQUEST_GAME_RESET'   // Guest requests game reset from host
 
 export interface WebrtcMessage {
   type: WebrtcMessageType

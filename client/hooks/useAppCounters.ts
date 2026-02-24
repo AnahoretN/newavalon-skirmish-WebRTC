@@ -72,12 +72,23 @@ export const useAppCounters = ({
 
       // Determine who is performing the action (Effective Actor)
       let effectiveActorId = localPlayerId
-      // First, try to get actor from originalOwnerId (preserves command card ownership)
-      if (cursorStack.originalOwnerId !== undefined) {
+
+      // CRITICAL: If active player is dummy, ALL actions should be attributed to the dummy player
+      // This ensures tokens/statuses belong to the dummy player, not the player controlling them
+      if (gameState.activePlayerId) {
+        const activePlayer = gameState.players.find(p => p.id === gameState.activePlayerId)
+        if (activePlayer?.isDummy) {
+          effectiveActorId = activePlayer.id
+        }
+      }
+
+      // Otherwise, try to get actor from originalOwnerId (preserves command card ownership)
+      // Only use these if active player is NOT dummy
+      if (effectiveActorId === localPlayerId && cursorStack.originalOwnerId !== undefined) {
         effectiveActorId = cursorStack.originalOwnerId
-      } else if (cursorStack.sourceCard?.ownerId) {
+      } else if (effectiveActorId === localPlayerId && cursorStack.sourceCard?.ownerId) {
         effectiveActorId = cursorStack.sourceCard.ownerId
-      } else if (cursorStack.sourceCoords && cursorStack.sourceCoords.row >= 0) {
+      } else if (effectiveActorId === localPlayerId && cursorStack.sourceCoords && cursorStack.sourceCoords.row >= 0) {
         const { row, col } = cursorStack.sourceCoords
         // Validate bounds before accessing board
         if (
@@ -90,11 +101,6 @@ export const useAppCounters = ({
           if (sourceCard) {
             effectiveActorId = sourceCard.ownerId || localPlayerId
           }
-        }
-      } else if (gameState.activePlayerId) {
-        const activePlayer = gameState.players.find(p => p.id === gameState.activePlayerId)
-        if (activePlayer?.isDummy) {
-          effectiveActorId = activePlayer.id
         }
       }
 

@@ -13,7 +13,6 @@ import type { HostConnectionManager } from './HostConnectionManager'
 import type { UltraCompactCardData, UltraCompactCardRef, CompactStatus } from './StatePersonalization'
 import { createDeltaFromStates, isDeltaEmpty, applyStateDelta } from '../utils/stateDelta'
 import { logger } from '../utils/logger'
-import { performPreparationPhase } from './PhaseManagement'
 import { getCardDefinition } from '../content'
 
 /**
@@ -196,24 +195,14 @@ export class HostStateManager {
     }
 
     const oldState = this.currentState
-    const phaseChanged = oldState.currentPhase !== newState.currentPhase
-    const activePlayerChanged = oldState.activePlayerId !== newState.activePlayerId
-
-    // Create delta from old state to new state
     const delta = createDeltaFromStates(oldState, newState, this.localPlayerId || 0)
-
-    // Update internal state
     this.currentState = newState
 
-    // Broadcast delta to all guests (excluding sender if provided)
+    // Broadcast to all guests
     if (!isDeltaEmpty(delta)) {
       this.broadcastDelta(delta, excludePeerId)
-      logger.info(`[HostStateManager] Local change broadcast via delta: phase=${!!delta.phaseDelta}, players=${Object.keys(delta.playerDeltas || {}).length}`)
-    } else if (phaseChanged || activePlayerChanged) {
-      // Delta system is stub (returns empty delta), so broadcast full state for important changes
-      // This ensures guests receive phase changes and active player changes
+    } else {
       this.connectionManager.broadcastGameState(newState, excludePeerId)
-      logger.info(`[HostStateManager] Local change broadcast via full state: phaseChanged=${phaseChanged}, activePlayerChanged=${activePlayerChanged}, newPhase=${newState.currentPhase}, activePlayerId=${newState.activePlayerId}`)
     }
   }
 
@@ -225,21 +214,13 @@ export class HostStateManager {
    * - handCards: [{ id, baseId, isFaceDown, statuses: [{type}] }]
    * - deckCardRefs: [{ index, id }] - reconstruct using contentDatabase
    * - discardCards: [{ id, baseId, isFaceDown, statuses: [{type}] }]
+   *
+   * @returns The final state after all updates
    */
-  updateFromGuest(guestPlayerId: number, guestState: GameState, excludePeerId?: string): void {
+  updateFromGuest(guestPlayerId: number, guestState: GameState, excludePeerId?: string): GameState | null {
     if (!this.currentState) {
       logger.warn('[HostStateManager] No current state, ignoring guest update')
-      return
-    }
-
-    // Log scores before merge for debugging
-    const guestPlayerData = guestState.players.find(p => p.id === guestPlayerId)
-    if (guestPlayerData) {
-      logger.info(`[HostStateManager] Guest ${guestPlayerId} score in guestState: ${guestPlayerData.score}`)
-    }
-    const hostPlayerData = this.currentState.players.find(p => p.id === guestPlayerId)
-    if (hostPlayerData) {
-      logger.info(`[HostStateManager] Guest ${guestPlayerId} score in hostState: ${hostPlayerData.score}`)
+      return null
     }
 
     // Merge guest state with host state
@@ -319,51 +300,27 @@ export class HostStateManager {
       }
     })
 
-    // Create new merged state
+    // Simple merge - take guest state but preserve host's authoritative fields
     const oldState = this.currentState
     const newState: GameState = {
       ...guestState,
       players: mergedPlayers,
-      // Use guest's board - it contains the latest changes from the active player
-      // The guest state should have the correct board state after their action
+      // Use guest's board - it contains the latest changes
       board: guestState.board,
-      currentPhase: guestState.currentPhase ?? oldState.currentPhase,
-      activePlayerId: guestState.activePlayerId ?? oldState.activePlayerId,
     }
 
     // Create delta and broadcast
     const delta = createDeltaFromStates(oldState, newState, guestPlayerId)
-
     this.currentState = newState
 
-    const phaseChanged = oldState.currentPhase !== newState.currentPhase
-    const activePlayerChanged = oldState.activePlayerId !== newState.activePlayerId
-
     if (!isDeltaEmpty(delta)) {
-      // Broadcast to all guests (excluding the sender if needed)
       this.broadcastDelta(delta, excludePeerId)
-      logger.info(`[HostStateManager] Guest ${guestPlayerId} update broadcast: phase=${!!delta.phaseDelta}, players=${Object.keys(delta.playerDeltas || {}).length}`)
-    } else if (phaseChanged || activePlayerChanged) {
-      // Delta system is stub (returns empty delta), so broadcast full state for important changes
+      logger.info(`[HostStateManager] Guest ${guestPlayerId} update broadcast`)
+    } else {
       this.connectionManager.broadcastGameState(newState, excludePeerId)
-      logger.info(`[HostStateManager] Guest ${guestPlayerId} update broadcast via full state: phaseChanged=${phaseChanged}, activePlayerChanged=${activePlayerChanged}`)
     }
 
-    // Special handling: Guest completed scoring step (isScoringStep went from true to false)
-    // Host should pass turn to next player
-    const scoringStepCompleted = oldState.isScoringStep && !newState.isScoringStep &&
-                                guestPlayerId === newState.activePlayerId &&
-                                newState.currentPhase === 4
-
-    if (scoringStepCompleted) {
-      logger.info(`[HostStateManager] Guest ${guestPlayerId} completed scoring step, passing turn`)
-      // Import and use passTurnToNextPlayer
-      const { passTurnToNextPlayer } = require('./PhaseManagement')
-      const turnPassedState = passTurnToNextPlayer(newState)
-      this.currentState = turnPassedState
-      this.connectionManager.broadcastGameState(turnPassedState, excludePeerId)
-      logger.info(`[HostStateManager] Turn passed to player ${turnPassedState.activePlayerId}, phase ${turnPassedState.currentPhase}`)
-    }
+    return this.currentState
   }
 
   /**
@@ -375,26 +332,15 @@ export class HostStateManager {
       return
     }
 
-    // Apply delta to current state
     const oldState = this.currentState
     const newState = applyStateDelta(oldState, delta, guestPlayerId)
-
-    // Create new delta from the change (this ensures sourcePlayerId is set correctly)
     const newDelta = createDeltaFromStates(oldState, newState, guestPlayerId)
-
     this.currentState = newState
 
-    const phaseChanged = oldState.currentPhase !== newState.currentPhase
-    const activePlayerChanged = oldState.activePlayerId !== newState.activePlayerId
-
     if (!isDeltaEmpty(newDelta)) {
-      // Broadcast to all guests except the sender
       this.broadcastDelta(newDelta, senderPeerId)
-      logger.info(`[HostStateManager] Guest ${guestPlayerId} delta broadcast: phase=${!!newDelta.phaseDelta}, players=${Object.keys(newDelta.playerDeltas || {}).length}`)
-    } else if (phaseChanged || activePlayerChanged) {
-      // Delta system is stub (returns empty delta), so broadcast full state for important changes
+    } else {
       this.connectionManager.broadcastGameState(newState, senderPeerId)
-      logger.info(`[HostStateManager] Guest ${guestPlayerId} delta broadcast via full state: phaseChanged=${phaseChanged}, activePlayerChanged=${activePlayerChanged}`)
     }
   }
 
@@ -579,8 +525,8 @@ export class HostStateManager {
       return player
     })
 
-    // Perform Preparation phase for starting player (draws 7th card and transitions to Setup)
-    newState = performPreparationPhase(newState, startingPlayerId)
+    // Preparation phase logic removed - just set phase to Setup
+    newState.currentPhase = 1 // Setup phase
 
     logger.info(`[HostStateManager] Preparation phase completed, now in phase ${newState.currentPhase} (Setup)`)
 
@@ -659,9 +605,16 @@ export class HostStateManager {
 
     this.currentState = newState
 
-    // Broadcast full state to all guests (excluding sender if provided)
-    this.connectionManager.broadcastGameState(newState, excludePeerId)
-    logger.info(`[HostStateManager] Targeting mode set by player ${targetingMode.playerId}, broadcasting to all guests`)
+    // Broadcast targeting mode via dedicated message (not via CARD_STATE)
+    // This ensures targetingMode is properly synchronized even though it's not in the binary codec
+    this.connectionManager.broadcast({
+      type: 'SET_TARGETING_MODE',
+      senderId: this.connectionManager.getPeerId(),
+      data: { targetingMode },
+      timestamp: Date.now()
+    }, excludePeerId)
+
+    logger.info(`[HostStateManager] Targeting mode set by player ${targetingMode.playerId}, broadcasting SET_TARGETING_MODE to all guests`)
   }
 
   /**
@@ -680,8 +633,14 @@ export class HostStateManager {
 
     this.currentState = newState
 
-    // Broadcast full state to all guests (excluding sender if provided)
-    this.connectionManager.broadcastGameState(newState, excludePeerId)
-    logger.info('[HostStateManager] Targeting mode cleared, broadcasting to all guests')
+    // Broadcast targeting mode clear via dedicated message
+    this.connectionManager.broadcast({
+      type: 'CLEAR_TARGETING_MODE',
+      senderId: this.connectionManager.getPeerId(),
+      data: { timestamp: Date.now() },
+      timestamp: Date.now()
+    }, excludePeerId)
+
+    logger.info('[HostStateManager] Targeting mode cleared, broadcasting CLEAR_TARGETING_MODE to all guests')
   }
 }

@@ -1,5 +1,5 @@
 import React, { memo, useMemo, useCallback, useState } from 'react'
-import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerColor, HighlightData, FloatingTextData, TargetingModeData, ClickWave, CursorStackState } from '@/types'
+import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerColor, HighlightData, FloatingTextData, TargetingModeData, ClickWave, CursorStackState, AbilityAction } from '@/types'
 import { ClickWave as ClickWaveComponent } from './ClickWave'
 import { Card } from './Card'
 import { PLAYER_COLORS, FLOATING_TEXT_COLORS, PLAYER_COLOR_RGB } from '@/constants'
@@ -35,11 +35,20 @@ interface GameBoardProps {
   abilitySourceCoords?: { row: number, col: number } | null;
   abilityCheckKey?: number;
   targetingMode?: TargetingModeData | null; // Shared targeting mode from gameState
+  abilityMode?: AbilityAction | null; // For line selection mode highlight color
   clickWaves?: ClickWave[];
   triggerClickWave?: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
   // Mode cancellation props (right-click to cancel)
   setCursorStack?: (value: CursorStackState | null) => void;
   onCancelAllModes?: () => void;
+}
+
+// Helper to check if an ability mode is a line selection mode
+const isLineSelectionMode = (mode: string | undefined): boolean => {
+  return mode === 'SCORE_LAST_PLAYED_LINE' ||
+         mode === 'SELECT_LINE_END' ||
+         mode === 'INTEGRATOR_LINE_SELECT' ||
+         mode === 'ZIUS_LINE_SELECT'
 }
 
 const GridCell = memo<{
@@ -67,11 +76,13 @@ const GridCell = memo<{
   isTargetingModeValidTarget?: boolean;
   targetingModePlayerId?: number;
   targetingModeOriginalOwnerId?: number; // The command card owner (for correct highlight color)
+  targetingModeActionMode?: string | undefined; // The mode from targetingMode.action.mode
   showNoTarget?: boolean;
   disableActiveHighlights?: boolean;
   preserveDeployAbilities?: boolean;
   abilitySourceCoords?: { row: number, col: number } | null;
   abilityCheckKey?: number;
+  abilityMode?: AbilityAction | null; // For line selection mode highlight color
   setCursorStack?: (value: CursorStackState | null) => void;
   onCancelAllModes?: () => void;
   triggerClickWave?: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
@@ -82,9 +93,9 @@ const GridCell = memo<{
       onCardDoubleClick, onEmptyCellDoubleClick, imageRefreshVersion, cursorStack,
       currentPhase, activePlayerId, onCardClick, onEmptyCellClick,
       isValidTarget, isTargetingModeValidTarget, targetingModePlayerId,
-      targetingModeOriginalOwnerId,
+      targetingModeOriginalOwnerId, targetingModeActionMode,
       showNoTarget, disableActiveHighlights, preserveDeployAbilities,
-      abilitySourceCoords, abilityCheckKey, setCursorStack: _setCursorStack, onCancelAllModes,
+      abilitySourceCoords, abilityCheckKey, abilityMode, setCursorStack: _setCursorStack, onCancelAllModes,
       triggerClickWave,
   } = props
 
@@ -242,7 +253,8 @@ const GridCell = memo<{
           )}
 
           {/* Targeting mode highlight - shows valid targets from another player's targeting mode */}
-          {isTargetingModeValidTarget && (targetingModePlayerId || targetingModeOriginalOwnerId) && (() => {
+          {/* NOT shown for line selection modes - they use dashed border instead */}
+          {isTargetingModeValidTarget && (targetingModePlayerId || targetingModeOriginalOwnerId) && !isLineSelectionMode(targetingModeActionMode) && (() => {
             // Prefer originalOwnerId (command card owner) for highlight color, fallback to playerId
             const highlightOwnerId = targetingModeOriginalOwnerId ?? targetingModePlayerId
             const targetingPlayerColor = highlightOwnerId !== undefined ? playerColorMap.get(highlightOwnerId) : undefined
@@ -258,6 +270,30 @@ const GridCell = memo<{
                   zIndex: 50,
                   boxShadow: `0 0 12px 2px ${rgba(glowRgb, 0.5)}`,
                   border: '3px solid',
+                  borderColor: `rgb(255, 255, 255)`,
+                  background: `radial-gradient(circle at center, transparent 20%, ${rgba(rgb, 0.5)} 100%)`,
+                }}
+              />
+            )
+          })()}
+
+          {/* Line selection modes highlight - dashed border for SCORE_LAST_PLAYED_LINE, etc. */}
+          {/* Check if this is a line selection mode (dashed border, lower priority than regular targeting) */}
+          {(isLineSelectionMode(abilityMode?.mode) || isLineSelectionMode(targetingModeActionMode)) && isValidTarget && (() => {
+            const highlightOwnerId = activePlayerId ?? localPlayerId ?? targetingModePlayerId
+            const targetingPlayerColor = highlightOwnerId !== undefined ? playerColorMap.get(highlightOwnerId) : undefined
+            const rgb = targetingPlayerColor && PLAYER_COLOR_RGB[targetingPlayerColor]
+              ? PLAYER_COLOR_RGB[targetingPlayerColor]
+              : { r: 37, g: 99, b: 235 }
+            const glowRgb = calculateGlowColor(rgb)
+            return (
+              <div
+                key={`line-selection-${row}-${col}`}
+                className="absolute inset-0 rounded-md pointer-events-none animate-glow-pulse"
+                style={{
+                  zIndex: 45,
+                  boxShadow: `0 0 12px 2px ${rgba(glowRgb, 0.5)}`,
+                  border: '3px dashed',
                   borderColor: `rgb(255, 255, 255)`,
                   background: `radial-gradient(circle at center, transparent 20%, ${rgba(rgb, 0.5)} 100%)`,
                 }}
@@ -360,6 +396,7 @@ export const GameBoard = memo<GameBoardProps>(({
   abilitySourceCoords = null,
   abilityCheckKey,
   targetingMode,
+  abilityMode = null,
   clickWaves,
 }) => {
 
@@ -455,6 +492,7 @@ export const GameBoard = memo<GameBoardProps>(({
           cell,
           isValidTarget: isValidTargetCell(originalRowIndex, originalColIndex),
           isTargetingModeValidTarget,
+          targetingModeActionMode: targetingMode?.action?.mode,
           isNoTarget: noTargetOverlay?.row === originalRowIndex && noTargetOverlay.col === originalColIndex,
           cellFloatingTexts: activeFloatingTexts?.filter(t => t.row === originalRowIndex && t.col === originalColIndex) || [],
           cellClickWaves: clickWaves?.filter(e => e.location === 'board' && e.boardCoords?.row === originalRowIndex && e.boardCoords?.col === originalColIndex) || [],
@@ -469,7 +507,7 @@ export const GameBoard = memo<GameBoardProps>(({
         {processedCells.map((rowCells) =>
           rowCells.map(({
             cellKey, originalRowIndex, originalColIndex, cell, isValidTarget,
-            isTargetingModeValidTarget, isNoTarget, cellFloatingTexts,
+            isTargetingModeValidTarget, targetingModeActionMode, isNoTarget, cellFloatingTexts,
             cellClickWaves,
           }) => (
             <div key={cellKey} className="relative w-full h-full">
@@ -498,11 +536,13 @@ export const GameBoard = memo<GameBoardProps>(({
                 isTargetingModeValidTarget={isTargetingModeValidTarget}
                 targetingModePlayerId={targetingMode?.playerId}
                 targetingModeOriginalOwnerId={targetingMode?.originalOwnerId}
+                targetingModeActionMode={targetingModeActionMode}
                 showNoTarget={isNoTarget}
                 disableActiveHighlights={disableActiveHighlights}
                 preserveDeployAbilities={preserveDeployAbilities}
                 abilitySourceCoords={abilitySourceCoords}
                 abilityCheckKey={abilityCheckKey}
+                abilityMode={abilityMode}
               />
               {cellFloatingTexts.map(ft => (
                 <FloatingTextOverlay

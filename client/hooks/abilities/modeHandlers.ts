@@ -9,6 +9,7 @@
 import type { Card, AbilityAction, CommandContext, DragItem, CursorStackState, CounterSelectionData, GameState, FloatingTextData, DropTarget } from '@/types'
 import { TIMING } from '@/utils/common'
 import { createTokenCursorStack } from '@/utils/tokenTargeting'
+import { handleLineSelection as handleLineSelectionModule } from './lineSelectionHandlers.js'
 
  
 
@@ -29,7 +30,7 @@ export interface ModeHandlersProps {
   markAbilityUsed: (coords: { row: number; col: number }, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void
   triggerNoTarget: (coords: { row: number; col: number }) => void
   triggerClickWave: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number; cardIndex: number }) => void
-  triggerDeckSelection: (playerId: number) => void
+  triggerDeckSelection: (playerId: number, selectedByPlayerId: number) => void
   handleActionExecution: (action: AbilityAction, sourceCoords: { row: number; col: number }) => void
   interactionLock: React.MutableRefObject<boolean>
   moveItem: (item: DragItem, target: DropTarget) => void
@@ -46,13 +47,19 @@ export interface ModeHandlersProps {
   removeStatusByType: (coords: {row: number; col: number}, type: string) => void
   resetDeployStatus: (coords: {row: number; col: number }) => void
   updatePlayerScore: (playerId: number, delta: number) => void
-  triggerFloatingText: (data: FloatingTextData) => void
+  triggerFloatingText: (data: Omit<FloatingTextData, 'timestamp'> | Omit<FloatingTextData, 'timestamp'>[]) => void
   setCounterSelectionData: React.Dispatch<React.SetStateAction<CounterSelectionData | null>>
   setViewingDiscard: React.Dispatch<React.SetStateAction<boolean>>
   clearValidTargets: () => void
   validTargets?: {row: number, col: number}[]
   handleLineSelection: (coords: {row: number; col: number }) => void
   setTargetingMode: (action: AbilityAction, playerId: number, sourceCoords?: { row: number; col: number }, preCalculatedTargets?: {row: number, col: number}[], commandContext?: CommandContext, preCalculatedHandTargets?: {playerId: number, cardIndex: number}[]) => void
+  clearTargetingMode: () => void
+  updateState?: (stateOrFn: any) => void
+  nextPhase?: (forceTurnPass?: boolean) => void
+  scoreLine?: (r1: number, c1: number, r2: number, c2: number, pid: number) => void
+  scoreDiagonal?: (r1: number, c1: number, r2: number, c2: number, pid: number, bonusType?: 'point_per_support' | 'draw_per_support') => void
+  isWebRTCMode?: boolean
 }
 
 /**
@@ -69,7 +76,7 @@ export function handleModeCardClick(
     localPlayerId: _localPlayerId,
     abilityMode,
     interactionLock,
-    handleLineSelection,
+    handleLineSelection: _handleLineSelection,
   } = props
 
   if (!abilityMode || abilityMode.type !== 'ENTER_MODE') {
@@ -100,7 +107,41 @@ export function handleModeCardClick(
 
   // Line selection modes
   if (mode === 'SELECT_LINE_START' || mode === 'SELECT_LINE_END') {
-    handleLineSelection(boardCoords)
+    const {
+      gameState,
+      localPlayerId,
+      abilityMode,
+      interactionLock,
+      setAbilityMode,
+      markAbilityUsed,
+      updatePlayerScore,
+      triggerFloatingText,
+      nextPhase,
+      modifyBoardCardPower,
+      scoreLine,
+      scoreDiagonal,
+      commandContext,
+      updateState,
+      isWebRTCMode,
+    } = props
+
+    handleLineSelectionModule(boardCoords, {
+      gameState,
+      localPlayerId,
+      abilityMode,
+      interactionLock,
+      setAbilityMode,
+      markAbilityUsed,
+      updatePlayerScore,
+      triggerFloatingText,
+      nextPhase: nextPhase || (() => {}),
+      modifyBoardCardPower: modifyBoardCardPower || (() => {}),
+      scoreLine: scoreLine || (() => {}),
+      scoreDiagonal: scoreDiagonal || (() => {}),
+      commandContext,
+      updateState,
+      isWebRTCMode,
+    })
     return true
   }
 
@@ -869,7 +910,6 @@ function handleReverendDoubleExploit(
       col: boardCoords.col,
       text: `+${exploitCount}`,
       playerId: ownerId,
-      timestamp: Date.now(),
     })
   }
 
@@ -1220,7 +1260,6 @@ function handleIntegratorLineSelect(
       col: sourceCoords.col,
       text: `+${exploitCount}`,
       playerId: ownerId,
-      timestamp: Date.now(),
     })
   }
 
@@ -1286,7 +1325,6 @@ function handleIpAgentThreatScoring(
       col: sourceCoords.col,
       text: `+${points}`,
       playerId: ownerId,
-      timestamp: Date.now(),
     })
   }
 
@@ -1366,7 +1404,6 @@ function handleZiusLineSelect(
         col: coords.col,
         text: '+1',
         playerId: ownerId,
-        timestamp: Date.now(),
       })
     })
   }
@@ -1462,7 +1499,6 @@ function handleSelectDiagonal(
       col: sourceCoords?.col || boardCoords.col,
       text: `+${exploitCount}`,
       playerId: ownerId,
-      timestamp: Date.now(),
     })
   }
 
@@ -1518,7 +1554,6 @@ function handleScoreLastPlayedLine(
       col: lastPlayedCoords.col,
       text: `+${power}`,
       playerId: ownerId,
-      timestamp: Date.now(),
     })
   } else if (payload?.rewardType === 'DRAW') {
     // Draw cards equal to power
@@ -1584,7 +1619,7 @@ function handleSelectDeck(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, triggerDeckSelection, markAbilityUsed, setAbilityMode } = props
+  const { abilityMode, triggerDeckSelection, markAbilityUsed, setAbilityMode, clearTargetingMode, localPlayerId } = props
 
   if (!abilityMode || abilityMode.mode !== 'SELECT_DECK') {
     return false
@@ -1592,8 +1627,9 @@ function handleSelectDeck(
 
   const { sourceCoords, isDeployAbility, readyStatusToRemove } = abilityMode
 
-  triggerDeckSelection(card.ownerId ?? 0)
+  triggerDeckSelection(card.ownerId ?? 0, localPlayerId ?? 0)
   markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
+  clearTargetingMode() // Clear targeting mode immediately after selection
   setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
   return true
 }

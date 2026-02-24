@@ -305,8 +305,13 @@ export function createCompactStateForHost(
   gameState: GameState,
   localPlayerId: number
 ): GameState {
+  // CRITICAL: In WebRTC P2P mode, host is authoritative for phase management
+  // Guests should NOT send currentPhase, activePlayerId, isScoringStep, targetingMode
+  // These are managed exclusively by the host
+  const { currentPhase, activePlayerId, isScoringStep, targetingMode, startingPlayerId, currentRound, ...stateForHost } = gameState
+
   return {
-    ...gameState,
+    ...stateForHost,
     players: gameState.players.map(p => {
       if (p.id === localPlayerId) {
         // Local player - send ULTRA-COMPACT data
@@ -378,6 +383,14 @@ export function createCompactStateForHost(
         ...cell,
         card: cell.card ? optimizeCard(cell.card) : null
       }))
-    ) as any
+    ) as any,
+    // CRITICAL: Restore phase management fields for local use
+    // These are NOT sent to host (they were destructured above)
+    currentPhase,
+    activePlayerId,
+    isScoringStep,
+    targetingMode,
+    startingPlayerId,
+    currentRound
   }
 }

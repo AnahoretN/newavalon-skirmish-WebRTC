@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import type { Card, GameState, AbilityAction, CommandContext, DragItem, Player, CounterSelectionData, CursorStackState, FloatingTextData } from '@/types'
 import { validateTarget } from '@shared/utils/targeting'
 import { hasReadyAbilityInCurrentPhase } from '@/utils/autoAbilities'
+import { getWebRTCEnabled } from './useWebRTCEnabled'
 
 // Import extracted handler modules
 import {
@@ -58,6 +59,7 @@ interface UseAppAbilitiesProps {
     removeStatusByType: (coords: { row: number; col: number }, type: string) => void;
     triggerFloatingText: (data: Omit<FloatingTextData, 'timestamp'> | Omit<FloatingTextData, 'timestamp'>[]) => void;
     triggerHandCardSelection: (playerId: number, cardIndex: number, selectedByPlayerId: number) => void;
+    triggerDeckSelection: (playerId: number, selectedByPlayerId: number) => void;
     clearValidTargets: () => void;
     setTargetingMode: (action: AbilityAction, playerId: number, sourceCoords?: { row: number; col: number }, preCalculatedTargets?: {row: number, col: number}[], commandContext?: CommandContext) => void;
     clearTargetingMode: () => void;
@@ -85,12 +87,13 @@ export const useAppAbilities = ({
   setViewingDiscard,
   triggerNoTarget,
   triggerClickWave,
+  triggerDeckSelection,
   playMode,
   setPlayMode,
   setCounterSelectionData,
   interactionLock,
   onAbilityComplete,
-  // updateState, // @ts-ignore - Unused but kept for future use
+  updateState,
   moveItem,
   destroyCard,
   // drawCard, // @ts-ignore - Unused but kept for future use
@@ -129,6 +132,7 @@ export const useAppAbilities = ({
    * Defined BEFORE handleActionExecution to avoid circular dependency
    */
   const handleLineSelection = useCallback((coords: { row: number; col: number }) => {
+    const isWebRTCMode = getWebRTCEnabled()
     handleLineSelectionModule(coords, {
       gameState,
       localPlayerId,
@@ -143,8 +147,10 @@ export const useAppAbilities = ({
       scoreLine,
       scoreDiagonal,
       commandContext,
+      updateState,
+      isWebRTCMode,
     })
-  }, [abilityMode, gameState, localPlayerId, interactionLock, setAbilityMode, markAbilityUsed, updatePlayerScore, triggerFloatingText, nextPhase, modifyBoardCardPower, scoreLine, scoreDiagonal, commandContext])
+  }, [abilityMode, gameState, localPlayerId, interactionLock, setAbilityMode, markAbilityUsed, updatePlayerScore, triggerFloatingText, nextPhase, modifyBoardCardPower, scoreLine, scoreDiagonal, commandContext, updateState])
 
   // Update ref whenever handleLineSelection changes
   lineSelectionRef.current = handleLineSelection
@@ -352,6 +358,7 @@ export const useAppAbilities = ({
 
     // 4. Handle ability modes with modular handler
     if (abilityMode?.type === 'ENTER_MODE') {
+      const isWebRTCMode = getWebRTCEnabled()
       const handled = handleModeCardClickModule(card, boardCoords, {
         gameState,
         localPlayerId,
@@ -369,7 +376,7 @@ export const useAppAbilities = ({
         markAbilityUsed,
         triggerNoTarget,
         triggerClickWave,
-        triggerDeckSelection: () => {},
+        triggerDeckSelection,
         handleActionExecution,
         interactionLock,
         moveItem,
@@ -393,6 +400,12 @@ export const useAppAbilities = ({
         validTargets,
         handleLineSelection,
         setTargetingMode,
+        clearTargetingMode,
+        updateState,
+        nextPhase,
+        scoreLine,
+        scoreDiagonal,
+        isWebRTCMode,
       })
       if (handled) {return}
     }
@@ -432,10 +445,15 @@ export const useAppAbilities = ({
     triggerFloatingText,
     triggerNoTarget,
     triggerClickWave,
+    triggerDeckSelection,
     validTargets,
     clearTargetingMode,
     activateAbility,
     setTargetingMode,
+    updateState,
+    nextPhase,
+    scoreLine,
+    scoreDiagonal,
   ])
 
   /**
@@ -465,6 +483,11 @@ export const useAppAbilities = ({
       updatePlayerScore,
       triggerFloatingText,
       handleLineSelection,
+      updateState,
+      nextPhase,
+      modifyBoardCardPower,
+      scoreLine,
+      scoreDiagonal,
       openContextMenu: () => {},
       triggerDeckSelection: () => {},
     })
@@ -490,6 +513,11 @@ export const useAppAbilities = ({
     updatePlayerScore,
     triggerFloatingText,
     handleLineSelection,
+    updateState,
+    nextPhase,
+    modifyBoardCardPower,
+    scoreLine,
+    scoreDiagonal,
   ])
 
   /**

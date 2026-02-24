@@ -6,6 +6,10 @@
  * Функции:
  * - setTargetingMode - активация режима прицеливания
  * - clearTargetingMode - очистка режима прицеливания
+ *
+ * WebRTC P2P mode:
+ * - Guests send ABILITY_ACTIVATED to host, host calculates targeting mode and broadcasts
+ * - Host broadcasts directly with SET_TARGETING_MODE
  */
 
 import { useCallback } from 'react'
@@ -22,6 +26,7 @@ interface UseTargetingModeProps {
   // Refs
   gameStateRef: React.MutableRefObject<GameState>
   webrtcIsHostRef: React.MutableRefObject<boolean>
+  localPlayerIdRef: React.MutableRefObject<number | null>
   // State setters
   setGameState: React.Dispatch<React.SetStateAction<GameState>>
 }
@@ -43,6 +48,7 @@ export function useTargetingMode(props: UseTargetingModeProps) {
     webrtcManager,
     gameStateRef,
     webrtcIsHostRef,
+    localPlayerIdRef,
     setGameState,
   } = props
 
@@ -145,7 +151,7 @@ export function useTargetingMode(props: UseTargetingModeProps) {
     // Broadcast via WebRTC (P2P mode)
     if (webrtcManager.current) {
       if (webrtcIsHostRef.current) {
-        // Host broadcasts directly to all guests
+        // Host broadcasts directly to all guests with SET_TARGETING_MODE
         webrtcManager.current.broadcastToGuests({
           type: 'SET_TARGETING_MODE',
           senderId: webrtcManager.current.getPeerId?.() ?? undefined,
@@ -153,18 +159,48 @@ export function useTargetingMode(props: UseTargetingModeProps) {
           timestamp: Date.now()
         })
       } else {
-        // Guest sends to host for rebroadcasting
+        // Guest sends ABILITY_ACTIVATED to host - host will infer targeting mode
+        // Get source card info from game state
+        let cardId = ''
+        let cardName = ''
+        let abilityType = 'deploy'
+
+        if (sourceCoords) {
+          const card = currentGameState.board[sourceCoords.row]?.[sourceCoords.col]?.card
+          if (card) {
+            cardId = card.id || ''
+            cardName = card.name || ''
+          }
+        }
+
+        // Determine ability type from phase or action
+        const phase = currentGameState.currentPhase
+        if (phase === 0) abilityType = 'setup'
+        else if (phase === 2) abilityType = 'commit'
+
         const success = webrtcManager.current.sendMessageToHost({
-          type: 'SET_TARGETING_MODE',
+          type: 'ABILITY_ACTIVATED',
           senderId: webrtcManager.current.getPeerId?.() ?? undefined,
-          data: { targetingMode: targetingModeData },
+          playerId: localPlayerIdRef.current ?? undefined,
+          data: {
+            coords: sourceCoords,
+            cardId,
+            cardName,
+            abilityType,
+            mode: action.mode,
+            actionType: action.payload?.actionType,
+            action,
+            boardTargets,
+            handTargets
+          },
           timestamp: Date.now()
         })
-        logger.info(`[TargetingMode] Guest sent SET_TARGETING_MODE to host`, {
+        logger.info(`[TargetingMode] Guest sent ABILITY_ACTIVATED to host`, {
           success,
           playerId,
           boardTargetsCount: boardTargets.length,
-          handTargetsCount: handTargets.length
+          handTargetsCount: handTargets.length,
+          abilityType
         })
       }
     }
@@ -210,10 +246,11 @@ export function useTargetingMode(props: UseTargetingModeProps) {
           timestamp: Date.now()
         })
       } else {
-        // Guest sends to host for rebroadcasting
+        // Guest sends ABILITY_CANCELLED to host
         webrtcManager.current.sendMessageToHost({
-          type: 'CLEAR_TARGETING_MODE',
+          type: 'ABILITY_CANCELLED',
           senderId: webrtcManager.current.getPeerId?.() ?? undefined,
+          playerId: localPlayerIdRef.current ?? undefined,
           data: { timestamp: Date.now() },
           timestamp: Date.now()
         })

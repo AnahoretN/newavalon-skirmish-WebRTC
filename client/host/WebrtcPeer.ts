@@ -114,9 +114,18 @@ export class WebrtcPeer {
       })
 
       this.peer.on('error', (err) => {
-        logger.error(`WebrtcPeer error:`, err)
+        // Check if this is just the signalling server disconnecting (not critical after P2P established)
+        const isSignallingDisconnect = err?.message && err.message.includes('Lost connection to server')
+        if (isSignallingDisconnect) {
+          logger.warn('[WebrtcPeer] Signalling server disconnected (P2P connection may still work)')
+        } else {
+          logger.error(`WebrtcPeer error:`, err)
+        }
         this.emitEvent({ type: 'error', data: err })
-        reject(err)
+        // Don't reject on signalling disconnect - P2P may still work
+        if (!isSignallingDisconnect) {
+          reject(err)
+        }
       })
 
       this.peer.on('close', () => {
@@ -146,9 +155,18 @@ export class WebrtcPeer {
       })
 
       this.peer.on('error', (err) => {
-        logger.error(`WebrtcPeer error:`, err)
+        // Check if this is just the signalling server disconnecting (not critical after P2P established)
+        const isSignallingDisconnect = err?.message && err.message.includes('Lost connection to server')
+        if (isSignallingDisconnect) {
+          logger.warn('[WebrtcPeer] Signalling server disconnected (P2P connection may still work)')
+        } else {
+          logger.error(`WebrtcPeer error:`, err)
+        }
         this.emitEvent({ type: 'error', data: err })
-        reject(err)
+        // Don't reject on signalling disconnect - P2P may still work
+        if (!isSignallingDisconnect) {
+          reject(err)
+        }
       })
 
       this.peer.on('close', () => {
@@ -193,6 +211,13 @@ export class WebrtcPeer {
     })
 
     conn.on('data', (data: unknown) => {
+      // CRITICAL: Log ALL incoming data at PeerJS level
+      console.log('[WebrtcPeer] RAW DATA EVENT on connection:', {
+        peerId: conn.peer,
+        dataType: typeof data,
+        hasType: !!(data && typeof data === 'object' && 'type' in data),
+        messageType: data && typeof data === 'object' && 'type' in data ? (data as any).type : 'N/A'
+      })
       this.emitEvent({
         type: 'connection_data',
         data: { peerId: conn.peer, data }
@@ -232,6 +257,20 @@ export class WebrtcPeer {
     }
 
     try {
+      // CRITICAL: Add detailed logging for REQUEST_TURN_PASS messages
+      if (data?.type === 'REQUEST_TURN_PASS') {
+        console.log('[WebrtcPeer.sendTo] SENDING REQUEST_TURN_PASS:', {
+          peerId,
+          messageType: data.type,
+          dataPlayerId: data.data?.playerId,
+          reason: data.data?.reason,
+          timestamp: data.timestamp
+        })
+        logger.info(`[sendTo] SENDING REQUEST_TURN_PASS to ${peerId}:`, {
+          dataPlayerId: data.data?.playerId,
+          reason: data.data?.reason
+        })
+      }
       conn.send(data)
       return true
     } catch (err) {

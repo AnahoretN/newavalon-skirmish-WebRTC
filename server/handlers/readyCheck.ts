@@ -6,7 +6,6 @@
 import { logger } from '../utils/logger.js';
 import { getGameState } from '../services/gameState.js';
 import { broadcastToGame } from '../services/websocket.js';
-import { performPreparationPhase } from './phaseManagement.js';
 import { logGameAction as logAction, GameActions } from '../utils/gameLogger.js';
 
 /**
@@ -204,9 +203,8 @@ export function handlePlayerReady(ws, data) {
         }).catch();
       }
 
-      // Trigger Preparation phase (0) for the starting player to give them their 7th card
-      gameState.currentPhase = 0;
-      performPreparationPhase(gameState);
+      // Set phase to Setup - preparation logic removed
+      gameState.currentPhase = 1;
     }
 
     broadcastToGame(data.gameId, gameState);

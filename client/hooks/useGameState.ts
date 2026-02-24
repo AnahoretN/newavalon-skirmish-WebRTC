@@ -10,7 +10,6 @@ import { deepCloneState, TIMING } from '../utils/common'
 import type { WebrtcEvent } from '../host/types'
 import { getWebRTCEnabled } from './useWebRTCEnabled'
 import type { WebrtcMessage } from '../host/types'
-import { toggleActivePlayer as toggleActivePlayerPhase } from '../host/PhaseManagement'
 import { recalculateAllReadyStatuses } from '../utils/autoAbilities'
 import {
   applyStateDelta,
@@ -58,6 +57,8 @@ import { useCardStatus } from './core/useCardStatus'
 import { useDeckManagement } from './core/useDeckManagement'
 // Phase management extracted to usePhaseManagement.ts
 import { usePhaseManagement } from './core/usePhaseManagement'
+// Phase actions extracted to usePhaseActions.ts
+import { usePhaseActions } from './core/usePhaseActions'
 // Scoring extracted to useScoring.ts
 import { useScoring } from './core/useScoring'
 // Board manipulation extracted to useBoardManipulation.ts
@@ -174,6 +175,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     setWebrtcHostId,
     gameStateRef,
     localPlayerIdRef,
+    setGameState, // Pass setGameState so host can configure onStateUpdate callback
   })
 
   // Destructure WebRTC functions for direct access
@@ -2318,6 +2320,31 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         break
       }
 
+      case 'STATE_UPDATE_COMPACT_JSON':
+        // Lightweight phase/activePlayer update from host
+        logger.info('[STATE_UPDATE_COMPACT_JSON] Phase update from host:', {
+          currentPhase: message.data?.currentPhase,
+          activePlayerId: message.data?.activePlayerId,
+          fullData: message.data
+        })
+        if (message.data) {
+          setGameState(currentState => {
+            const newState = {
+              ...currentState,
+              ...(message.data.currentPhase !== undefined && { currentPhase: message.data.currentPhase }),
+              ...(message.data.activePlayerId !== undefined && { activePlayerId: message.data.activePlayerId })
+            }
+            logger.info('[STATE_UPDATE_COMPACT_JSON] Updated state:', {
+              oldPhase: currentState.currentPhase,
+              newPhase: newState.currentPhase,
+              oldActivePlayer: currentState.activePlayerId,
+              newActivePlayer: newState.activePlayerId
+            })
+            return newState
+          })
+        }
+        break
+
       case 'STATE_DELTA':
         // Host: received delta from guest, rebroadcast to all other guests
         // Guest: received delta broadcast from host
@@ -2683,35 +2710,8 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
               return updatedState
             })
-          } else if (actionType === 'NEXT_PHASE') {
-            // Guest wants to advance to next phase
-            setGameState(prev => {
-              const currentState = prev
-              const currentPhase = currentState.currentPhase
-              const enteringScoringPhase = currentPhase === 2 && !currentState.isScoringStep
-
-              const newPhase = currentPhase + 1
-              return {
-                ...currentState,
-                currentPhase: newPhase,
-                ...(enteringScoringPhase && { isScoringStep: true })
-              }
-            })
-          } else if (actionType === 'PREV_PHASE') {
-            // Guest wants to go to previous phase
-            setGameState(prev => {
-              const currentState = prev
-              if (currentState.isScoringStep) {
-                return { ...currentState, isScoringStep: false, currentPhase: Math.max(1, currentState.currentPhase - 1) }
-              }
-              return {
-                ...currentState,
-                currentPhase: Math.max(1, currentState.currentPhase - 1),
-              }
-            })
-          } else if (actionType === 'SET_PHASE' && actionData?.phaseIndex !== undefined) {
-            // Guest wants to set specific phase
-            setGameState(prev => ({ ...prev, currentPhase: actionData.phaseIndex }))
+          // Note: NEXT_PHASE, PREV_PHASE, SET_PHASE are now sent directly as message types (not inside ACTION)
+          // They are handled by HostManager's message handlers, not here
           } else if (actionType === 'UPDATE_PLAYER_NAME' && actionData?.playerId !== undefined && actionData?.name !== undefined) {
             setGameState(prev => ({
               ...prev,
@@ -2853,39 +2853,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
               return newState
             })
-          } else if (actionType === 'TOGGLE_ACTIVE_PLAYER' && actionData?.playerId !== undefined) {
-            setGameState(prev => {
-              const currentPlayer = prev.players.find(p => p.id === actionData.playerId)
-              if (!currentPlayer) {return prev}
-
-              // Use the proper toggleActivePlayer function from PhaseManagement
-              // This handles the Preparation phase (draw card) and transition to Setup
-              const newState = toggleActivePlayerPhase(prev, actionData.playerId)
-
-              // Broadcast the state change to all guests
-              if (webrtcManagerRef.current) {
-                webrtcManagerRef.current.broadcastGameState(newState)
-              }
-
-              return newState
-            })
-          } else if (actionType === 'TOGGLE_AUTO_DRAW' && actionData?.playerId !== undefined) {
-            setGameState(prev => ({
-              ...prev,
-              players: prev.players.map(p =>
-                p.id === actionData.playerId ? { ...p, autoDrawEnabled: !p.autoDrawEnabled } : p
-              ),
-            }))
-          } else if (actionType === 'START_NEXT_ROUND') {
-            setGameState(prev => ({
-              ...prev,
-              isRoundEndModalOpen: false,
-              currentRound: (prev.currentRound || 1) + 1,
-              players: prev.players.map(p => ({
-                ...p,
-                score: 0,
-              })),
-            }))
           } else if (actionType === 'RESET_DEPLOY_STATUS') {
             setGameState(prev => {
               const updatedBoard = prev.board.map(row =>
@@ -3446,15 +3413,30 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       // Ability mode synchronization messages
       case 'ABILITY_MODE_SET':
-        // Host broadcasts ability mode to all clients
+        // Host broadcasts ability mode to all clients with targeting info
         if (message.data?.abilityMode) {
+          const { playerId, sourceCoords, mode, actionType, boardTargets, handTargets } = message.data.abilityMode
+
+          // Build targeting mode data from ability mode
+          const targetingModeData = {
+            playerId,
+            action: { type: 'ENTER_MODE' as const, mode, payload: { actionType } },
+            sourceCoords,
+            timestamp: message.data.abilityMode.timestamp || Date.now(),
+            boardTargets: boardTargets || [],
+            handTargets: handTargets || []
+          }
+
           setGameState(prev => ({
             ...prev,
             abilityMode: message.data.abilityMode,
+            targetingMode: targetingModeData,
           }))
           logger.info('[AbilityMode] Received ability mode from host', {
-            playerId: message.data.abilityMode.playerId,
-            mode: message.data.abilityMode.mode,
+            playerId,
+            mode,
+            boardTargetsCount: boardTargets?.length || 0,
+            handTargetsCount: handTargets?.length || 0,
           })
         }
         break
@@ -3465,21 +3447,34 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         break
 
       case 'ABILITY_COMPLETED':
-        // Ability completed - clear mode
+        // Ability completed - clear mode and targeting
         setGameState(prev => ({
           ...prev,
           abilityMode: undefined,
+          targetingMode: null,
         }))
         logger.info('[Ability] Ability completed', message.data)
         break
 
       case 'ABILITY_CANCELLED':
-        // Ability cancelled - clear mode
+        // Ability cancelled - clear mode and targeting
         setGameState(prev => ({
           ...prev,
           abilityMode: undefined,
+          targetingMode: null,
         }))
         logger.info('[Ability] Ability cancelled')
+        break
+
+      case 'ABILITY_ACTIVATED':
+        // Ability activation is handled by HostManager on the host side
+        // Guests should forward this to host, but if we receive it here, just log it
+        // The actual processing happens in HostManager.handleAbilityActivated
+        logger.info('[Ability] ABILITY_ACTIVATED message received - handled by HostManager', {
+          isHost: webrtcIsHostRef.current,
+          senderId: message.senderId,
+          data: message.data
+        })
         break
 
       case 'CHANGE_PLAYER_COLOR':
@@ -3756,9 +3751,15 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
       case 'SET_TARGETING_MODE':
         // Targeting mode synchronization (P2P)
-        // Both host and guests update their local state
-        // HostManager already handles broadcasting for host, so no need to rebroadcast
+        // HostManager already handles broadcasting, guests only update local state
+        // IMPORTANT: Ignore loopback messages (from self)
         if (message.data?.targetingMode) {
+          const ourPeerId = webrtcManagerRef.current?.getPeerId?.()
+          if (message.senderId === ourPeerId) {
+            logger.debug('[TargetingMode] Ignoring loopback SET_TARGETING_MODE from self')
+            break
+          }
+
           const targetingMode = message.data.targetingMode
           // Support both old format (with action) and new format (with mode directly)
           const mode = targetingMode.mode || targetingMode.action?.mode
@@ -3770,32 +3771,29 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             isDeckSelectable: targetingMode.isDeckSelectable || false,
             timestamp: targetingMode.timestamp,
             isHost: webrtcIsHostRef.current,
+            senderId: message.senderId,
+            ourPeerId: ourPeerId,
           })
-          // Both host and guests update their local state
+          // Both host and guests update their local state only
+          // NO rebroadcasting - HostManager handles all broadcasting
           setGameState(prev => ({
             ...prev,
             targetingMode: targetingMode,
           }))
           gameStateRef.current.targetingMode = targetingMode
-
-          // Only guests need to broadcast (for old-style direct connections)
-          // Host uses HostManager which already handles broadcasting
-          if (!webrtcIsHostRef.current && webrtcManagerRef.current) {
-            webrtcManagerRef.current.broadcastToGuests({
-              type: 'SET_TARGETING_MODE',
-              senderId: webrtcManagerRef.current.getPeerId?.() ?? undefined,
-              data: { targetingMode },
-              timestamp: Date.now()
-            })
-            logger.info('[TargetingMode] Host broadcasted SET_TARGETING_MODE to guests')
-          }
         }
         break
 
       case 'CLEAR_TARGETING_MODE':
         // Clear targeting mode (P2P)
         // Both host and guests update their local state
-        // IMPORTANT: Host MUST broadcast to all guests to ensure targeting mode is cleared everywhere
+        // IMPORTANT: Ignore loopback messages (from self)
+        const ourPeerId = webrtcManagerRef.current?.getPeerId?.()
+        if (message.senderId === ourPeerId) {
+          logger.debug('[TargetingMode] Ignoring loopback CLEAR_TARGETING_MODE from self')
+          break
+        }
+
         logger.info('[TargetingMode] Received CLEAR_TARGETING_MODE via WebRTC', {
           isHost: webrtcIsHostRef.current,
           senderId: message.senderId,
@@ -3808,17 +3806,30 @@ export const useGameState = (props: UseGameStateProps = {}) => {
 
         logger.info('[TargetingMode] Cleared targeting mode locally')
 
-        // Host: Broadcast CLEAR_TARGETING_MODE to all other guests
-        // Guest: No need to rebroadcast (host already broadcasted)
-        if (webrtcIsHostRef.current && webrtcManagerRef.current) {
-          webrtcManagerRef.current.broadcastToGuests({
-            type: 'CLEAR_TARGETING_MODE',
-            senderId: webrtcManagerRef.current.getPeerId?.() ?? undefined,
-            data: { timestamp: Date.now() },
-            timestamp: Date.now()
-          })
-          logger.info('[TargetingMode] Host broadcasted CLEAR_TARGETING_MODE to all guests')
-        }
+        // NO rebroadcasting - HostManager handles all broadcasting
+        break
+
+      case 'SCORING_COMPLETE_AND_TURN_PASS':
+        // Host completed scoring and passed turn to next player
+        logger.info('[Scoring] Received SCORING_COMPLETE_AND_TURN_PASS from host', {
+          activePlayerId: message.data.activePlayerId,
+          currentPhase: message.data.currentPhase,
+          turnNumber: message.data.turnNumber
+        })
+
+        setGameState(prev => ({
+          ...prev,
+          activePlayerId: message.data.activePlayerId,
+          currentPhase: message.data.currentPhase,
+          turnNumber: message.data.turnNumber,
+          isScoringStep: false,
+        }))
+        gameStateRef.current.activePlayerId = message.data.activePlayerId
+        gameStateRef.current.currentPhase = message.data.currentPhase
+        gameStateRef.current.turnNumber = message.data.turnNumber
+        gameStateRef.current.isScoringStep = false
+
+        logger.info('[Scoring] Turn passed to next player')
         break
 
       case 'RECONNECT_ACCEPT':
@@ -4570,31 +4581,14 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     recoverDiscardedCard,
   } = deckManagement
 
-  // Phase management hook - handles phase and round management
+  // Phase management hook - only for displaying current phase (no logic)
   const phaseManagement = usePhaseManagement({
-    ws,
-    webrtcManagerRef,
-    webrtcIsHostRef,
     gameStateRef,
-    scoreDeltaAccumulator,
-    setGameState,
-    updateState,
-    abilityMode,
-    setAbilityMode,
-    createDeck,
   })
 
-  // Destructure phase management functions for direct access
-  const {
-    toggleActivePlayer,
-    toggleAutoDraw,
-    setPhase,
-    nextPhase,
-    prevPhase,
-    closeRoundEndModal,
-    closeRoundEndModalOnly,
-    resetGame,
-  } = phaseManagement
+  // Phase display functions (no control logic)
+  const getCurrentPhaseName = phaseManagement.getCurrentPhaseName
+  const getCurrentPhase = phaseManagement.getCurrentPhase
 
   // Initial connection and state restoration useEffect
   useEffect(() => {
@@ -4810,6 +4804,19 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             : p
         ),
       }))
+
+      // CRITICAL: In WebRTC mode, send score update to host immediately
+      // Host is authoritative and must sync scores to all players
+      if (webrtcManagerRef.current?.sendMessageToHost) {
+        logger.info(`[ScoreUpdate] Sending to host: player=${playerId}, delta=${delta}`)
+        webrtcManagerRef.current.sendMessageToHost({
+          type: 'UPDATE_PLAYER_SCORE',
+          senderId: webrtcManagerRef.current!.getPeerId?.() ?? undefined,
+          playerId,
+          data: { delta },
+          timestamp: Date.now()
+        })
+      }
     } else {
       // WebSocket mode: local optimistic update
       setGameState(prev => ({
@@ -4875,6 +4882,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     webrtcManager: webrtcManagerRef,
     gameStateRef,
     webrtcIsHostRef,
+    localPlayerIdRef,
     setGameState,
   })
 
@@ -4891,8 +4899,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     updateState,
     updatePlayerScore,
     triggerFloatingText,
-    clearTargetingMode,
-    webrtcIsHostRef,
   })
 
   // Destructure scoring functions for direct access
@@ -4931,6 +4937,85 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     swapBoardCards,
     destroyCard,
   } = cardMovement
+
+  // Phase actions hook - handles phase transitions for WebRTC P2P mode
+  const phaseActions = usePhaseActions({
+    gameStateRef,
+    localPlayerId,
+    isHost: webrtcIsHost,
+    hostManager: webrtcManagerRef.current,
+    guestConnection: webrtcManagerRef.current,
+    onStateUpdate: updateState,
+  })
+
+  // Destructure phase action functions
+  const {
+    nextPhase: nextPhaseAction,
+    previousPhase: prevPhaseAction,
+    passTurn,
+    startScoring,
+    selectScoringLine,
+  } = phaseActions
+
+  // Wrapper functions that work in both WebSocket and WebRTC modes
+  const nextPhase = useCallback((forceTurnPass?: boolean) => {
+    console.log('[useGameState] nextPhase wrapper called with forceTurnPass:', forceTurnPass, 'WebRTC enabled:', getWebRTCEnabled())
+    if (forceTurnPass) {
+      // Force pass turn (used after scoring)
+      console.log('[useGameState] Forcing turn pass instead of next phase')
+      passTurn()
+      return
+    }
+
+    if (getWebRTCEnabled()) {
+      // Use new phase system for WebRTC
+      console.log('[useGameState] Calling nextPhaseAction for WebRTC')
+      nextPhaseAction()
+    } else {
+      // Legacy WebSocket mode - send to server
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify({
+          type: 'NEXT_PHASE',
+          gameId: gameStateRef.current.gameId,
+        }))
+      }
+    }
+  }, [getWebRTCEnabled, nextPhaseAction, passTurn])
+
+  const prevPhase = useCallback(() => {
+    if (getWebRTCEnabled()) {
+      prevPhaseAction()
+    } else {
+      // Legacy WebSocket mode
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify({
+          type: 'PREV_PHASE',
+          gameId: gameStateRef.current.gameId,
+        }))
+      }
+    }
+  }, [getWebRTCEnabled, prevPhaseAction])
+
+  const setPhase = useCallback((phaseIndex: number) => {
+    console.log('[useGameState] setPhase called with phaseIndex:', phaseIndex)
+    // Convert 1-based visible phase index to actual phase (1-4)
+    const targetPhase = Math.max(1, Math.min(phaseIndex, 4))
+
+    if (getWebRTCEnabled()) {
+      // Use direct phase setting from usePhaseActions
+      // This allows any player to set any phase at any time
+      phaseActions.setPhase(targetPhase)
+    } else {
+      // Legacy WebSocket mode
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify({
+          type: 'SET_PHASE',
+          gameId: gameStateRef.current.gameId,
+          phaseIndex: targetPhase,
+        }))
+      }
+    }
+  }, [getWebRTCEnabled, phaseActions])
 
   return {
     gameState,
@@ -4982,8 +5067,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     respondToRevealRequest,
     syncGame,
     removeRevealedStatus,
-    toggleActivePlayer,
-    toggleAutoDraw,
     // Visual effects triggers
     triggerHighlight,
     triggerFloatingText,
@@ -4996,9 +5079,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     syncValidTargets,
     setTargetingMode,
     clearTargetingMode,
-    nextPhase,
-    prevPhase,
-    setPhase,
     markAbilityUsed: boardManipulation.markAbilityUsed,
     applyGlobalEffect: boardManipulation.applyGlobalEffect,
     swapCards: boardManipulation.swapCards,
@@ -5011,13 +5091,17 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     recoverDiscardedCard,
     resurrectDiscardedCard,
     scoreLine,
-    closeRoundEndModal,
-    closeRoundEndModalOnly,
-    resetGame,
     scoreDiagonal,
     reorderTopDeck,
     reorderCards,
     updateState,
+    // Phase management functions
+    nextPhase,
+    prevPhase,
+    setPhase,
+    passTurn,
+    startScoring,
+    selectScoringLine,
     // Deck viewing function
     requestDeckView,
     sendFullDeckToHost,

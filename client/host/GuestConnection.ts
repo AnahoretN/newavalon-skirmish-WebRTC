@@ -36,6 +36,9 @@ export class GuestConnectionManager {
   private eventHandlers: Set<WebrtcEventHandler> = new Set()
   private config: GuestConnectionManagerConfig
 
+  // Phase handler (initialized via GuestPhaseIntegration)
+  public _guestPhaseHandler?: any
+
   constructor(config: GuestConnectionManagerConfig = {}) {
     this.config = config
 
@@ -106,7 +109,8 @@ export class GuestConnectionManager {
    */
   private handleMessage(message: WebrtcMessage): void {
     // Log important messages for debugging
-    if (message.type === 'SET_TARGETING_MODE' || message.type === 'CLEAR_TARGETING_MODE' || message.type === 'JOIN_ACCEPT_MINIMAL' || message.type === 'JOIN_ACCEPT') {
+    if (message.type === 'SET_TARGETING_MODE' || message.type === 'CLEAR_TARGETING_MODE' || message.type === 'JOIN_ACCEPT_MINIMAL' || message.type === 'JOIN_ACCEPT' ||
+        message.type === 'PHASE_STATE_UPDATE' || message.type === 'PHASE_TRANSITION' || message.type === 'TURN_CHANGE') {
       logger.info(`[GuestConnection] Received ${message.type} from host`, {
         senderId: message.senderId,
         playerId: message.playerId,
@@ -117,12 +121,74 @@ export class GuestConnectionManager {
       logger.info(`[GuestConnection] Received ${message.type} from host`)
     }
 
+    // Handle phase messages specifically
+    if ((this as any)._guestPhaseHandler && this.isPhaseMessage(message.type)) {
+      this.handlePhaseMessage(message)
+      return
+    }
+
     this.emitEvent({
       type: 'message_received',
       data: message
     })
 
     this.config.onMessage?.(message)
+  }
+
+  /**
+   * Check if message is a phase-related message
+   */
+  private isPhaseMessage(type: string): boolean {
+    return [
+      'PHASE_STATE_UPDATE',
+      'PHASE_TRANSITION',
+      'TURN_CHANGE',
+      'ROUND_END',
+      'MATCH_END',
+      'SCORING_MODE_START',
+      'SCORING_MODE_COMPLETE',
+      'PHASE_ACTION_RESULT',
+    ].includes(type)
+  }
+
+  /**
+   * Handle phase message from host
+   * Delegates to GuestPhaseHandler
+   */
+  private handlePhaseMessage(message: WebrtcMessage): void {
+    const handler = (this as any)._guestPhaseHandler
+    if (!handler) return
+
+    try {
+      switch (message.type) {
+        case 'PHASE_STATE_UPDATE':
+          handler.handlePhaseStateUpdate(message)
+          break
+        case 'PHASE_TRANSITION':
+          handler.handlePhaseTransition(message)
+          break
+        case 'TURN_CHANGE':
+          handler.handleTurnChange(message)
+          break
+        case 'ROUND_END':
+          handler.handleRoundEnd(message)
+          break
+        case 'MATCH_END':
+          handler.handleMatchEnd(message)
+          break
+        case 'SCORING_MODE_START':
+          handler.handleScoringModeStart(message)
+          break
+        case 'SCORING_MODE_COMPLETE':
+          handler.handleScoringModeComplete(message)
+          break
+        case 'PHASE_ACTION_RESULT':
+          handler.handleActionResult(message)
+          break
+      }
+    } catch (e) {
+      logger.error('[GuestConnection] Failed to handle phase message:', e)
+    }
   }
 
   /**
@@ -243,15 +309,29 @@ export class GuestConnectionManager {
       return false
     }
 
+    // CRITICAL: Log peer ID and connection status for REQUEST_TURN_PASS
+    if (message.type === 'REQUEST_TURN_PASS') {
+      console.log('[GuestConnection.sendMessage] PRE-SEND CHECK:', {
+        hostPeerId: this.hostPeerId,
+        myPeerId: this.webrtcPeer.getPeerId(),
+        connectionExists: this.webrtcPeer.getConnection(this.hostPeerId) !== undefined,
+        connectionOpen: this.webrtcPeer.getConnection(this.hostPeerId)?.open,
+        messageType: message.type,
+        dataPlayerId: message.data?.playerId
+      })
+    }
+
     const success = this.webrtcPeer.sendTo(this.hostPeerId, message)
 
-    // Log targeting mode messages for debugging
-    if (message.type === 'SET_TARGETING_MODE' || message.type === 'CLEAR_TARGETING_MODE') {
+    // Log targeting mode messages and REQUEST_TURN_PASS for debugging
+    if (message.type === 'SET_TARGETING_MODE' || message.type === 'CLEAR_TARGETING_MODE' || message.type === 'REQUEST_TURN_PASS') {
       if (success) {
         logger.info(`[GuestConnection] Sent ${message.type} to host`, {
           hasData: !!message.data,
           hasTargetingMode: !!message.data?.targetingMode,
           targetingModePlayerId: message.data?.targetingMode?.playerId,
+          playerId: message.data?.playerId,
+          reason: message.data?.reason,
           timestamp: message.timestamp
         })
       } else {
@@ -446,6 +526,16 @@ export class GuestConnectionManager {
    * Cleanup connection
    */
   cleanup(): void {
+    // Cleanup phase handler if initialized
+    if (this._guestPhaseHandler) {
+      try {
+        this._guestPhaseHandler.reset()
+      } catch (e) {
+        logger.warn('[GuestConnection] Failed to reset phase handler:', e)
+      }
+    }
+    this._guestPhaseHandler = undefined
+
     this.webrtcPeer.cleanup()
     this.hostPeerId = null
     logger.info('GuestConnection cleaned up')

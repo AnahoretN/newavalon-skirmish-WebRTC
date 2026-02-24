@@ -11,7 +11,6 @@
 import { useCallback } from 'react'
 import { getWebRTCEnabled } from '../useWebRTCEnabled'
 import { deepCloneState } from '../../utils/common'
-import { passTurnToNextPlayer } from '../../host/PhaseManagement'
 import type { GameState, FloatingTextData } from '../../types'
 
 interface UseScoringProps {
@@ -20,8 +19,6 @@ interface UseScoringProps {
   updateState: (updater: (prevState: GameState) => GameState) => void
   updatePlayerScore: (playerId: number, delta: number) => void
   triggerFloatingText: (events: Omit<FloatingTextData, 'timestamp'>[]) => void
-  clearTargetingMode?: () => void
-  webrtcIsHostRef?: React.MutableRefObject<boolean>
 }
 
 export function useScoring(props: UseScoringProps) {
@@ -31,8 +28,6 @@ export function useScoring(props: UseScoringProps) {
     updateState,
     updatePlayerScore,
     triggerFloatingText,
-    clearTargetingMode,
-    webrtcIsHostRef,
   } = props
 
   /**
@@ -125,34 +120,9 @@ export function useScoring(props: UseScoringProps) {
       updatePlayerScore(playerId, totalScore)
     }
 
-    // Case 3: Auto-pass after scoring: if in Scoring phase (4) and points were scored,
-    // automatically pass turn to next player after a short delay
-    // IMPORTANT: In WebRTC mode, ONLY the host should trigger turn passing
-    // Guests should wait for the host to broadcast the state change
-    const shouldAutoPass = totalScore > 0 &&
-      currentState.currentPhase === 4 &&
-      currentState.activePlayerId === playerId &&
-      (!isWebRTCMode || webrtcIsHostRef?.current === true) // In WebRTC, only host auto-passes
-
-    if (shouldAutoPass) {
-      const gameId = currentState.gameId
-      setTimeout(() => {
-        // Clear targeting mode first (for all clients)
-        clearTargetingMode?.()
-
-        if (isWebRTCMode) {
-          // WebRTC mode: Pass turn locally (host only - guarded by shouldAutoPass check)
-          updateState(prevState => passTurnToNextPlayer(prevState))
-        } else if (ws.current?.readyState === WebSocket.OPEN && gameId) {
-          // WebSocket mode: Send NEXT_PHASE to server
-          ws.current.send(JSON.stringify({
-            type: 'NEXT_PHASE',
-            gameId: gameId
-          }))
-        }
-      }, 100) // 100ms delay to show scoring animation
-    }
-  }, [triggerFloatingText, updatePlayerScore, updateState, ws, gameStateRef, clearTargetingMode, passTurnToNextPlayer, webrtcIsHostRef])
+    // Note: Auto-pass after scoring is handled by usePhaseManagement.nextPhase()
+    // This prevents duplicate turn pass logic
+  }, [triggerFloatingText, updatePlayerScore, updateState, ws, gameStateRef, getWebRTCEnabled])
 
   /**
    * Score a diagonal for a player with optional bonus per support
@@ -255,35 +225,8 @@ export function useScoring(props: UseScoringProps) {
         return newState
       })
     }
-
-    // Case 3: Auto-pass after scoring: if in Scoring phase (4) and points were scored,
-    // automatically pass turn to next player after a short delay
-    // IMPORTANT: In WebRTC mode, ONLY the host should trigger turn passing
-    // Guests should wait for the host to broadcast the state change
-    const shouldAutoPass = totalScore > 0 &&
-      currentState.currentPhase === 4 &&
-      currentState.activePlayerId === playerId &&
-      (!isWebRTCMode || webrtcIsHostRef?.current === true) // In WebRTC, only host auto-passes
-
-    if (shouldAutoPass) {
-      const gameId = currentState.gameId
-      setTimeout(() => {
-        // Clear targeting mode first (for all clients)
-        clearTargetingMode?.()
-
-        if (isWebRTCMode) {
-          // WebRTC mode: Pass turn locally (host only - guarded by shouldAutoPass check)
-          updateState(prevState => passTurnToNextPlayer(prevState))
-        } else if (ws.current?.readyState === WebSocket.OPEN && gameId) {
-          // WebSocket mode: Send NEXT_PHASE to server
-          ws.current.send(JSON.stringify({
-            type: 'NEXT_PHASE',
-            gameId: gameId
-          }))
-        }
-      }, 500) // 500ms delay to show scoring animation
-    }
-  }, [triggerFloatingText, updatePlayerScore, updateState, ws, gameStateRef, clearTargetingMode, passTurnToNextPlayer, webrtcIsHostRef])
+    // Note: No auto-pass for diagonal scoring (only for line scoring)
+  }, [triggerFloatingText, updatePlayerScore, updateState, gameStateRef, getWebRTCEnabled])
 
   return {
     scoreLine,

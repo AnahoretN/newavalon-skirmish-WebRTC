@@ -46,7 +46,6 @@ import {
   resetInactivityTimer,
   broadcastGamesList
 } from '../services/gameLifecycle.js';
-import { performPreparationPhase } from './phaseManagement.js';
 import { openGameLog, logGameAction as logAction, GameActions } from '../utils/gameLogger.js';
 
 const MAX_PLAYERS = 4;
@@ -194,14 +193,13 @@ export function handleUpdateState(ws, data) {
       // This happens when client sends UPDATE_STATE with old phase=0 after server already moved to phase 1
       const isStalePhaseAfterDraw = clientPhase === 0 && previousPhase === 1;
 
-      // Perform draw FIRST on existing state (before any client data is applied)
-      // Universal: phase=0 with activePlayerId AND server not in phase 1 = draw for that player
+      // Draw logic removed - just set active player
       let drawnPlayerId: number | null = null;
       if (clientRequestsDraw) {
         existingGameState.activePlayerId = clientActivePlayerId;
-        performPreparationPhase(existingGameState);
+        // Draw logic removed - phase management disabled
         drawnPlayerId = clientActivePlayerId;
-        existingGameState.lastDrawnPlayerId = clientActivePlayerId;  // Track for merge logic
+        existingGameState.lastDrawnPlayerId = clientActivePlayerId;
       } else if (clientActivePlayerId !== null && clientActivePlayerId !== undefined) {
         // No draw requested, just set the active player
         existingGameState.activePlayerId = clientActivePlayerId;

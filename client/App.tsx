@@ -360,9 +360,10 @@ const AppInner = function AppInner() {
   })
 
   // Wrapper for nextPhase that sets justAutoTransitioned flag
-  const handleNextPhase = useCallback(() => {
+  // Also forwards forceTurnPass parameter for scoring completion
+  const handleNextPhase = useCallback((forceTurnPass?: boolean) => {
     setJustAutoTransitioned(true)
-    nextPhase()
+    nextPhase(forceTurnPass)
   }, [nextPhase])
 
   const {
@@ -382,6 +383,7 @@ const AppInner = function AppInner() {
     setViewingDiscard,
     triggerNoTarget,
     triggerClickWave,
+    triggerDeckSelection,
     playMode,
     setPlayMode,
     setCounterSelectionData,
@@ -1127,6 +1129,15 @@ const AppInner = function AppInner() {
     setValidTargets(boardTargets)
     setValidHandTargets(handTargets)
 
+    // Debug: log valid targets for line selection modes
+    if (abilityMode && (abilityMode.mode === 'SCORE_LAST_PLAYED_LINE' || abilityMode.mode === 'SELECT_LINE_END' || abilityMode.mode === 'INTEGRATOR_LINE_SELECT' || abilityMode.mode === 'ZIUS_LINE_SELECT')) {
+      logger.info(`[App.tsx] Line selection mode (${abilityMode.mode}) - set ${boardTargets.length} validTargets`, {
+        boardTargets: boardTargets.slice(0, 5), // Log first 5 for brevity
+        sourceCoords: abilityMode.sourceCoords,
+        boardSize,
+      })
+    }
+
     // Use universal targeting mode system to sync targets to all players
     // This ensures all players see the same visual highlights
     //
@@ -1176,20 +1187,34 @@ const AppInner = function AppInner() {
           boardSize
         )
 
-        // Debug: log targeting mode setup (after targetingPlayerId is determined)
-        logger.info(`[App.tsx] Calling setTargetingMode`, {
-          mode: targetingAction.mode,
-          actionType: targetingAction.payload?.actionType,
-          hasFilter: !!targetingAction.payload?.filter,
-          targetingPlayerId,
-          boardTargetsCount: boardTargets.length,
-          handTargetsCount: handTargets.length,
-          hasCursorStack: !!cursorStack,
-          hasAbilityMode: !!abilityMode,
-        })
+        // CRITICAL: Line selection modes use abilityMode + handleLineSelection for their interaction
+        // They should NOT use setTargetingMode() which sends ABILITY_ACTIVATED to host
+        // This prevents immediate processing when guest clicks on a line
+        const isLineSelectionMode = targetingAction.mode === 'SCORE_LAST_PLAYED_LINE' ||
+                                   targetingAction.mode === 'SELECT_LINE_END' ||
+                                   targetingAction.mode === 'INTEGRATOR_LINE_SELECT' ||
+                                   targetingAction.mode === 'ZIUS_LINE_SELECT'
 
-        // Pass pre-calculated boardTargets and handTargets to avoid recalculating (important for line modes and hand targeting)
-        setTargetingMode(targetingAction, targetingPlayerId, sourceCoords, boardTargets, commandContext, handTargets)
+        if (!isLineSelectionMode) {
+          // Debug: log targeting mode setup (after targetingPlayerId is determined)
+          logger.info(`[App.tsx] Calling setTargetingMode`, {
+            mode: targetingAction.mode,
+            actionType: targetingAction.payload?.actionType,
+            hasFilter: !!targetingAction.payload?.filter,
+            targetingPlayerId,
+            boardTargetsCount: boardTargets.length,
+            handTargetsCount: handTargets.length,
+            hasCursorStack: !!cursorStack,
+            hasAbilityMode: !!abilityMode,
+          })
+
+          // Pass pre-calculated boardTargets and handTargets to avoid recalculating (important for line modes and hand targeting)
+          setTargetingMode(targetingAction, targetingPlayerId, sourceCoords, boardTargets, commandContext, handTargets)
+        } else {
+          // For line selection modes, only set local validTargets - don't call setTargetingMode
+          // The line selection is handled via handleLineSelection in lineSelectionHandlers.ts
+          logger.info(`[App.tsx] Line selection mode detected (${targetingAction.mode}) - setting local targets only, not calling setTargetingMode`)
+        }
       }
     } else if (!hasActiveMode) {
       // Clear targeting mode ONLY if it belongs to the local player
@@ -1319,11 +1344,19 @@ const AppInner = function AppInner() {
 
   // Scoring Phase Logic
   useEffect(() => {
-    // If we left scoring step (e.g. someone else scored), clear the mode
-    if (!gameState.isScoringStep && abilityMode?.mode === 'SCORE_LAST_PLAYED_LINE') {
-      setAbilityMode(null)
-      return
-    }
+    // NOTE: Removed the check that cleared SCORE_LAST_PLAYED_LINE when !isScoringStep
+    // This was causing a race condition in WebRTC mode where guests would receive
+    // ABILITY_MODE_SET before receiving the isScoringStep=true state update.
+    // The host is authoritative for scoring mode - guests should trust the host's
+    // ABILITY_MODE_SET message and not clear it based on local isScoringStep state.
+
+    logger.info('[App.tsx] Scoring Phase useEffect triggered', {
+      isScoringStep: gameState.isScoringStep,
+      abilityMode: abilityMode,
+      activePlayerId: gameState.activePlayerId,
+      localPlayerId,
+      boardSize,
+    })
 
     if (gameState.isScoringStep && !abilityMode) {
       const activePlayerId = gameState.activePlayerId
@@ -1352,11 +1385,66 @@ const AppInner = function AppInner() {
         }
 
         if (found && lastPlayedCoords) {
-          setAbilityMode({
+          // Create ability action for scoring line selection
+          const scoringAction: AbilityAction = {
             type: 'ENTER_MODE',
             mode: 'SCORE_LAST_PLAYED_LINE',
             sourceCoords: lastPlayedCoords,
-          })
+          }
+          // Set ability mode locally
+          // NOTE: For scoring line selection, we use abilityMode, NOT targetingMode
+          // The handleLineSelection function in lineSelectionHandlers.ts handles this mode
+          setAbilityMode(scoringAction)
+
+          // In WebRTC mode, broadcast to guests so they see the scoring selection
+          // Include boardTargets so guests can see the highlighted lines
+          const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+          if (isWebRTCMode && activePlayerId !== null) {
+            // Calculate boardTargets for the line selection
+            const gridSize = boardSize
+            const boardTargets: {row: number, col: number}[] = []
+            // Highlight horizontal line (same row)
+            for (let c = 0; c < gridSize; c++) {
+              boardTargets.push({ row: lastPlayedCoords.row, col: c })
+            }
+            // Highlight vertical line (same column)
+            for (let r = 0; r < gridSize; r++) {
+              boardTargets.push({ row: r, col: lastPlayedCoords.col })
+            }
+
+            const webrtcManager = (window as any).webrtcManager
+            const isHost = (window as any).webrtcIsHost
+
+            if (isHost && webrtcManager?.broadcastToGuests) {
+              // Host broadcasts directly to all guests
+              webrtcManager.broadcastToGuests({
+                type: 'ABILITY_MODE_SET',
+                senderId: webrtcManager.getPeerId(),
+                data: {
+                  abilityMode: {
+                    ...scoringAction,
+                    playerId: activePlayerId,
+                    boardTargets,
+                  }
+                },
+                timestamp: Date.now()
+              })
+            } else if (!isHost && webrtcManager?.sendMessageToHost) {
+              // Guest sends to host
+              webrtcManager.sendMessageToHost({
+                type: 'ABILITY_MODE_SET',
+                senderId: webrtcManager.getPeerId?.() ?? undefined,
+                data: {
+                  abilityMode: {
+                    ...scoringAction,
+                    playerId: activePlayerId,
+                    boardTargets,
+                  }
+                },
+                timestamp: Date.now()
+              })
+            }
+          }
         } else {
           // No LastPlayed card found (e.g. destroyed), skip scoring.
           // Any player can trigger phase change for dummy active player
@@ -2550,6 +2638,7 @@ const AppInner = function AppInner() {
               activeFloatingTexts={activeFloatingTexts}
               abilitySourceCoords={abilityMode?.sourceCoords || null}
               abilityCheckKey={abilityCheckKey}
+              abilityMode={abilityMode}
               clickWaves={clickWaves}
               triggerClickWave={triggerClickWave}
               onCancelAllModes={handleCancelAllModes}
