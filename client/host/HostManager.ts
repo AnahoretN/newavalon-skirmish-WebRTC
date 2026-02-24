@@ -716,6 +716,13 @@ export class HostManager {
         }
         break
 
+      case 'RESET_GAME':
+      case 'GAME_RESET':
+        // Reset game to lobby state (keeps players and decks)
+        logger.info('[HostManager] Received RESET_GAME request')
+        this.handleResetGame()
+        break
+
       default:
         logger.debug(`[HostManager] Unhandled message type: ${message.type}`)
         break
@@ -1067,10 +1074,14 @@ export class HostManager {
     let finalDeck: any[] = []
     let compactDeckForBroadcast: any[] = []
 
+    // Debug logging
+    logger.info(`[HostManager] handleChangePlayerDeck: playerId=${playerId}, deckType=${deckType}, isDummy=${isDummy}, receivedDeck=${Array.isArray(receivedDeck)}, deckLength=${receivedDeck?.length || 0}`)
+
     // For dummy players, ALWAYS create deck on host (ignore guest's deck data)
     // For real players, use deck data from guest if provided
     if (isDummy || !receivedDeck || !Array.isArray(receivedDeck) || receivedDeck.length === 0) {
       // Create deck locally on host
+      logger.info(`[HostManager] Creating deck locally for player ${playerId}: ${deckType}`)
       finalDeck = createDeck(deckType, playerId, targetPlayer.name)
 
       // Create compact version for broadcast (only essential data)
@@ -1142,13 +1153,17 @@ export class HostManager {
     }
 
     // Update the player's deck
+    // CRITICAL: If game has already started, don't clear hand/discard
+    const gameStarted = state.isGameStarted
     this.stateManager.updatePlayerProperty(playerId, {
       selectedDeck: deckType,
       deck: finalDeck,
-      hand: [],
-      discard: [],
-      announcedCard: null,
-      boardHistory: []
+      ...(gameStarted ? {} : {
+        hand: [],
+        discard: [],
+        announcedCard: null,
+        boardHistory: []
+      })
     })
 
     // Broadcast full deck data to ALL guests (including original sender for confirmation)
@@ -1189,17 +1204,21 @@ export class HostManager {
       return
     }
 
-    // IMPORTANT: Update the player's deck in HostStateManager state
-    // This ensures the deck is available when game starts
-    const updatedPlayers = state.players.map(p =>
-      p.id === playerId
-        ? { ...p, deck: receivedDeck || [], hand: p.hand || [], discard: p.discard || [] }
-        : p
-    )
+    // CRITICAL: If game has already started, only update deck if hand is still empty
+    // This prevents overwriting dealt hands
+    const gameStarted = state.isGameStarted
+    const shouldUpdateDeck = !gameStarted || targetPlayer.hand.length === 0
 
-    const updatedState = { ...state, players: updatedPlayers }
-    this.stateManager.setInitialState(updatedState)
-    logger.info(`[HostManager] Updated player ${playerId} deck in state: ${receivedDeck?.length || 0} cards`)
+    if (shouldUpdateDeck) {
+      // Use updatePlayerProperty to avoid race conditions with startGame
+      this.stateManager.updatePlayerProperty(playerId, {
+        deck: receivedDeck || [],
+        selectedDeck: targetPlayer.selectedDeck // Preserve selectedDeck
+      })
+      logger.info(`[HostManager] Updated player ${playerId} deck in state: ${receivedDeck?.length || 0} cards`)
+    } else {
+      logger.warn(`[HostManager] Skipped deck update for player ${playerId}: game started and player already has ${targetPlayer.hand.length} cards`)
+    }
 
     // Broadcast deck data to ALL other guests (excluding sender)
     // This allows guests to view each other's decks in the deck view modal
@@ -1216,6 +1235,76 @@ export class HostManager {
     }, fromPeerId) // Exclude sender since they already have their own deck
 
     logger.info(`[HostManager] Broadcasted deck data for player ${playerId}: ${receivedDeck?.length || 0} cards`)
+  }
+
+  /**
+   * Handle game reset request
+   * Resets game to lobby state but keeps players and their selected decks
+   */
+  private handleResetGame(): void {
+    const state = this.stateManager.getState()
+    if (!state) {
+      logger.warn('[HostManager] No game state for reset')
+      return
+    }
+
+    logger.info('[HostManager] Resetting game to lobby state')
+
+    // Reset game state but keep players and their decks
+    const resetState: Partial<GameState> = {
+      isGameStarted: false,
+      isRoundEndModalOpen: false,
+      currentPhase: 0, // Preparation phase
+      currentRound: 1,
+      turnNumber: 0,
+      activePlayerId: null,
+      startingPlayerId: null,
+      gameWinner: null,
+      roundWinners: {},
+      isScoringStep: false,
+      abilityMode: undefined,
+      targetingMode: null,
+      board: state.board.map(row => row.map(cell => ({
+        ...cell,
+        card: null
+      }))),
+      // Reset players but keep their deck and selectedDeck
+      players: state.players.map(p => ({
+        ...p,
+        score: 0,
+        hand: [],
+        discard: [],
+        announcedCard: null,
+        boardHistory: [],
+        isReady: false,
+        // Keep: deck, selectedDeck, name, color, id
+      })),
+      // Clear visual effects
+      highlights: [],
+      floatingTexts: [],
+      deckSelections: [],
+      handCardSelections: [],
+    }
+
+    // Merge with current state
+    const newState = { ...state, ...resetState }
+    this.stateManager.setInitialState(newState)
+
+    // Broadcast reset to all guests
+    this.connectionManager.broadcast({
+      type: 'GAME_RESET',
+      senderId: this.connectionManager.getPeerId(),
+      data: resetState,
+      timestamp: Date.now()
+    })
+
+    // Update host's UI
+    if (this.config.onStateUpdate) {
+      this.config.onStateUpdate(newState)
+    }
+
+    this.gameLogger.logAction('GAME_RESET', {}, 0)
+    logger.info('[HostManager] Game reset to lobby state')
   }
 
   /**

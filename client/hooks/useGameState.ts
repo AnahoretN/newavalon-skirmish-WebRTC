@@ -2330,8 +2330,43 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         })
         if (message.data) {
           setGameState(currentState => {
+            // Check if phase is changing
+            const phaseChanging = message.data.currentPhase !== undefined && message.data.currentPhase !== currentState.currentPhase
+
+            let newBoard = currentState.board
+            // If phase changed, remove readyDeploy statuses and recalculate Support/Threat
+            if (phaseChanging) {
+              newBoard = currentState.board.map(row =>
+                row.map(cell => {
+                  if (!cell.card) {
+                    return cell
+                  }
+                  const card = cell.card
+                  if (card.statuses) {
+                    const filteredStatuses = card.statuses.filter(s => s.type !== 'readyDeploy')
+                    if (filteredStatuses.length !== card.statuses.length) {
+                      return {
+                        ...cell,
+                        card: {
+                          ...card,
+                          statuses: filteredStatuses
+                        }
+                      }
+                    }
+                  }
+                  return cell
+                })
+              )
+              // Recalculate board statuses to restore Support/Threat tokens
+              newBoard = recalculateBoardStatuses({
+                ...currentState,
+                board: newBoard
+              })
+            }
+
             const newState = {
               ...currentState,
+              board: newBoard,
               ...(message.data.currentPhase !== undefined && { currentPhase: message.data.currentPhase }),
               ...(message.data.activePlayerId !== undefined && { activePlayerId: message.data.activePlayerId }),
               ...(message.data.isScoringStep !== undefined && { isScoringStep: message.data.isScoringStep })
@@ -2339,10 +2374,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
             logger.info('[STATE_UPDATE_COMPACT_JSON] Updated state:', {
               oldPhase: currentState.currentPhase,
               newPhase: newState.currentPhase,
-              oldActivePlayer: currentState.activePlayerId,
-              newActivePlayer: newState.activePlayerId,
+              oldActivePlayerId: currentState.activePlayerId,
+              newActivePlayerId: newState.activePlayerId,
               oldIsScoringStep: currentState.isScoringStep,
-              newIsScoringStep: newState.isScoringStep
+              newIsScoringStep: newState.isScoringStep,
+              boardRecalculated: phaseChanging
             })
             return newState
           })
@@ -3180,10 +3216,17 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               })
             )
 
+            // Recalculate board statuses to restore Support/Threat tokens
+            // This is necessary because we removed readyDeploy and need to recalculate dynamic statuses
+            const recalculatedBoard = recalculateBoardStatuses({
+              ...prev,
+              board: newBoard
+            })
+
             const newState = {
               ...prev,
               currentPhase: newPhase,
-              board: newBoard
+              board: recalculatedBoard
             }
 
             // Handle scoring step
@@ -5154,6 +5197,52 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     }
   }, [getWebRTCEnabled, phaseActions])
 
+  // Game reset function - resets game to lobby (keeps players and decks)
+  const resetGame = useCallback(() => {
+    if (getWebRTCEnabled()) {
+      // WebRTC P2P mode - send RESET_GAME action to host
+      if (webrtcManagerRef.current?.sendMessageToHost) {
+        webrtcManagerRef.current.sendMessageToHost({
+          type: 'RESET_GAME',
+          senderId: webrtcManagerRef.current!.getPeerId?.() ?? undefined,
+          data: {},
+          timestamp: Date.now()
+        })
+      }
+    } else {
+      // WebSocket mode - send to server
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify({
+          type: 'RESET_GAME',
+          gameId: gameStateRef.current.gameId,
+        }))
+      }
+    }
+  }, [getWebRTCEnabled])
+
+  // Close round end modal and start next round
+  const closeRoundEndModal = useCallback(() => {
+    if (getWebRTCEnabled()) {
+      // WebRTC P2P mode
+      phaseActions.startNextRound()
+    } else {
+      // WebSocket mode
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify({
+          type: 'START_NEXT_ROUND',
+          gameId: gameStateRef.current.gameId,
+        }))
+      }
+      // Also close modal locally
+      updateState(prev => ({ ...prev, isRoundEndModalOpen: false }))
+    }
+  }, [getWebRTCEnabled, phaseActions, updateState])
+
+  // Close round end modal only (without starting next round)
+  const closeRoundEndModalOnly = useCallback(() => {
+    updateState(prev => ({ ...prev, isRoundEndModalOpen: false }))
+  }, [updateState])
+
   return {
     gameState,
     localPlayerId,
@@ -5239,6 +5328,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     passTurn,
     startScoring,
     selectScoringLine,
+    closeRoundEndModal,
+    closeRoundEndModalOnly,
+    resetGame,
     // Deck viewing function
     requestDeckView,
     sendFullDeckToHost,

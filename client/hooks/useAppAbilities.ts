@@ -3,6 +3,7 @@ import type { Card, GameState, AbilityAction, CommandContext, DragItem, Player, 
 import { validateTarget } from '@shared/utils/targeting'
 import { hasReadyAbilityInCurrentPhase } from '@/utils/autoAbilities'
 import { getWebRTCEnabled } from './useWebRTCEnabled'
+import { logger } from '@/utils/logger'
 
 // Import extracted handler modules
 import {

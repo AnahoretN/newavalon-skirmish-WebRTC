@@ -56,8 +56,9 @@ export function useDeckManagement(props: UseDeckManagementProps) {
   const changePlayerDeck = useCallback((playerId: number, deckType: DeckType) => {
     const isWebRTCMode = getWebRTCEnabled()
     let playerIsDummy = false
+    let deckForHostSync: Card[] = []
 
-    // First, read current state to check if player is dummy
+    // First, get current state info and create deck if needed
     updateState(currentState => {
       const targetPlayer = currentState.players.find(p => p.id === playerId)
       if (!targetPlayer) {
@@ -84,6 +85,11 @@ export function useDeckManagement(props: UseDeckManagementProps) {
 
       // Create the new deck (only for non-dummy or host)
       const newDeck = shouldCreateDeckLocally ? createDeck(deckType, playerId, targetPlayer.name) : []
+
+      // For guest players (not dummy), store deck for sending to host
+      if (isWebRTCMode && !isHost && !isDummy) {
+        deckForHostSync = newDeck
+      }
 
       // Log what we're doing
       if (isDummy) {
@@ -215,32 +221,26 @@ export function useDeckManagement(props: UseDeckManagementProps) {
         // Host needs to know guest's deck because when game starts, host distributes cards from player.deck
         // If host doesn't have the updated deck, guests will start with wrong cards
         if (sendWebrtcAction) {
-          // Get the deck that was just created locally
-          let deckToSend: Card[] = []
-          updateState(currentState => {
-            const player = currentState.players.find(p => p.id === playerId)
-            if (player && player.deck) {
-              deckToSend = player.deck
-            }
-            return currentState
-          })
+          if (deckForHostSync.length > 0) {
+            const compactDeckData = deckForHostSync.map(card => ({
+              id: card.id,
+              baseId: card.baseId || card.id,
+              power: card.power,
+              powerModifier: card.powerModifier || 0,
+              isFaceDown: card.isFaceDown || false,
+              statuses: card.statuses || []
+            }))
 
-          const compactDeckData = deckToSend.map(card => ({
-            id: card.id,
-            baseId: card.baseId || card.id,
-            power: card.power,
-            powerModifier: card.powerModifier || 0,
-            isFaceDown: card.isFaceDown || false,
-            statuses: card.statuses || []
-          }))
-
-          sendWebrtcAction('CHANGE_PLAYER_DECK', {
-            playerId,
-            deckType,
-            deck: compactDeckData,
-            deckSize: compactDeckData.length
-          })
-          logger.info(`[changePlayerDeck] Guest sending own deck data to host: player ${playerId}, deck ${deckType}, ${compactDeckData.length} cards`)
+            sendWebrtcAction('CHANGE_PLAYER_DECK', {
+              playerId,
+              deckType,
+              deck: compactDeckData,
+              deckSize: compactDeckData.length
+            })
+            logger.info(`[changePlayerDeck] Guest sending own deck data to host: player ${playerId}, deck ${deckType}, ${compactDeckData.length} cards`)
+          } else {
+            logger.warn(`[changePlayerDeck] Guest has no deck data to send for player ${playerId}`)
+          }
         } else {
           logger.warn(`[changePlayerDeck] Guest mode but no sendWebrtcAction available`)
         }

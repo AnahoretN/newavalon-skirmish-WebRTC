@@ -143,6 +143,7 @@ export class HostStateManager {
 
   /**
    * Set the initial game state
+   * IMPORTANT: If game has already started, only update deck/selectedDeck properties to avoid losing game progress
    */
   setInitialState(state: GameState): void {
     // Validate state before setting
@@ -151,6 +152,30 @@ export class HostStateManager {
       logger.error('[HostStateManager] Invalid initial state - no players, rejecting')
       return
     }
+
+    // If game has already started, don't overwrite the entire state
+    // Only update deck/selectedDeck properties for each player
+    if (this.currentState?.isGameStarted) {
+      logger.warn('[HostStateManager] Game already started, merging deck data instead of overwriting state')
+      // Merge deck data from incoming state into current state
+      const updatedPlayers = this.currentState.players.map(currentPlayer => {
+        const incomingPlayer = state.players.find(p => p.id === currentPlayer.id)
+        if (incomingPlayer) {
+          return {
+            ...currentPlayer,
+            deck: incomingPlayer.deck || currentPlayer.deck,
+            selectedDeck: incomingPlayer.selectedDeck || currentPlayer.selectedDeck
+          }
+        }
+        return currentPlayer
+      })
+      this.currentState = {
+        ...this.currentState,
+        players: updatedPlayers
+      }
+      return
+    }
+
     this.currentState = state
 
     // If localPlayerId is not set yet, default to player 1 (host is always player 1)
