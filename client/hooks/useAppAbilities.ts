@@ -349,8 +349,16 @@ export const useAppAbilities = ({
     }
 
     // 3. Handle line selection modes
+    // CRITICAL: Only the active player with scoring mode can click to score
     if (abilityMode && (abilityMode.mode === 'SCORE_LAST_PLAYED_LINE' || abilityMode.mode === 'SELECT_LINE_END')) {
-      handleLineSelection(boardCoords)
+      // Check if local player is the active player (only active player can score)
+      const canScore = localPlayerId === gameState.activePlayerId
+
+      if (canScore) {
+        handleLineSelection(boardCoords)
+      } else {
+        logger.info(`[handleBoardCardClick] Ignoring click - local player ${localPlayerId} is not active player ${gameState.activePlayerId}`)
+      }
       return
     }
 

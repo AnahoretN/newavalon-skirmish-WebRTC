@@ -521,23 +521,31 @@ export function handleEmptyCellClick(
 
   // === ABILITY MODE - LINE SELECTION MODES ===
   if (abilityMode?.mode && ['SCORE_LAST_PLAYED_LINE', 'SELECT_LINE_END', 'SELECT_LINE_START', 'SELECT_DIAGONAL'].includes(abilityMode.mode)) {
-    handleLineSelectionModule(boardCoords, {
-      gameState,
-      localPlayerId,
-      abilityMode,
-      interactionLock,
-      setAbilityMode,
-      markAbilityUsed,
-      updatePlayerScore,
-      triggerFloatingText,
-      nextPhase: nextPhase || (() => {}),
-      modifyBoardCardPower: modifyBoardPower || (() => {}),
-      scoreLine: scoreLine || (() => {}),
-      scoreDiagonal: scoreDiagonal || (() => {}),
-      commandContext,
-      updateState,
-      isWebRTCMode: props.isWebRTCMode,
-    })
+    // CRITICAL: Only the active player can click to select lines
+    const canSelect = localPlayerId === gameState.activePlayerId
+
+    if (canSelect) {
+      handleLineSelectionModule(boardCoords, {
+        gameState,
+        localPlayerId,
+        abilityMode,
+        interactionLock,
+        setAbilityMode,
+        markAbilityUsed,
+        updatePlayerScore,
+        triggerFloatingText,
+        nextPhase: nextPhase || (() => {}),
+        modifyBoardCardPower: modifyBoardPower || (() => {}),
+        scoreLine: scoreLine || (() => {}),
+        scoreDiagonal: scoreDiagonal || (() => {}),
+        commandContext,
+        updateState,
+        isWebRTCMode: props.isWebRTCMode,
+      })
+    } else {
+      // Silently ignore clicks from non-active players
+      console.log(`[emptyCellHandlers] Ignoring line selection click - local player ${localPlayerId} is not active player ${gameState.activePlayerId}`)
+    }
     return true
   }
 
