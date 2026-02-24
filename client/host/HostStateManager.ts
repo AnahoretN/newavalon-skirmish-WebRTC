@@ -157,7 +157,10 @@ export class HostStateManager {
     // Only update deck/selectedDeck properties for each player
     // BUT also update abilityMode and targetingMode (needed for scoring mode)
     if (this.currentState?.isGameStarted) {
-      logger.warn('[HostStateManager] Game already started, merging deck data and mode properties instead of overwriting state')
+      logger.info('[HostStateManager] Game already started, merging deck data and mode properties instead of overwriting state')
+      logger.info('[HostStateManager] Incoming abilityMode:', state.abilityMode)
+      logger.info('[HostStateManager] Incoming targetingMode:', state.targetingMode)
+
       // Merge deck data from incoming state into current state
       const updatedPlayers = this.currentState.players.map(currentPlayer => {
         const incomingPlayer = state.players.find(p => p.id === currentPlayer.id)
@@ -177,6 +180,8 @@ export class HostStateManager {
         abilityMode: state.abilityMode,
         targetingMode: state.targetingMode,
       }
+      logger.info('[HostStateManager] After merge - abilityMode:', this.currentState.abilityMode)
+      logger.info('[HostStateManager] After merge - targetingMode:', this.currentState.targetingMode)
       return this.currentState  // Return updated state so caller can use it
     }
 

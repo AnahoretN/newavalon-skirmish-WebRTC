@@ -855,9 +855,13 @@ export class HostManager {
         this.broadcastScoringMode(updatedState)
       }
 
-      // Update host's React state with new object
-      if (this.config.onStateUpdate) {
-        this.config.onStateUpdate(updatedState)
+      // CRITICAL: Get the actual state from stateManager (may include abilityMode/targetingMode from broadcastScoringMode)
+      // and use it for onStateUpdate to ensure host sees the same state as guests
+      const finalStateForUI = this.stateManager.getState()
+
+      // Update host's React state with the final state (including abilityMode/targetingMode if set)
+      if (this.config.onStateUpdate && finalStateForUI) {
+        this.config.onStateUpdate(finalStateForUI)
       }
 
       logger.info(`[HostManager] Phase action: ${phaseAction.action} by player ${playerId}, phase=${newPhase}, activePlayer=${newActivePlayer}, isScoringStep=${newIsScoringStep}`)
@@ -1005,9 +1009,13 @@ export class HostManager {
       this.broadcastScoringMode(updatedState)
     }
 
-    // Update host's React state with new object
-    if (this.config.onStateUpdate) {
-      this.config.onStateUpdate(updatedState)
+    // CRITICAL: Get the actual state from stateManager (may include abilityMode/targetingMode from broadcastScoringMode)
+    // and use it for onStateUpdate to ensure host sees the same state as guests
+    const finalStateForUI = this.stateManager.getState()
+
+    // Update host's React state with the final state (including abilityMode/targetingMode if set)
+    if (this.config.onStateUpdate && finalStateForUI) {
+      this.config.onStateUpdate(finalStateForUI)
     }
 
     logger.info(`[HostManager] Phase action: ${actionType} by player ${playerId}, phase=${newPhase}, activePlayer=${newActivePlayer}, isScoringStep=${newIsScoringStep}`)
