@@ -512,15 +512,24 @@ export class HostManager {
               break
             }
 
-            // Update host's internal state
+            // Update host's internal state with both abilityMode and targetingMode
+            const abilityModeData = message.data.abilityMode
             const newState = {
               ...currentState,
-              abilityMode: message.data.abilityMode
+              abilityMode: abilityModeData,
+              targetingMode: abilityModeData.boardTargets ? {
+                playerId: abilityModeData.playerId || currentState.activePlayerId,
+                action: { type: 'ENTER_MODE', mode: abilityModeData.mode },
+                sourceCoords: abilityModeData.sourceCoords,
+                timestamp: abilityModeData.timestamp || Date.now(),
+                boardTargets: abilityModeData.boardTargets,
+                handTargets: abilityModeData.handTargets,
+              } : currentState.targetingMode,
             }
-            this.stateManager.setInitialState(newState)
-            // Update host's UI
-            if (this.config.onStateUpdate) {
-              this.config.onStateUpdate(newState)
+            const actualState = this.stateManager.setInitialState(newState)
+            // Update host's UI with the actual state
+            if (this.config.onStateUpdate && actualState) {
+              this.config.onStateUpdate(actualState)
             }
           }
 
@@ -2372,11 +2381,22 @@ export class HostManager {
           boardTargets,
         }
       }
-      this.stateManager.setInitialState(updatedState)
+      const actualUpdatedState = this.stateManager.setInitialState(updatedState)
 
-      // Update host's UI
-      if (this.config.onStateUpdate) {
-        this.config.onStateUpdate(updatedState)
+      logger.info('[HostManager] broadcastScoringMode - setting state for host:', {
+        hasAbilityMode: !!actualUpdatedState?.abilityMode,
+        abilityMode: actualUpdatedState?.abilityMode,
+        hasTargetingMode: !!actualUpdatedState?.targetingMode,
+        targetingModePlayerId: actualUpdatedState?.targetingMode?.playerId,
+        boardTargetsCount: actualUpdatedState?.targetingMode?.boardTargets?.length,
+      })
+
+      // Update host's UI with the actual state that was set
+      if (this.config.onStateUpdate && actualUpdatedState) {
+        this.config.onStateUpdate(actualUpdatedState)
+        logger.info('[HostManager] Called onStateUpdate with scoring mode')
+      } else {
+        logger.warn('[HostManager] onStateUpdate callback missing or actualUpdatedState is null')
       }
       logger.info('[HostManager] Set scoring mode for all players including host')
 

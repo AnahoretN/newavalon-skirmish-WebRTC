@@ -145,12 +145,12 @@ export class HostStateManager {
    * Set the initial game state
    * IMPORTANT: If game has already started, only update deck/selectedDeck properties to avoid losing game progress
    */
-  setInitialState(state: GameState): void {
+  setInitialState(state: GameState): GameState | null {
     // Validate state before setting
     logger.info(`[HostStateManager] setInitialState called: state=${!!state}, players=${state?.players?.length || 0}, gameId=${state?.gameId}, localPlayerId=${this.localPlayerId}`)
     if (!state || !state.players || state.players.length === 0) {
       logger.error('[HostStateManager] Invalid initial state - no players, rejecting')
-      return
+      return null
     }
 
     // If game has already started, don't overwrite the entire state
@@ -177,7 +177,7 @@ export class HostStateManager {
         abilityMode: state.abilityMode,
         targetingMode: state.targetingMode,
       }
-      return
+      return this.currentState  // Return updated state so caller can use it
     }
 
     this.currentState = state
@@ -189,6 +189,7 @@ export class HostStateManager {
     }
 
     logger.info('[HostStateManager] Initial state set with ' + state.players.length + ' players')
+    return this.currentState
   }
 
   /**
