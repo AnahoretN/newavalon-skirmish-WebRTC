@@ -155,8 +155,9 @@ export class HostStateManager {
 
     // If game has already started, don't overwrite the entire state
     // Only update deck/selectedDeck properties for each player
+    // BUT also update abilityMode and targetingMode (needed for scoring mode)
     if (this.currentState?.isGameStarted) {
-      logger.warn('[HostStateManager] Game already started, merging deck data instead of overwriting state')
+      logger.warn('[HostStateManager] Game already started, merging deck data and mode properties instead of overwriting state')
       // Merge deck data from incoming state into current state
       const updatedPlayers = this.currentState.players.map(currentPlayer => {
         const incomingPlayer = state.players.find(p => p.id === currentPlayer.id)
@@ -171,7 +172,10 @@ export class HostStateManager {
       })
       this.currentState = {
         ...this.currentState,
-        players: updatedPlayers
+        players: updatedPlayers,
+        // CRITICAL: Also update abilityMode and targetingMode for scoring mode
+        abilityMode: state.abilityMode,
+        targetingMode: state.targetingMode,
       }
       return
     }
@@ -378,7 +382,18 @@ export class HostStateManager {
     }
 
     const oldState = this.currentState
-    const newState = applyStateDelta(oldState, delta, guestPlayerId)
+    let newState = applyStateDelta(oldState, delta, guestPlayerId)
+
+    // CRITICAL: Preserve abilityMode and targetingMode from current state
+    // Guest deltas don't include these, so we must preserve them
+    // Unless the delta explicitly sets them to undefined/null (clearing)
+    if (!delta.phaseDelta || delta.phaseDelta.abilityMode === undefined) {
+      newState = { ...newState, abilityMode: oldState.abilityMode }
+    }
+    if (!delta.phaseDelta || delta.phaseDelta.targetingMode === undefined) {
+      newState = { ...newState, targetingMode: oldState.targetingMode }
+    }
+
     const newDelta = createDeltaFromStates(oldState, newState, guestPlayerId)
     this.currentState = newState
 
