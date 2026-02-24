@@ -1508,7 +1508,9 @@ export class HostManager {
     )
     const updatedState: GameState = {
       ...state,
-      players: updatedPlayers
+      players: updatedPlayers,
+      abilityMode: undefined,  // Clear ability mode on host too
+      targetingMode: null
     }
     this.stateManager.setInitialState(updatedState)
     if (this.config.onStateUpdate) {
@@ -2357,31 +2359,26 @@ export class HostManager {
         sourceCoords: lastPlayedCoords,
       }
 
-      // CRITICAL: Only update host's abilityMode if HOST is the active player
-      // Host should NOT see scoring mode UI for other players' turns
-      const hostPlayerId = this.stateManager.getLocalPlayerId()
-      if (activePlayerId === hostPlayerId) {
-        const updatedState: GameState = {
-          ...state,
-          abilityMode: scoringAction,
-          targetingMode: {
-            playerId: activePlayerId,
-            action: { type: 'ENTER_MODE', mode: 'SCORE_LAST_PLAYED_LINE' },
-            sourceCoords: lastPlayedCoords,
-            timestamp: Date.now(),
-            boardTargets,
-          }
+      // Update host's abilityMode so host sees the scoring mode
+      // All players (including host) should see line selection effects
+      const updatedState: GameState = {
+        ...state,
+        abilityMode: scoringAction,
+        targetingMode: {
+          playerId: activePlayerId,
+          action: { type: 'ENTER_MODE', mode: 'SCORE_LAST_PLAYED_LINE' },
+          sourceCoords: lastPlayedCoords,
+          timestamp: Date.now(),
+          boardTargets,
         }
-        this.stateManager.setInitialState(updatedState)
-
-        // Update host's UI
-        if (this.config.onStateUpdate) {
-          this.config.onStateUpdate(updatedState)
-        }
-        logger.info('[HostManager] Set scoring mode for HOST (active player)')
-      } else {
-        logger.info(`[HostManager] Skipping scoring mode for host - active player is ${activePlayerId}`)
       }
+      this.stateManager.setInitialState(updatedState)
+
+      // Update host's UI
+      if (this.config.onStateUpdate) {
+        this.config.onStateUpdate(updatedState)
+      }
+      logger.info('[HostManager] Set scoring mode for all players including host')
 
       // Broadcast ABILITY_MODE_SET to all guests
       this.connectionManager.broadcast({
