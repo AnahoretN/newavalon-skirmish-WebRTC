@@ -292,7 +292,7 @@ export class PhaseManager {
       newPhase: prepResult.newPhase,
       oldActivePlayer,
       newActivePlayer: startingPlayerId,
-      reason: 'game_started' as PhaseTransitionReason,
+      reason: PhaseTransitionReason.GAME_STARTED,
       ...(prepResult.roundEndInfo ? { roundEndInfo: prepResult.roundEndInfo } : {})
     }
 
@@ -335,7 +335,7 @@ export class PhaseManager {
 
     // Go back one phase
     const newPhase = currentPhase - 1 as GamePhase
-    return this.setPhase(newPhase, playerId, 'previous_phase' as PhaseTransitionReason)
+    return this.setPhase(newPhase, playerId, PhaseTransitionReason.PREVIOUS_PHASE)
   }
 
   /**
@@ -399,7 +399,7 @@ export class PhaseManager {
       newPhase: GamePhase.SCORING,
       oldActivePlayer,
       newActivePlayer: playerId,
-      reason: 'next_phase' as PhaseTransitionReason,
+      reason: PhaseTransitionReason.NEXT_PHASE,
       scoringStarted: true
     }
 
@@ -508,7 +508,7 @@ export class PhaseManager {
       newPhase: prepResult.newPhase,
       oldActivePlayer: playerId,
       newActivePlayer: nextPlayerId,
-      reason: 'game_started' as PhaseTransitionReason,
+      reason: PhaseTransitionReason.GAME_STARTED,
       ...(prepResult.roundEndInfo ? { roundEndInfo: prepResult.roundEndInfo } : {})
     }
 
@@ -562,7 +562,7 @@ export class PhaseManager {
       newPhase: prepResult.newPhase,
       oldActivePlayer: playerId,
       newActivePlayer: newStartingPlayerId,
-      reason: 'game_started' as PhaseTransitionReason,
+      reason: PhaseTransitionReason.GAME_STARTED,
       ...(prepResult.roundEndInfo ? { roundEndInfo: prepResult.roundEndInfo } : {})
     }
 
@@ -630,7 +630,7 @@ export class PhaseManager {
       newPhase: targetPhase as GamePhase,
       oldActivePlayer,
       newActivePlayer: this.state.activePlayerId,
-      reason: 'phase_set' as PhaseTransitionReason
+      reason: PhaseTransitionReason.PHASE_SET
     }
 
     this.notifyPhaseChange(result)
@@ -661,7 +661,7 @@ export class PhaseManager {
     // Main -> Commit is just phase change
     // Setup -> Main happens when card is played
     // Preparation -> Setup happens automatically after prep actions
-    return this.setPhase(nextPhase, playerId, 'next_phase' as PhaseTransitionReason)
+    return this.setPhase(nextPhase, playerId, PhaseTransitionReason.NEXT_PHASE)
   }
 
   /**
@@ -736,7 +736,7 @@ export class PhaseManager {
       newPhase: prepResult.newPhase,
       oldActivePlayer,
       newActivePlayer: nextPlayerId,
-      reason: 'turn_started' as PhaseTransitionReason,
+      reason: PhaseTransitionReason.TURN_STARTED,
       ...(prepResult.roundEndInfo ? { roundEndInfo: prepResult.roundEndInfo } : {})
     }
 

@@ -145,6 +145,22 @@ export function usePhaseActions(props: UsePhaseActionsProps): PhaseActionsResult
             if (onStateUpdate) {
               onStateUpdate(gameStateRef.current)
             }
+          },
+          onScoringModeStarted: (activePlayerId: number, validLinesCount: number) => {
+            // Scoring mode started - update state
+            if (onStateUpdate) {
+              const state = gameStateRef.current
+              state.isScoringStep = true
+              onStateUpdate(state)
+            }
+          },
+          onScoringModeCompleted: (info: any) => {
+            // Scoring mode completed - update state
+            if (onStateUpdate) {
+              const state = gameStateRef.current
+              state.isScoringStep = false
+              onStateUpdate(state)
+            }
           }
         })
         phaseSystemInitialized.current = true
