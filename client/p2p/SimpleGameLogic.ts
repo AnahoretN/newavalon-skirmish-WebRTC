@@ -11,8 +11,28 @@ import type { ActionType } from './SimpleP2PTypes'
 import { getCardDefinition } from '../content'
 import { shuffleDeck } from '../../shared/utils/array'
 import { recalculateBoardStatuses } from '../../shared/utils/boardUtils'
-import { initializeReadyStatuses, recalculateAllReadyStatuses, clearAllReadyStatuses } from '../utils/autoAbilities'
+import { initializeReadyStatuses, recalculateAllReadyStatuses } from '../utils/autoAbilities'
 import { createDeck } from '../hooks/core/gameCreators'
+
+/**
+ * Проверить является ли карта токеном
+ */
+function isToken(card: Card): boolean {
+  return card.deck === 'counter'
+}
+
+/**
+ * Очистить все статусы карты кроме Revealed
+ * Вызывается при перемещении карты с поля боя
+ */
+function clearAllStatusesExceptRevealed(card: Card): void {
+  if (!card.statuses) {
+    card.statuses = []
+    return
+  }
+  // Сохраняем только статусы Revealed, удаляем все остальные
+  card.statuses = card.statuses.filter(s => s.type === 'Revealed')
+}
 
 /**
  * Применить действие к состоянию игры
@@ -176,6 +196,14 @@ export function applyAction(
 
     case 'REMOVE_STATUS_BY_TYPE':
       newState = handleRemoveStatusByType(newState, data)
+      break
+
+    case 'ADD_STATUS_TO_BOARD_CARD':
+      newState = handleAddStatusToBoardCard(newState, playerId, data)
+      break
+
+    case 'PLAY_TOKEN_CARD':
+      newState = handlePlayTokenCard(newState, playerId, data)
       break
 
     case 'SET_GAME_MODE':
@@ -697,9 +725,8 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
         if (cell.card?.id === cardId) {
           cardToMove = cell.card
           targetPlayerId = cardToMove.ownerId || playerId
-          // Clear all ready statuses when card leaves battlefield
-          // This allows deploy ability to be used again when card returns
-          clearAllReadyStatuses(cardToMove!)
+          // Clear all statuses except Revealed when card leaves battlefield
+          clearAllStatusesExceptRevealed(cardToMove!)
           return { card: null }
         }
         return cell
@@ -717,6 +744,17 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
   }
 
   if (!cardToMove) {return state}
+
+  // If card is a token, destroy it instead of adding to hand
+  if (isToken(cardToMove)) {
+    // Token is removed from source and not added to destination
+    return { ...state, board: newBoard, players: state.players.map(p => {
+      if (p.id === playerId && newDiscard !== null) {
+        return { ...p, discard: newDiscard, discardSize: newDiscard.length }
+      }
+      return p
+    })}
+  }
 
   const newPlayers = state.players.map(p => {
     if (p.id === targetPlayerId) {
@@ -751,8 +789,8 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
         if (cell.card?.id === cardId) {
           cardToMove = cell.card
           targetPlayerId = cardToMove.ownerId || playerId
-          // Clear all ready statuses when card leaves battlefield
-          clearAllReadyStatuses(cardToMove!)
+          // Clear all statuses except Revealed when card leaves battlefield
+          clearAllStatusesExceptRevealed(cardToMove!)
           return { card: null }
         }
         return cell
@@ -779,6 +817,26 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
   }
 
   if (!cardToMove) {return state}
+
+  // If card is a token, destroy it instead of adding to deck
+  if (isToken(cardToMove)) {
+    // Token is removed from source and not added to destination
+    return { ...state, board: newBoard, players: state.players.map(p => {
+      if (p.id === playerId) {
+        const updates: any = {}
+        if (newHand !== null) {
+          updates.hand = newHand
+          updates.handSize = newHand.length
+        }
+        if (newDiscard !== null) {
+          updates.discard = newDiscard
+          updates.discardSize = newDiscard.length
+        }
+        return { ...p, ...updates }
+      }
+      return p
+    })}
+  }
 
   const newPlayers = state.players.map(p => {
     if (p.id === targetPlayerId) {
@@ -822,8 +880,8 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
         if (cell.card?.id === cardId) {
           cardToMove = cell.card
           targetPlayerId = cardToMove.ownerId || playerId
-          // Clear all ready statuses when card leaves battlefield
-          clearAllReadyStatuses(cardToMove!)
+          // Clear all statuses except Revealed when card leaves battlefield
+          clearAllStatusesExceptRevealed(cardToMove!)
           return { card: null }
         }
         return cell
@@ -850,6 +908,26 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
   }
 
   if (!cardToMove) {return state}
+
+  // If card is a token, destroy it instead of adding to discard
+  if (isToken(cardToMove)) {
+    // Token is removed from source and not added to destination
+    return { ...state, board: newBoard, players: state.players.map(p => {
+      if (p.id === playerId) {
+        const updates: any = {}
+        if (newHand !== null) {
+          updates.hand = newHand
+          updates.handSize = newHand.length
+        }
+        if (newDeck !== null) {
+          updates.deck = newDeck
+          updates.deckSize = newDeck.length
+        }
+        return { ...p, ...updates }
+      }
+      return p
+    })}
+  }
 
   const newPlayers = state.players.map(p => {
     if (p.id === targetPlayerId) {
@@ -1103,9 +1181,9 @@ function handleDestroyCard(state: GameState, playerId: number, data: any): GameS
 
   if (!destroyedCard || !ownerId) {return state}
 
-  // Clear all ready statuses when card is destroyed
-  // If it returns to battlefield later, deploy ability will be available again
-  clearAllReadyStatuses(destroyedCard)
+  // Clear all statuses except Revealed when card is destroyed and goes to discard
+  // This allows deploy ability to be used again when card returns to battlefield
+  clearAllStatusesExceptRevealed(destroyedCard)
 
   // Проверяем, была ли это последняя сыгранная карта владельца
   const owner = state.players.find(p => p.id === ownerId)
@@ -1887,4 +1965,112 @@ function handlePlayCardFromDiscard(state: GameState, playerId: number, data: any
   // Use handlePlayCard logic to place the card on board
   const newState = { ...state, players: newPlayers }
   return handlePlayCard(newState, playerId, { card: cardToPlay, boardCoords, faceDown })
+}
+
+/**
+ * ADD_STATUS_TO_BOARD_CARD - добавить статус (жетон) на карту на поле боя
+ */
+function handleAddStatusToBoardCard(state: GameState, playerId: number, data: any): GameState {
+  const { boardCoords, statusType, ownerId, replaceStatusType } = data || {}
+  if (!boardCoords || !statusType || ownerId === undefined) {
+    return state
+  }
+
+  const { row, col } = boardCoords
+  if (row === undefined || col === undefined) {
+    return state
+  }
+
+  // Validate bounds
+  if (row < 0 || row >= state.board.length || col < 0 || col >= state.board[row]?.length) {
+    return state
+  }
+
+  const cell = state.board[row][col]
+  if (!cell || !cell.card) {
+    return state
+  }
+
+  // Create new card with added status
+  const targetCard = cell.card
+  const existingStatuses = targetCard.statuses || []
+
+  // If replaceStatusType is specified, remove that status type first
+  let filteredStatuses = existingStatuses
+  if (replaceStatusType) {
+    filteredStatuses = existingStatuses.filter(s => s.type !== replaceStatusType)
+  }
+
+  // Check if status already exists (avoid duplicates)
+  const alreadyHasStatus = filteredStatuses.some(s => s.type === statusType && s.addedByPlayerId === ownerId)
+  if (alreadyHasStatus) {
+    return state
+  }
+
+  // Add the new status
+  const newStatuses = [...filteredStatuses, { type: statusType, addedByPlayerId: ownerId }]
+
+  const newCard = {
+    ...targetCard,
+    statuses: newStatuses
+  }
+
+  const newBoard = state.board.map((r, rIdx) =>
+    r.map((c, cIdx) => {
+      if (rIdx === row && cIdx === col) {
+        return { card: newCard }
+      }
+      return c
+    })
+  )
+
+  return { ...state, board: newBoard }
+}
+
+/**
+ * PLAY_TOKEN_CARD - разместить карту-токен на поле боя
+ * Токен НЕ удаляется из панели (может использоваться многократно)
+ * Владелец = игрок который разместил (или dummy если активен)
+ */
+function handlePlayTokenCard(state: GameState, playerId: number, data: any): GameState {
+  const { card, boardCoords, ownerId } = data || {}
+  if (!card || !boardCoords) {
+    return state
+  }
+
+  const { row, col } = boardCoords
+  if (row === undefined || col === undefined) {
+    return state
+  }
+
+  // Validate bounds
+  if (row < 0 || row >= state.board.length || col < 0 || col >= state.board[row]?.length) {
+    return state
+  }
+
+  const cell = state.board[row][col]
+  // Can only place token on empty cells
+  if (cell.card) {
+    return state
+  }
+
+  // Create token card with proper owner
+  const tokenCard: Card = {
+    ...card,
+    id: `token_${Date.now()}_${row}_${col}_${Math.random().toString(36).substr(2, 9)}`,
+    ownerId: ownerId ?? playerId,
+    enteredThisTurn: true,
+    statuses: []
+  }
+
+  const newBoard = state.board.map((r, rIdx) =>
+    r.map((c, cIdx) => {
+      if (rIdx === row && cIdx === col) {
+        return { card: tokenCard }
+      }
+      return c
+    })
+  )
+
+  return { ...state, board: newBoard }
 }

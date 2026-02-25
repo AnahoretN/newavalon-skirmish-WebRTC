@@ -50,6 +50,10 @@ export {
   clearTurnLimitedAbilities,
   clearTurnLimitedAbilitiesForPlayer,
 
+  // Deploy ability specific tracking
+  hasDeployAbilityUsed,
+  clearDeployAbilityUsage,
+
   // Types
   type CardAbilityInfo,
 } from './readySystem.js'

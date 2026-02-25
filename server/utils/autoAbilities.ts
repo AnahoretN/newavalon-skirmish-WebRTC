@@ -18,8 +18,6 @@ import {
   type CardAbilityInfo,
   // Import content abilities building logic
   buildActionFromContentAbility,
-  buildDetailsFromContent,
-  buildFilterFromString,
   type ContentAbility,
 } from '../../shared/abilities/index.js'
 

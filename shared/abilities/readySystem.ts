@@ -16,6 +16,12 @@
 type Card = any
 type GameState = any
 
+// Status type for internal use
+type CardStatus = {
+  type: string
+  addedByPlayerId: number
+}
+
 // ============================================================================
 // Constants
 // ============================================================================
@@ -33,8 +39,9 @@ export const PHASE_SPECIFIC_STATUSES = [READY_STATUS.SETUP, READY_STATUS.COMMIT]
 
 // Turn-limited ability usage tracking (removed when turn passes)
 export const TURN_LIMITED_ABILITIES = {
-  SETUP_USED: 'setupUsedThisTurn',
-  COMMIT_USED: 'commitUsedThisTurn'
+  DEPLOY_USED: 'deployUsedThisTurn',  // Deploy ability - once per battlefield stay
+  SETUP_USED: 'setupUsedThisTurn',    // Setup ability - once per turn
+  COMMIT_USED: 'commitUsedThisTurn'   // Commit ability - once per turn
 } as const
 
 // ============================================================================
@@ -52,19 +59,19 @@ export function isReadyStatus(statusType: string): statusType is ReadyStatusType
 /** Check if card has a specific ready status */
 export function hasReadyStatus(card: Card, statusType: ReadyStatusType): boolean {
   if (!card.statuses) return false
-  return card.statuses.some(s => s.type === statusType)
+  return card.statuses.some((s: CardStatus) => s.type === statusType)
 }
 
 /** Check if card has any ready status */
 export function hasAnyReadyStatus(card: Card): boolean {
   if (!card.statuses) return false
-  return card.statuses.some(s => isReadyStatus(s.type))
+  return card.statuses.some((s: CardStatus) => isReadyStatus(s.type))
 }
 
 /** Add ready status to card if not present */
 export function addReadyStatus(card: Card, statusType: ReadyStatusType, ownerId: number): void {
   if (!card.statuses) card.statuses = []
-  if (!card.statuses.some(s => s.type === statusType)) {
+  if (!card.statuses.some((s: CardStatus) => s.type === statusType)) {
     card.statuses.push({ type: statusType, addedByPlayerId: ownerId })
   }
 }
@@ -72,19 +79,19 @@ export function addReadyStatus(card: Card, statusType: ReadyStatusType, ownerId:
 /** Remove ready status from card */
 export function removeReadyStatus(card: Card, statusType: ReadyStatusType): void {
   if (!card.statuses) return
-  card.statuses = card.statuses.filter(s => s.type !== statusType)
+  card.statuses = card.statuses.filter((s: CardStatus) => s.type !== statusType)
 }
 
 /** Remove all ready statuses from card */
 export function removeAllReadyStatuses(card: Card): void {
   if (!card.statuses) return
-  card.statuses = card.statuses.filter(s => !isReadyStatus(s.type))
+  card.statuses = card.statuses.filter((s: CardStatus) => !isReadyStatus(s.type))
 }
 
 /** Remove phase-specific ready statuses (keeps readyDeploy) */
 export function removePhaseSpecificStatuses(card: Card): void {
   if (!card.statuses) return
-  card.statuses = card.statuses.filter(s => {
+  card.statuses = card.statuses.filter((s: CardStatus) => {
     if (s.type === READY_STATUS.DEPLOY) return false
     if (s.type === READY_STATUS.SETUP) return false
     if (s.type === READY_STATUS.COMMIT) return false
@@ -97,7 +104,7 @@ export function hasUsedAbilityThisTurn(card: Card, abilityType: 'setup' | 'commi
   const usedStatus = abilityType === 'setup'
     ? TURN_LIMITED_ABILITIES.SETUP_USED
     : TURN_LIMITED_ABILITIES.COMMIT_USED
-  return card.statuses?.some(s => s.type === usedStatus) ?? false
+  return card.statuses?.some((s: CardStatus) => s.type === usedStatus) ?? false
 }
 
 /** Mark that a card has used its turn-limited ability this turn */
@@ -107,7 +114,7 @@ export function markAbilityUsedThisTurn(card: Card, abilityType: 'setup' | 'comm
     : TURN_LIMITED_ABILITIES.COMMIT_USED
 
   if (!card.statuses) card.statuses = []
-  if (!card.statuses.some(s => s.type === usedStatus)) {
+  if (!card.statuses.some((s: CardStatus) => s.type === usedStatus)) {
     card.statuses.push({ type: usedStatus, addedByPlayerId: card.ownerId || 0 })
 
     // When ability is used, also remove the corresponding ready status
@@ -119,7 +126,8 @@ export function markAbilityUsedThisTurn(card: Card, abilityType: 'setup' | 'comm
 /** Clear turn-limited ability usage flags from a card */
 export function clearTurnLimitedAbilities(card: Card): void {
   if (!card.statuses) return
-  card.statuses = card.statuses.filter(s => {
+  card.statuses = card.statuses.filter((s: CardStatus) => {
+    if (s.type === TURN_LIMITED_ABILITIES.DEPLOY_USED) return false
     if (s.type === TURN_LIMITED_ABILITIES.SETUP_USED) return false
     if (s.type === TURN_LIMITED_ABILITIES.COMMIT_USED) return false
     return true
@@ -138,18 +146,58 @@ export function clearTurnLimitedAbilitiesForPlayer(gameState: GameState, playerI
 }
 
 // ============================================================================
+// Deploy Ability Specific Functions
+// ============================================================================
+
+/**
+ * Check if a card has used its deploy ability since entering the battlefield.
+ * Deploy abilities are single-use - once used, they cannot be used again
+ * unless the card leaves and returns to the battlefield.
+ */
+export function hasDeployAbilityUsed(card: Card): boolean {
+  return card.statuses?.some((s: CardStatus) => s.type === TURN_LIMITED_ABILITIES.DEPLOY_USED) ?? false
+}
+
+/**
+ * Mark that a card has used its deploy ability.
+ * This removes the readyDeploy status and adds the deployUsedThisTurn marker.
+ * The marker persists until the card leaves the battlefield.
+ */
+export function markDeployAbilityUsed(card: Card): void {
+  if (!card.statuses) card.statuses = []
+
+  // Add the usage marker
+  if (!card.statuses.some((s: CardStatus) => s.type === TURN_LIMITED_ABILITIES.DEPLOY_USED)) {
+    card.statuses.push({ type: TURN_LIMITED_ABILITIES.DEPLOY_USED, addedByPlayerId: card.ownerId || 0 })
+  }
+
+  // Remove the ready status
+  removeReadyStatus(card, READY_STATUS.DEPLOY)
+}
+
+/**
+ * Clear deploy ability usage marker.
+ * This should be called when a card leaves the battlefield.
+ * When the card returns, it can use deploy again.
+ */
+export function clearDeployAbilityUsage(card: Card): void {
+  if (!card.statuses) return
+  card.statuses = card.statuses.filter((s: CardStatus) => s.type !== TURN_LIMITED_ABILITIES.DEPLOY_USED)
+}
+
+// ============================================================================
 // Conditions for Ready Statuses
 // ============================================================================
 
 /** Check if card is stunned */
 export function isStunned(card: Card): boolean {
-  return card.statuses?.some(s => s.type === 'Stun') ?? false
+  return card.statuses?.some((s: CardStatus) => s.type === 'Stun') ?? false
 }
 
 /** Check if card has Support from its owner */
 export function hasSupport(card: Card, playerId?: number): boolean {
   if (!card.statuses) return false
-  return card.statuses.some(s =>
+  return card.statuses.some((s: CardStatus) =>
     s.type === 'Support' &&
     (playerId === undefined || s.addedByPlayerId === playerId)
   )
@@ -158,7 +206,7 @@ export function hasSupport(card: Card, playerId?: number): boolean {
 /** Check if a card has a specific status (including playerId filter) */
 export function hasStatus(card: Card, type: string, playerId?: number): boolean {
   if (!card.statuses) return false
-  return card.statuses.some(s =>
+  return card.statuses.some((s: CardStatus) =>
     s.type === type &&
     (playerId === undefined || s.addedByPlayerId === playerId)
   )
@@ -258,19 +306,27 @@ export function updateCardReadyStatuses(
       activePlayerId
     )
 
-    // Deploy: only if hasn't been used yet
-    if (abilityInfo.hasDeployAbility && hasReadyStatus(card, READY_STATUS.DEPLOY)) {
+    // Deploy: only if hasn't been used yet (checked via deployUsedThisTurn status)
+    // Deploy ability is single-use - once used, cannot be used again unless card leaves battlefield
+    const deployAlreadyUsed = hasDeployAbilityUsed(card)
+    if (abilityInfo.hasDeployAbility && !deployAlreadyUsed) {
       shouldHave.add(READY_STATUS.DEPLOY)
     }
 
-    // Setup: phase 1, only if no Deploy AND hasn't been used this turn
-    if (canSetup && currentPhase === 1 && !shouldHave.has(READY_STATUS.DEPLOY) && !hasUsedAbilityThisTurn(card, 'setup')) {
-      shouldHave.add(READY_STATUS.SETUP)
+    // Setup: phase 1, only if hasn't been used this turn AND deploy not available
+    if (canSetup && currentPhase === 1 && !hasUsedAbilityThisTurn(card, 'setup')) {
+      // Setup can't be used if Deploy is available and hasn't been used
+      if (!shouldHave.has(READY_STATUS.DEPLOY)) {
+        shouldHave.add(READY_STATUS.SETUP)
+      }
     }
 
-    // Commit: phase 3, only if no Deploy AND hasn't been used this turn
-    if (canCommit && currentPhase === 3 && !shouldHave.has(READY_STATUS.DEPLOY) && !hasUsedAbilityThisTurn(card, 'commit')) {
-      shouldHave.add(READY_STATUS.COMMIT)
+    // Commit: phase 3, only if hasn't been used this turn AND deploy not available
+    if (canCommit && currentPhase === 3 && !hasUsedAbilityThisTurn(card, 'commit')) {
+      // Commit can't be used if Deploy is available and hasn't been used
+      if (!shouldHave.has(READY_STATUS.DEPLOY)) {
+        shouldHave.add(READY_STATUS.COMMIT)
+      }
     }
   }
 
@@ -287,7 +343,7 @@ function syncCardStatuses(card: Card, shouldHave: Set<ReadyStatusType>): void {
   const ownerId = card.ownerId ?? 0
 
   // Remove ready statuses that shouldn't exist
-  card.statuses = card.statuses.filter(s => {
+  card.statuses = card.statuses.filter((s: CardStatus) => {
     if (!isReadyStatus(s.type)) return true // Keep non-ready statuses
     return shouldHave.has(s.type as ReadyStatusType)
   })
@@ -347,28 +403,6 @@ export function initializeCardReadyStatuses(
   if (currentPhase === 1 && abilityInfo.hasSetupAbility) {
     addReadyStatus(card, READY_STATUS.SETUP, ownerId)
   } else if (currentPhase === 3 && abilityInfo.hasCommitAbility) {
-    addReadyStatus(card, READY_STATUS.COMMIT, ownerId)
-  }
-}
-
-/**
- * Mark Deploy ability as used - removes readyDeploy and adds phase-specific status.
- * Call this when Deploy ability is successfully executed.
- */
-export function markDeployAbilityUsed(
-  card: Card,
-  currentPhase: number,
-  hasSetupAbility: boolean,
-  hasCommitAbility: boolean
-): void {
-  removeReadyStatus(card, READY_STATUS.DEPLOY)
-
-  const ownerId = card.ownerId ?? 0
-
-  // Add phase-specific status if appropriate
-  if (currentPhase === 1 && hasSetupAbility) {
-    addReadyStatus(card, READY_STATUS.SETUP, ownerId)
-  } else if (currentPhase === 3 && hasCommitAbility) {
     addReadyStatus(card, READY_STATUS.COMMIT, ownerId)
   }
 }

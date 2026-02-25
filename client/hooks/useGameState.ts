@@ -459,7 +459,25 @@ export function useGameState(props: any = {}): UseGameStateResult {
         faceDown: item.card?.isFaceDown
       }
 
-      if (item.source === 'deck') {
+      if (item.source === 'counter_panel') {
+        // Размещение жетона/статуса на карту с поля боя
+        action = 'ADD_STATUS_TO_BOARD_CARD'
+        actionData = {
+          boardCoords: target.boardCoords,
+          statusType: item.statusType,
+          ownerId: item.ownerId,
+          replaceStatusType: item.replaceStatusType
+        }
+      } else if (item.source === 'token_panel') {
+        // Размещение карты-токена на пустую клетку поля боя
+        // Токен НЕ удаляется из панели (может использоваться многократно)
+        action = 'PLAY_TOKEN_CARD'
+        actionData = {
+          card: item.card,
+          boardCoords: target.boardCoords,
+          ownerId: item.ownerId // Владелец = разместивший или dummy
+        }
+      } else if (item.source === 'deck') {
         action = 'PLAY_CARD_FROM_DECK'
         actionData.cardIndex = item.cardIndex ?? 0
       } else if (item.source === 'discard') {

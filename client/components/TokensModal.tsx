@@ -81,12 +81,18 @@ export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDr
       return
     }
 
-    const rect = modalRef.current.getBoundingClientRect()
-    const x = e.clientX
-    const y = e.clientY
+    // Check if actually dragging (draggedTokenId is set)
+    if (!draggedTokenId) {
+      return
+    }
 
-    // If cursor is outside modal bounds, set up draggedItem and close modal
-    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+    // Check if we're actually leaving the modal (not just moving to a child element)
+    // e.currentTarget is the element with the handler, e.target is the element being left
+    // e.relatedTarget is the element we're entering
+    const relatedTarget = e.relatedTarget as HTMLElement
+    const isLeavingModal = e.currentTarget === modalRef.current && !modalRef.current.contains(relatedTarget)
+
+    if (isLeavingModal) {
       // Determine token owner: tokens belong to the active player (even if it's a dummy)
       // This ensures dummy player's tokens belong to the dummy, not the controlling player
       const activePlayer = players?.find(p => p.id === activePlayerId)

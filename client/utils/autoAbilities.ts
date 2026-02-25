@@ -52,6 +52,10 @@ import {
   markAbilityUsedThisTurn,
   clearTurnLimitedAbilities,
   clearTurnLimitedAbilitiesForPlayer,
+
+  // Deploy ability specific tracking
+  hasDeployAbilityUsed,
+  clearDeployAbilityUsage,
 } from '@shared/abilities/index.js'
 
 // Re-export everything for external use
@@ -95,8 +99,19 @@ export {
   clearTurnLimitedAbilities,
   clearTurnLimitedAbilitiesForPlayer,
 
+  // Deploy ability specific tracking
+  hasDeployAbilityUsed,
+  clearDeployAbilityUsage,
+
   // Types
   CardAbilityInfo,
+}
+
+// Export combined function that clears all ready statuses including usage tracking
+// This should be called when a card leaves the battlefield
+export function clearAllReadyStatuses(card: Card): void {
+  removeAllReadyStatuses(card)      // Remove readyDeploy, readySetup, readyCommit
+  clearTurnLimitedAbilities(card)   // Remove deployUsedThisTurn, setupUsedThisTurn, commitUsedThisTurn
 }
 
 // Re-export constants for backward compatibility

@@ -73,6 +73,16 @@ export type ActionType =
   | 'SET_PRIVACY'
   | 'ASSIGN_TEAMS'
 
+  // Ability tracking
+  | 'MARK_ABILITY_USED'
+  | 'REMOVE_STATUS_BY_TYPE'
+
+  // Status effects
+  | 'ADD_STATUS_TO_BOARD_CARD'
+
+  // Token cards
+  | 'PLAY_TOKEN_CARD'
+
 /**
  * Сообщение от клиента к хосту - запрос на действие
  */
