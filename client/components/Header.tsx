@@ -631,10 +631,17 @@ const Header = memo<HeaderProps>(({
               const bgClass = isGameStarted && isCurrentPhase ? `${colorClasses} text-white` : 'text-gray-400 hover:text-white'
               const isDisabled = !isGameStarted || (isScoringPhase && !canClickScoring && !isScoringStep)
 
+              // When clicking on a phase, jump directly to that phase (skip intermediate phases)
+              // Scoring mode initialization is handled in handleSetPhase
+              const handlePhaseClick = () => {
+                if (isDisabled) return
+                onSetPhase(visiblePhaseIndex)
+              }
+
               return (
                 <div
                   key={phase}
-                  onClick={() => !isDisabled && onSetPhase(visiblePhaseIndex)}
+                  onClick={handlePhaseClick}
                   className={`
                     px-3 py-1.5 text-sm font-bold uppercase transition-all duration-200 rounded
                     ${isCurrentPhase ? '' : ''}

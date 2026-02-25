@@ -6,8 +6,144 @@
  */
 
 import type { SimpleHost } from './SimpleHost'
-import type { HighlightData, FloatingTextData, TargetingModeData } from '../types'
+import type { HighlightData, FloatingTextData, TargetingModeData, AbilityAction } from '../types'
 import { logger } from '../utils/logger'
+
+/**
+ * Check if a value can be serialized by PeerJS
+ * Only primitives, arrays, and plain objects are allowed
+ */
+function isSerializable(value: any): boolean {
+  if (value === null || value === undefined) {
+    return true
+  }
+
+  const type = typeof value
+  if (type === 'string' || type === 'number' || type === 'boolean') {
+    return true
+  }
+
+  if (value instanceof Date) {
+    return true
+  }
+
+  if (Array.isArray(value)) {
+    return value.every(isSerializable)
+  }
+
+  if (type === 'object') {
+    // Check for functions
+    for (const key in value) {
+      if (typeof value[key] === 'function') {
+        return false
+      }
+      if (!isSerializable(value[key])) {
+        return false
+      }
+    }
+    return true
+  }
+
+  return false
+}
+
+/**
+ * Sanitize AbilityAction for PeerJS serialization
+ * Removes sourceCard and other non-serializable properties
+ */
+function sanitizeAbilityAction(action: AbilityAction): any {
+  const sanitized: any = {}
+
+  // Copy only serializable properties
+  for (const key in action) {
+    const value = (action as any)[key]
+
+    // Skip sourceCard - replace with baseId
+    if (key === 'sourceCard' && value) {
+      sanitized.sourceCardBaseId = value.baseId || value.id
+      continue
+    }
+
+    // Skip non-serializable values (functions, etc.)
+    if (typeof value === 'function') {
+      continue
+    }
+
+    // Recursively sanitize chainedAction
+    if (key === 'chainedAction' && value) {
+      sanitized.chainedAction = sanitizeAbilityAction(value)
+      continue
+    }
+
+    // Skip payload if it's not serializable (could contain functions)
+    if (key === 'payload' && !isSerializable(value)) {
+      continue
+    }
+
+    sanitized[key] = value
+  }
+
+  return sanitized
+}
+
+/**
+ * Deep sanitize any object for PeerJS serialization
+ * Removes functions, circular references, and other non-serializable data
+ */
+function deepSanitize(obj: any): any {
+  if (obj === null || obj === undefined) {
+    return obj
+  }
+
+  const type = typeof obj
+
+  // Primitives are fine
+  if (type === 'string' || type === 'number' || type === 'boolean') {
+    return obj
+  }
+
+  // Date objects - convert to timestamp
+  if (obj instanceof Date) {
+    return obj.getTime()
+  }
+
+  // Arrays - recursively sanitize
+  if (Array.isArray(obj)) {
+    return obj.map(deepSanitize).filter(item => item !== undefined)
+  }
+
+  // Objects - recursively sanitize properties
+  if (type === 'object') {
+    const sanitized: any = {}
+
+    for (const key in obj) {
+      // Skip functions
+      if (typeof obj[key] === 'function') {
+        continue
+      }
+
+      // Skip special React properties
+      if (key === '_reactInternalFiber' || key === '_reactFiber') {
+        continue
+      }
+
+      try {
+        const value = deepSanitize(obj[key])
+        if (value !== undefined) {
+          sanitized[key] = value
+        }
+      } catch (e) {
+        // Skip properties that cause errors during serialization
+        logger.debug(`[SimpleVisualEffects] Skipping property ${key} during sanitization:`, e)
+      }
+    }
+
+    return sanitized
+  }
+
+  // Skip everything else (functions, symbols, etc.)
+  return undefined
+}
 
 /**
  * Visual effects broadcaster for P2P mode
@@ -59,9 +195,39 @@ export class SimpleVisualEffects {
    * Set targeting mode for all guests
    */
   setTargetingMode(mode: TargetingModeData): void {
+    // Sanitize the action to remove non-serializable properties like sourceCard
+    const sanitizedAction = sanitizeAbilityAction(mode.action)
+
+    // Create sanitized mode object
+    const sanitizedMode: any = {
+      playerId: mode.playerId,
+      action: sanitizedAction,
+      timestamp: mode.timestamp,
+    }
+
+    // Add optional properties if present
+    if (mode.sourceCoords) {
+      sanitizedMode.sourceCoords = mode.sourceCoords
+    }
+    if (mode.boardTargets) {
+      sanitizedMode.boardTargets = mode.boardTargets
+    }
+    if (mode.handTargets) {
+      sanitizedMode.handTargets = mode.handTargets
+    }
+    if (mode.isDeckSelectable !== undefined) {
+      sanitizedMode.isDeckSelectable = mode.isDeckSelectable
+    }
+    if (mode.originalOwnerId !== undefined) {
+      sanitizedMode.originalOwnerId = mode.originalOwnerId
+    }
+
+    // Final deep sanitization to catch anything missed
+    const finalMode = deepSanitize(sanitizedMode)
+
     this.host.broadcast({
       type: 'TARGETING_MODE',
-      data: { targetingMode: mode }
+      data: { targetingMode: finalMode }
     })
     logger.debug(`[SimpleVisualEffects] Targeting mode by player ${mode.playerId}`)
   }

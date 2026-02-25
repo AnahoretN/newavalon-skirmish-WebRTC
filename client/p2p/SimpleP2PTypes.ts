@@ -181,9 +181,119 @@ export interface PersonalizedPlayer {
 }
 
 /**
+ * Визуальный эффект (подсветка ячейки)
+ */
+export interface HighlightMessage {
+  type: 'HIGHLIGHT'
+  data: {
+    row: number
+    col: number
+    color: string
+    duration?: number
+    timestamp: number
+  }
+}
+
+/**
+ * Плавающий текст
+ */
+export interface FloatingTextMessage {
+  type: 'FLOATING_TEXT'
+  data: {
+    batch: Array<{
+      text: string
+      coords?: { row: number; col: number }
+      color: string
+      timestamp: number
+    }>
+  }
+}
+
+/**
+ * Targeting mode
+ */
+export interface TargetingModeMessage {
+  type: 'TARGETING_MODE'
+  data: {
+    targetingMode: any
+  }
+}
+
+/**
+ * Clear targeting mode
+ */
+export interface ClearTargetingModeMessage {
+  type: 'CLEAR_TARGETING_MODE'
+  data: {
+    timestamp: number
+  }
+}
+
+/**
+ * No target overlay
+ */
+export interface NoTargetMessage {
+  type: 'NO_TARGET'
+  data: {
+    coords: { row: number; col: number }
+    timestamp: number
+  }
+}
+
+/**
+ * Deck selection
+ */
+export interface DeckSelectionMessage {
+  type: 'DECK_SELECTION'
+  data: {
+    playerId: number
+    selectedByPlayerId: number
+    timestamp: number
+  }
+}
+
+/**
+ * Hand card selection
+ */
+export interface HandCardSelectionMessage {
+  type: 'HAND_CARD_SELECTION'
+  data: {
+    playerId: number
+    cardIndex: number
+    selectedByPlayerId: number
+    timestamp: number
+  }
+}
+
+/**
+ * Click wave
+ */
+export interface ClickWaveMessage {
+  type: 'CLICK_WAVE'
+  data: {
+    timestamp: number
+    location: 'board' | 'hand' | 'deck'
+    boardCoords?: { row: number; col: number }
+    handTarget?: { playerId: number; cardIndex: number }
+    clickedByPlayerId: number
+    playerColor: string
+  }
+}
+
+/**
  * Тип входящего P2P сообщения
  */
-export type P2PMessage = ActionMessage | StateMessage
+export type P2PMessage =
+  | ActionMessage
+  | StateMessage
+  | HighlightMessage
+  | FloatingTextMessage
+  | TargetingModeMessage
+  | ClearTargetingModeMessage
+  | NoTargetMessage
+  | DeckSelectionMessage
+  | HandCardSelectionMessage
+  | ClickWaveMessage
 
 /**
  * Конфигурация SimpleHost
@@ -204,4 +314,20 @@ export interface SimpleGuestConfig {
   onConnected?: () => void
   onDisconnected?: () => void
   onError?: (error: string) => void
+  // Visual effect callbacks
+  onHighlight?: (data: { row: number; col: number; color: string; duration?: number }) => void
+  onFloatingText?: (batch: Array<{ text: string; coords?: { row: number; col: number }; color: string }>) => void
+  onTargetingMode?: (targetingMode: any) => void
+  onClearTargetingMode?: () => void
+  onNoTarget?: (coords: { row: number; col: number }) => void
+  onDeckSelection?: (playerId: number, selectedByPlayerId: number) => void
+  onHandCardSelection?: (playerId: number, cardIndex: number, selectedByPlayerId: number) => void
+  onClickWave?: (wave: {
+    timestamp: number
+    location: 'board' | 'hand' | 'deck'
+    boardCoords?: { row: number; col: number }
+    handTarget?: { playerId: number; cardIndex: number }
+    clickedByPlayerId: number
+    playerColor: string
+  }) => void
 }

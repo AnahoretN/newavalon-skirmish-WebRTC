@@ -352,6 +352,50 @@ export function useGameState(props: any = {}): UseGameStateResult {
         },
         onError: (error) => {
           logger.error('[useGameState] Guest error:', error)
+        },
+        // Visual effect callbacks
+        onHighlight: (data) => {
+          setLatestHighlight({ ...data, timestamp: Date.now() })
+        },
+        onFloatingText: (batch) => {
+          const timestamp = Date.now()
+          const withTimestamp = batch.map((item, i) => ({ ...item, timestamp: timestamp + i }))
+          setLatestFloatingTexts(withTimestamp)
+        },
+        onTargetingMode: (targetingMode) => {
+          setGameState((prev: any) => ({
+            ...prev,
+            targetingMode
+          }))
+        },
+        onClearTargetingMode: () => {
+          setGameState((prev: any) => ({
+            ...prev,
+            targetingMode: null
+          }))
+        },
+        onNoTarget: (coords) => {
+          setLatestNoTarget({ coords, timestamp: Date.now() })
+        },
+        onDeckSelection: (playerId, selectedByPlayerId) => {
+          const selection = { playerId, selectedByPlayerId, timestamp: Date.now() }
+          setLatestDeckSelections(prev => [...prev, selection])
+          setTimeout(() => {
+            setLatestDeckSelections(prev => prev.filter(ds => ds.timestamp !== selection.timestamp))
+          }, 1000)
+        },
+        onHandCardSelection: (playerId, cardIndex, selectedByPlayerId) => {
+          const selection = { playerId, cardIndex, selectedByPlayerId, timestamp: Date.now() }
+          setLatestHandCardSelections(prev => [...prev, selection])
+          setTimeout(() => {
+            setLatestHandCardSelections(prev => prev.filter(cs => cs.timestamp !== selection.timestamp))
+          }, 1000)
+        },
+        onClickWave: (wave) => {
+          setClickWaves(prev => [...prev, wave])
+          setTimeout(() => {
+            setClickWaves(prev => prev.filter(w => w.timestamp !== wave.timestamp))
+          }, 600)
         }
       })
 

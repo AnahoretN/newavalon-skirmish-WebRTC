@@ -275,6 +275,9 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
   // Preparation (0) → Setup (1) - автоматический, обрабатывается в passTurn
   if (phase === 0) {
     const newState = { ...state, currentPhase: 1 }
+    // Clear scoring mode if somehow active
+    newState.isScoringStep = false
+    newState.scoringLines = []
     recalculateAllReadyStatuses(newState)
     return newState
   }
@@ -282,6 +285,9 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
   // Setup (1) → Main (2) - происходит при игре карты
   if (phase === 1) {
     const newState = { ...state, currentPhase: 2 }
+    // Clear scoring mode if somehow active
+    newState.isScoringStep = false
+    newState.scoringLines = []
     recalculateAllReadyStatuses(newState)
     return newState
   }
@@ -289,6 +295,9 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
   // Main (2) → Commit (3)
   if (phase === 2) {
     const newState = { ...state, currentPhase: 3 }
+    // Clear scoring mode if somehow active
+    newState.isScoringStep = false
+    newState.scoringLines = []
     recalculateAllReadyStatuses(newState)
     return newState
   }
@@ -451,6 +460,20 @@ function handleSetPhase(state: GameState, phaseNumber: number): GameState {
         return cell
       })
     )
+  }
+
+  // When entering Scoring phase (4), initialize scoring mode
+  if (clamped === 4) {
+    // Use activePlayerId for scoring, or default to player 1
+    const scoringPlayerId = state.activePlayerId || 1
+    return enterScoringPhase(newState, scoringPlayerId)
+  }
+
+  // Clear scoring mode when leaving scoring phase (4)
+  // If setting any phase other than scoring, close scoring selection
+  if (clamped !== 4) {
+    newState.isScoringStep = false
+    newState.scoringLines = []
   }
 
   recalculateAllReadyStatuses(newState)

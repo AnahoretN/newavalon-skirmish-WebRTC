@@ -154,6 +154,22 @@ export class SimpleGuest {
       this.handleState(data)
     } else if (data.type === 'JOIN_ACCEPT') {
       this.handleJoinAccept(data)
+    } else if (data.type === 'HIGHLIGHT') {
+      this.handleHighlight(data)
+    } else if (data.type === 'FLOATING_TEXT') {
+      this.handleFloatingText(data)
+    } else if (data.type === 'TARGETING_MODE') {
+      this.handleTargetingMode(data)
+    } else if (data.type === 'CLEAR_TARGETING_MODE') {
+      this.handleClearTargetingMode()
+    } else if (data.type === 'NO_TARGET') {
+      this.handleNoTarget(data)
+    } else if (data.type === 'DECK_SELECTION') {
+      this.handleDeckSelection(data)
+    } else if (data.type === 'HAND_CARD_SELECTION') {
+      this.handleHandCardSelection(data)
+    } else if (data.type === 'CLICK_WAVE') {
+      this.handleClickWave(data)
     } else {
       logger.warn('[SimpleGuest] Unknown message type:', data.type)
     }
@@ -318,6 +334,69 @@ export class SimpleGuest {
    */
   getLocalPlayerId(): number {
     return this.localPlayerId
+  }
+
+  /**
+   * Обработка подсветки ячейки
+   */
+  private handleHighlight(data: any): void {
+    const highlightData = data.data
+    this.config.onHighlight?.({ row: highlightData.row, col: highlightData.col, color: highlightData.color, duration: highlightData.duration })
+  }
+
+  /**
+   * Обработка плавающего текста
+   */
+  private handleFloatingText(data: any): void {
+    const { batch } = data.data
+    this.config.onFloatingText?.(batch)
+  }
+
+  /**
+   * Обработка установки режима таргетинга
+   */
+  private handleTargetingMode(data: any): void {
+    const { targetingMode } = data.data
+    this.config.onTargetingMode?.(targetingMode)
+  }
+
+  /**
+   * Обработка очистки режима таргетинга
+   */
+  private handleClearTargetingMode(): void {
+    this.config.onClearTargetingMode?.()
+  }
+
+  /**
+   * Обработка overlay "нет цели"
+   */
+  private handleNoTarget(data: any): void {
+    const { coords } = data.data
+    this.config.onNoTarget?.(coords)
+  }
+
+  /**
+   * Обработка выбора колоды
+   */
+  private handleDeckSelection(data: any): void {
+    const { playerId, selectedByPlayerId } = data.data
+    this.config.onDeckSelection?.(playerId, selectedByPlayerId)
+  }
+
+  /**
+   * Обработка выбора карты из руки
+   */
+  private handleHandCardSelection(data: any): void {
+    const { playerId, cardIndex, selectedByPlayerId } = data.data
+    this.config.onHandCardSelection?.(playerId, cardIndex, selectedByPlayerId)
+  }
+
+  /**
+   * Обработка клик-волны
+   */
+  private handleClickWave(data: any): void {
+    const wave = data.data
+    this.config.onClickWave?.(wave)
   }
 
   /**
