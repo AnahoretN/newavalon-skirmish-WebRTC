@@ -426,6 +426,34 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
     return 0
   }
 
+  // Helper: Get effective hand size
+  // Use handSize metadata for WebRTC optimized states where hand array may be empty
+  const getHandSize = (): number => {
+    // If hand array has cards, use its length (source of truth for local player)
+    if (player.hand.length > 0) {
+      return player.hand.length
+    }
+    // Otherwise use handSize metadata (for remote players in WebRTC)
+    if (player.handSize !== undefined) {
+      return player.handSize
+    }
+    return 0
+  }
+
+  // Helper: Get effective discard size
+  // Use discardSize metadata for WebRTC optimized states where discard array may be empty
+  const getDiscardSize = (): number => {
+    // If discard array has cards, use its length (source of truth for local player)
+    if (player.discard.length > 0) {
+      return player.discard.length
+    }
+    // Otherwise use discardSize metadata (for remote players in WebRTC)
+    if (player.discardSize !== undefined) {
+      return player.discardSize
+    }
+    return 0
+  }
+
   const prevDeckLengthRef = useRef<number>(getDeckSize())
 
   // State for deck change indicator (+/- number)
@@ -694,7 +722,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
             <DropZone onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'discard', playerId: player.id })} onContextMenu={(e) => handleContextMenuWithCancel(e, 'discardPile', { player })} isOverClassName="rounded ring-2 ring-white">
               <div className="aspect-square bg-gray-700 rounded flex flex-col items-center justify-center cursor-pointer hover:bg-gray-600 transition-all shadow-md border border-gray-600 select-none text-white">
                 <span className="text-[10px] sm:text-xs font-bold mb-0.5 text-gray-400 uppercase tracking-tight">{t('discard')}</span>
-                <span className="text-base sm:text-lg font-bold">{player.discard.length}</span>
+                <span className="text-base sm:text-lg font-bold">{getDiscardSize()}</span>
               </div>
             </DropZone>
 
@@ -1115,7 +1143,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
               <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'discard', playerId: player.id })} onContextMenu={(e) => handleContextMenuWithCancel(e, 'discardPile', { player })} isOverClassName="rounded ring-2 ring-white">
                 <RemotePile
                   label={t('discard')}
-                  count={player.discard.length}
+                  count={getDiscardSize()}
                   className="bg-gray-700"
                 />
               </DropZone>

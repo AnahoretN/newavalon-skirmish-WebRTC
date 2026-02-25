@@ -56,6 +56,7 @@ export interface PhaseSystemCallbacks {
   onScoringModeCompleted?: (playerId: number, line: ScoringLine, points: number) => void
   onCardDrawn?: (playerId: number, card: Card) => void
   onStateUpdateRequired?: (newState: GameState) => void
+  onGuestShouldAutoDraw?: (playerId: number) => void  // NEW: Called when guest should auto-draw locally
 }
 
 /**
@@ -74,8 +75,12 @@ export class PhaseManager {
     selectedLine: null
   }
 
-  // Track which players have auto-drawn in current turn
+  // Track which players have auto-drawn in current turn (Preparation phase)
   private autoDrawnThisTurn: Set<number> = new Set()
+
+  // Track players who auto-drew in the most recent Preparation phase
+  // This is used by onStateUpdateRequired to detect who needs state broadcast
+  private recentAutoDrawPlayers: Set<number> = new Set()
 
   constructor(
     config: Partial<PhaseSystemConfig> = {},
@@ -184,6 +189,7 @@ export class PhaseManager {
 
   /**
    * Start the game - transition from lobby to first player's Preparation phase
+   * NEW APPROACH: All players draw 6 cards (+1 for starting player) in Preparation phase
    */
   startGame(startingPlayerId: number): PhaseTransitionResult {
     if (!this.state) {
@@ -197,6 +203,7 @@ export class PhaseManager {
 
     // Update state
     this.state.isGameStarted = true
+    this.state.isReadyCheckActive = false  // Close ready check when game starts
     this.state.currentPhase = GamePhase.PREPARATION
     this.state.activePlayerId = startingPlayerId
     this.state.startingPlayerId = startingPlayerId
@@ -205,9 +212,76 @@ export class PhaseManager {
 
     // Clear auto-drawn tracking
     this.autoDrawnThisTurn.clear()
+    this.recentAutoDrawPlayers.clear()
 
-    // Execute Preparation phase actions (auto-draw + victory check)
-    const prepResult = this.executePreparationPhase(startingPlayerId)
+    // CRITICAL: Draw starting hands for ALL players (6 cards each, +1 for starting player)
+    // This happens BEFORE phase transition so all states are synchronized
+    logger.info(`[PhaseManager] Drawing starting hands for all players (startingPlayer=${startingPlayerId})`)
+    for (const player of this.state.players) {
+      if (!player.isDisconnected && player.deck && player.deck.length > 0) {
+        const isStartingPlayer = player.id === startingPlayerId
+        const cardsToDraw = Math.min(6, player.deck.length)
+
+        // Draw 6 cards
+        for (let i = 0; i < cardsToDraw; i++) {
+          if (player.deck.length > 0) {
+            const drawnCard = player.deck.shift()!
+            player.hand.push(drawnCard)
+          }
+        }
+
+        // If starting player, draw 7th card
+        if (isStartingPlayer && player.deck.length > 0) {
+          const seventhCard = player.deck.shift()!
+          player.hand.push(seventhCard)
+          logger.info(`[PhaseManager] Player ${player.id} (starting) drew ${player.hand.length} cards`)
+        } else {
+          logger.info(`[PhaseManager] Player ${player.id} drew ${player.hand.length} cards`)
+        }
+
+        // Update sizes
+        player.handSize = player.hand.length
+        player.deckSize = player.deck.length
+
+        // Mark as auto-drawn for this turn
+        this.autoDrawnThisTurn.add(player.id)
+        this.recentAutoDrawPlayers.add(player.id)
+      }
+    }
+
+    // Update ready statuses for all players
+    for (const player of this.state.players) {
+      updateReadyStatuses(
+        { gameState: this.state, playerId: player.id },
+        (card: Card) => getCardAbilityInfo(card)
+      )
+    }
+
+    // Check round victory (should be false at game start)
+    let prepResult: { roundEndInfo?: RoundEndInfo, newPhase: GamePhase }
+    if (shouldRoundEnd(this.state.players, this.state.currentRound)) {
+      const winners = determineRoundWinners(this.state.players)
+      this.state.roundWinners[this.state.currentRound] = winners
+      const matchCheck = checkMatchOver(this.state.roundWinners)
+      const roundEndInfo: RoundEndInfo = {
+        roundNumber: this.state.currentRound,
+        winners,
+        roundWinners: { ...this.state.roundWinners },
+        isMatchOver: matchCheck.isOver,
+        matchWinner: matchCheck.winner
+      }
+      this.state.isRoundEndModalOpen = true
+      this.state.gameWinner = matchCheck.winner
+      this.callbacks.onRoundEnded?.(roundEndInfo)
+      if (matchCheck.isOver) {
+        this.callbacks.onMatchEnded?.(matchCheck.winner)
+      }
+      prepResult = { roundEndInfo, newPhase: GamePhase.PREPARATION }
+    } else {
+      // Auto-transition to Setup
+      this.state.currentPhase = GamePhase.SETUP
+      prepResult = { newPhase: GamePhase.SETUP }
+    }
 
     const result: PhaseTransitionResult = {
       success: true,
@@ -605,13 +679,22 @@ export class PhaseManager {
    * - Auto-draw card if enabled
    * - Check round victory
    * - Auto-transition to Setup
+   *
+   * CRITICAL: For guests, auto-draw happens LOCALLY on guest's machine.
+   * Host only performs auto-draw for itself (local player).
+   * Guests will draw locally and send updated hand/deck to host via STATE_UPDATE_COMPACT.
+   *
+   * @param playerId - The active player
+   * @param skipAllAutoDraw - If true, skip ALL auto-draw (host and guests). Used at game start
+   *                         because all players draw their own cards via GAME_STARTING message.
    */
-  private executePreparationPhase(playerId: number): {
+  private executePreparationPhase(playerId: number, skipAllAutoDraw: boolean = false): {
     roundEndInfo?: RoundEndInfo
     newPhase: GamePhase
+    guestShouldAutoDraw: boolean  // NEW: Indicates to host system that guest should be notified
   } {
     if (!this.state) {
-      return { newPhase: GamePhase.SETUP }
+      return { newPhase: GamePhase.SETUP, guestShouldAutoDraw: false }
     }
 
     // CRITICAL: Update ready statuses for the new active player
@@ -624,8 +707,34 @@ export class PhaseManager {
     logger.debug(`[PhaseManager] Updated ready statuses for player ${playerId} in Preparation phase`)
 
     // 1. Auto-draw if enabled and hasn't drawn yet this turn
-    if (this.config.autoDrawEnabled && !this.autoDrawnThisTurn.has(playerId)) {
-      this.performAutoDraw(playerId)
+    // IMPORTANT: Only perform auto-draw locally for the host (localPlayerId)
+    // For guests, we signal that they should auto-draw locally via guestShouldAutoDraw flag
+    // Guests will receive this via phase transition and auto-draw on their machine
+    const isLocalPlayer = playerId === this.config.localPlayerId
+    const guestShouldAutoDraw = this.config.autoDrawEnabled && !this.autoDrawnThisTurn.has(playerId) && !isLocalPlayer
+
+    logger.info(`[PhaseManager] executePreparationPhase: playerId=${playerId}, localPlayerId=${this.config.localPlayerId}, isLocalPlayer=${isLocalPlayer}, autoDrawEnabled=${this.config.autoDrawEnabled}, alreadyDrawn=${this.autoDrawnThisTurn.has(playerId)}, skipAllAutoDraw=${skipAllAutoDraw}`)
+
+    // Clear recent auto-draw tracking at the start of each Preparation phase
+    this.recentAutoDrawPlayers.clear()
+
+    // NEW APPROACH: At game start, skip ALL auto-draw because everyone draws their own cards
+    if (skipAllAutoDraw) {
+      logger.info(`[PhaseManager] Skipping ALL auto-draw for player ${playerId} (skipAllAutoDraw=true at game start)`)
+      this.autoDrawnThisTurn.add(playerId)  // Mark as drawn so next turn works correctly
+    } else if (this.config.autoDrawEnabled && !this.autoDrawnThisTurn.has(playerId)) {
+      if (isLocalPlayer) {
+        // Host draws locally
+        this.performAutoDraw(playerId)
+        this.recentAutoDrawPlayers.add(playerId)  // Mark for state broadcast
+        logger.info(`[PhaseManager] Host auto-drew for player ${playerId} (local player)`)
+      } else {
+        // Signal to host system that guest should auto-draw locally
+        // The host will send a message to the guest to trigger local auto-draw
+        logger.info(`[PhaseManager] About to call onGuestShouldAutoDraw for player ${playerId}`)
+        this.callbacks.onGuestShouldAutoDraw?.(playerId)
+        logger.info(`[PhaseManager] Signaled guest ${playerId} to auto-draw locally`)
+      }
       this.autoDrawnThisTurn.add(playerId)
     }
 
@@ -658,12 +767,12 @@ export class PhaseManager {
       }
 
       // Stay in Preparation (modal open)
-      return { roundEndInfo, newPhase: GamePhase.PREPARATION }
+      return { roundEndInfo, newPhase: GamePhase.PREPARATION, guestShouldAutoDraw: false }
     }
 
     // 3. Auto-transition to Setup
     this.state.currentPhase = GamePhase.SETUP
-    return { newPhase: GamePhase.SETUP }
+    return { newPhase: GamePhase.SETUP, guestShouldAutoDraw }
   }
 
   /**
@@ -687,6 +796,30 @@ export class PhaseManager {
       this.callbacks.onCardDrawn?.(playerId, drawnCard)
       logger.info(`[PhaseManager] Auto-drew card for player ${playerId}`)
     }
+  }
+
+  /**
+   * Mark player as having drawn (called when guest sends AUTO_DRAW_COMPLETED)
+   * This prevents host from drawing again for the same player
+   */
+  markPlayerAsDrawn(playerId: number): void {
+    this.autoDrawnThisTurn.add(playerId)
+    logger.debug(`[PhaseManager] Marked player ${playerId} as drawn`)
+  }
+
+  /**
+   * Get players who auto-drew in the most recent Preparation phase
+   * Returns a copy of the set to avoid external modification
+   */
+  getRecentAutoDrawPlayers(): Set<number> {
+    return new Set(this.recentAutoDrawPlayers)
+  }
+
+  /**
+   * Clear recent auto-draw players tracking
+   */
+  clearRecentAutoDrawPlayers(): void {
+    this.recentAutoDrawPlayers.clear()
   }
 
   /**

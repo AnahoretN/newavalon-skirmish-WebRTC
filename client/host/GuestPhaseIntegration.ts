@@ -13,6 +13,9 @@ import type { GamePhase } from './phase/PhaseTypes'
 import { GuestPhaseHandler, applyPhaseStateToGameState, initializePhaseStateFromGameState } from './phase/GuestPhaseHandler'
 import { logger } from '../utils/logger'
 
+// Track auto-draw per player to prevent duplicate draws in same turn
+const autoDrawnThisTurn = new Set<number>()
+
 /**
  * Initialize phase system on GuestConnectionManager
  * Call this after creating GuestConnectionManager to enable phase handling
@@ -21,6 +24,8 @@ export function initializePhaseSystemForGuest(
   guestConnection: GuestConnectionManager,
   config?: {
     gameStateRef?: React.MutableRefObject<GameState>
+    localPlayerId?: number | null  // Local player ID for auto-draw detection
+    onDrawCard?: (playerId: number) => void  // Callback to draw card (same as clicking deck)
     onPhaseStateChanged?: (state: any) => void
     onPhaseTransition?: (
       oldPhase: GamePhase,
@@ -38,12 +43,58 @@ export function initializePhaseSystemForGuest(
   // Access private members via type assertions
   const gc = guestConnection as any
 
+  // Track the last active player to detect when we become the active player
+  let lastActivePlayer: number | null = null
+
   // Create callbacks for GuestPhaseHandler
   const phaseCallbacks = {
     onPhaseStateChanged: (state: any) => {
       // Update game state if ref provided
       if (config?.gameStateRef) {
         applyPhaseStateToGameState(config.gameStateRef.current, state)
+      }
+
+      // CRITICAL: Local auto-draw for guest
+      // Triggered when we become the active player and phase is Setup
+      // This detects turn pass events even though Preparation auto-transitions to Setup
+      if (config?.gameStateRef && config?.localPlayerId) {
+        const localPlayerId = config.localPlayerId
+        const activePlayerId = state.activePlayerId
+
+        // Check if we just became the active player (transition from different player or null)
+        const justBecameActive = lastActivePlayer !== activePlayerId
+
+        // Only auto-draw if:
+        // 1. We are the active player
+        // 2. We just became active (transition from different player)
+        // 3. The current phase is Setup (1), which means Preparation just completed
+        // 4. Auto-draw is enabled for this player
+        logger.info(`[GuestPhaseIntegration] Auto-draw check: justBecameActive=${justBecameActive}, lastActivePlayer=${lastActivePlayer}, activePlayerId=${activePlayerId}, localPlayerId=${localPlayerId}, currentPhase=${state.currentPhase}`)
+
+        // Update tracking for next time
+        lastActivePlayer = activePlayerId
+
+        if (justBecameActive && activePlayerId === localPlayerId && state.currentPhase === 1) {
+          const gameState = config.gameStateRef.current
+          const player = gameState.players.find(p => p.id === localPlayerId)
+          const autoDrawEnabled = player?.autoDrawEnabled !== false
+
+          if (autoDrawEnabled && player && player.deck && player.deck.length > 0) {
+            // Check if already drawn this turn
+            if (!autoDrawnThisTurn.has(localPlayerId)) {
+              logger.info(`[GuestPhaseIntegration] Local auto-draw for player ${localPlayerId} (became active player, phase is Setup)`)
+
+              // Mark as drawn for this turn BEFORE calling drawCard
+              autoDrawnThisTurn.add(localPlayerId)
+
+              // Use onDrawCard callback - this works exactly like clicking deck
+              // drawCard will call updateState which syncs to host and all guests
+              if (config?.onDrawCard) {
+                config.onDrawCard(localPlayerId)
+              }
+            }
+          }
+        }
       }
 
       // Call external callback
@@ -62,6 +113,14 @@ export function initializePhaseSystemForGuest(
         config.gameStateRef.current.activePlayerId = newActivePlayer
       }
 
+      // Update last active player tracking
+      lastActivePlayer = newActivePlayer
+
+      // Reset auto-draw tracking when leaving Preparation
+      if (oldPhase === 0 && newPhase !== 0) {
+        autoDrawnThisTurn.clear()
+      }
+
       // Call external callback
       config?.onPhaseTransition?.(oldPhase, newPhase, oldActivePlayer, newActivePlayer)
     },
@@ -71,6 +130,9 @@ export function initializePhaseSystemForGuest(
       if (config?.gameStateRef) {
         config.gameStateRef.current.activePlayerId = newPlayerId
       }
+
+      // Update last active player tracking
+      lastActivePlayer = newPlayerId
 
       // Call external callback
       config?.onTurnChanged?.(oldPlayerId, newPlayerId)

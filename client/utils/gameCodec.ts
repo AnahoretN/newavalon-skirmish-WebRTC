@@ -193,15 +193,19 @@ function encodeCardCollection(collection: Card[] | undefined, dataParts: Uint8Ar
 
 /**
  * Encode a card reference to bytes
- * Format: [baseIdLength: 1 byte] [baseId: string] [ownerId: 1 byte] [power: 1 byte] [flags: 1 byte] [statusMask: 4 bytes]
+ * Format: [baseIdLength: 1 byte] [baseId: string] [ownerId: 1 byte] [power: 1 byte] [flags: 1 byte] [statusMask: 4 bytes] [supportPlayerId: 1 byte] [threatPlayerId: 1 byte]
  * Guest will use baseId to look up full card data from local contentDatabase
+ *
+ * CRITICAL: supportPlayerId and threatPlayerId preserve which player added Support/Threat status
+ * This is necessary for correct Threat/Support token calculation across all players
  */
 function encodeCardRef(card: Card): Uint8Array {
   const baseId = extractBaseId(card)
   const encoder = new TextEncoder()
   const baseIdBytes = encoder.encode(baseId)
 
-  const buffer = new Uint8Array(1 + baseIdBytes.length + 1 + 1 + 1 + 4)
+  // Extended format with supportPlayerId and threatPlayerId
+  const buffer = new Uint8Array(1 + baseIdBytes.length + 1 + 1 + 1 + 4 + 1 + 1)
   let offset = 0
 
   // baseIdLength
@@ -228,18 +232,31 @@ function encodeCardRef(card: Card): Uint8Array {
   buffer[offset++] = (statusMask >> 8) & 0xFF
   buffer[offset++] = statusMask & 0xFF
 
+  // CRITICAL: Extract Support/Threat addedByPlayerId for proper token calculation
+  const supportStatus = card.statuses?.find(s => s.type === 'Support')
+  const threatStatus = card.statuses?.find(s => s.type === 'Threat')
+
+  // supportPlayerId (255 = none)
+  buffer[offset++] = (supportStatus?.addedByPlayerId ?? 255) & 0xFF
+
+  // threatPlayerId (255 = none)
+  buffer[offset++] = (threatStatus?.addedByPlayerId ?? 255) & 0xFF
+
   return buffer
 }
 
 /**
  * Encode statuses to bitmask using known status types
+ * IMPORTANT: Support and Threat must be encoded for proper board status sync
  */
 function encodeStatusesToMask(statuses: CardStatus[]): number {
   const statusTypes = [
     'Stun', 'Aim', 'Exploit', 'Poison', 'Shield', 'Riot', 'Flying',
     'Deploy', 'Setup', 'Commit', 'LastPlayed',
     'readyDeploy', 'readySetup', 'readyCommit',
-    'Revealed'  // Important: Revealed status must be encoded!
+    'Revealed',  // Important: Revealed status must be encoded!
+    'Support',   // CRITICAL: Support status for Threat/Support token calculation
+    'Threat',    // CRITICAL: Threat status for Threat/Support token calculation
   ]
   let mask = 0
   for (const status of statuses) {
@@ -253,13 +270,16 @@ function encodeStatusesToMask(statuses: CardStatus[]): number {
 
 /**
  * Decode statuses from bitmask
+ * IMPORTANT: Support and Threat must be decoded for proper board status sync
  */
 function decodeStatusesFromMask(mask: number, addedByPlayerId: number): CardStatus[] {
   const statusTypes = [
     'Stun', 'Aim', 'Exploit', 'Poison', 'Shield', 'Riot', 'Flying',
     'Deploy', 'Setup', 'Commit', 'LastPlayed',
     'readyDeploy', 'readySetup', 'readyCommit',
-    'Revealed'  // Important: Revealed status must be decoded!
+    'Revealed',  // Important: Revealed status must be decoded!
+    'Support',   // CRITICAL: Support status for Threat/Support token calculation
+    'Threat',    // CRITICAL: Threat status for Threat/Support token calculation
   ]
   const statuses: CardStatus[] = []
   for (let i = 0; i < 32; i++) {
@@ -284,18 +304,20 @@ function decodeStatusesFromMask(mask: number, addedByPlayerId: number): CardStat
  */
 export function encodeCardState(
   gameState: GameState,
-  recipientPlayerId?: number | null
+  recipientPlayerId?: number | null,
+  authorPlayerId?: number | null
 ): Uint8Array {
   const buffers: Uint8Array[] = []
 
-  // Header: [MSG_TYPE: 1 byte] [TIMESTAMP: 4 bytes] [DATA_LENGTH: 2 bytes]
+  // Header: [MSG_TYPE: 1 byte] [TIMESTAMP: 4 bytes] [AUTHOR_PLAYER_ID: 1 byte] [DATA_LENGTH: 2 bytes]
   const timestamp = Date.now()
-  const header = new Uint8Array(7)
+  const header = new Uint8Array(8)
   header[0] = CodecMessageType.CARD_STATE
   header[1] = (timestamp >> 24) & 0xFF
   header[2] = (timestamp >> 16) & 0xFF
   header[3] = (timestamp >> 8) & 0xFF
   header[4] = timestamp & 0xFF
+  header[5] = (authorPlayerId ?? 0) & 0xFF  // Who made these changes (0 for host/system)
   // Data length will be filled later
   buffers.push(header)
 
@@ -329,7 +351,8 @@ export function encodeCardState(
     if (player.isDisconnected) {
       playerFlags |= 1 << 1
     }
-    if (player.autoDrawEnabled) {
+    // CRITICAL: autoDrawEnabled defaults to true if undefined
+    if (player.autoDrawEnabled !== false) {
       playerFlags |= 1 << 2
     }
     dataParts.push(new Uint8Array([playerFlags]))
@@ -346,8 +369,11 @@ export function encodeCardState(
     const discardSize = player.discardSize ?? player.discard?.length ?? 0
     dataParts.push(new Uint8Array([handSize, (deckSize >> 8) & 0xFF, deckSize & 0xFF, discardSize]))
 
-    // Log encoding for each player
-    logger.info(`[GameCodec] Encoding player ${player.id}: hand=${handSize}, deck=${deckSize}, discard=${discardSize}, isDummy=${player.isDummy}`)
+    // Log encoding for each player - check if properties match array lengths
+    const propsMatch = (player.handSize === player.hand?.length) &&
+                       (player.deckSize === player.deck?.length) &&
+                       (player.discardSize === player.discard?.length)
+    logger.info(`[GameCodec] Encoding player ${player.id}: hand=${handSize}, deck=${deckSize}, discard=${discardSize}, isDummy=${player.isDummy}, propsMatch=${propsMatch}`)
 
     // [nameLength: 1 byte] [name: string]
     const nameBytes = new TextEncoder().encode(player.name || '')
@@ -394,8 +420,11 @@ export function encodeCardState(
     gameState.isScoringStep ? 1 : 0
   ]))
 
-  // Game flags: [isGameStarted: 1 byte] (0 = false, 1 = true)
-  dataParts.push(new Uint8Array([gameState.isGameStarted ? 1 : 0]))
+  // Game flags: [isGameStarted: 1 byte] [isReadyCheckActive: 1 byte] (0 = false, 1 = true)
+  dataParts.push(new Uint8Array([
+    gameState.isGameStarted ? 1 : 0,
+    gameState.isReadyCheckActive ? 1 : 0
+  ]))
 
   // Recipient player data: [hasRecipientPlayer: 1 byte] (0 = none, 1 = included)
   // If included: [playerId: 1 byte] [handSize: 1 byte] [deckSize: 2 bytes] [discardSize: 1 byte]
@@ -481,9 +510,9 @@ export function encodeCardState(
     dataLength += part.length
   }
 
-  // Fill in data length in header
-  header[5] = (dataLength >> 8) & 0xFF
-  header[6] = dataLength & 0xFF
+  // Fill in data length in header (offset 6-7, after authorPlayerId at offset 5)
+  header[6] = (dataLength >> 8) & 0xFF
+  header[7] = dataLength & 0xFF
 
   // Combine all buffers
   buffers.push(...dataParts)
@@ -502,10 +531,12 @@ export function encodeCardState(
 /**
  * Decode card state from binary
  * Uses local contentDatabase to look up card data by baseId
+ *
+ * @returns { state: Partial<GameState>, authorPlayerId: number }
  */
 export function decodeCardState(
   data: Uint8Array
-): Partial<GameState> {
+): { state: Partial<GameState>, authorPlayerId: number } {
   let offset = 0
 
   // Verify message type
@@ -516,10 +547,13 @@ export function decodeCardState(
   // Read timestamp
   const timestamp = (data[offset++] << 24) | (data[offset++] << 16) | (data[offset++] << 8) | data[offset++]
 
+  // Read authorPlayerId - who made these changes (0 for host/system)
+  const authorPlayerId = data[offset++]
+
   // Read data length
   const dataLength = (data[offset++] << 8) | data[offset++]
 
-  logger.info(`[GameCodec] Decoding card state: ${dataLength} bytes, timestamp=${timestamp}`)
+  logger.info(`[GameCodec] Decoding card state: ${dataLength} bytes, timestamp=${timestamp}, authorPlayerId=${authorPlayerId}`)
 
   // Read player count
   const playerCount = data[offset++]
@@ -629,8 +663,10 @@ export function decodeCardState(
   const isScoringStep = scoringStepByte === 1
 
   // Read game flags
-  const gameFlags = data[offset++]
-  const isGameStarted = (gameFlags & 0x01) !== 0
+  const gameFlags1 = data[offset++]
+  const gameFlags2 = data[offset++]
+  const isGameStarted = (gameFlags1 & 0x01) !== 0
+  const isReadyCheckActive = (gameFlags2 & 0x01) !== 0
 
   // Read recipient player data
   const hasRecipientPlayer = data[offset++]
@@ -900,14 +936,18 @@ export function decodeCardState(
   logger.info(`[GameCodec] Decoded: ${boardCardCount} board cards, ${playerCount} players, ${dummyCount} dummies, ${otherPlayerDeckCount} other player hands/decks, hasRecipientPlayer=${hasRecipientPlayer === 1}, phase=${currentPhase}, isGameStarted=${isGameStarted}, activeGridSize=${activeGridSize}, isScoringStep=${isScoringStep}`)
 
   return {
-    players,
-    board,
-    currentPhase,
-    activePlayerId,
-    currentRound,
-    isGameStarted,
-    isScoringStep,
-    activeGridSize: activeGridSize as any // number to GridSize conversion
+    state: {
+      players,
+      board,
+      currentPhase,
+      activePlayerId,
+      currentRound,
+      isGameStarted,
+      isReadyCheckActive,
+      isScoringStep,
+      activeGridSize: activeGridSize as any // number to GridSize conversion
+    },
+    authorPlayerId
   }
 }
 
@@ -940,13 +980,24 @@ function decodeCardRef(data: Uint8Array, offset: number): { card: Card, bytesCon
   // statusMask
   const statusMask = (data[pos++] << 24) | (data[pos++] << 16) | (data[pos++] << 8) | data[pos++]
 
+  // CRITICAL: Read supportPlayerId and threatPlayerId
+  const supportPlayerId = data[pos++]
+  const threatPlayerId = data[pos++]
+
   // Look up card definition from local contentDatabase
   const cardDef = getCardDefinitionFromLocal(baseId)
 
-  // Decode statuses with ownerId as the default addedByPlayerId
-  // This ensures status icons show the correct owner color
-  // Note: This assumes statuses belong to card owner, which is correct for most cases
-  // (Support/Threat from different players would require more complex encoding)
+  // Decode statuses with proper addedByPlayerId for Support/Threat
+  let statuses = decodeStatusesFromMask(statusMask, ownerId)
+
+  // Override Support/Threat addedByPlayerId with the correct values
+  if (supportPlayerId !== 255) {
+    statuses = statuses.map(s => s.type === 'Support' ? { ...s, addedByPlayerId: supportPlayerId } : s)
+  }
+  if (threatPlayerId !== 255) {
+    statuses = statuses.map(s => s.type === 'Threat' ? { ...s, addedByPlayerId: threatPlayerId } : s)
+  }
+
   return {
     card: {
       id: `${baseId}_${ownerId}_${Date.now()}_${Math.random()}`,
@@ -962,7 +1013,7 @@ function decodeCardRef(data: Uint8Array, offset: number): { card: Card, bytesCon
       isFaceDown: (flags & 1) !== 0,
       enteredThisTurn: (flags & 2) !== 0,
       revealedTo: (flags & 4) ? 'all' : undefined,
-      statuses: decodeStatusesFromMask(statusMask, ownerId)
+      statuses
     },
     bytesConsumed: pos - offset
   }
@@ -1046,7 +1097,8 @@ function getCardDefinitionFromLocal(baseId: string): { name: string, imageUrl: s
 export function mergeDecodedState(
   existingState: GameState,
   decodedState: Partial<GameState>,
-  localPlayerId: number | null = null
+  localPlayerId: number | null = null,
+  isHost: boolean = false  // NEW: If true, preserve full data for all players (host needs complete state)
 ): GameState {
   const result = { ...existingState }
 
@@ -1143,6 +1195,27 @@ export function mergeDecodedState(
           }
         }
 
+        // CRITICAL FIX: For host, preserve full data for ALL players
+        // For guests, preserve existing hand/deck/discard and only update sizes
+        if (isHost) {
+          // Host needs complete state for all players to broadcast correctly
+          return {
+            ...player,
+            // Preserve all card data from existing state (host has complete data)
+            hand: existing.hand,
+            deck: existing.deck,
+            discard: existing.discard,
+            // Update other properties from decoded
+            announcedCard: player.announcedCard || existing.announcedCard,
+            boardHistory: player.boardHistory || existing.boardHistory,
+            selectedDeck: player.selectedDeck || existing.selectedDeck,
+            // Update size metadata from decoded state
+            handSize: player.handSize ?? player.hand?.length ?? existing.handSize ?? existing.hand?.length,
+            deckSize: player.deckSize ?? player.deck?.length ?? existing.deckSize ?? existing.deck?.length,
+            discardSize: player.discardSize ?? player.discard?.length ?? existing.discardSize ?? existing.discard?.length
+          }
+        }
+
         // Preserve existing hand/deck/discard (other real players)
         // BUT update size metadata from decoded state
         return {
@@ -1195,6 +1268,10 @@ export function mergeDecodedState(
 
   if (decodedState.isGameStarted !== undefined) {
     result.isGameStarted = decodedState.isGameStarted
+  }
+
+  if (decodedState.isReadyCheckActive !== undefined) {
+    result.isReadyCheckActive = decodedState.isReadyCheckActive
   }
 
   if (decodedState.isScoringStep !== undefined) {

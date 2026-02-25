@@ -14,6 +14,7 @@ import type { UltraCompactCardData, UltraCompactCardRef, CompactStatus } from '.
 import { createDeltaFromStates, isDeltaEmpty, applyStateDelta } from '../utils/stateDelta'
 import { logger } from '../utils/logger'
 import { getCardDefinition } from '../content'
+import { recalculateBoardStatuses } from '../../shared/utils/boardUtils'
 
 /**
  * Reconstruct a full card from ultra-compact data using contentDatabase
@@ -136,6 +137,11 @@ export class HostStateManager {
   private connectionManager: HostConnectionManager
   private currentState: GameState | null = null
   private localPlayerId: number | null = null
+  // Track last broadcast state hash to prevent echo loops
+  private lastBroadcastStateHash: string = ''
+  private lastBroadcastTimestamp: number = 0
+  // Track game start timestamp to ignore stale guest updates
+  private gameStartTimestamp: number = 0
 
   constructor(connectionManager: HostConnectionManager) {
     this.connectionManager = connectionManager
@@ -154,8 +160,9 @@ export class HostStateManager {
     }
 
     // If game has already started, don't overwrite the entire state
-    // Only update deck/selectedDeck properties for each player
+    // Only update deck/selectedDeck/hand/discard properties for each player
     // BUT also update abilityMode and targetingMode (needed for scoring mode)
+    // CRITICAL: Also update handSize, deckSize, discardSize for proper UI sync
     if (this.currentState?.isGameStarted) {
       logger.info('[HostStateManager] Game already started, merging deck data and mode properties instead of overwriting state')
       logger.info('[HostStateManager] Incoming abilityMode:', state.abilityMode)
@@ -165,10 +172,46 @@ export class HostStateManager {
       const updatedPlayers = this.currentState.players.map(currentPlayer => {
         const incomingPlayer = state.players.find(p => p.id === currentPlayer.id)
         if (incomingPlayer) {
+          const oldHandSize = currentPlayer.handSize ?? currentPlayer.hand?.length ?? 0
+          const oldDeckSize = currentPlayer.deckSize ?? currentPlayer.deck?.length ?? 0
+          const newHandSize = incomingPlayer.handSize ?? incomingPlayer.hand?.length ?? 0
+          const newDeckSize = incomingPlayer.deckSize ?? incomingPlayer.deck?.length ?? 0
+
+          // Log if sizes changed (e.g., auto-draw happened)
+          if (oldHandSize !== newHandSize || oldDeckSize !== newDeckSize) {
+            logger.info(`[HostStateManager] Player ${currentPlayer.id} size changed: hand ${oldHandSize}->${newHandSize}, deck ${oldDeckSize}->${newDeckSize}`)
+          }
+
+          // Check if incoming player has ultra-compact data (means this player sent their own cards)
+          const hasUltraCompactData = (incomingPlayer as any).handCards?.length > 0 ||
+                                       (incomingPlayer as any).deckCardRefs?.length > 0 ||
+                                       (incomingPlayer as any).discardCards?.length > 0
+
+          // Check if incoming state has actual card data (not just empty arrays)
+          const hasIncomingHandData = incomingPlayer.hand && incomingPlayer.hand.length > 0
+          const hasIncomingDeckData = incomingPlayer.deck && incomingPlayer.deck.length > 0
+          const hasIncomingDiscardData = incomingPlayer.discard && incomingPlayer.discard.length > 0
+
           return {
             ...currentPlayer,
-            deck: incomingPlayer.deck || currentPlayer.deck,
-            selectedDeck: incomingPlayer.selectedDeck || currentPlayer.selectedDeck
+            // CRITICAL: Update hand, deck, discard from incoming state
+            // Only update if incoming state has actual data (array with items) OR ultra-compact data
+            // NEVER replace existing data with empty arrays from other players' states
+            hand: (hasIncomingHandData || hasUltraCompactData) ? incomingPlayer.hand : currentPlayer.hand,
+            deck: (hasIncomingDeckData || hasUltraCompactData) ? incomingPlayer.deck : currentPlayer.deck,
+            discard: (hasIncomingDiscardData || hasUltraCompactData) ? incomingPlayer.discard : currentPlayer.discard,
+            selectedDeck: incomingPlayer.selectedDeck || currentPlayer.selectedDeck,
+            // CRITICAL: Update size properties - ONLY if incoming has valid data
+            // Don't let empty states (0 sizes) overwrite existing valid sizes
+            handSize: (hasIncomingHandData || hasUltraCompactData)
+              ? (incomingPlayer.handSize ?? incomingPlayer.hand?.length ?? currentPlayer.handSize)
+              : (currentPlayer.handSize ?? currentPlayer.hand?.length),
+            deckSize: (hasIncomingDeckData || hasUltraCompactData)
+              ? (incomingPlayer.deckSize ?? incomingPlayer.deck?.length ?? currentPlayer.deckSize)
+              : (currentPlayer.deckSize ?? currentPlayer.deck?.length),
+            discardSize: (hasIncomingDiscardData || hasUltraCompactData)
+              ? (incomingPlayer.discardSize ?? incomingPlayer.discard?.length ?? currentPlayer.discardSize)
+              : (currentPlayer.discardSize ?? currentPlayer.discard?.length)
           }
         }
         return currentPlayer
@@ -274,6 +317,14 @@ export class HostStateManager {
       return null
     }
 
+    // ANTI-ECHO: Check if this guest is echoing back the state we just broadcast
+    // Compare key state properties to detect if guest is just reflecting our own broadcast
+    const guestHash = this.quickHashState(guestState)
+    if (guestHash === this.lastBroadcastStateHash && Date.now() - this.lastBroadcastTimestamp < 1000) {
+      logger.debug(`[HostStateManager] Ignoring echo from guest ${guestPlayerId} (state matches last broadcast)`)
+      return null
+    }
+
     // Merge guest state with host state
     const mergedPlayers = this.currentState.players.map(hostPlayer => {
       const guestPlayer = guestState.players.find(p => p.id === hostPlayer.id)
@@ -290,20 +341,36 @@ export class HostStateManager {
                                      (guestPlayer as any).deckCardRefs?.length > 0 ||
                                      (guestPlayer as any).discardCards?.length > 0
 
+        // CRITICAL: Ignore stale STATE_UPDATE_COMPACT with empty hand after game has started
+        // Guests send empty state when clicking "Ready" (before GAME_STARTING)
+        // After GAME_STARTING, they send actual cards - ignore stale empty hand messages
+        const isGameStarted = this.currentState?.isGameStarted ?? false
+        const guestHandIsEmpty = !guestPlayer.hand || guestPlayer.hand.length === 0
+
+        if (isGameStarted && !hasUltraCompactData && guestHandIsEmpty) {
+          logger.info(`[HostStateManager] Ignoring stale STATE_UPDATE_COMPACT from guest ${guestPlayerId} (game started, hand empty, no ultra-compact data)`)
+          return hostPlayer // Keep host state for this player
+        }
+
         if (hasUltraCompactData) {
           // Reconstruct hand from ultra-compact handCards
           let reconstructedHand = hostPlayer.hand
           if ((guestPlayer as any).handCards) {
             const handCards = (guestPlayer as any).handCards as UltraCompactCardData[]
+            logger.info(`[HostStateManager] Guest ${guestPlayerId} reconstructing hand: ${handCards.length} cards`)
             reconstructedHand = handCards.map(hc => reconstructCardFromUltraCompact(hc, hostPlayer.selectedDeck))
           }
 
-          // Reconstruct deck from deckCardRefs using contentDatabase
+          // CRITICAL: Always trust guest's deck data for their own deck
+          // Each player is authoritative for their own deck/hand/discard in WebRTC P2P mode
+          // When guest draws a card (manually or auto-draw), they send the updated state
+          // and host must apply it to stay in sync
           let reconstructedDeck = hostPlayer.deck
           if ((guestPlayer as any).deckCardRefs) {
+            // Reconstruct deck from guest's refs - guest has authoritative data
             const deckCardRefs = (guestPlayer as any).deckCardRefs as UltraCompactCardRef[]
             reconstructedDeck = reconstructDeckFromRefs(deckCardRefs, hostPlayer.selectedDeck, hostPlayer.deck)
-            logger.info(`[HostStateManager] Guest ${guestPlayerId} reconstructed deck from ${deckCardRefs.length} refs`)
+            logger.info(`[HostStateManager] Guest ${guestPlayerId} reconstructed deck from ${deckCardRefs.length} refs (authoritative)`)
           }
 
           // Reconstruct discard from ultra-compact discardCards
@@ -336,33 +403,63 @@ export class HostStateManager {
           ...guestPlayer,
           deck: hostPlayer.deck,
           discard: hostPlayer.discard,
+          hand: hostPlayer.hand,  // Also preserve hand from host
+          // CRITICAL: Override sizes to match actual arrays (guest sizes may be stale)
+          handSize: hostPlayer.hand.length,
+          deckSize: hostPlayer.deck.length,
+          discardSize: hostPlayer.discard.length,
         }
-        logger.info(`[HostStateManager] Guest ${guestPlayerId} merged score: ${merged.score}`)
+        logger.info(`[HostStateManager] Guest ${guestPlayerId} merged: hand=${merged.handSize}, deck=${merged.deckSize}, score=${merged.score}`)
         return merged
       }
 
       // For other players, prefer host state but take non-sensitive updates
-      return {
+      const merged = {
         ...hostPlayer,
         // Take safe updates from guest state
         isReady: guestPlayer.isReady,
         score: guestPlayer.score,
         // Don't take hand/deck/discard (privacy and host authority)
+        hand: hostPlayer.hand,
+        deck: hostPlayer.deck,
+        discard: hostPlayer.discard,
       }
+      // Debug log to verify hand/deck sizes are preserved
+      if (hostPlayer.id !== guestPlayerId && (hostPlayer.handSize !== merged.handSize || hostPlayer.deckSize !== merged.deckSize)) {
+        logger.warn(`[HostStateManager] Player ${hostPlayer.id} size mismatch after merge: host hand=${hostPlayer.handSize}/${hostPlayer.deck?.length}, merged hand=${merged.handSize}/${merged.deckSize}`)
+      }
+      return merged
     })
 
     // Simple merge - take guest state but preserve host's authoritative fields
     const oldState = this.currentState
-    const newState: GameState = {
+    let newState: GameState = {
       ...guestState,
       players: mergedPlayers,
       // Use guest's board - it contains the latest changes
       board: guestState.board,
+      // CRITICAL: Preserve phase info from current state (guest state may not have it)
+      // These are managed by host's PhaseManager and should not be overwritten by guest state
+      currentPhase: oldState.currentPhase,
+      activePlayerId: oldState.activePlayerId,
+      startingPlayerId: oldState.startingPlayerId,
+      currentRound: oldState.currentRound,
+      turnNumber: oldState.turnNumber,
+      isGameStarted: oldState.isGameStarted,
+      isReadyCheckActive: oldState.isReadyCheckActive,
+      isScoringStep: oldState.isScoringStep,
+      roundWinners: oldState.roundWinners,
+      gameWinner: oldState.gameWinner,
+      isRoundEndModalOpen: oldState.isRoundEndModalOpen,
       // CRITICAL: Preserve abilityMode and targetingMode from current state
       // Guest doesn't send these in STATE_UPDATE_COMPACT, so we must preserve them
       abilityMode: oldState.abilityMode,
       targetingMode: oldState.targetingMode,
     }
+
+    // CRITICAL: Recalculate board statuses after any guest update
+    // This ensures Support/Threat tokens are correctly updated after card movements
+    newState = { ...newState, board: recalculateBoardStatuses(newState) }
 
     // Create delta and broadcast
     const delta = createDeltaFromStates(oldState, newState, guestPlayerId)
@@ -372,7 +469,11 @@ export class HostStateManager {
       this.broadcastDelta(delta, excludePeerId)
       logger.info(`[HostStateManager] Guest ${guestPlayerId} update broadcast`)
     } else {
-      this.connectionManager.broadcastGameState(newState, excludePeerId)
+      // Pass guestPlayerId as authorPlayerId so guests can ignore their own updates (echo prevention)
+      this.connectionManager.broadcastGameState(newState, excludePeerId, guestPlayerId)
+      // Update broadcast hash to prevent echo loops
+      this.lastBroadcastStateHash = this.quickHashState(newState)
+      this.lastBroadcastTimestamp = Date.now()
     }
 
     return this.currentState
@@ -390,15 +491,32 @@ export class HostStateManager {
     const oldState = this.currentState
     let newState = applyStateDelta(oldState, delta, guestPlayerId)
 
-    // CRITICAL: Preserve abilityMode and targetingMode from current state
-    // Guest deltas don't include these, so we must preserve them
-    // Unless the delta explicitly sets them to undefined/null (clearing)
-    if (!delta.phaseDelta || delta.phaseDelta.abilityMode === undefined) {
-      newState = { ...newState, abilityMode: oldState.abilityMode }
+    // CRITICAL: Preserve authoritative fields from current state (host-managed)
+    // Guest deltas don't include these phase/game management fields, so we must preserve them
+    // These are managed by host's PhaseManager and should not be overwritten by guest updates
+    newState = {
+      ...newState,
+      // Phase management fields (managed by PhaseManager)
+      currentPhase: oldState.currentPhase,
+      activePlayerId: oldState.activePlayerId,
+      startingPlayerId: oldState.startingPlayerId,
+      currentRound: oldState.currentRound,
+      turnNumber: oldState.turnNumber,
+      // Game state flags
+      isGameStarted: oldState.isGameStarted,
+      isReadyCheckActive: oldState.isReadyCheckActive,
+      isScoringStep: oldState.isScoringStep,
+      roundWinners: oldState.roundWinners,
+      gameWinner: oldState.gameWinner,
+      isRoundEndModalOpen: oldState.isRoundEndModalOpen,
+      // Visual interaction modes
+      abilityMode: oldState.abilityMode,
+      targetingMode: oldState.targetingMode,
     }
-    if (!delta.phaseDelta || delta.phaseDelta.targetingMode === undefined) {
-      newState = { ...newState, targetingMode: oldState.targetingMode }
-    }
+
+    // CRITICAL: Recalculate board statuses after any guest delta
+    // This ensures Support/Threat tokens are correctly updated after card movements
+    newState = { ...newState, board: recalculateBoardStatuses(newState) }
 
     const newDelta = createDeltaFromStates(oldState, newState, guestPlayerId)
     this.currentState = newState
@@ -406,7 +524,8 @@ export class HostStateManager {
     if (!isDeltaEmpty(newDelta)) {
       this.broadcastDelta(newDelta, senderPeerId)
     } else {
-      this.connectionManager.broadcastGameState(newState, senderPeerId)
+      // Pass guestPlayerId as authorPlayerId so guests can ignore their own updates (echo prevention)
+      this.connectionManager.broadcastGameState(newState, senderPeerId, guestPlayerId)
     }
   }
 
@@ -415,6 +534,11 @@ export class HostStateManager {
    */
   private broadcastDelta(delta: StateDelta, excludePeerId?: string): void {
     this.connectionManager.broadcastStateDelta(delta, excludePeerId)
+    // Update broadcast hash to prevent echo loops
+    if (this.currentState) {
+      this.lastBroadcastStateHash = this.quickHashState(this.currentState)
+      this.lastBroadcastTimestamp = Date.now()
+    }
   }
 
   /**
@@ -423,6 +547,18 @@ export class HostStateManager {
   broadcastFullState(excludePeerId?: string): void {
     if (!this.currentState) {return}
     this.connectionManager.broadcastGameState(this.currentState, excludePeerId)
+    // Update broadcast hash to prevent echo loops
+    this.lastBroadcastStateHash = this.quickHashState(this.currentState)
+    this.lastBroadcastTimestamp = Date.now()
+  }
+
+  /**
+   * Create a quick hash of state for comparison
+   * Used to detect echo loops where guests reflect back our own broadcasts
+   */
+  private quickHashState(state: GameState): string {
+    // Hash only the most important fields that change frequently
+    return `${state.currentPhase}-${state.activePlayerId}-${state.players.map(p => `${p.id}:${p.handSize}:${p.deckSize}:${p.score}`).join('|')}`
   }
 
   /**
@@ -543,71 +679,15 @@ export class HostStateManager {
 
   /**
    * Start the game
-   * - Draw initial hands for ALL players (host, guests, dummies)
-   * - Perform Preparation phase for starting player
-   * - Broadcast personalized CARD_STATE to each guest immediately
+   * NOTE: This method is OVERRIDDEN by HostPhaseIntegration.initializePhaseSystem
+   * to use PhaseManager for proper phase management including auto-draw.
+   * The override handles drawing initial 6 cards, then calls PhaseManager.startGame
+   * which draws the 7th card for the starting player in Preparation phase.
    */
   startGame(): void {
-    if (!this.currentState || !this.localPlayerId) {
-      logger.error('[HostStateManager] Cannot start game: no state or local player ID')
-      return
-    }
-
-    logger.info('[HostStateManager] All players ready! Starting game...')
-
-    const allPlayers = this.currentState.players.filter(p => !p.isDisconnected)
-    const randomIndex = Math.floor(Math.random() * allPlayers.length)
-    const startingPlayerId = allPlayers[randomIndex].id
-
-    // Create new state with game started
-    let newState: GameState = {
-      ...this.currentState,
-      isReadyCheckActive: false,
-      isGameStarted: true,
-      startingPlayerId: startingPlayerId,
-      activePlayerId: startingPlayerId,
-      currentPhase: 0  // Start at Preparation phase
-    }
-
-    // Draw initial hands (6 cards) for ALL players
-    // Each guest receives their personalized hand in broadcastGameState
-    newState.players = newState.players.map(player => {
-      logger.info(`[HostStateManager] Player ${player.id}: hand=${player.hand.length}, deck=${player.deck.length}, isDummy=${player.isDummy}`)
-
-      if (player.hand.length === 0 && player.deck.length > 0) {
-        const cardsToDraw = 6
-        const newHand = [...player.hand]
-        const newDeck = [...player.deck]
-
-        for (let i = 0; i < cardsToDraw && i < newDeck.length; i++) {
-          const drawnCard = newDeck[0]
-          newDeck.splice(0, 1)
-          newHand.push(drawnCard)
-        }
-
-        logger.info(`[HostStateManager] Drew initial ${newHand.length} cards for player ${player.id}, deck now has ${newDeck.length} cards`)
-        return { ...player, hand: newHand, deck: newDeck }
-      }
-      return player
-    })
-
-    // Preparation phase logic removed - just set phase to Setup
-    newState.currentPhase = 1 // Setup phase
-
-    logger.info(`[HostStateManager] Preparation phase completed, now in phase ${newState.currentPhase} (Setup)`)
-
-    // Update current state
-    this.currentState = newState
-
-    // Log final state for debugging
-    newState.players.forEach(p => {
-      logger.info(`[HostStateManager] Final state - Player ${p.id}: hand=${p.hand.length}, deck=${p.deck.length}, discard=${p.discard.length}`)
-    })
-
-    // Broadcast personalized CARD_STATE to all guests IMMEDIATELY (no delay!)
-    // Each guest receives their own full hand/deck + sizes for other players
-    this.connectionManager.broadcastGameState(newState)
-    logger.info('[HostStateManager] Broadcasted personalized CARD_STATE to all guests')
+    // This is a stub - the actual implementation is provided by HostPhaseIntegration
+    // which overrides this method after PhaseManager is initialized
+    logger.warn('[HostStateManager] startGame called but PhaseManager is not initialized yet. This should not happen after initialization.')
   }
 
   /**

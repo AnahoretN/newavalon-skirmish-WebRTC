@@ -238,6 +238,18 @@ export class HostConnectionManager {
   }
 
   /**
+   * Get peer ID for a given player ID
+   */
+  getPeerIdForPlayer(playerId: number): string | undefined {
+    for (const [peerId, guest] of this.guests.entries()) {
+      if (guest.playerId === playerId) {
+        return peerId
+      }
+    }
+    return undefined
+  }
+
+  /**
    * Accept guest and send minimal game info
    */
   acceptGuestMinimal(peerId: string, minimalInfo: any, playerId: number): boolean {
@@ -319,8 +331,11 @@ export class HostConnectionManager {
   /**
    * Broadcast game state to all guests (personalized)
    * Uses BINARY codec for MUCH smaller message size
+   *
+   * @param authorPlayerId - The player who made these changes (0 for host/system).
+   *                         Used to prevent echo where a player receives back their own updates.
    */
-  broadcastGameState(gameState: GameState, excludePeerId?: string): void {
+  broadcastGameState(gameState: GameState, excludePeerId?: string, authorPlayerId: number = 0): void {
     if (this.connections.size === 0) {
       logger.debug('[broadcastGameState] No guests to broadcast to')
       return
@@ -339,7 +354,8 @@ export class HostConnectionManager {
 
     // Log scores being broadcast for debugging
     const scores = gameState.players.map(p => `P${p.id}:${p.score}`).join(', ')
-    logger.info(`[broadcastGameState] Broadcasting state with scores: ${scores}, currentPhase=${gameState.currentPhase}, activePlayerId=${gameState.activePlayerId}`)
+    const handDeckInfo = gameState.players.map(p => `P${p.id}:h${p.hand?.length ?? 0}/d${p.deck?.length ?? 0}`).join(', ')
+    logger.info(`[broadcastGameState] Broadcasting state with scores: ${scores}, ${handDeckInfo}, currentPhase=${gameState.currentPhase}, activePlayerId=${gameState.activePlayerId}, authorPlayerId=${authorPlayerId}`)
 
     let successCount = 0
 
@@ -357,7 +373,8 @@ export class HostConnectionManager {
 
       try {
         // Use BINARY codec - much smaller than MessagePack!
-        const stateData = serializeGameState(gameState, guest.playerId)
+        // authorPlayerId is passed through so guests can ignore their own updates (echo prevention)
+        const stateData = serializeGameState(gameState, guest.playerId, authorPlayerId)
         const base64Data = btoa(String.fromCharCode(...stateData))
 
         const message: WebrtcMessage = {
@@ -410,10 +427,11 @@ export class HostConnectionManager {
 
   /**
    * Broadcast card state to all guests (new codec)
+   * authorPlayerId defaults to 0 (host/system) if not provided
    */
-  broadcastCardState(gameState: GameState, localPlayerId: number | null, excludePeerId?: string): number {
+  broadcastCardState(gameState: GameState, localPlayerId: number | null, excludePeerId?: string, authorPlayerId: number = 0): number {
     try {
-      const stateData = serializeGameState(gameState, localPlayerId)
+      const stateData = serializeGameState(gameState, localPlayerId, authorPlayerId)
       const base64Data = btoa(String.fromCharCode(...stateData))
 
       const message: WebrtcMessage = {
@@ -424,7 +442,7 @@ export class HostConnectionManager {
       }
 
       const successCount = this.broadcast(message, excludePeerId)
-      logger.info(`[broadcastCardState] Sent ${stateData.length} bytes to ${successCount} guests`)
+      logger.info(`[broadcastCardState] Sent ${stateData.length} bytes to ${successCount} guests, authorPlayerId=${authorPlayerId}`)
       return successCount
     } catch (err) {
       logger.error('[broadcastCardState] Failed to encode/broadcast state:', err)

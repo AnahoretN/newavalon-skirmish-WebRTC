@@ -839,19 +839,29 @@ const arePropsEqual = (prevProps: CardCoreProps & CardInteractionProps, nextProp
   }
 
   // Performance critical: deep comparison only for status and power changes
+  // IMPORTANT: Compare statuses as sets, not arrays, because recalculateBoardStatuses
+  // may reorder statuses without actually changing them
   const prevStatuses = prevProps.card.statuses || []
   const nextStatuses = nextProps.card.statuses || []
   if (prevStatuses.length !== nextStatuses.length) {
     return false
   }
 
-  // Check if any status changed
-  for (let i = 0; i < prevStatuses.length; i++) {
-    const prev = prevStatuses[i]
-    const next = nextStatuses[i]
-    if (!next || prev.type !== next.type || prev.addedByPlayerId !== next.addedByPlayerId) {
-      return false
+  // Check if statuses are the same (order-independent comparison)
+  // Create a map of {type_addedByPlayerId} for efficient comparison
+  const prevStatusMap = new Map<string, boolean>()
+  for (const s of prevStatuses) {
+    prevStatusMap.set(`${s.type}_${s.addedByPlayerId}`, true)
+  }
+  for (const s of nextStatuses) {
+    const key = `${s.type}_${s.addedByPlayerId}`
+    if (!prevStatusMap.has(key)) {
+      return false  // New or different status
     }
+    prevStatusMap.delete(key)
+  }
+  if (prevStatusMap.size > 0) {
+    return false  // Some statuses were removed
   }
 
   // Check power-related changes

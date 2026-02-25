@@ -37,18 +37,24 @@ import {
 export function handleCardStateMessage(
   data: Uint8Array,
   currentState: GameState,
-  localPlayerId: number | null
-): GameState {
+  localPlayerId: number | null,
+  isHost: boolean = false  // NEW: Indicates if this is the host
+): { gameState: GameState, authorPlayerId: number } {
   try {
-    const decodedState = deserializeGameState(data, localPlayerId)
-    logger.info(`[WebRTCCodec] Received card state: ${decodedState.board?.length}x${decodedState.board?.[0]?.length || 0}, ${decodedState.players?.length || 0} players, activeGridSize=${decodedState.activeGridSize}`)
+    const { state: decodedState, authorPlayerId } = deserializeGameState(data, localPlayerId)
+    logger.info(`[WebRTCCodec] Received card state: ${decodedState.board?.length}x${decodedState.board?.[0]?.length || 0}, ${decodedState.players?.length || 0} players, activeGridSize=${decodedState.activeGridSize}, authorPlayerId=${authorPlayerId}`)
 
     // Use the mergeDecodedState utility for consistent merging
     // Pass localPlayerId to preserve guest's deck choice
-    return mergeDecodedState(currentState, decodedState, localPlayerId)
+    // Pass isHost flag so host preserves full state for all players
+    const mergedState = mergeDecodedState(currentState, decodedState, localPlayerId, isHost)
+
+    // Return both the merged state and the authorPlayerId
+    // This allows the caller to decide whether to broadcast based on author
+    return { gameState: mergedState, authorPlayerId }
   } catch (e) {
     logger.error('[WebRTCCodec] Failed to deserialize card state:', e)
-    return currentState
+    return { gameState: currentState, authorPlayerId: 0 }
   }
 }
 
@@ -206,19 +212,23 @@ export function handleSessionEventMessage(
 /**
  * Main handler for new codec messages
  * Routes to appropriate handler based on message type
+ *
+ * @returns { gameState: GameState, effectData?: any, authorPlayerId?: number }
  */
 export function handleCodecMessage(
   messageType: number,
   data: Uint8Array,
   currentState: GameState,
-  localPlayerId: number | null
+  localPlayerId: number | null,
+  isHost: boolean = false  // NEW: Indicates if this is the host
 ): {
   gameState: GameState
   effectData?: any
+  authorPlayerId?: number
 } {
   if (messageType === 0x02) { // CARD_STATE
-    const newGameState = handleCardStateMessage(data, currentState, localPlayerId)
-    return { gameState: newGameState }
+    const { gameState: newGameState, authorPlayerId } = handleCardStateMessage(data, currentState, localPlayerId, isHost)
+    return { gameState: newGameState, authorPlayerId }
   }
 
   if (messageType === 0x03) { // ABILITY_EFFECT

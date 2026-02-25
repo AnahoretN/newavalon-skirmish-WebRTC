@@ -78,7 +78,7 @@ import { backgroundLoader, extractCardUrls } from '../utils/backgroundImageLoade
 const scoreDeltaAccumulator = new Map<number, { delta: number, timerId: ReturnType<typeof setTimeout> }>()
 
 export const useGameState = (props: UseGameStateProps = {}) => {
-  const { abilityMode, setAbilityMode } = props;
+  const { setAbilityMode } = props;
 
   const [gameState, setGameState] = useState<GameState>(createInitialState())
 
@@ -2542,34 +2542,67 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               bytes[i] = binaryString.charCodeAt(i)
             }
             setGameState(prev => {
-              const updatedState = handleCodecMessage(
+              const { gameState: updatedState, authorPlayerId } = handleCodecMessage(
                 0x02, // CodecMessageType.CARD_STATE
                 bytes,
                 prev,
-                localPlayerIdRef.current || prev.localPlayerId
+                localPlayerIdRef.current || prev.localPlayerId,
+                webrtcIsHostRef.current  // Pass isHost flag
               )
+
+              // CRITICAL: Echo prevention - if we are the author, ignore this update
+              // This prevents receiving back our own state changes that we just sent to host
+              const myPlayerId = localPlayerIdRef.current
+              if (authorPlayerId !== undefined && authorPlayerId === myPlayerId) {
+                logger.info(`[handleWebrtcMessage] CARD_STATE: Ignoring echo from authorPlayerId=${authorPlayerId} (myPlayerId=${myPlayerId})`)
+                return prev
+              }
+
               // Update timestamp after successfully applying state
               if (message.timestamp) {
                 lastCardStateTimestampRef.current = message.timestamp
               }
-              return updatedState.gameState
+
+              // CRITICAL: Also update gameStateRef synchronously so phase callbacks
+              // can access the updated state immediately (before useEffect runs)
+              // This prevents guests from sending empty hand state back to host
+              gameStateRef.current = updatedState
+
+              // Return the updated state as-is (host already drew cards for all players)
+              return updatedState
             })
           } catch (e) {
             logger.error('[handleWebrtcMessage] Failed to decode CARD_STATE:', e)
           }
         } else if (message.data instanceof Uint8Array) {
           setGameState(prev => {
-            const updatedState = handleCodecMessage(
+            const { gameState: updatedState, authorPlayerId } = handleCodecMessage(
               0x02, // CodecMessageType.CARD_STATE
               message.data,
               prev,
-              localPlayerIdRef.current || prev.localPlayerId
+              localPlayerIdRef.current || prev.localPlayerId,
+              webrtcIsHostRef.current  // Pass isHost flag
             )
+
+            // CRITICAL: Echo prevention - if we are the author, ignore this update
+            const myPlayerId = localPlayerIdRef.current
+            if (authorPlayerId !== undefined && authorPlayerId === myPlayerId) {
+              logger.info(`[handleWebrtcMessage] CARD_STATE: Ignoring echo from authorPlayerId=${authorPlayerId} (myPlayerId=${myPlayerId})`)
+              return prev
+            }
+
             // Update timestamp after successfully applying state
             if (message.timestamp) {
               lastCardStateTimestampRef.current = message.timestamp
             }
-            return updatedState.gameState
+
+            // CRITICAL: Also update gameStateRef synchronously so phase callbacks
+            // can access the updated state immediately (before useEffect runs)
+            // This prevents guests from sending empty hand state back to host
+            gameStateRef.current = updatedState
+
+            // Return the updated state as-is (host already drew cards for all players)
+            return updatedState
           })
         }
         break
@@ -2590,8 +2623,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
                 0x03, // CodecMessageType.ABILITY_EFFECT
                 bytes,
                 prev,
-                localPlayerIdRef.current || prev.localPlayerId
+                localPlayerIdRef.current || prev.localPlayerId,
+                webrtcIsHostRef.current  // Pass isHost flag
               )
+              // Update gameStateRef synchronously for immediate access
+              gameStateRef.current = updatedState
               return updatedState
             })
           } catch (e) {
@@ -2603,8 +2639,11 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               0x03, // CodecMessageType.ABILITY_EFFECT
               message.data,
               prev,
-              localPlayerIdRef.current || prev.localPlayerId
+              localPlayerIdRef.current || prev.localPlayerId,
+              webrtcIsHostRef.current  // Pass isHost flag
             )
+            // Update gameStateRef synchronously for immediate access
+            gameStateRef.current = updatedState
             return updatedState
           })
         }
@@ -2622,24 +2661,32 @@ export const useGameState = (props: UseGameStateProps = {}) => {
               bytes[i] = binaryString.charCodeAt(i)
             }
             setGameState(prev => {
-              return handleCodecMessage(
+              const updatedState = handleCodecMessage(
                 0x04, // CodecMessageType.SESSION_EVENT
                 bytes,
                 prev,
-                localPlayerIdRef.current || prev.localPlayerId
+                localPlayerIdRef.current || prev.localPlayerId,
+                webrtcIsHostRef.current  // Pass isHost flag
               ).gameState
+              // Update gameStateRef synchronously for immediate access
+              gameStateRef.current = updatedState
+              return updatedState
             })
           } catch (e) {
             logger.error('[handleWebrtcMessage] Failed to decode SESSION_EVENT:', e)
           }
         } else if (message.data instanceof Uint8Array) {
           setGameState(prev => {
-            return handleCodecMessage(
+            const updatedState = handleCodecMessage(
               0x04, // CodecMessageType.SESSION_EVENT
               message.data,
               prev,
-              localPlayerIdRef.current || prev.localPlayerId
+              localPlayerIdRef.current || prev.localPlayerId,
+              webrtcIsHostRef.current  // Pass isHost flag
             ).gameState
+            // Update gameStateRef synchronously for immediate access
+            gameStateRef.current = updatedState
+            return updatedState
           })
         }
         break
@@ -4060,7 +4107,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           setGameState(prev => ({
             ...prev,
             players: prev.players.map(p =>
-              p.id === message.data.playerId ? { ...p, isDummy: true, isDisconnected: true } : p
+              p.id === message.data.playerId ? { ...p, isDummy: true, isDisconnected: true, autoDrawEnabled: true, isReady: true } : p
             )
           }))
         }
@@ -4425,6 +4472,65 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
       }
+
+      case 'GAME_STARTING':
+        // Host signals game is starting - phase system will run first
+        // NEW APPROACH:
+        // 1. Host broadcasts GAME_STARTING
+        // 2. PhaseManager runs Preparation -> Setup transition on host
+        // 3. Host broadcasts CARD_STATE with Setup phase
+        // 4. Guests receive state, draw their cards, and send STATE_UPDATE_COMPACT
+        logger.info('[GAME_STARTING] Host signaled game start, preparing for phase transition', message.data)
+        if (!message.data) {
+          break
+        }
+
+        const startingPlayerIdForGameStart = message.data.startingPlayerId
+        const activePlayerIdForGameStart = message.data.activePlayerId ?? startingPlayerIdForGameStart
+        const isStartingPlayerNow = startingPlayerIdForGameStart === localPlayerIdRef.current
+
+        logger.info(`[GAME_STARTING] Player ${localPlayerIdRef.current} preparing (isStartingPlayer: ${isStartingPlayerNow})`)
+
+        // Update state with game start info, but DON'T draw yet
+        // Wait for CARD_STATE from host with phase info, then draw
+        setGameState(prev => {
+          if (!prev || localPlayerIdRef.current === null) {
+            logger.warn('[GAME_STARTING] No game state or local player ID')
+            return prev
+          }
+
+          // Just update game flags, don't draw cards yet
+          // Cards will be drawn after receiving CARD_STATE with Setup phase
+          const newState = {
+            ...prev,
+            isGameStarted: true,
+            isReadyCheckActive: false,
+            startingPlayerId: startingPlayerIdForGameStart,
+            activePlayerId: activePlayerIdForGameStart,
+            currentPhase: message.data.currentPhase ?? 0  // Preparation phase
+          }
+
+          logger.info(`[GAME_STARTING] State updated, waiting for CARD_STATE to draw cards`)
+          return newState
+        })
+        break
+
+      case 'GUEST_AUTO_DRAW':
+        // Host signals guest to auto-draw locally in Preparation phase
+        logger.info('[GUEST_AUTO_DRAW] Host signaled to auto-draw', message.data)
+        if (!message.data || message.data.playerId === undefined) {
+          break
+        }
+
+        const targetPlayerId = message.data.playerId
+        // Only process if this is for us
+        if (targetPlayerId === localPlayerIdRef.current) {
+          logger.info(`[GUEST_AUTO_DRAW] Auto-drawing for player ${targetPlayerId}`)
+          // Call drawCard via ref - this works exactly like clicking the deck
+          // It will update local state and send STATE_UPDATE_COMPACT to host
+          drawCardRef.current?.(targetPlayerId)
+        }
+        break
 
       default:
         // Log unknown message types for debugging
@@ -4895,6 +5001,12 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     flipBoardCardFaceDown,
   } = cardOperations
 
+  // Ref to hold drawCard for use in useEffect before cardOperations is available
+  const drawCardRef = useRef(drawCard)
+  useEffect(() => {
+    drawCardRef.current = drawCard
+  }, [drawCard])
+
   // Game settings functions from useGameSettings hook
   const {
     assignTeams,
@@ -5126,6 +5238,7 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     hostManager: webrtcManagerRef.current,
     guestConnection: webrtcManagerRef.current,
     onStateUpdate: updateState,
+    drawCard: cardOperations.drawCard,  // For auto-draw sync
   })
 
   // Destructure phase action functions

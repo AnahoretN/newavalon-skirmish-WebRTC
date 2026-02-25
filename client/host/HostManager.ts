@@ -209,9 +209,9 @@ export class HostManager {
     const state = this.stateManager.getState()
     if (!state) {return}
 
-    // Convert player to dummy - dummy players are always ready
+    // Convert player to dummy - dummy players are always ready and have auto-draw enabled
     const updatedPlayers = state.players.map(p =>
-      p.id === playerId ? { ...p, isDummy: true, isDisconnected: true, isReady: true } : p
+      p.id === playerId ? { ...p, isDummy: true, isDisconnected: true, isReady: true, autoDrawEnabled: true } : p
     )
 
     const newState: GameState = {
@@ -610,17 +610,23 @@ export class HostManager {
         break
 
       case 'ABILITY_CANCELLED':
-        // Rebroadcast ability cancellation and clear targeting mode
-        this.visualEffects.clearTargetingMode()
-
-        // Clear targeting mode on host state
+        // Guest cancelled ability mode - update host's internal state
+        // DO NOT rebroadcast CLEAR_TARGETING_MODE - it creates a loop
+        // The guest who cancelled already knows, and other guests don't need
+        // to be notified about individual guest cancellations
         const state = this.stateManager.getState()
         if (state) {
           const newState: GameState = {
             ...state,
-            targetingMode: null
+            targetingMode: null,
           }
           this.stateManager.setInitialState(newState)
+
+          // Update host's UI to sync the state change
+          // This ensures the host's React state (including abilityMode) is updated
+          if (this.config.onStateUpdate) {
+            this.config.onStateUpdate(newState)
+          }
         }
         break
 
@@ -740,7 +746,7 @@ export class HostManager {
 
   /**
    * Handle phase-related message from guest
-   * Simple direct handling without complex PhaseManager
+   * DELEGATES TO PhaseManager for proper phase management
    */
   private handlePhaseMessage(message: any, fromPeerId: string): void {
     try {
@@ -762,109 +768,8 @@ export class HostManager {
 
       const playerId = guest.playerId
 
-      // Get state - any player can change phases
-      const state = this.stateManager.getState()
-      if (!state) return
-
-      // Debug logging
-      logger.info(`[HostManager] Phase action: ${phaseAction.action} by player ${playerId}, phase=${state.currentPhase}, activePlayer=${state.activePlayerId}`)
-
-      // Process the phase action
-      let newPhase = state.currentPhase
-      let newActivePlayer = state.activePlayerId
-      let newIsScoringStep = state.isScoringStep || false
-
-      switch (phaseAction.action) {
-        case 1: // NEXT_PHASE
-          if (newPhase < 4) {
-            newPhase = newPhase + 1
-          }
-          break
-        case 2: // PREVIOUS_PHASE
-          if (newPhase > 0) {
-            newPhase = newPhase - 1
-          }
-          break
-        case 3: // PASS_TURN
-          // Pass to next player
-          const activePlayers = state.players.filter(p => !p.isDisconnected)
-          const currentPlayerIndex = activePlayers.findIndex(p => p.id === state.activePlayerId)
-          if (currentPlayerIndex >= 0 && activePlayers.length > 0) {
-            const nextPlayer = activePlayers[(currentPlayerIndex + 1) % activePlayers.length]
-            newActivePlayer = nextPlayer.id
-            newPhase = 0 // Preparation
-          }
-          break
-        case 4: // START_SCORING
-          newPhase = 4 // Scoring
-          break
-        case 9: // SET_PHASE - Direct phase setting from guest (PhaseActionType.SET_PHASE = 0x09)
-          if (phaseAction.data && phaseAction.data.phase !== undefined) {
-            newPhase = Math.max(0, Math.min(4, phaseAction.data.phase))
-          }
-          break
-        default:
-          logger.warn('[HostManager] Unknown phase action type:', phaseAction.action)
-          return
-      }
-
-      // Handle isScoringStep flag:
-      // - Set to true when entering Scoring phase (4)
-      // - Set to false when leaving Scoring phase (was 4, now not 4)
-      // - Also set to false when passing turn (action 3) regardless of phase
-      const enteringScoringPhase = newPhase === 4 && state.currentPhase !== 4
-      const leavingScoringPhase = state.currentPhase === 4 && newPhase !== 4
-      const isPassTurn = phaseAction.action === 3
-
-      if (enteringScoringPhase) {
-        newIsScoringStep = true
-        logger.info('[HostManager] Entering Scoring phase - setting isScoringStep=true')
-      } else if (leavingScoringPhase || isPassTurn) {
-        newIsScoringStep = false
-        logger.info(`[HostManager] Leaving Scoring phase or passing turn - setting isScoringStep=false (leaving=${leavingScoringPhase}, passTurn=${isPassTurn})`)
-      }
-
-      // Update state - create new object to trigger React re-render
-      const updatedState = {
-        ...state,
-        currentPhase: newPhase,
-        activePlayerId: newActivePlayer,
-        isScoringStep: newIsScoringStep
-      }
-
-      // Update the actual state object
-      state.currentPhase = newPhase
-      state.activePlayerId = newActivePlayer
-      state.isScoringStep = newIsScoringStep
-
-      // Broadcast updated state to all
-      this.connectionManager.broadcast({
-        type: 'STATE_UPDATE_COMPACT_JSON',
-        data: {
-          currentPhase: newPhase,
-          activePlayerId: newActivePlayer,
-          isScoringStep: newIsScoringStep
-        },
-        senderId: this.connectionManager.getPeerId(),
-        timestamp: Date.now()
-      })
-
-      // IMPORTANT: When entering scoring phase, host broadcasts ABILITY_MODE_SET to all guests
-      // This ensures all players see the scoring mode, regardless of whose turn it is
-      if (enteringScoringPhase && newIsScoringStep) {
-        this.broadcastScoringMode(updatedState)
-      }
-
-      // CRITICAL: Get the actual state from stateManager (may include abilityMode/targetingMode from broadcastScoringMode)
-      // and use it for onStateUpdate to ensure host sees the same state as guests
-      const finalStateForUI = this.stateManager.getState()
-
-      // Update host's React state with the final state (including abilityMode/targetingMode if set)
-      if (this.config.onStateUpdate && finalStateForUI) {
-        this.config.onStateUpdate(finalStateForUI)
-      }
-
-      logger.info(`[HostManager] Phase action: ${phaseAction.action} by player ${playerId}, phase=${newPhase}, activePlayer=${newActivePlayer}, isScoringStep=${newIsScoringStep}`)
+      // Delegate to handlePhaseAction which uses PhaseManager
+      this.handlePhaseAction(phaseAction.action, playerId, phaseAction.data)
     } catch (e) {
       logger.error('[HostManager] Failed to handle phase message:', e)
     }
@@ -898,11 +803,11 @@ export class HostManager {
 
     const action = actionMap[actionType]
 
-    // Use PhaseManager if available and action is mapped
-    if (action && (this as any)._phaseManager) {
+    // Use PhaseManager for all phase actions
+    if ((this as any)._phaseManager) {
       try {
         // Update phase manager state before handling action
-        (this as any)._phaseManager.setState(state)
+        ;(this as any)._phaseManager.setState(state)
 
         const result = (this as any)._phaseManager.handleAction({
           action,
@@ -918,107 +823,9 @@ export class HostManager {
       } catch (error) {
         logger.error('[HostManager] Error in PhaseManager:', error)
       }
+    } else {
+      logger.warn('[HostManager] PhaseManager not initialized, phase action ignored')
     }
-
-    // Fallback to legacy logic for unsupported actions or if PhaseManager is not available
-    // Process the phase action
-    let newPhase = state.currentPhase
-    let newActivePlayer = state.activePlayerId
-    let newIsScoringStep = state.isScoringStep || false
-
-    logger.info(`[HostManager] Before switch: actionType=${actionType}, currentPhase=${newPhase}, activePlayerId=${newActivePlayer}`)
-
-    switch (actionType) {
-      case 1: // NEXT_PHASE
-        if (newPhase < 4) {
-          newPhase = newPhase + 1
-        }
-        break
-      case 2: // PREVIOUS_PHASE
-        if (newPhase > 0) {
-          newPhase = newPhase - 1
-        }
-        break
-      case 3: // PASS_TURN
-        // Pass to next player
-        const activePlayers = state.players.filter(p => !p.isDisconnected)
-        const currentPlayerIndex = activePlayers.findIndex(p => p.id === state.activePlayerId)
-        if (currentPlayerIndex >= 0 && activePlayers.length > 0) {
-          const nextPlayer = activePlayers[(currentPlayerIndex + 1) % activePlayers.length]
-          newActivePlayer = nextPlayer.id
-          newPhase = 0 // Preparation
-        }
-        break
-      case 4: // START_SCORING
-        newPhase = 4 // Scoring
-        break
-      case 9: // SET_PHASE - Direct phase setting (PhaseActionType.SET_PHASE = 0x09)
-        if (data && data.phase !== undefined) {
-          newPhase = Math.max(0, Math.min(4, data.phase))
-        }
-        break
-      default:
-        logger.warn('[HostManager] Unknown phase action type:', actionType)
-        return
-    }
-
-    // Handle isScoringStep flag:
-    // - Set to true when entering Scoring phase (4)
-    // - Set to false when leaving Scoring phase (was 4, now not 4)
-    // - Also set to false when passing turn (action 3) regardless of phase
-    const enteringScoringPhase = newPhase === 4 && state.currentPhase !== 4
-    const leavingScoringPhase = state.currentPhase === 4 && newPhase !== 4
-    const isPassTurn = actionType === 3
-
-    if (enteringScoringPhase) {
-      newIsScoringStep = true
-      logger.info('[HostManager] Entering Scoring phase - setting isScoringStep=true')
-    } else if (leavingScoringPhase || isPassTurn) {
-      newIsScoringStep = false
-      logger.info(`[HostManager] Leaving Scoring phase or passing turn - setting isScoringStep=false (leaving=${leavingScoringPhase}, passTurn=${isPassTurn})`)
-    }
-
-    // Update state - create new object to trigger React re-render
-    const updatedState = {
-      ...state,
-      currentPhase: newPhase,
-      activePlayerId: newActivePlayer,
-      isScoringStep: newIsScoringStep
-    }
-
-    // Update the actual state object
-    state.currentPhase = newPhase
-    state.activePlayerId = newActivePlayer
-    state.isScoringStep = newIsScoringStep
-
-    // Broadcast updated state to all
-    this.connectionManager.broadcast({
-      type: 'STATE_UPDATE_COMPACT_JSON',
-      data: {
-        currentPhase: newPhase,
-        activePlayerId: newActivePlayer,
-        isScoringStep: newIsScoringStep
-      },
-      senderId: this.connectionManager.getPeerId(),
-      timestamp: Date.now()
-    })
-
-    // IMPORTANT: When entering scoring phase, host broadcasts ABILITY_MODE_SET to all guests
-    // This ensures all players see the scoring mode, regardless of whose turn it is
-    if (enteringScoringPhase && newIsScoringStep) {
-      this.broadcastScoringMode(updatedState)
-    }
-
-    // CRITICAL: Get the actual state from stateManager (may include abilityMode/targetingMode from broadcastScoringMode)
-    // and use it for onStateUpdate to ensure host sees the same state as guests
-    const finalStateForUI = this.stateManager.getState()
-
-    // Update host's React state with the final state (including abilityMode/targetingMode if set)
-    if (this.config.onStateUpdate && finalStateForUI) {
-      this.config.onStateUpdate(finalStateForUI)
-    }
-
-    logger.info(`[HostManager] Phase action: ${actionType} by player ${playerId}, phase=${newPhase}, activePlayer=${newActivePlayer}, isScoringStep=${newIsScoringStep}`)
   }
 
   /**
@@ -1221,10 +1028,10 @@ export class HostManager {
       return
     }
 
-    // CRITICAL: If game has already started, only update deck if hand is still empty
-    // This prevents overwriting dealt hands
-    const gameStarted = state.isGameStarted
-    const shouldUpdateDeck = !gameStarted || targetPlayer.hand.length === 0
+    // DECK_DATA_UPDATE is used for deck view feature
+    // Auto-draw now works through updateState mechanism (like clicking deck)
+    // Only update deck if hand is still empty or game not started
+    const shouldUpdateDeck = !state.isGameStarted || targetPlayer.hand.length === 0
 
     if (shouldUpdateDeck) {
       // Use updatePlayerProperty to avoid race conditions with startGame

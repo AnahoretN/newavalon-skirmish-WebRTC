@@ -25,7 +25,8 @@ export type WebrtcMessageType =
   | 'CANCEL_READY_CHECK'   // Host cancels ready check
   | 'PLAYER_READY'         // Guest signals ready
   | 'HOST_READY'           // Host signals ready
-  | 'GAME_START'           // Host starts the game
+  | 'GAME_START'           // Host starts the game (legacy)
+  | 'GAME_STARTING'        // Host signals game is starting (guests draw their own cards)
   | 'GAME_RESET'           // Reset game to lobby state
   | 'ASSIGN_TEAMS'         // Host assigns teams
   | 'SET_GAME_MODE'        // Host sets game mode
@@ -43,6 +44,7 @@ export type WebrtcMessageType =
   | 'TOGGLE_AUTO_DRAW'     // Toggle auto draw
   | 'START_NEXT_ROUND'     // Start next round
   | 'RESET_DEPLOY_STATUS'  // Reset deploy status
+  | 'GUEST_AUTO_DRAW'      // Host tells guest to auto-draw locally
   // Phase system messages (ultra-compact binary encoding)
   | 'PHASE_STATE_UPDATE'   // Full phase state broadcast (10 bytes)
   | 'PHASE_TRANSITION'     // Phase transition notification (5 bytes)
@@ -119,6 +121,13 @@ export type WebrtcMessageType =
   | 'REQUEST_TURN_PASS'    // Guest requests to auto-pass turn (no cards on board, etc.)
   | 'SCORING_COMPLETE_AND_TURN_PASS' // Host completed scoring and passed turn
   | 'REQUEST_GAME_RESET'   // Guest requests game reset from host
+  // NEW: Granular state synchronization system
+  // Each message has an 'authorPlayerId' - the player who made the change
+  // Recipients ignore updates for their own data if they are the author (echo prevention)
+  | 'BOARD_STATE_SYNC'     // Board state sync (entire battlefield)
+  | 'PLAYER_HAND_DECK_SYNC' // Player's hand/deck/discard/showcase sync (for specific player)
+  | 'PLAYER_SCORE_SYNC'    // Player score sync
+  | 'PLAYER_PROPERTY_SYNC' // Other player properties (name, color, ready, etc.)
 
 export interface WebrtcMessage {
   type: WebrtcMessageType
@@ -278,3 +287,64 @@ export interface AbilityCompletedData {
   success: boolean
   timestamp: number
 }
+
+// ============================================================================
+// NEW GRANULAR STATE SYNCHRONIZATION SYSTEM
+// Each message has an authorPlayerId - the player who made the change
+// This prevents echo loops where a player receives back their own updates
+// ============================================================================
+
+/**
+ * Board state synchronization message
+ * Contains the entire battlefield state
+ */
+export interface BoardStateSyncMessage {
+  board: any[][]  // The board state
+  authorPlayerId: number  // Who made this change (0 for host/system)
+  timestamp: number
+  reason?: string  // Optional reason for logging
+}
+
+/**
+ * Player hand/deck/discard/showcase synchronization message
+ * Contains all card data for a specific player
+ * IMPORTANT: Uses ultra-compact format with baseId
+ */
+export interface PlayerHandDeckSyncMessage {
+  targetPlayerId: number  // Which player's data this is
+  authorPlayerId: number  // Who made this change
+  handCards: Array<{ id: string; baseId: string; isFaceDown: boolean; statuses: Array<{type: string}> }>  // Ultra-compact hand
+  deckCardRefs: Array<{ index: number; baseId: string }>  // Ultra-compact deck refs
+  discardCards: Array<{ id: string; baseId: string; isFaceDown: boolean; statuses: Array<{type: string}> }>  // Ultra-compact discard
+  announcedCard: { id: string; baseId: string; isFaceDown: boolean } | null  // Compact announced card
+  timestamp: number
+}
+
+/**
+ * Player score synchronization message
+ */
+export interface PlayerScoreSyncMessage {
+  targetPlayerId: number  // Which player's score
+  authorPlayerId: number  // Who changed it (usually 0 for host/system)
+  score: number
+  timestamp: number
+}
+
+/**
+ * Player property synchronization message
+ * For properties like name, color, ready, etc.
+ */
+export interface PlayerPropertySyncMessage {
+  targetPlayerId: number  // Which player's property
+  authorPlayerId: number  // Who changed it
+  properties: {
+    name?: string
+    color?: string
+    isReady?: boolean
+    selectedDeck?: string
+    isDisconnected?: boolean
+    // Add other properties as needed
+  }
+  timestamp: number
+}
+

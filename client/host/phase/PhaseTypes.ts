@@ -165,6 +165,7 @@ export interface PhaseSystemCallbacks {
   onScoringModeCompleted?: (playerId: number, line: ScoringLine, points: number) => void
   onCardDrawn?: (playerId: number, card: Card) => void
   onStateUpdateRequired?: (newState: GameState) => void
+  onGuestShouldAutoDraw?: (playerId: number) => void  // Signal guest to auto-draw locally
 }
 
 /**
@@ -175,6 +176,7 @@ export interface PhaseSystemConfig {
   victoryThresholdPerRound: number // Additional points per round (10)
   maxRounds: number               // Maximum rounds before match ends (3)
   autoDrawEnabled: boolean        // Whether auto-draw is enabled
+  localPlayerId?: number | null   // ID of the host player (only perform auto-draw for this player and dummies)
 }
 
 /**
@@ -185,6 +187,7 @@ export const DEFAULT_PHASE_CONFIG: PhaseSystemConfig = {
   victoryThresholdPerRound: 10,
   maxRounds: 3,
   autoDrawEnabled: true,
+  localPlayerId: null,
 }
 
 /**

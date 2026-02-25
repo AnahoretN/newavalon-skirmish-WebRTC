@@ -29,22 +29,27 @@ import {
  * @param gameState - The game state to serialize
  * @param recipientPlayerId - The ID of the player who will receive this state.
  *                             Their hand/deck/discard will be included in the encoding.
+ * @param authorPlayerId - The ID of the player who made these changes (0 for host/system).
+ *                         Used to prevent echo loops where a player receives back their own updates.
  */
 export function serializeGameState(
   gameState: GameState,
-  recipientPlayerId?: number | null
+  recipientPlayerId?: number | null,
+  authorPlayerId?: number | null
 ): Uint8Array {
-  return encodeCardState(gameState, recipientPlayerId)
+  return encodeCardState(gameState, recipientPlayerId, authorPlayerId)
 }
 
 /**
  * Deserialize game state from binary format
  * Uses local contentDatabase to look up cards by baseId
+ *
+ * @returns { state: Partial<GameState>, authorPlayerId: number }
  */
 export function deserializeGameState(
   data: Uint8Array,
   _localPlayerId: number | null
-): Partial<GameState> {
+): { state: Partial<GameState>, authorPlayerId: number } {
   return decodeCardState(data)
 }
 

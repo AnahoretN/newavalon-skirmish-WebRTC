@@ -8,7 +8,7 @@
  */
 
 import { HostManager } from './HostManager'
-import type { GameState } from '../types'
+import type { GameState, Player } from '../types'
 import type {
   PhaseTransitionResult,
   PhaseSystemCallbacks,
@@ -16,6 +16,7 @@ import type {
 } from './phase/PhaseTypes'
 import { PhaseManager } from './phase/PhaseManager'
 import { PhaseSyncManager, gameStateToPhaseState } from './phase/PhaseSyncManager'
+import { GamePhase } from './phase/PhaseTypes'
 import { logger } from '../utils/logger'
 
 /**
@@ -97,31 +98,156 @@ export function initializePhaseSystem(
       config?.onScoringModeCompleted?.(playerId, line, points)
     },
 
-    onStateUpdateRequired: (newState: GameState) => {
+    onGuestShouldAutoDraw: (playerId: number) => {
+      // Send a message to the guest telling them to auto-draw
+      // The guest will draw locally and send updated state back to host
+      const guestPeerId = hm.connectionManager.getPeerIdForPlayer(playerId)
+      if (guestPeerId) {
+        const message = {
+          type: 'GUEST_AUTO_DRAW',
+          playerId,
+          timestamp: Date.now()
+        }
+        hm.connectionManager.sendToGuest(guestPeerId, message)
+        logger.info(`[HostPhaseIntegration] Sent auto-draw signal to guest ${playerId} (peer: ${guestPeerId})`)
+      } else {
+        logger.warn(`[HostPhaseIntegration] No peerId found for player ${playerId} to send auto-draw signal`)
+      }
+    },
+
+    onStateUpdateRequired: (phaseManagerState: GameState) => {
+      // CRITICAL: PhaseManager is the source of truth for phase transitions and auto-draw
+      // PhaseManager directly modifies player hands/decks when auto-drawing
+      // We need to broadcast this updated state to all guests
+
+      // Get players who auto-drew in this Preparation phase
+      const autoDrawPlayers = hm._phaseManager?.getRecentAutoDrawPlayers?.() || new Set()
+
+      if (autoDrawPlayers.size > 0) {
+        logger.info(`[HostPhaseIntegration] Players who auto-drew: [${Array.from(autoDrawPlayers).join(', ')}]`)
+      }
+
+      // Log player hand sizes before broadcasting
+      logger.info('[HostPhaseIntegration] Broadcasting state with player hands:', phaseManagerState.players.map(p => `P${p.id}:h${p.hand?.length ?? 0}/d${p.deck?.length ?? 0}`).join(', '))
+
+      // PhaseManager state already has all the changes (including auto-draw)
+      // Use it directly for broadcasting
+      const mergedState: GameState = {
+        ...phaseManagerState,
+      }
+
       // Update host's local state
       if (hm.config?.onStateUpdate) {
-        hm.config.onStateUpdate(newState)
+        hm.config.onStateUpdate(mergedState)
       }
-      // Broadcast updated state to all guests
-      hm.stateManager.setInitialState(newState)
-      hm.connectionManager.broadcastGameState(newState)
+
+      // CRITICAL: Directly update stateManager's currentState and broadcast
+      // Do NOT use setInitialState because it has merge logic that drops player hands!
+      hm.stateManager.currentState = mergedState
+      hm.stateManager.broadcastFullState()  // This handles personalization for each guest
+
+      // Clear recent auto-draw tracking after broadcasting
+      hm._phaseManager?.clearRecentAutoDrawPlayers?.()
     },
   }
 
-  // Create PhaseManager
-  const phaseManager = new PhaseManager({}, phaseCallbacks)
+  // Get local player ID (host's player ID)
+  // Host is always player 1, but also check stateManager in case it's already set
+  const initialState = stateManager.getState()
+  let localPlayerId = stateManager.getLocalPlayerId()
+
+  // If localPlayerId is not set yet, default to 1 (host is always player 1)
+  if (!localPlayerId) {
+    localPlayerId = 1
+    // Also set it in stateManager for future reference
+    stateManager.setLocalPlayerId(1)
+    logger.info('[HostPhaseIntegration] Defaulted localPlayerId to 1 (host)')
+  }
+
+  // Create PhaseManager with localPlayerId so it knows not to auto-draw for guests
+  const phaseManager = new PhaseManager({ localPlayerId }, phaseCallbacks)
 
   // Store references on HostManager instance
   hm._phaseManager = phaseManager
   hm._phaseSyncManager = phaseSyncManager
 
   // Set initial state
-  const initialState = stateManager.getState()
   if (initialState) {
     phaseManager.setState(initialState)
   }
 
-  logger.info('[HostPhaseIntegration] Phase system initialized')
+  logger.info('[HostPhaseIntegration] Phase system initialized with localPlayerId=' + localPlayerId)
+
+  // IMPORTANT: Override HostStateManager's startGame to use PhaseManager
+  // NEW APPROACH:
+  // 1. Host broadcasts GAME_STARTING with starting player info
+  // 2. PhaseManager runs Preparation phase for starting player (no card draw yet)
+  // 3. PhaseManager transitions to Setup phase
+  // 4. After phase transition, host broadcasts final state
+  // 5. Each guest receives state and draws their 6 cards locally (or 7 if starting player)
+  // 6. Guests send STATE_UPDATE_COMPACT to host with their drawn cards
+  // 7. Host merges and broadcasts final synchronized state
+  hm.stateManager.startGame = () => {
+    logger.info('[HostPhaseIntegration] startGame called - using phase-first approach')
+
+    // Get the current state to determine starting player
+    const currentState = hm.stateManager.getState()
+    if (!currentState) {
+      logger.error('[HostPhaseIntegration] No state available for startGame')
+      return
+    }
+
+    // Select random starting player
+    const allPlayers = currentState.players.filter((p: Player) => !p.isDisconnected)
+    const randomIndex = Math.floor(Math.random() * allPlayers.length)
+    const startingPlayerId = allPlayers[randomIndex].id
+
+    logger.info(`[HostPhaseIntegration] Starting game with player ${startingPlayerId}`)
+
+    // Update local state to mark game as started
+    // DON'T draw any cards yet - PhaseManager will handle phases, guests will draw after receiving state
+    let newState: GameState = {
+      ...currentState,
+      isReadyCheckActive: false,
+      isGameStarted: true,
+      startingPlayerId: startingPlayerId,
+      activePlayerId: startingPlayerId,
+      currentPhase: GamePhase.PREPARATION  // Start in Preparation phase
+    }
+
+    // Set state on host BEFORE running PhaseManager
+    hm.stateManager.currentState = newState
+
+    // Broadcast GAME_STARTING message to all guests
+    // Guests will prepare for game start but NOT draw yet
+    // They will draw after receiving the phase state broadcast
+    hm.connectionManager.broadcast({
+      type: 'GAME_STARTING',
+      senderId: hm.connectionManager.getPeerId(),
+      data: {
+        startingPlayerId: startingPlayerId,
+        activePlayerId: startingPlayerId,
+        currentPhase: GamePhase.PREPARATION
+      },
+      timestamp: Date.now()
+    })
+
+    logger.info(`[HostPhaseIntegration] Broadcast GAME_STARTING to all guests, startingPlayerId=${startingPlayerId}`)
+
+    // Now call PhaseManager's startGame which will:
+    // 1. Draw starting hands for ALL players (6 cards each, +1 for starting player)
+    // 2. Set phase to Preparation, then transition to Setup
+    // 3. Broadcast phase state to all guests
+    // 4. Guests receive state with their drawn cards already in hand
+    const result = startGameWithPhaseSystem(hm, startingPlayerId)
+
+    if (result) {
+      logger.info(`[HostPhaseIntegration] PhaseManager started game: phase=${result.newPhase}, activePlayer=${result.newActivePlayer}`)
+      logger.info('[HostPhaseIntegration] All players have drawn their starting hands, state broadcast complete')
+    } else {
+      logger.error('[HostPhaseIntegration] PhaseManager failed to start game')
+    }
+  }
 }
 
 /**

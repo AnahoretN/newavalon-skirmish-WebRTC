@@ -13,7 +13,7 @@ import type { GameState } from '../../types'
 import type { ScoringLine, GamePhase } from '../../host/phase/PhaseTypes'
 import { getPhaseName } from '../../host/phase/PhaseTypes'
 import { initializePhaseSystem } from '../../host/HostPhaseIntegration'
-import { initializePhaseSystemForGuest, requestPhaseAction } from '../../host/GuestPhaseIntegration'
+import { initializePhaseSystemForGuest } from '../../host/GuestPhaseIntegration'
 import { encodePhaseAction, createPhaseMessage, PhaseActionType } from '../../host/phase/PhaseMessageCodec'
 
 interface UsePhaseActionsProps {
@@ -23,6 +23,7 @@ interface UsePhaseActionsProps {
   hostManager?: any
   guestConnection?: any
   onStateUpdate?: (newState: GameState) => void
+  drawCard?: (playerId: number) => void  // For auto-draw sync
 }
 
 interface PhaseActionsResult {
@@ -62,6 +63,7 @@ export function usePhaseActions(props: UsePhaseActionsProps): PhaseActionsResult
   const {
     gameStateRef,
     localPlayerId,
+    drawCard,
     isHost,
     hostManager,
     guestConnection,
@@ -114,9 +116,15 @@ export function usePhaseActions(props: UsePhaseActionsProps): PhaseActionsResult
       try {
         initializePhaseSystemForGuest(guestConnection, {
           gameStateRef,
+          localPlayerId,  // Pass localPlayerId for auto-draw detection
+          onDrawCard: drawCard,  // Pass drawCard for auto-draw (works like clicking deck)
           onPhaseTransition: (_oldPhase, _newPhase, _oldActivePlayer, _newActivePlayer) => {
             // Phase transition - trigger state update
-            if (onStateUpdate) {
+            // CRITICAL: Don't trigger update for initial Preparation→Setup transition at game start
+            // Host already broadcasts complete state with drawn cards via CARD_STATE
+            // If we trigger update here, guests will send empty STATE_UPDATE_COMPACT back
+            const isInitialGameStartTransition = _oldPhase === 0 && _newPhase === 1
+            if (onStateUpdate && !isInitialGameStartTransition) {
               onStateUpdate(gameStateRef.current)
             }
           },
@@ -144,7 +152,7 @@ export function usePhaseActions(props: UsePhaseActionsProps): PhaseActionsResult
         console.error('[usePhaseActions] Failed to initialize guest phase system:', e)
       }
     }
-  }, [isHost, hostManager, guestConnection, gameStateRef, onStateUpdate])
+  }, [isHost, hostManager, guestConnection, gameStateRef, onStateUpdate, localPlayerId, drawCard])
 
   /**
    * Send phase action request

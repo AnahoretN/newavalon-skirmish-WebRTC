@@ -112,15 +112,6 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white relative overflow-hidden">
-      <div
-        className="absolute inset-0 z-0 opacity-30"
-        style={{
-          backgroundImage: 'url(https://images.unsplash.com/photo-1614728853975-69c960c725af?q=80&w=1920&auto=format&fit=crop)',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-        }}
-      ></div>
-
       <div className="z-10 text-center p-8 bg-black bg-opacity-60 rounded-xl shadow-2xl border border-gray-700 max-w-md w-full">
         <h1 className="text-5xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-b from-purple-600 to-blue-400 drop-shadow-lg">
                     New Avalon
