@@ -26,6 +26,7 @@ export function initializePhaseSystemForGuest(
     gameStateRef?: React.MutableRefObject<GameState>
     localPlayerId?: number | null  // Local player ID for auto-draw detection
     onDrawCard?: (playerId: number) => void  // Callback to draw card (same as clicking deck)
+    onStateUpdate?: (newState: GameState) => void  // CRITICAL: Triggers React re-render
     onPhaseStateChanged?: (state: any) => void
     onPhaseTransition?: (
       oldPhase: GamePhase,
@@ -52,6 +53,12 @@ export function initializePhaseSystemForGuest(
       // Update game state if ref provided
       if (config?.gameStateRef) {
         applyPhaseStateToGameState(config.gameStateRef.current, state)
+      }
+
+      // CRITICAL: Trigger React re-render by calling onStateUpdate
+      // Without this, UI won't update with new phase state!
+      if (config?.onStateUpdate && config?.gameStateRef) {
+        config.onStateUpdate(config.gameStateRef.current)
       }
 
       // CRITICAL: Local auto-draw for guest
@@ -123,6 +130,17 @@ export function initializePhaseSystemForGuest(
       // Reset auto-draw tracking when leaving Preparation
       if (oldPhase === 0 && newPhase !== 0) {
         autoDrawnThisTurn.clear()
+      }
+
+      // CRITICAL: Trigger React re-render by calling onStateUpdate
+      // Without this, UI won't update with new phase!
+      if (config?.onStateUpdate && config?.gameStateRef) {
+        // Check for initial game start transition (0 -> 1)
+        // We don't trigger update for this because CARD_STATE message will handle it
+        const isInitialGameStartTransition = oldPhase === 0 && newPhase === 1
+        if (!isInitialGameStartTransition) {
+          config.onStateUpdate(config.gameStateRef.current)
+        }
       }
 
       // Call external callback

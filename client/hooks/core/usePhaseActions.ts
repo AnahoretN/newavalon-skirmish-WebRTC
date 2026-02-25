@@ -118,21 +118,15 @@ export function usePhaseActions(props: UsePhaseActionsProps): PhaseActionsResult
           gameStateRef,
           localPlayerId,  // Pass localPlayerId for auto-draw detection
           onDrawCard: drawCard,  // Pass drawCard for auto-draw (works like clicking deck)
+          onStateUpdate,  // CRITICAL: Pass onStateUpdate to trigger React re-render
           onPhaseTransition: (_oldPhase, _newPhase, _oldActivePlayer, _newActivePlayer) => {
-            // Phase transition - trigger state update
-            // CRITICAL: Don't trigger update for initial Preparation→Setup transition at game start
-            // Host already broadcasts complete state with drawn cards via CARD_STATE
-            // If we trigger update here, guests will send empty STATE_UPDATE_COMPACT back
-            const isInitialGameStartTransition = _oldPhase === 0 && _newPhase === 1
-            if (onStateUpdate && !isInitialGameStartTransition) {
-              onStateUpdate(gameStateRef.current)
-            }
+            // Phase transition - handled by GuestPhaseIntegration
+            // Just log for debugging
+            logger.debug(`[usePhaseActions] Phase transition: ${_oldPhase} -> ${_newPhase}`)
           },
           onTurnChanged: () => {
-            // Turn changed - trigger state update
-            if (onStateUpdate) {
-              onStateUpdate(gameStateRef.current)
-            }
+            // Turn changed - handled by GuestPhaseIntegration
+            logger.debug(`[usePhaseActions] Turn changed`)
           },
           onRoundEnded: () => {
             // Round ended - trigger state update
@@ -147,20 +141,12 @@ export function usePhaseActions(props: UsePhaseActionsProps): PhaseActionsResult
             }
           },
           onScoringModeStarted: (activePlayerId: number, validLinesCount: number) => {
-            // Scoring mode started - update state
-            if (onStateUpdate) {
-              const state = gameStateRef.current
-              state.isScoringStep = true
-              onStateUpdate(state)
-            }
+            // Scoring mode started - handled by GuestPhaseIntegration
+            logger.debug(`[usePhaseActions] Scoring mode started: player=${activePlayerId}, lines=${validLinesCount}`)
           },
           onScoringModeCompleted: (info: any) => {
-            // Scoring mode completed - update state
-            if (onStateUpdate) {
-              const state = gameStateRef.current
-              state.isScoringStep = false
-              onStateUpdate(state)
-            }
+            // Scoring mode completed - handled by GuestPhaseIntegration
+            logger.debug(`[usePhaseActions] Scoring mode completed`)
           }
         })
         phaseSystemInitialized.current = true
