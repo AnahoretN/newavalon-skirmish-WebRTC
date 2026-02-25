@@ -11,7 +11,7 @@ import type { ActionType } from './SimpleP2PTypes'
 import { getCardDefinition } from '../content'
 import { shuffleDeck } from '../../shared/utils/array'
 import { recalculateBoardStatuses } from '../../shared/utils/boardUtils'
-import { initializeReadyStatuses, recalculateAllReadyStatuses } from '../utils/autoAbilities'
+import { initializeReadyStatuses, recalculateAllReadyStatuses, clearAllReadyStatuses } from '../utils/autoAbilities'
 import { createDeck } from '../hooks/core/gameCreators'
 
 /**
@@ -51,6 +51,14 @@ export function applyAction(
 
     case 'PLAY_CARD':
       newState = handlePlayCard(newState, playerId, data)
+      break
+
+    case 'PLAY_CARD_FROM_DECK':
+      newState = handlePlayCardFromDeck(newState, playerId, data)
+      break
+
+    case 'PLAY_CARD_FROM_DISCARD':
+      newState = handlePlayCardFromDiscard(newState, playerId, data)
       break
 
     case 'MOVE_CARD_ON_BOARD':
@@ -160,6 +168,14 @@ export function applyAction(
 
     case 'RESET_GAME':
       newState = handleResetGame(newState)
+      break
+
+    case 'MARK_ABILITY_USED':
+      newState = handleMarkAbilityUsed(newState, data)
+      break
+
+    case 'REMOVE_STATUS_BY_TYPE':
+      newState = handleRemoveStatusByType(newState, data)
       break
 
     case 'SET_GAME_MODE':
@@ -329,13 +345,22 @@ function handlePassTurn(state: GameState, playerId: number, reason: string): Gam
   console.log('[handlePassTurn] Turn passed from', playerId, 'to', nextPlayerId, 'reason:', reason)
 
   // Сбрасываем enteredThisTurn у всех карт на доске при передаче хода
+  // Также очищаем setupUsedThisTurn и commitUsedThisTurn (но не deployUsedThisTurn!)
   const newBoard = state.board.map(row =>
     row.map(cell => {
       if (cell.card) {
+        const newStatuses = cell.card.statuses?.filter((s: any) => {
+          // Сохраняем все статусы кроме setupUsedThisTurn и commitUsedThisTurn
+          if (s.type === 'setupUsedThisTurn') return false
+          if (s.type === 'commitUsedThisTurn') return false
+          return true
+        }) || []
+
         return {
           card: {
             ...cell.card,
-            enteredThisTurn: false
+            enteredThisTurn: false,
+            statuses: newStatuses
           }
         }
       }
@@ -374,7 +399,32 @@ function handlePassTurn(state: GameState, playerId: number, reason: string): Gam
  */
 function handleSetPhase(state: GameState, phaseNumber: number): GameState {
   const clamped = Math.max(0, Math.min(4, phaseNumber))
-  const newState = { ...state, currentPhase: clamped }
+  let newState = { ...state, currentPhase: clamped }
+
+  // When entering Preparation phase (0), clear setup/commit usage markers
+  // This allows abilities to be used again in the new turn
+  if (clamped === 0) {
+    newState.board = newState.board.map(row =>
+      row.map(cell => {
+        if (cell.card) {
+          const newStatuses = cell.card.statuses?.filter((s: any) => {
+            // Remove only setupUsedThisTurn and commitUsedThisTurn
+            // Keep deployUsedThisTurn (only clears when card leaves battlefield)
+            if (s.type === 'setupUsedThisTurn') return false
+            if (s.type === 'commitUsedThisTurn') return false
+            return true
+          }) || []
+
+          return {
+            ...cell,
+            card: { ...cell.card, statuses: newStatuses }
+          }
+        }
+        return cell
+      })
+    )
+  }
+
   recalculateAllReadyStatuses(newState)
   return newState
 }
@@ -423,21 +473,36 @@ function executePreparationPhase(state: GameState, activePlayerId: number): Game
 
 /**
  * PLAY_CARD - сыграть карту из руки на доску
+ * Also supports direct card parameter for playing from deck/discard
  */
 function handlePlayCard(state: GameState, playerId: number, data: any): GameState {
-  const { cardIndex, boardCoords, faceDown = false } = data || {}
+  const { card, cardIndex, boardCoords, faceDown = false } = data || {}
   const player = state.players.find(p => p.id === playerId)
 
   if (!player || !boardCoords) {return state}
 
-  const cardIndexNum = cardIndex ?? player.hand.length - 1
-  const card = player.hand[cardIndexNum]
+  let cardToPlay: Card | null = null
+  let newHand = player.hand
+  let newHandSize = player.hand.length
 
-  if (!card) {return state}
+  // If card is passed directly (from deck/discard), use it
+  if (card) {
+    cardToPlay = card
+    // Hand remains unchanged when playing from deck/discard
+  } else {
+    // Otherwise, get card from hand
+    const cardIndexNum = cardIndex ?? player.hand.length - 1
+    cardToPlay = player.hand[cardIndexNum]
 
-  // Убираем карту из руки
-  const newHand = [...player.hand]
-  newHand.splice(cardIndexNum, 1)
+    if (!cardToPlay) {return state}
+
+    // Убираем карту из руки
+    newHand = [...player.hand]
+    newHand.splice(cardIndexNum, 1)
+    newHandSize = newHand.length
+  }
+
+  if (!cardToPlay) {return state}
 
   // Сначала убираем LastPlayed статус со ВСЕХ карт игрока на доске
   // (только одна карта может иметь LastPlayed статус одновременно)
@@ -465,12 +530,12 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
         // Add LastPlayed status to the card when played from hand
         // This status is used to determine if player can enter scoring phase
         const lastPlayedStatus = { type: 'LastPlayed', addedByPlayerId: playerId }
-        const existingStatuses = card.statuses || []
+        const existingStatuses = cardToPlay.statuses || []
         // Remove any existing LastPlayed status from this card (to avoid duplicates)
-        const filteredStatuses = existingStatuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === playerId))
+        const filteredStatuses = existingStatuses.filter((s: any) => !(s.type === 'LastPlayed' && s.addedByPlayerId === playerId))
 
         const boardCard = {
-          ...card,
+          ...cardToPlay,
           ownerId: playerId,
           isFaceDown: faceDown,
           enteredThisTurn: true,
@@ -489,7 +554,7 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
   )
 
   // Добавляем в boardHistory
-  const newBoardHistory = [...player.boardHistory, card.id]
+  const newBoardHistory = [...player.boardHistory, cardToPlay.id]
 
   // Обновляем игрока - устанавливаем lastPlayedCardId
   const newPlayers = state.players.map(p =>
@@ -497,9 +562,9 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
       ? {
           ...p,
           hand: newHand,
-          handSize: newHand.length,
+          handSize: newHandSize,
           boardHistory: newBoardHistory,
-          lastPlayedCardId: card.id
+          lastPlayedCardId: cardToPlay.id
         }
       : p
   )
@@ -632,6 +697,9 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
         if (cell.card?.id === cardId) {
           cardToMove = cell.card
           targetPlayerId = cardToMove.ownerId || playerId
+          // Clear all ready statuses when card leaves battlefield
+          // This allows deploy ability to be used again when card returns
+          clearAllReadyStatuses(cardToMove!)
           return { card: null }
         }
         return cell
@@ -683,6 +751,8 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
         if (cell.card?.id === cardId) {
           cardToMove = cell.card
           targetPlayerId = cardToMove.ownerId || playerId
+          // Clear all ready statuses when card leaves battlefield
+          clearAllReadyStatuses(cardToMove!)
           return { card: null }
         }
         return cell
@@ -752,6 +822,8 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
         if (cell.card?.id === cardId) {
           cardToMove = cell.card
           targetPlayerId = cardToMove.ownerId || playerId
+          // Clear all ready statuses when card leaves battlefield
+          clearAllReadyStatuses(cardToMove!)
           return { card: null }
         }
         return cell
@@ -1031,6 +1103,10 @@ function handleDestroyCard(state: GameState, playerId: number, data: any): GameS
 
   if (!destroyedCard || !ownerId) {return state}
 
+  // Clear all ready statuses when card is destroyed
+  // If it returns to battlefield later, deploy ability will be available again
+  clearAllReadyStatuses(destroyedCard)
+
   // Проверяем, была ли это последняя сыгранная карта владельца
   const owner = state.players.find(p => p.id === ownerId)
   let updatedBoard = newBoard
@@ -1188,10 +1264,6 @@ function handleChangePlayerColor(state: GameState, playerId: number, color: any)
  * Создаёт новую колоду выбранного типа
  */
 function handleChangePlayerDeck(state: GameState, playerId: number, deckType: DeckType): GameState {
-  // Импортируем здесь, чтобы избежать циклических зависимостей
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createDeck } = require('../hooks/core/gameCreators')
-
   const player = state.players.find(p => p.id === playerId)
   if (!player) {return state}
 
@@ -1672,4 +1744,147 @@ function checkMatchWinner(existingWins: Record<number, number[]>, newWinners: nu
   }
 
   return null
+}
+
+/**
+ * MARK_ABILITY_USED - пометить способность как использованную
+ * Удаляет готовый статус и добавляет маркер использования
+ */
+function handleMarkAbilityUsed(state: GameState, data: any): GameState {
+  const { coords, isDeploy, readyStatusToRemove } = data || {}
+  if (!coords) return state
+
+  const { row, col } = coords
+  if (row === undefined || col === undefined) return state
+
+  console.log('[handleMarkAbilityUsed] coords:', coords, 'isDeploy:', isDeploy, 'readyStatusToRemove:', readyStatusToRemove)
+
+  const newBoard = state.board.map((r, rIdx) =>
+    r.map((cell, cIdx) => {
+      if (rIdx === row && cIdx === col && cell.card) {
+        const newCard = { ...cell.card }
+        if (!newCard.statuses) newCard.statuses = []
+
+        // Remove the ready status
+        if (readyStatusToRemove) {
+          newCard.statuses = newCard.statuses.filter(s => s.type !== readyStatusToRemove)
+        }
+
+        // Mark ability as used based on type
+        if (isDeploy) {
+          // Deploy: mark as used (persists until card leaves battlefield)
+          const deployUsedStatus = 'deployUsedThisTurn'
+          if (!newCard.statuses.some(s => s.type === deployUsedStatus)) {
+            newCard.statuses.push({ type: deployUsedStatus, addedByPlayerId: newCard.ownerId || 0 })
+            console.log('[handleMarkAbilityUsed] Added deployUsedThisTurn to card:', newCard.baseId)
+          }
+        } else if (readyStatusToRemove === 'readySetup') {
+          // Setup: mark as used this turn
+          const setupUsedStatus = 'setupUsedThisTurn'
+          if (!newCard.statuses.some(s => s.type === setupUsedStatus)) {
+            newCard.statuses.push({ type: setupUsedStatus, addedByPlayerId: newCard.ownerId || 0 })
+            console.log('[handleMarkAbilityUsed] Added setupUsedThisTurn to card:', newCard.baseId)
+          }
+        } else if (readyStatusToRemove === 'readyCommit') {
+          // Commit: mark as used this turn
+          const commitUsedStatus = 'commitUsedThisTurn'
+          if (!newCard.statuses.some(s => s.type === commitUsedStatus)) {
+            newCard.statuses.push({ type: commitUsedStatus, addedByPlayerId: newCard.ownerId || 0 })
+            console.log('[handleMarkAbilityUsed] Added commitUsedThisTurn to card:', newCard.baseId)
+          }
+        }
+
+        return { ...cell, card: newCard }
+      }
+      return cell
+    })
+  )
+
+  return { ...state, board: newBoard }
+}
+
+/**
+ * REMOVE_STATUS_BY_TYPE - удалить статус определённого типа с карты
+ */
+function handleRemoveStatusByType(state: GameState, data: any): GameState {
+  const { coords, type } = data || {}
+  if (!coords || !type) return state
+
+  const { row, col } = coords
+  if (row === undefined || col === undefined) return state
+
+  const newBoard = state.board.map((r, rIdx) =>
+    r.map((cell, cIdx) => {
+      if (rIdx === row && cIdx === col && cell.card) {
+        const newStatuses = cell.card.statuses?.filter(s => s.type !== type) || []
+        const newCard = { ...cell.card, statuses: newStatuses }
+        return { ...cell, card: newCard }
+      }
+      return cell
+    })
+  )
+
+  return { ...state, board: newBoard }
+}
+
+/**
+ * PLAY_CARD_FROM_DECK - сыграть верхнюю карту колоды на поле боя
+ */
+function handlePlayCardFromDeck(state: GameState, playerId: number, data: any): GameState {
+  const { cardIndex, boardCoords, faceDown } = data || {}
+  const player = state.players.find(p => p.id === playerId)
+  if (!player || !player.deck || player.deck.length === 0) return state
+
+  // Get the card to play (top card from deck by default)
+  const indexToPlay = cardIndex !== undefined ? cardIndex : 0
+  const cardToPlay = player.deck[indexToPlay]
+  if (!cardToPlay) return state
+
+  // Remove card from deck
+  const newDeck = [...player.deck]
+  newDeck.splice(indexToPlay, 1)
+
+  // Create modified player
+  const updatedPlayer = {
+    ...player,
+    deck: newDeck,
+    deckSize: newDeck.length
+  }
+
+  const newPlayers = state.players.map(p => p.id === playerId ? updatedPlayer : p)
+
+  // Use handlePlayCard logic to place the card on board
+  const newState = { ...state, players: newPlayers }
+  return handlePlayCard(newState, playerId, { card: cardToPlay, boardCoords, faceDown })
+}
+
+/**
+ * PLAY_CARD_FROM_DISCARD - сыграть карту из сброса на поле боя
+ */
+function handlePlayCardFromDiscard(state: GameState, playerId: number, data: any): GameState {
+  const { cardIndex, boardCoords, faceDown } = data || {}
+  const player = state.players.find(p => p.id === playerId)
+  if (!player || !player.discard || player.discard.length === 0) return state
+
+  // Get the card to play (top card from discard by default)
+  const indexToPlay = cardIndex !== undefined ? cardIndex : player.discard.length - 1
+  const cardToPlay = player.discard[indexToPlay]
+  if (!cardToPlay) return state
+
+  // Remove card from discard
+  const newDiscard = [...player.discard]
+  newDiscard.splice(indexToPlay, 1)
+
+  // Create modified player
+  const updatedPlayer = {
+    ...player,
+    discard: newDiscard,
+    discardSize: newDiscard.length
+  }
+
+  const newPlayers = state.players.map(p => p.id === playerId ? updatedPlayer : p)
+
+  // Use handlePlayCard logic to place the card on board
+  const newState = { ...state, players: newPlayers }
+  return handlePlayCard(newState, playerId, { card: cardToPlay, boardCoords, faceDown })
 }
