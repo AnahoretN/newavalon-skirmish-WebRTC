@@ -219,8 +219,7 @@ export class SimpleHost {
     if (newState !== oldState) {
       this.state = newState
       this.version++
-      this.broadcastAll()
-      this.notifyStateUpdate()
+      this.broadcastAll()  // broadcastAll теперь вызывает notifyStateUpdate внутри
     }
   }
 
@@ -394,12 +393,24 @@ export class SimpleHost {
       state: this.state as any  // будет персонализировано для каждого
     }
 
+    // Также уведомляем хоста
+    this.notifyStateUpdate()
+
     this.connections.forEach((conn, peerId) => {
       const playerId = this.peerIdToPlayerId.get(peerId)
 
       if (playerId) {
         // Персонализируем состояние для этого игрока
         const personalized = this.personalizeForPlayer(playerId)
+
+        // Логируем все announcedCard для отладки
+        const announcedCards = personalized.players
+          .filter((p: any) => p.announcedCard)
+          .map((p: any) => `Player${p.id}:${p.announcedCard.name}`)
+          .join(', ')
+        if (announcedCards) {
+          logger.info(`[SimpleHost] Broadcasting to player ${playerId} with announcedCards: [${announcedCards}]`)
+        }
 
         conn.send({
           ...message,
@@ -412,7 +423,7 @@ export class SimpleHost {
 
   /**
    * Персонализировать состояние для игрока
-   * Конвертирует все неподдерживаемые PeerJS типы (Map, Set) в обычные объекты
+   * Конвертируем все неподдерживаемые PeerJS типы (Map, Set) в обычные объекты
    */
   private personalizeForPlayer(localPlayerId: number): PersonalizedState {
     const baseState = this.state
@@ -425,7 +436,7 @@ export class SimpleHost {
       }
     }
 
-    return {
+    const result = {
       ...baseState,
       // Заменяем Map на объект
       visualEffects: visualEffectsObj,
@@ -434,7 +445,7 @@ export class SimpleHost {
         const isDummy = player.isDummy
 
         // Для локального игрока и dummy - полные данные
-        // Для остальных - только размеры
+        // Для остальных - только размеры + announcedCard (витрина видна всем)
         if (isLocalPlayer || isDummy) {
           return {
             id: player.id,
@@ -453,11 +464,11 @@ export class SimpleHost {
             hand: player.hand,
             deck: player.deck,
             discard: player.discard,
-            announcedCard: player.announcedCard,
+            announcedCard: player.announcedCard ? { ...player.announcedCard } : null,
             boardHistory: player.boardHistory
           }
         } else {
-          return {
+          const pData = {
             id: player.id,
             name: player.name,
             score: player.score,
@@ -472,11 +483,20 @@ export class SimpleHost {
             selectedDeck: player.selectedDeck,
             handSize: player.hand?.length || 0,
             deckSize: player.deck?.length || 0,
-            discardSize: player.discard?.length || 0
+            discardSize: player.discard?.length || 0,
+            // Делаем глубокую копию announcedCard для избежания проблем с ссылками
+            announcedCard: player.announcedCard ? { ...player.announcedCard } : null
           }
+          // Логируем announcedCard для отладки
+          if (player.announcedCard) {
+            logger.info(`[SimpleHost] Player ${player.id} announcedCard for ${localPlayerId}:`, player.announcedCard.name)
+          }
+          return pData
         }
       }) as PersonalizedPlayer[]
     }
+
+    return result
   }
 
   /**
@@ -518,7 +538,18 @@ export class SimpleHost {
   private notifyStateUpdate(): void {
     if (this.config.onStateUpdate) {
       // Для хоста - локальный игрок всегда 1
-      this.config.onStateUpdate(this.personalizeForPlayer(1))
+      const hostState = this.personalizeForPlayer(1)
+
+      // Логируем все announcedCard для отладки
+      const announcedCards = hostState.players
+        .filter((p: any) => p.announcedCard)
+        .map((p: any) => `Player${p.id}:${p.announcedCard.name}`)
+        .join(', ')
+      if (announcedCards) {
+        logger.info(`[SimpleHost] Host (player1) receiving state with announcedCards: [${announcedCards}]`)
+      }
+
+      this.config.onStateUpdate(hostState)
     }
   }
 
@@ -531,6 +562,7 @@ export class SimpleHost {
       type: 'ACTION',
       playerId: 1,
       action: action as any,
+      data,
       timestamp: Date.now()
     }, 'host')
   }

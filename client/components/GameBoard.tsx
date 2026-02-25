@@ -199,6 +199,9 @@ const GridCell = memo<{
       const isOccupied = !!cell.card
       const baseClasses = 'w-full h-full rounded-lg transition-colors duration-200 flex items-center justify-center relative'
 
+      // Check if dragged item is from hand/deck/discard (cards that can be played)
+      const isDraggingCard = draggedItem && ['hand', 'deck', 'discard'].includes(draggedItem.source)
+
       const canDrop = !!draggedItem && (!isOccupied || (isOccupied && draggedItem.source === 'counter_panel'))
       const canPlay = isInPlayMode && !isOccupied
       const canStack = isStackMode && isValidTarget
@@ -212,6 +215,12 @@ const GridCell = memo<{
       )
       const hasActiveEffect = isValidTarget || hasReadyAbility
       // Card has active effects (highlight, selection, or ready ability) - should appear above other cards
+
+      // Visual highlights:
+      // 1. For drag: only highlight when cursor is over the cell
+      const showDragHighlight = !isOccupied && isDraggingCard && isOver && localPlayerId !== null
+      // 2. For play mode: highlight all empty cells as valid targets
+      const showPlayModeHighlight = !isOccupied && isInPlayMode && localPlayerId !== null
 
       // Only add cursor pointer for interactive cells - visual highlight comes from shared highlights
       const targetClasses = isInteractive ? 'cursor-pointer z-10' : ''
@@ -244,6 +253,46 @@ const GridCell = memo<{
           data-interactive={!cell.card}
           data-board-coords={`${row},${col}`}
         >
+          {/* Drag highlight - only when cursor is over the cell */}
+          {showDragHighlight && (() => {
+            const playerColor = playerColorMap.get(localPlayerId!)
+            const rgb = playerColor && PLAYER_COLOR_RGB[playerColor]
+              ? PLAYER_COLOR_RGB[playerColor]
+              : { r: 37, g: 99, b: 235 }
+            return (
+              <div
+                className="absolute inset-0 rounded-md pointer-events-none"
+                style={{
+                  zIndex: 40,
+                  boxShadow: `0 0 12px 2px ${rgba(rgb, 0.6)}`,
+                  border: '3px solid',
+                  borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
+                  background: `radial-gradient(circle at center, transparent 20%, ${rgba(rgb, 0.4)} 100%)`,
+                }}
+              />
+            )
+          })()}
+
+          {/* Play mode highlight - all empty cells are valid targets */}
+          {showPlayModeHighlight && (() => {
+            const playerColor = playerColorMap.get(localPlayerId!)
+            const rgb = playerColor && PLAYER_COLOR_RGB[playerColor]
+              ? PLAYER_COLOR_RGB[playerColor]
+              : { r: 37, g: 99, b: 235 }
+            return (
+              <div
+                className="absolute inset-0 rounded-md pointer-events-none animate-pulse"
+                style={{
+                  zIndex: 35,
+                  boxShadow: `0 0 8px 1px ${rgba(rgb, 0.3)}`,
+                  border: '2px dashed',
+                  borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
+                  background: `radial-gradient(circle at center, transparent 40%, ${rgba(rgb, 0.2)} 100%)`,
+                }}
+              />
+            )
+          })()}
+
           {showNoTarget && (
             <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
               <img

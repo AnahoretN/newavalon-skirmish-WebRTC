@@ -63,6 +63,43 @@ export function applyAction(
       newState = handleAnnounceCard(newState, playerId, data)
       break
 
+    // Перемещение между зонами
+    case 'MOVE_CARD_TO_HAND':
+      newState = handleMoveCardToHand(newState, playerId, data)
+      break
+
+    case 'MOVE_CARD_TO_DECK':
+      newState = handleMoveCardToDeck(newState, playerId, data)
+      break
+
+    case 'MOVE_CARD_TO_DISCARD':
+      newState = handleMoveCardToDiscard(newState, playerId, data)
+      break
+
+    case 'MOVE_HAND_CARD_TO_DECK':
+      newState = handleMoveHandCardToDeck(newState, playerId, data)
+      break
+
+    case 'MOVE_HAND_CARD_TO_DISCARD':
+      newState = handleMoveHandCardToDiscard(newState, playerId, data)
+      break
+
+    case 'MOVE_ANNOUNCED_TO_HAND':
+      newState = handleMoveAnnouncedToHand(newState, playerId, data)
+      break
+
+    case 'MOVE_ANNOUNCED_TO_DECK':
+      newState = handleMoveAnnouncedToDeck(newState, playerId, data)
+      break
+
+    case 'MOVE_ANNOUNCED_TO_DISCARD':
+      newState = handleMoveAnnouncedToDiscard(newState, playerId, data)
+      break
+
+    case 'PLAY_ANNOUNCED_TO_BOARD':
+      newState = handlePlayAnnouncedToBoard(newState, playerId, data)
+      break
+
     case 'DESTROY_CARD':
       newState = handleDestroyCard(newState, playerId, data)
       break
@@ -166,16 +203,8 @@ function canPlayerAct(
   const player = state.players.find(p => p.id === playerId)
   if (player?.isDummy) return true
 
-  // Фазовые действия - только активный игрок
-  if (['NEXT_PHASE', 'PREVIOUS_PHASE', 'PASS_TURN', 'START_SCORING'].includes(action)) {
-    return state.activePlayerId === playerId
-  }
-
-  // Игровые действия - только активный игрок или все в зависимости от настроек
-  if (['PLAY_CARD', 'MOVE_CARD', 'DRAW_CARD', 'ANNOUNCE_CARD'].includes(action)) {
-    return state.activePlayerId === playerId
-  }
-
+  // Все остальные действия могут выполнять любые игроки
+  // (карты можно перемещать в любой ход, фазы может переключать любой игрок)
   return true
 }
 
@@ -441,6 +470,335 @@ function handleReturnCardToHand(state: GameState, playerId: number, data: any): 
     board: newBoard,
     players: newPlayers
   }
+}
+
+/**
+ * MOVE_CARD_TO_HAND - переместить карту с доски/сброса в руку
+ */
+function handleMoveCardToHand(state: GameState, playerId: number, data: any): GameState {
+  const { cardId, source } = data || {}
+  if (!cardId) return state
+
+  let cardToMove: Card | null = null
+  let targetPlayerId = playerId
+  let newBoard = state.board
+  let newDiscard: Card[] | null = null
+
+  if (source === 'board') {
+    newBoard = state.board.map((row, r) =>
+      row.map((cell, c) => {
+        if (cell.card?.id === cardId) {
+          cardToMove = cell.card
+          targetPlayerId = cardToMove.ownerId || playerId
+          return { card: null }
+        }
+        return cell
+      })
+    )
+  } else if (source === 'discard') {
+    const player = state.players.find(p => p.id === playerId)
+    if (!player) return state
+    const cardIndex = player.discard?.findIndex(c => c.id === cardId)
+    if (cardIndex === undefined || cardIndex === -1) return state
+    cardToMove = player.discard[cardIndex]
+    targetPlayerId = playerId
+    newDiscard = [...player.discard]
+    newDiscard.splice(cardIndex, 1)
+  }
+
+  if (!cardToMove) return state
+
+  const newPlayers = state.players.map(p => {
+    if (p.id === targetPlayerId) {
+      const newHand = [...p.hand, cardToMove]
+      return { ...p, hand: newHand, handSize: newHand.length }
+    }
+    if (p.id === playerId && newDiscard !== null) {
+      return { ...p, discard: newDiscard, discardSize: newDiscard.length }
+    }
+    return p
+  })
+
+  return { ...state, board: newBoard, players: newPlayers }
+}
+
+/**
+ * MOVE_CARD_TO_DECK - переместить карту с доски/руки/сброса в колоду
+ */
+function handleMoveCardToDeck(state: GameState, playerId: number, data: any): GameState {
+  const { cardId, source } = data || {}
+  if (!cardId) return state
+
+  let cardToMove: Card | null = null
+  let targetPlayerId = playerId
+  let newBoard = state.board
+  let newHand: Card[] | null = null
+  let newDiscard: Card[] | null = null
+
+  if (source === 'board') {
+    newBoard = state.board.map((row, r) =>
+      row.map((cell, c) => {
+        if (cell.card?.id === cardId) {
+          cardToMove = cell.card
+          targetPlayerId = cardToMove.ownerId || playerId
+          return { card: null }
+        }
+        return cell
+      })
+    )
+  } else if (source === 'hand') {
+    const player = state.players.find(p => p.id === playerId)
+    if (!player) return state
+    const cardIndex = player.hand?.findIndex(c => c.id === cardId)
+    if (cardIndex === undefined || cardIndex === -1) return state
+    cardToMove = player.hand[cardIndex]
+    targetPlayerId = playerId
+    newHand = [...player.hand]
+    newHand.splice(cardIndex, 1)
+  } else if (source === 'discard') {
+    const player = state.players.find(p => p.id === playerId)
+    if (!player) return state
+    const cardIndex = player.discard?.findIndex(c => c.id === cardId)
+    if (cardIndex === undefined || cardIndex === -1) return state
+    cardToMove = player.discard[cardIndex]
+    targetPlayerId = playerId
+    newDiscard = [...player.discard]
+    newDiscard.splice(cardIndex, 1)
+  }
+
+  if (!cardToMove) return state
+
+  const newPlayers = state.players.map(p => {
+    if (p.id === targetPlayerId) {
+      const newDeck = [cardToMove, ...(p.deck || [])]
+      return { ...p, deck: newDeck, deckSize: newDeck.length }
+    }
+    if (p.id === playerId) {
+      let updates: any = {}
+      if (newHand !== null) {
+        updates.hand = newHand
+        updates.handSize = newHand.length
+      }
+      if (newDiscard !== null) {
+        updates.discard = newDiscard
+        updates.discardSize = newDiscard.length
+      }
+      return { ...p, ...updates }
+    }
+    return p
+  })
+
+  return { ...state, board: newBoard, players: newPlayers }
+}
+
+/**
+ * MOVE_CARD_TO_DISCARD - переместить карту с доски/руки/колоды в сброс
+ */
+function handleMoveCardToDiscard(state: GameState, playerId: number, data: any): GameState {
+  const { cardId, source } = data || {}
+  if (!cardId) return state
+
+  let cardToMove: Card | null = null
+  let targetPlayerId = playerId
+  let newBoard = state.board
+  let newHand: Card[] | null = null
+  let newDeck: Card[] | null = null
+
+  if (source === 'board') {
+    newBoard = state.board.map((row, r) =>
+      row.map((cell, c) => {
+        if (cell.card?.id === cardId) {
+          cardToMove = cell.card
+          targetPlayerId = cardToMove.ownerId || playerId
+          return { card: null }
+        }
+        return cell
+      })
+    )
+  } else if (source === 'hand') {
+    const player = state.players.find(p => p.id === playerId)
+    if (!player) return state
+    const cardIndex = player.hand?.findIndex(c => c.id === cardId)
+    if (cardIndex === undefined || cardIndex === -1) return state
+    cardToMove = player.hand[cardIndex]
+    targetPlayerId = playerId
+    newHand = [...player.hand]
+    newHand.splice(cardIndex, 1)
+  } else if (source === 'deck') {
+    const player = state.players.find(p => p.id === playerId)
+    if (!player) return state
+    const cardIndex = player.deck?.findIndex(c => c.id === cardId)
+    if (cardIndex === undefined || cardIndex === -1) return state
+    cardToMove = player.deck[cardIndex]
+    targetPlayerId = playerId
+    newDeck = [...player.deck]
+    newDeck.splice(cardIndex, 1)
+  }
+
+  if (!cardToMove) return state
+
+  const newPlayers = state.players.map(p => {
+    if (p.id === targetPlayerId) {
+      const newDiscard = [...(p.discard || []), cardToMove]
+      return { ...p, discard: newDiscard, discardSize: newDiscard.length }
+    }
+    if (p.id === playerId) {
+      let updates: any = {}
+      if (newHand !== null) {
+        updates.hand = newHand
+        updates.handSize = newHand.length
+      }
+      if (newDeck !== null) {
+        updates.deck = newDeck
+        updates.deckSize = newDeck.length
+      }
+      return { ...p, ...updates }
+    }
+    return p
+  })
+
+  return { ...state, board: newBoard, players: newPlayers }
+}
+
+/**
+ * MOVE_HAND_CARD_TO_DECK - переместить карту из руки в колоду
+ */
+function handleMoveHandCardToDeck(state: GameState, playerId: number, data: any): GameState {
+  const { cardIndex } = data || {}
+  const player = state.players.find(p => p.id === playerId)
+
+  if (!player || cardIndex === undefined || cardIndex < 0 || cardIndex >= player.hand.length) {
+    return state
+  }
+
+  const cardToMove = player.hand[cardIndex]
+  const newHand = [...player.hand]
+  newHand.splice(cardIndex, 1)
+  const newDeck = [cardToMove, ...player.deck]
+
+  const newPlayers = state.players.map(p =>
+    p.id === playerId
+      ? { ...p, hand: newHand, handSize: newHand.length, deck: newDeck, deckSize: newDeck.length }
+      : p
+  )
+
+  return { ...state, players: newPlayers }
+}
+
+/**
+ * MOVE_HAND_CARD_TO_DISCARD - переместить карту из руки в сброс
+ */
+function handleMoveHandCardToDiscard(state: GameState, playerId: number, data: any): GameState {
+  const { cardIndex } = data || {}
+  const player = state.players.find(p => p.id === playerId)
+
+  if (!player || cardIndex === undefined || cardIndex < 0 || cardIndex >= player.hand.length) {
+    return state
+  }
+
+  const cardToMove = player.hand[cardIndex]
+  const newHand = [...player.hand]
+  newHand.splice(cardIndex, 1)
+  const newDiscard = [...player.discard, cardToMove]
+
+  const newPlayers = state.players.map(p =>
+    p.id === playerId
+      ? { ...p, hand: newHand, handSize: newHand.length, discard: newDiscard, discardSize: newDiscard.length }
+      : p
+  )
+
+  return { ...state, players: newPlayers }
+}
+
+/**
+ * MOVE_ANNOUNCED_TO_HAND - переместить карту из витрины в руку
+ */
+function handleMoveAnnouncedToHand(state: GameState, playerId: number, data: any): GameState {
+  const player = state.players.find(p => p.id === playerId)
+  if (!player || !player.announcedCard) return state
+
+  const cardToMove = player.announcedCard
+  const newHand = [...player.hand, cardToMove]
+
+  const newPlayers = state.players.map(p =>
+    p.id === playerId
+      ? { ...p, hand: newHand, handSize: newHand.length, announcedCard: null }
+      : p
+  )
+
+  return { ...state, players: newPlayers }
+}
+
+/**
+ * MOVE_ANNOUNCED_TO_DECK - переместить карту из витрины в колоду
+ */
+function handleMoveAnnouncedToDeck(state: GameState, playerId: number, data: any): GameState {
+  const player = state.players.find(p => p.id === playerId)
+  if (!player || !player.announcedCard) return state
+
+  const cardToMove = player.announcedCard
+  const newDeck = [cardToMove, ...player.deck]
+
+  const newPlayers = state.players.map(p =>
+    p.id === playerId
+      ? { ...p, deck: newDeck, deckSize: newDeck.length, announcedCard: null }
+      : p
+  )
+
+  return { ...state, players: newPlayers }
+}
+
+/**
+ * MOVE_ANNOUNCED_TO_DISCARD - переместить карту из витрины в сброс
+ */
+function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, data: any): GameState {
+  const player = state.players.find(p => p.id === playerId)
+  if (!player || !player.announcedCard) return state
+
+  const cardToMove = player.announcedCard
+  const newDiscard = [...player.discard, cardToMove]
+
+  const newPlayers = state.players.map(p =>
+    p.id === playerId
+      ? { ...p, discard: newDiscard, discardSize: newDiscard.length, announcedCard: null }
+      : p
+  )
+
+  return { ...state, players: newPlayers }
+}
+
+/**
+ * PLAY_ANNOUNCED_TO_BOARD - сыграть карту из витрины на поле боя
+ */
+function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: any): GameState {
+  const { row, col, faceDown = false } = data || {}
+  const player = state.players.find(p => p.id === playerId)
+
+  if (!player || !player.announcedCard) return state
+  if (row === undefined || col === undefined) return state
+  if (row < 0 || row >= state.activeGridSize || col < 0 || col >= state.activeGridSize) return state
+
+  // Проверяем, что клетка пуста
+  if (state.board[row]?.[col]?.card) return state
+
+  const cardToPlay = { ...player.announcedCard, isFaceDown: faceDown }
+
+  const newBoard = state.board.map((r, rIdx) =>
+    r.map((cell, cIdx) => {
+      if (rIdx === row && cIdx === col) {
+        return { card: cardToPlay }
+      }
+      return cell
+    })
+  )
+
+  const newPlayers = state.players.map(p =>
+    p.id === playerId
+      ? { ...p, announcedCard: null }
+      : p
+  )
+
+  return { ...state, board: newBoard, players: newPlayers }
 }
 
 /**

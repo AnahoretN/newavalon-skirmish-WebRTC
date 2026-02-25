@@ -20,10 +20,26 @@ export type ActionType =
 
   // Карточные действия
   | 'PLAY_CARD'
+  | 'PLAY_CARD_FROM_DECK'
+  | 'PLAY_CARD_FROM_DISCARD'
   | 'MOVE_CARD'
   | 'RETURN_CARD_TO_HAND'
   | 'ANNOUNCE_CARD'
   | 'DESTROY_CARD'
+
+  // Перемещение между зонами
+  | 'MOVE_CARD_TO_HAND'
+  | 'MOVE_CARD_TO_DECK'
+  | 'MOVE_CARD_TO_DISCARD'
+  | 'MOVE_CARD_TO_BOARD'
+  | 'MOVE_HAND_CARD_TO_DECK'
+  | 'MOVE_HAND_CARD_TO_DISCARD'
+
+  // Перемещение из витрины (showcase)
+  | 'MOVE_ANNOUNCED_TO_HAND'
+  | 'MOVE_ANNOUNCED_TO_DECK'
+  | 'MOVE_ANNOUNCED_TO_DISCARD'
+  | 'PLAY_ANNOUNCED_TO_BOARD'
 
   // Управление колодой
   | 'DRAW_CARD'
@@ -134,12 +150,12 @@ export interface PersonalizedPlayer {
   isSpectator: GameState['players'][0]['isSpectator']
   position: GameState['players'][0]['position']
   selectedDeck: GameState['players'][0]['selectedDeck']
+  announcedCard?: GameState['players'][0]['announcedCard']  // Витрина видна всем
 
   // Для локального игрока: полные данные
   hand?: GameState['players'][0]['hand']
   deck?: GameState['players'][0]['deck']
   discard?: GameState['players'][0]['discard']
-  announcedCard?: GameState['players'][0]['announcedCard']
   boardHistory?: GameState['players'][0]['boardHistory']
 
   // Для других игроков: только размеры

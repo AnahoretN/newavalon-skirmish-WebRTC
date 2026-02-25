@@ -145,7 +145,7 @@ function personalToGameState(personal: PersonalizedState, localPlayerId: number)
     ? personal.visualEffects
     : new Map(Object.entries(personal.visualEffects || {}))
 
-  return {
+  const result = {
     ...personal,
     visualEffects: visualEffectsMap,
     players: personal.players.map(p => {
@@ -163,14 +163,14 @@ function personalToGameState(personal: PersonalizedState, localPlayerId: number)
           discardSize: p.discard?.length || 0
         }
       } else {
-        // Для других игроков - только размеры
+        // Для других игроков - только размеры + announcedCard (витрина видна всем)
         return {
           ...p,
           hand: [],
           deck: [],
           discard: [],
           boardHistory: [],
-          announcedCard: null,
+          announcedCard: p.announcedCard || null,  // Витрина видна всем игрокам
           handSize: p.handSize || 0,
           deckSize: p.deckSize || 0,
           discardSize: p.discardSize || 0
@@ -179,6 +179,8 @@ function personalToGameState(personal: PersonalizedState, localPlayerId: number)
     }),
     localPlayerId
   } as GameState
+
+  return result
 }
 
 export function useGameState(props: any = {}): UseGameStateResult {
@@ -192,8 +194,10 @@ export function useGameState(props: any = {}): UseGameStateResult {
   const guestRef = useRef<SimpleGuest | null>(null)
   const isHostRef = useRef<boolean>(false)
 
-  // Refs для совместимости
-  const draggedItemRef = useRef<DragItem | null>(null)
+  // State for draggedItem (useState вместо useRef для реактивности)
+  const [draggedItem, setDraggedItemState] = useState<DragItem | null>(null)
+
+  // Refs для совместимости (остальные)
   const latestHighlightRef = useRef<HighlightData | null>(null)
   const latestNoTargetRef = useRef<{ coords: any; timestamp: number } | null>(null)
   const clickWavesRef = useRef<any[]>([])
@@ -398,13 +402,89 @@ export function useGameState(props: any = {}): UseGameStateResult {
 
   const handleDrop = useCallback((item: DragItem, target: any) => {
     if (target.target === 'board') {
-      sendAction('PLAY_CARD', {
+      // Определяем действие по источнику карты
+      let action = 'PLAY_CARD'
+      let actionData: any = {
         cardIndex: item.cardIndex,
         boardCoords: target.boardCoords,
         faceDown: item.card?.isFaceDown
+      }
+
+      if (item.source === 'deck') {
+        action = 'PLAY_CARD_FROM_DECK'
+        actionData.cardIndex = item.cardIndex ?? 0
+      } else if (item.source === 'discard') {
+        action = 'PLAY_CARD_FROM_DISCARD'
+        actionData.cardIndex = item.cardIndex
+      } else if (item.source === 'announced') {
+        // Перетаскивание из витрины на поле боя
+        action = 'PLAY_ANNOUNCED_TO_BOARD'
+        actionData = {
+          row: target.boardCoords.row,
+          col: target.boardCoords.col,
+          faceDown: item.card?.isFaceDown
+        }
+      }
+
+      sendAction(action, actionData)
+    } else if (target.target === 'hand') {
+      // Перемещение в руку
+      if (item.source === 'announced') {
+        // Из витрины в руку
+        sendAction('MOVE_ANNOUNCED_TO_HAND', {})
+      } else {
+        const cardId = item.card?.id
+        if (cardId) {
+          sendAction('MOVE_CARD_TO_HAND', {
+            cardId,
+            source: item.source
+          })
+        }
+      }
+    } else if (target.target === 'deck') {
+      // Перемещение в колоду
+      if (item.source === 'hand') {
+        sendAction('MOVE_HAND_CARD_TO_DECK', {
+          cardIndex: item.cardIndex
+        })
+      } else if (item.source === 'board') {
+        const cardId = item.card?.id
+        if (cardId) {
+          sendAction('MOVE_CARD_TO_DECK', {
+            cardId,
+            source: 'board'
+          })
+        }
+      } else if (item.source === 'announced') {
+        // Из витрины в колоду
+        sendAction('MOVE_ANNOUNCED_TO_DECK', {})
+      }
+    } else if (target.target === 'discard') {
+      // Перемещение в сброс
+      if (item.source === 'hand') {
+        sendAction('MOVE_HAND_CARD_TO_DISCARD', {
+          cardIndex: item.cardIndex
+        })
+      } else if (item.source === 'board') {
+        const cardId = item.card?.id
+        if (cardId) {
+          sendAction('MOVE_CARD_TO_DISCARD', {
+            cardId,
+            source: 'board'
+          })
+        }
+      } else if (item.source === 'announced') {
+        // Из витрины в сброс
+        sendAction('MOVE_ANNOUNCED_TO_DISCARD', {})
+      }
+    } else if (target.target === 'announced') {
+      // Перемещение в витрину (announce)
+      sendAction('ANNOUNCE_CARD', {
+        cardId: item.card?.id,
+        source: item.source,
+        cardIndex: item.cardIndex
       })
     }
-    // TODO: другие типы
   }, [sendAction])
 
   const moveItem = useCallback(() => {
@@ -574,7 +654,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
   // Вспомогательные
   // ============================================================================
   const setDraggedItem = useCallback((item: DragItem | null) => {
-    draggedItemRef.current = item
+    setDraggedItemState(item)
   }, [])
 
   // ============================================================================
@@ -600,7 +680,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
     gameState,
     localPlayerId,
     setLocalPlayerId,
-    draggedItem: draggedItemRef.current,
+    draggedItem,
     setDraggedItem,
     connectionStatus,
     gamesList: [],

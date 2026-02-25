@@ -173,6 +173,15 @@ export class SimpleGuest {
     this.state = data.state
     this.localPlayerId = this.findLocalPlayerId()
 
+    // Логируем все announcedCard для отладки
+    const announcedCards = this.state.players
+      .filter((p: any) => p.announcedCard)
+      .map((p: any) => `Player${p.id}:${p.announcedCard.name}`)
+      .join(', ')
+    if (announcedCards) {
+      logger.info('[SimpleGuest] Received state version:', data.version, 'with announcedCards: [', announcedCards, ']')
+    }
+
     logger.info('[SimpleGuest] State updated, version:', data.version,
       'phase:', this.state.currentPhase,
       'activePlayer:', this.state.activePlayerId)
