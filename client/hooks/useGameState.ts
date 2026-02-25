@@ -210,6 +210,26 @@ export function useGameState(props: any = {}): UseGameStateResult {
   // State for draggedItem (useState вместо useRef для реактивности)
   const [draggedItem, setDraggedItemState] = useState<DragItem | null>(null)
 
+  // Refs для useVisualEffects
+  const gameStateRef = useRef(gameState)
+  const localPlayerIdRef = useRef(localPlayerId)
+
+  // Update refs when state changes
+  useEffect(() => {
+    gameStateRef.current = gameState
+  }, [gameState])
+  useEffect(() => {
+    localPlayerIdRef.current = localPlayerId
+  }, [localPlayerId])
+
+  // States for visual effects
+  const [latestHighlight, setLatestHighlight] = useState<HighlightData | null>(null)
+  const [latestFloatingTexts, setLatestFloatingTexts] = useState<FloatingTextData[] | null>(null)
+  const [latestNoTarget, setLatestNoTarget] = useState<{ coords: { row: number; col: number }; timestamp: number } | null>(null)
+  const [latestDeckSelections, setLatestDeckSelections] = useState<Array<{ playerId: number; selectedByPlayerId: number; timestamp: number }>>([])
+  const [latestHandCardSelections, setLatestHandCardSelections] = useState<Array<{ playerId: number; cardIndex: number; selectedByPlayerId: number; timestamp: number }>>([])
+  const [clickWaves, setClickWaves] = useState<Array<any>>([])
+
   // Refs для совместимости (остальные)
   const latestHighlightRef = useRef<HighlightData | null>(null)
   const latestNoTargetRef = useRef<{ coords: any; timestamp: number } | null>(null)
@@ -217,6 +237,20 @@ export function useGameState(props: any = {}): UseGameStateResult {
   const latestFloatingTextsRef = useRef<FloatingTextData[]>([])
   const latestDeckSelectionsRef = useRef<DeckSelectionData[]>([])
   const latestHandCardSelectionsRef = useRef<HandCardSelectionData[]>([])
+
+  // Update refs when state changes
+  useEffect(() => {
+    latestHighlightRef.current = latestHighlight
+  }, [latestHighlight])
+  useEffect(() => {
+    latestFloatingTextsRef.current = latestFloatingTexts || []
+  }, [latestFloatingTexts])
+  useEffect(() => {
+    latestNoTargetRef.current = latestNoTarget
+  }, [latestNoTarget])
+  useEffect(() => {
+    clickWavesRef.current = clickWaves
+  }, [clickWaves])
 
   // ============================================================================
   // Инициализация хоста
