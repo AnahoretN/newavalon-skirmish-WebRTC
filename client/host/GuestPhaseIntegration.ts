@@ -55,11 +55,8 @@ export function initializePhaseSystemForGuest(
         applyPhaseStateToGameState(config.gameStateRef.current, state)
       }
 
-      // CRITICAL: Trigger React re-render by calling onStateUpdate
-      // Without this, UI won't update with new phase state!
-      if (config?.onStateUpdate && config?.gameStateRef) {
-        config.onStateUpdate(config.gameStateRef.current)
-      }
+      // NOTE: Not calling onStateUpdate here to avoid triggering sendStateToHost
+      // Phase state changes will be reflected via CARD_STATE message from host
 
       // CRITICAL: Local auto-draw for guest
       // Triggered when we become the active player and phase is Setup
@@ -156,11 +153,9 @@ export function initializePhaseSystemForGuest(
       // Update last active player tracking
       lastActivePlayer = newPlayerId
 
-      // CRITICAL: Trigger React re-render by calling onStateUpdate
-      // Without this, UI won't update with new active player!
-      if (config?.onStateUpdate && config?.gameStateRef) {
-        config.onStateUpdate(config.gameStateRef.current)
-      }
+      // NOTE: Not calling onStateUpdate here because it triggers sendStateToHost
+      // which can overwrite cards drawn by host during game start
+      // The activePlayerId change will be reflected in next CARD_STATE message
 
       // Call external callback
       config?.onTurnChanged?.(oldPlayerId, newPlayerId)
@@ -175,10 +170,8 @@ export function initializePhaseSystemForGuest(
         }
       }
 
-      // CRITICAL: Trigger React re-render by calling onStateUpdate
-      if (config?.onStateUpdate && config?.gameStateRef) {
-        config.onStateUpdate(config.gameStateRef.current)
-      }
+      // NOTE: Not calling onStateUpdate here to avoid triggering sendStateToHost
+      // The round end modal state will be updated via CARD_STATE message
 
       // Call external callback
       config?.onRoundEnded?.(info)
@@ -190,10 +183,8 @@ export function initializePhaseSystemForGuest(
         config.gameStateRef.current.gameWinner = winnerId
       }
 
-      // CRITICAL: Trigger React re-render by calling onStateUpdate
-      if (config?.onStateUpdate && config?.gameStateRef) {
-        config.onStateUpdate(config.gameStateRef.current)
-      }
+      // NOTE: Not calling onStateUpdate here to avoid triggering sendStateToHost
+      // The game winner state will be updated via CARD_STATE message
 
       // Call external callback
       config?.onMatchEnded?.(winnerId)
@@ -205,10 +196,8 @@ export function initializePhaseSystemForGuest(
         config.gameStateRef.current.isScoringStep = true
       }
 
-      // CRITICAL: Trigger React re-render by calling onStateUpdate
-      if (config?.onStateUpdate && config?.gameStateRef) {
-        config.onStateUpdate(config.gameStateRef.current)
-      }
+      // NOTE: Not calling onStateUpdate here to avoid triggering sendStateToHost
+      // The scoring mode state will be reflected in next CARD_STATE message
 
       // Call external callback
       config?.onScoringModeStarted?.(activePlayerId, validLinesCount)
@@ -220,10 +209,8 @@ export function initializePhaseSystemForGuest(
         config.gameStateRef.current.isScoringStep = false
       }
 
-      // CRITICAL: Trigger React re-render by calling onStateUpdate
-      if (config?.onStateUpdate && config?.gameStateRef) {
-        config.onStateUpdate(config.gameStateRef.current)
-      }
+      // NOTE: Not calling onStateUpdate here to avoid triggering sendStateToHost
+      // The scoring mode state will be reflected in next CARD_STATE message
 
       // Call external callback
       config?.onScoringModeCompleted?.(info)
