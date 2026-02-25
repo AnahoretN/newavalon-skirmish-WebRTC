@@ -154,7 +154,7 @@ export function useWebRTC(props: UseWebRTCProps) {
         // @ts-ignore - initializePhaseSystem is added via prototype extension
         guestManager.initializePhaseSystem({
           gameStateRef: fullGameStateRef,
-          localPlayerId: localPlayerIdRef.current,
+          localPlayerIdRef: localPlayerIdRef,  // Pass ref so phase system can get current value
           onDrawCard: drawCard,
           onStateUpdate: setGameState
         })

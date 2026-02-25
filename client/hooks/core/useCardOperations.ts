@@ -15,6 +15,7 @@ import { useCallback } from 'react'
 import { shuffleDeck } from '@shared/utils/array'
 import { deepCloneState } from '../../utils/common'
 import { recalculateBoardStatuses } from '@shared/utils/boardUtils'
+import { logger } from '../../utils/logger'
 import type { GameState, Player } from '../../types'
 import type { WebRTCManager } from './types'
 
@@ -36,12 +37,15 @@ export function useCardOperations(props: UseCardOperationsProps) {
    * Draw a card from deck to hand
    */
   const drawCard = useCallback((playerId: number) => {
+    logger.info(`[drawCard] Drawing card for player ${playerId}`)
     updateState(currentState => {
       if (!currentState.isGameStarted) {
+        logger.warn(`[drawCard] Game not started, skipping draw for player ${playerId}`)
         return currentState
       }
       const player = currentState.players.find(p => p.id === playerId)
       if (!player || player.deck.length === 0) {
+        logger.warn(`[drawCard] No player or empty deck for player ${playerId}`)
         return currentState
       }
       const newState = deepCloneState(currentState)
@@ -49,6 +53,7 @@ export function useCardOperations(props: UseCardOperationsProps) {
       const cardDrawn = playerToUpdate.deck.shift()
       if (cardDrawn) {
         playerToUpdate.hand.push(cardDrawn)
+        logger.info(`[drawCard] Drew card for player ${playerId}: hand=${playerToUpdate.hand.length}, deck=${playerToUpdate.deck.length}`)
       }
       return newState
     })

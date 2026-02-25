@@ -330,6 +330,17 @@ export class HostManager {
         }
         break
 
+      case 'GUEST_AUTO_DRAW_COMPLETE':
+        // Guest completed their auto-draw, transition to Setup
+        if (guestPlayerId) {
+          logger.info(`[HostManager] Guest ${guestPlayerId} completed auto-draw`)
+          const phaseManager = (this as any)._phaseManager
+          if (phaseManager && phaseManager.completeGuestAutoDraw) {
+            phaseManager.completeGuestAutoDraw(guestPlayerId)
+          }
+        }
+        break
+
       case 'CHANGE_PLAYER_DECK':
         if (guestPlayerId && message.data) {
           this.handleChangePlayerDeck(guestPlayerId, message.data, fromPeerId)
@@ -1187,40 +1198,39 @@ export class HostManager {
       logger.info(`[HostManager] Player ${guestPlayerId} selected scoring line with mode: ${mode}, data:`, data)
 
       // For scoring in WebRTC mode, we need to:
-      // 1. Score the line (add points to player)
-      // 2. Clear isScoringStep
-      // 3. Pass turn to next player
+      // 1. Clear isScoringStep
+      // 2. Pass turn to next player (via PhaseManager)
 
-      // Process scoring - update player score based on line
-      // For now, we'll pass the turn since the actual scoring should be handled by the guest's local state
-      // and synced via STATE_UPDATE_COMPACT
+      // Use PhaseManager to handle turn passing after scoring
+      const phaseManager = (this as any)._phaseManager
+      if (phaseManager && phaseManager.completeScoringStep) {
+        logger.info(`[HostManager] Using PhaseManager to complete scoring step for player ${guestPlayerId}`)
+        phaseManager.completeScoringStep(guestPlayerId, data)
+      } else {
+        logger.warn(`[HostManager] PhaseManager not available for scoring completion, using fallback`)
+        // Fallback: Clear isScoringStep
+        let updatedState = {
+          ...state,
+          isScoringStep: false
+        }
+        this.stateManager.setInitialState(updatedState)
 
-      // Clear scoring step - turn passing logic removed
-      let updatedState = {
-        ...state,
-        isScoringStep: false
+        // Broadcast to all guests
+        this.connectionManager.broadcast({
+          type: 'SCORING_MODE_COMPLETE',
+          senderId: this.connectionManager.getPeerId(),
+          data: {
+            activePlayerId: updatedState.activePlayerId,
+            currentPhase: updatedState.currentPhase
+          },
+          timestamp: Date.now()
+        })
+
+        // Call onStateUpdate to update host's React state
+        if (this.config.onStateUpdate) {
+          this.config.onStateUpdate(updatedState)
+        }
       }
-
-      // Update host state
-      this.stateManager.setInitialState(updatedState)
-
-      // Broadcast to all guests
-      this.connectionManager.broadcast({
-        type: 'SCORING_MODE_COMPLETE',
-        senderId: this.connectionManager.getPeerId(),
-        data: {
-          activePlayerId: updatedState.activePlayerId,
-          currentPhase: updatedState.currentPhase
-        },
-        timestamp: Date.now()
-      })
-
-      // Call onStateUpdate to update host's React state
-      if (this.config.onStateUpdate) {
-        this.config.onStateUpdate(updatedState)
-      }
-
-      logger.info(`[HostManager] Scoring complete, passed turn to player ${updatedState.activePlayerId}`)
       return
     }
 

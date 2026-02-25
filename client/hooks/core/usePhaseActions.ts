@@ -15,6 +15,7 @@ import { getPhaseName } from '../../host/phase/PhaseTypes'
 import { initializePhaseSystem } from '../../host/HostPhaseIntegration'
 import { initializePhaseSystemForGuest } from '../../host/GuestPhaseIntegration'
 import { encodePhaseAction, createPhaseMessage, PhaseActionType } from '../../host/phase/PhaseMessageCodec'
+import { logger } from '../../utils/logger'
 
 interface UsePhaseActionsProps {
   gameStateRef: React.MutableRefObject<GameState>
@@ -176,6 +177,10 @@ export function usePhaseActions(props: UsePhaseActionsProps): PhaseActionsResult
       'PREVIOUS_PHASE': 2,
       'PASS_TURN': 3,
       'START_SCORING': 4,
+      'SELECT_LINE': 5,
+      'ROUND_COMPLETE': 6,
+      'START_NEXT_ROUND': 7,
+      'START_NEW_MATCH': 8,
     }
 
     const actionType = actionMap[action]

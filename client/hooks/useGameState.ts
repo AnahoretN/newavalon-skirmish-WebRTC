@@ -28,6 +28,7 @@ import {
 // New WebRTC message handlers (handles CARD_STATE, ABILITY_EFFECT, SESSION_EVENT)
 import { handleCodecMessage } from '../utils/webrtcMessageHandlers'
 import { saveGuestData, saveWebrtcState, loadGuestData, loadHostData, loadWebrtcState, getRestorableSessionType, clearWebrtcData, broadcastHostPeerId, clearHostPeerIdBroadcast, getHostPeerIdForGame } from '../host/WebrtcStatePersistence'
+import { markPlayerAutoDrawn } from '../host/GuestPhaseIntegration'
 // Storage functions extracted to gameStateStorage.ts
 import {
   syncGameStateImages,
@@ -155,6 +156,10 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   // This preserves full card data (name, imageUrl, etc.) that guests send via DECK_DATA_UPDATE
   // Map<playerId, fullDeckData[]>
   const guestFullDecksRef = useRef<Map<number, any[]>>(new Map())
+
+  // Track auto-draw per turn to prevent duplicate draws when GUEST_AUTO_DRAW message arrives
+  // Map<playerId, turnNumber>
+  const guestAutoDrawTrackingRef = useRef<Map<number, number>>(new Map())
 
   // Ref for setGameStateWithDelta (used in callbacks)
   const setGameStateWithDeltaRef = useRef<(updater: React.SetStateAction<GameState>, sourcePlayerId?: number) => void>(() => {})
@@ -2696,6 +2701,81 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
 
+      case 'GUEST_AUTO_DRAW':
+        // Host signals guest to auto-draw a card
+        // This is sent when the guest becomes the active player and is in Preparation phase
+        // We process this regardless of current phase because the message may arrive before phase state updates
+        logger.info(`[handleWebrtcMessage] Received GUEST_AUTO_DRAW from host`, message)
+        if (message.playerId !== undefined && message.playerId === localPlayerIdRef.current) {
+          const targetPlayerId = message.playerId
+          const currentTurn = gameStateRef.current.turnNumber || 0
+
+          // Check if we already auto-drew this turn (prevent duplicates)
+          const lastDrawTurn = guestAutoDrawTrackingRef.current.get(targetPlayerId) ?? -1
+          if (lastDrawTurn === currentTurn) {
+            logger.info(`[GUEST_AUTO_DRAW] Player ${targetPlayerId} already drew this turn (turn ${currentTurn}), skipping`)
+            break
+          }
+
+          // Log current phase for debugging
+          logger.info(`[GUEST_AUTO_DRAW] Processing for player ${targetPlayerId}, currentPhase=${gameStateRef.current.currentPhase}, turn=${currentTurn}`)
+
+          // Mark as drawn for this turn BEFORE processing (both local and GuestPhaseIntegration tracking)
+          guestAutoDrawTrackingRef.current.set(targetPlayerId, currentTurn)
+          markPlayerAutoDrawn(targetPlayerId)  // Also update GuestPhaseIntegration tracking
+
+          // Use updateState to draw card - this will sync to host via STATE_UPDATE_COMPACT
+          updateState(currentState => {
+            const player = currentState.players.find(p => p.id === targetPlayerId)
+            if (!player) {
+              logger.warn(`[GUEST_AUTO_DRAW] Player ${targetPlayerId} not found`)
+              return currentState
+            }
+
+            const autoDrawEnabled = player?.autoDrawEnabled !== false
+
+            if (autoDrawEnabled && player.deck && player.deck.length > 0) {
+              logger.info(`[GUEST_AUTO_DRAW] Auto-drawing card for player ${targetPlayerId}`)
+
+              // Draw top card from deck to hand
+              const drawnCard = player.deck.shift()
+              if (drawnCard) {
+                player.hand.push(drawnCard)
+                player.deckSize = player.deck.length
+                player.handSize = player.hand.length
+
+                logger.info(`[GUEST_AUTO_DRAW] Player ${targetPlayerId} drew card: ${drawnCard.name}`)
+              }
+
+              // After drawing, send completion message to host
+              if (webrtcManagerRef.current) {
+                // Use sendMessage for guest connection (host uses broadcast)
+                const manager = webrtcManagerRef.current as any
+                if (manager.sendMessage) {
+                  manager.sendMessage({
+                    type: 'GUEST_AUTO_DRAW_COMPLETE',
+                    playerId: targetPlayerId,
+                    timestamp: Date.now()
+                  })
+                } else if (manager.sendToHost) {
+                  manager.sendToHost({
+                    type: 'GUEST_AUTO_DRAW_COMPLETE',
+                    playerId: targetPlayerId,
+                    timestamp: Date.now()
+                  })
+                }
+                logger.info(`[GUEST_AUTO_DRAW] Sent GUEST_AUTO_DRAW_COMPLETE for player ${targetPlayerId}`)
+              }
+
+              return currentState
+            } else {
+              logger.warn(`[GUEST_AUTO_DRAW] Cannot auto-draw: player=${targetPlayerId}, autoDrawEnabled=${autoDrawEnabled}, deckEmpty=${!player?.deck || player.deck.length === 0}`)
+              return currentState
+            }
+          })
+        }
+        break
+
       case 'JOIN_REQUEST':
         // Guest wants to join (host only)
         logger.info(`[handleWebrtcMessage] Received JOIN_REQUEST, senderId: ${message.senderId}, isHost: ${webrtcIsHostRef.current}`)
@@ -4518,23 +4598,6 @@ export const useGameState = (props: UseGameStateProps = {}) => {
           logger.info(`[GAME_STARTING] State updated, waiting for CARD_STATE to draw cards`)
           return newState
         })
-        break
-
-      case 'GUEST_AUTO_DRAW':
-        // Host signals guest to auto-draw locally in Preparation phase
-        logger.info('[GUEST_AUTO_DRAW] Host signaled to auto-draw', message.data)
-        if (!message.data || message.data.playerId === undefined) {
-          break
-        }
-
-        const targetPlayerId = message.data.playerId
-        // Only process if this is for us
-        if (targetPlayerId === localPlayerIdRef.current) {
-          logger.info(`[GUEST_AUTO_DRAW] Auto-drawing for player ${targetPlayerId}`)
-          // Call drawCard via ref - this works exactly like clicking the deck
-          // It will update local state and send STATE_UPDATE_COMPACT to host
-          drawCardRef.current?.(targetPlayerId)
-        }
         break
 
       // Phase messages - handled by GuestPhaseHandler

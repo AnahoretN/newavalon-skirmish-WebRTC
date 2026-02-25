@@ -17,6 +17,30 @@ import { logger } from '../utils/logger'
 const autoDrawnThisTurn = new Set<number>()
 
 /**
+ * Mark a player as having auto-drawn this turn
+ * Called from GUEST_AUTO_DRAW handler to prevent duplicate draws
+ */
+export function markPlayerAutoDrawn(playerId: number): void {
+  autoDrawnThisTurn.add(playerId)
+  logger.debug(`[GuestPhaseIntegration] Marked player ${playerId} as auto-drawn`)
+}
+
+/**
+ * Check if a player has auto-drawn this turn
+ */
+export function hasPlayerAutoDrawn(playerId: number): boolean {
+  return autoDrawnThisTurn.has(playerId)
+}
+
+/**
+ * Clear auto-draw tracking (called when leaving Preparation phase)
+ */
+export function clearAutoDrawTracking(): void {
+  autoDrawnThisTurn.clear()
+  logger.debug('[GuestPhaseIntegration] Cleared auto-draw tracking')
+}
+
+/**
  * Initialize phase system on GuestConnectionManager
  * Call this after creating GuestConnectionManager to enable phase handling
  */
@@ -66,6 +90,7 @@ export function initializePhaseSystemForGuest(
         const activePlayerId = state.activePlayerId
 
         // Check if we just became the active player (transition from different player or null)
+        // IMPORTANT: Check BEFORE updating lastActivePlayer
         const justBecameActive = lastActivePlayer !== activePlayerId
 
         // Only auto-draw if:
@@ -75,7 +100,7 @@ export function initializePhaseSystemForGuest(
         // 4. Auto-draw is enabled for this player
         logger.info(`[GuestPhaseIntegration] Auto-draw check: justBecameActive=${justBecameActive}, lastActivePlayer=${lastActivePlayer}, activePlayerId=${activePlayerId}, localPlayerId=${localPlayerId}, currentPhase=${state.currentPhase}`)
 
-        // Update tracking for next time
+        // Update tracking for next time AFTER the check
         lastActivePlayer = activePlayerId
 
         if (justBecameActive && activePlayerId === localPlayerId && state.currentPhase === 1) {
@@ -121,8 +146,50 @@ export function initializePhaseSystemForGuest(
         config.gameStateRef.current.isScoringStep = (newPhase === 4)
       }
 
-      // Update last active player tracking
-      lastActivePlayer = newActivePlayer
+      // CRITICAL: Auto-draw check happens here!
+      // onPhaseStateChanged is NOT called during phase transitions, only during PHASE_STATE updates
+      // So we need to check for auto-draw here too
+      if (config?.gameStateRef && config?.localPlayerId) {
+        const localPlayerId = config.localPlayerId
+
+        // Check if we just became the active player (transition from different player or null)
+        // IMPORTANT: Check BEFORE updating lastActivePlayer
+        const justBecameActive = oldActivePlayer !== newActivePlayer && newActivePlayer === localPlayerId
+
+        // Only auto-draw if:
+        // 1. We just became the active player
+        // 2. The new phase is Setup (1), which means Preparation just completed
+        // 3. Auto-draw is enabled for this player
+        logger.info(`[GuestPhaseIntegration] onPhaseTransition Auto-draw check: justBecameActive=${justBecameActive}, oldActivePlayer=${oldActivePlayer}, newActivePlayer=${newActivePlayer}, localPlayerId=${localPlayerId}, newPhase=${newPhase}`)
+
+        // Update last active player tracking
+        lastActivePlayer = newActivePlayer
+
+        if (justBecameActive && newPhase === 1) {
+          const gameState = config.gameStateRef.current
+          const player = gameState.players.find(p => p.id === localPlayerId)
+          const autoDrawEnabled = player?.autoDrawEnabled !== false
+
+          if (autoDrawEnabled && player && player.deck && player.deck.length > 0) {
+            // Check if already drawn this turn
+            if (!autoDrawnThisTurn.has(localPlayerId)) {
+              logger.info(`[GuestPhaseIntegration] Local auto-draw for player ${localPlayerId} (phase transition to Setup)`)
+
+              // Mark as drawn for this turn BEFORE calling drawCard
+              autoDrawnThisTurn.add(localPlayerId)
+
+              // Use onDrawCard callback - this works exactly like clicking deck
+              // drawCard will call updateState which syncs to host and all guests
+              if (config?.onDrawCard) {
+                config.onDrawCard(localPlayerId)
+              }
+            }
+          }
+        }
+      } else {
+        // Update tracking even if no config
+        lastActivePlayer = newActivePlayer
+      }
 
       // Reset auto-draw tracking when leaving Preparation
       if (oldPhase === 0 && newPhase !== 0) {
@@ -150,8 +217,8 @@ export function initializePhaseSystemForGuest(
         config.gameStateRef.current.activePlayerId = newPlayerId
       }
 
-      // Update last active player tracking
-      lastActivePlayer = newPlayerId
+      // CRITICAL: Do NOT update lastActivePlayer here!
+      // It will be updated in onPhaseStateChanged AFTER the auto-draw check
 
       // NOTE: Not calling onStateUpdate here because it triggers sendStateToHost
       // which can overwrite cards drawn by host during game start

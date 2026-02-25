@@ -59,9 +59,6 @@ export function initializePhaseSystem(
         phaseSyncManager.broadcastPhaseState(phaseState)
       }
 
-      // Broadcast phase transition to all guests
-      phaseSyncManager.broadcastPhaseTransition(result)
-
       // Call external callback
       config?.onPhaseChanged?.(result)
     },
@@ -101,6 +98,7 @@ export function initializePhaseSystem(
     onGuestShouldAutoDraw: (playerId: number) => {
       // Send a message to the guest telling them to auto-draw
       // The guest will draw locally and send updated state back to host
+      logger.info(`[HostPhaseIntegration] onGuestShouldAutoDraw called for player ${playerId}`)
       const guestPeerId = hm.connectionManager.getPeerIdForPlayer(playerId)
       if (guestPeerId) {
         const message = {
@@ -119,6 +117,8 @@ export function initializePhaseSystem(
       // CRITICAL: PhaseManager is the source of truth for phase transitions and auto-draw
       // PhaseManager directly modifies player hands/decks when auto-drawing
       // We need to broadcast this updated state to all guests
+
+      logger.info(`[HostPhaseIntegration] onStateUpdateRequired called: phase=${phaseManagerState.currentPhase}, activePlayer=${phaseManagerState.activePlayerId}`)
 
       // Get players who auto-drew in this Preparation phase
       const autoDrawPlayers = hm._phaseManager?.getRecentAutoDrawPlayers?.() || new Set()

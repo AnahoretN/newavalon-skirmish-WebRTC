@@ -645,9 +645,10 @@ export class PhaseManager {
 
     const currentPhase = this.state.currentPhase as GamePhase
 
-    // Scoring phase is handled separately (select line -> auto-pass)
+    // Scoring phase: pass turn to next player (who will start in Preparation phase)
     if (currentPhase === GamePhase.SCORING) {
-      return null
+      logger.info(`[PhaseManager] transitionToNextPhase: In SCORING phase, passing turn to next player`)
+      return this.passTurnToNextPlayer('next_phase_from_scoring')
     }
 
     // Commit -> Scoring (or pass turn if no cards)
@@ -697,7 +698,9 @@ export class PhaseManager {
   /**
    * Pass turn to next player in order
    */
-  private passTurnToNextPlayer(_reason: string): PhaseTransitionResult {
+  private passTurnToNextPlayer(reason: string): PhaseTransitionResult {
+    logger.info(`[PhaseManager] passTurnToNextPlayer called: reason=${reason}, currentPhase=${this.state?.currentPhase}, activePlayer=${this.state?.activePlayerId}`)
+
     if (!this.state) {
       throw new Error('[PhaseManager] No state')
     }
@@ -713,6 +716,7 @@ export class PhaseManager {
     }
 
     const nextPlayerId = getNextPlayer(oldActivePlayer || 1, activePlayerIds)
+    logger.info(`[PhaseManager] Passing turn: player ${oldActivePlayer} -> ${nextPlayerId}, phase ${oldPhase} -> PREPARATION`)
 
     // Check if we've completed a full orbit (back to starting player)
     if (nextPlayerId === this.state.startingPlayerId) {
@@ -748,11 +752,14 @@ export class PhaseManager {
    * Execute Preparation phase actions
    * - Auto-draw card if enabled
    * - Check round victory
-   * - Auto-transition to Setup
+   * - Returns whether phase should stay in Preparation or can proceed to Setup
    *
    * CRITICAL: For guests, auto-draw happens LOCALLY on guest's machine.
    * Host only performs auto-draw for itself (local player).
    * Guests will draw locally and send updated hand/deck to host via STATE_UPDATE_COMPACT.
+   *
+   * NEW: Phase stays in PREPARATION until guest completes auto-draw.
+   * Host automatically transitions to Setup after host's auto-draw completes.
    *
    * @param playerId - The active player
    * @param skipAllAutoDraw - If true, skip ALL auto-draw (host and guests). Used at game start
@@ -762,9 +769,10 @@ export class PhaseManager {
     roundEndInfo?: RoundEndInfo
     newPhase: GamePhase
     guestShouldAutoDraw: boolean  // NEW: Indicates to host system that guest should be notified
+    waitForGuest: boolean  // NEW: If true, stay in Preparation and wait for guest to complete auto-draw
   } {
     if (!this.state) {
-      return { newPhase: GamePhase.SETUP, guestShouldAutoDraw: false }
+      return { newPhase: GamePhase.SETUP, guestShouldAutoDraw: false, waitForGuest: false }
     }
 
     // CRITICAL: Update ready statuses for the new active player
@@ -783,7 +791,7 @@ export class PhaseManager {
     const isLocalPlayer = playerId === this.config.localPlayerId
     const guestShouldAutoDraw = this.config.autoDrawEnabled && !this.autoDrawnThisTurn.has(playerId) && !isLocalPlayer
 
-    logger.info(`[PhaseManager] executePreparationPhase: playerId=${playerId}, localPlayerId=${this.config.localPlayerId}, isLocalPlayer=${isLocalPlayer}, autoDrawEnabled=${this.config.autoDrawEnabled}, alreadyDrawn=${this.autoDrawnThisTurn.has(playerId)}, skipAllAutoDraw=${skipAllAutoDraw}`)
+    logger.info(`[PhaseManager] executePreparationPhase START: playerId=${playerId}, localPlayerId=${this.config.localPlayerId}, isLocalPlayer=${isLocalPlayer}, autoDrawEnabled=${this.config.autoDrawEnabled}, alreadyDrawn=${this.autoDrawnThisTurn.has(playerId)}, skipAllAutoDraw=${skipAllAutoDraw}`)
 
     // Clear recent auto-draw tracking at the start of each Preparation phase
     this.recentAutoDrawPlayers.clear()
@@ -792,20 +800,28 @@ export class PhaseManager {
     if (skipAllAutoDraw) {
       logger.info(`[PhaseManager] Skipping ALL auto-draw for player ${playerId} (skipAllAutoDraw=true at game start)`)
       this.autoDrawnThisTurn.add(playerId)  // Mark as drawn so next turn works correctly
+      logger.info(`[PhaseManager] SKIP PATH: going to auto-transition check`)
     } else if (this.config.autoDrawEnabled && !this.autoDrawnThisTurn.has(playerId)) {
       if (isLocalPlayer) {
         // Host draws locally
         this.performAutoDraw(playerId)
         this.recentAutoDrawPlayers.add(playerId)  // Mark for state broadcast
-        logger.info(`[PhaseManager] Host auto-drew for player ${playerId} (local player)`)
+        logger.info(`[PhaseManager] HOST AUTO-DRAW PATH: Host auto-drew for player ${playerId} (local player), going to auto-transition check`)
       } else {
         // Signal to host system that guest should auto-draw locally
         // The host will send a message to the guest to trigger local auto-draw
-        logger.info(`[PhaseManager] About to call onGuestShouldAutoDraw for player ${playerId}`)
+        // STAY IN PREPARATION and wait for guest to complete
+        logger.info(`[PhaseManager] GUEST AUTO-DRAW PATH: About to call onGuestShouldAutoDraw for player ${playerId}`)
         this.callbacks.onGuestShouldAutoDraw?.(playerId)
-        logger.info(`[PhaseManager] Signaled guest ${playerId} to auto-draw locally`)
+        logger.info(`[PhaseManager] GUEST AUTO-DRAW PATH: Signaled guest ${playerId} to auto-draw locally`)
+        this.autoDrawnThisTurn.add(playerId)
+        // Return early - stay in Preparation and wait for guest
+        logger.info(`[PhaseManager] GUEST AUTO-DRAW PATH: Returning PREPARATION phase, waiting for guest`)
+        return { newPhase: GamePhase.PREPARATION, guestShouldAutoDraw: true, waitForGuest: true }
       }
       this.autoDrawnThisTurn.add(playerId)
+    } else {
+      logger.info(`[PhaseManager] NO AUTO-DRAW PATH: autoDrawEnabled=${this.config.autoDrawEnabled}, alreadyDrawn=${this.autoDrawnThisTurn.has(playerId)}, going to auto-transition check`)
     }
 
     // 2. Check round victory
@@ -837,12 +853,13 @@ export class PhaseManager {
       }
 
       // Stay in Preparation (modal open)
-      return { roundEndInfo, newPhase: GamePhase.PREPARATION, guestShouldAutoDraw: false }
+      return { roundEndInfo, newPhase: GamePhase.PREPARATION, guestShouldAutoDraw: false, waitForGuest: false }
     }
 
-    // 3. Auto-transition to Setup
+    // 3. Auto-transition to Setup (only if not waiting for guest)
+    logger.info(`[PhaseManager] AUTO-TRANSITION PATH: Transitioning to Setup, newPhase=SETUP`)
     this.state.currentPhase = GamePhase.SETUP
-    return { newPhase: GamePhase.SETUP, guestShouldAutoDraw }
+    return { newPhase: GamePhase.SETUP, guestShouldAutoDraw, waitForGuest: false }
   }
 
   /**
@@ -878,6 +895,83 @@ export class PhaseManager {
   }
 
   /**
+   * Complete guest auto-draw and transition to Setup
+   * Called when guest completes their local auto-draw
+   */
+  completeGuestAutoDraw(playerId: number): PhaseTransitionResult | null {
+    if (!this.state) {
+      logger.warn('[PhaseManager] No state in completeGuestAutoDraw')
+      return null
+    }
+
+    // Verify we're in Preparation phase for this player
+    if (this.state.currentPhase !== GamePhase.PREPARATION) {
+      logger.warn(`[PhaseManager] Not in Preparation phase, current phase is ${this.state.currentPhase}`)
+      return null
+    }
+
+    if (this.state.activePlayerId !== playerId) {
+      logger.warn(`[PhaseManager] Guest ${playerId} is not the active player (${this.state.activePlayerId})`)
+      return null
+    }
+
+    logger.info(`[PhaseManager] completeGuestAutoDraw: Guest ${playerId} completed auto-draw, transitioning to Setup`)
+    logger.info(`[PhaseManager] completeGuestAutoDraw: Current state - phase=${this.state.currentPhase}, activePlayer=${this.state.activePlayerId}`)
+
+    // Check round victory before transitioning
+    if (shouldRoundEnd(this.state.players, this.state.currentRound)) {
+      const winners = determineRoundWinners(this.state.players)
+      this.state.roundWinners[this.state.currentRound] = winners
+      const matchCheck = checkMatchOver(this.state.roundWinners)
+
+      const roundEndInfo: RoundEndInfo = {
+        roundNumber: this.state.currentRound,
+        winners,
+        roundWinners: { ...this.state.roundWinners },
+        isMatchOver: matchCheck.isOver,
+        matchWinner: matchCheck.winner
+      }
+
+      this.state.isRoundEndModalOpen = true
+      this.state.gameWinner = matchCheck.winner
+
+      this.callbacks.onRoundEnded?.(roundEndInfo)
+      if (matchCheck.isOver) {
+        this.callbacks.onMatchEnded?.(matchCheck.winner)
+      }
+
+      // Stay in Preparation (modal open)
+      const result: PhaseTransitionResult = {
+        success: true,
+        oldPhase: GamePhase.PREPARATION,
+        newPhase: GamePhase.PREPARATION,
+        oldActivePlayer: playerId,
+        newActivePlayer: playerId,
+        reason: PhaseTransitionReason.TURN_STARTED,
+        roundEndInfo
+      }
+      this.notifyPhaseChange(result)
+      return result
+    }
+
+    // Transition to Setup
+    const oldPhase = this.state.currentPhase
+    this.state.currentPhase = GamePhase.SETUP
+
+    const result: PhaseTransitionResult = {
+      success: true,
+      oldPhase,
+      newPhase: GamePhase.SETUP,
+      oldActivePlayer: playerId,
+      newActivePlayer: playerId,
+      reason: PhaseTransitionReason.NEXT_PHASE
+    }
+
+    this.notifyPhaseChange(result)
+    return result
+  }
+
+  /**
    * Get players who auto-drew in the most recent Preparation phase
    * Returns a copy of the set to avoid external modification
    */
@@ -890,6 +984,41 @@ export class PhaseManager {
    */
   clearRecentAutoDrawPlayers(): void {
     this.recentAutoDrawPlayers.clear()
+  }
+
+  /**
+   * Complete scoring step and pass turn to next player
+   * Called when a player selects a scoring line in Scoring phase
+   */
+  completeScoringStep(playerId: number, scoringData?: any): PhaseTransitionResult | null {
+    if (!this.state) {
+      logger.warn('[PhaseManager] No state in completeScoringStep')
+      return null
+    }
+
+    // Verify we're in Scoring phase and scoring step is active
+    if (this.state.currentPhase !== GamePhase.SCORING) {
+      logger.warn(`[PhaseManager] Not in Scoring phase, current phase is ${this.state.currentPhase}`)
+      return null
+    }
+
+    if (!this.state.isScoringStep) {
+      logger.warn('[PhaseManager] Not in scoring step')
+      return null
+    }
+
+    if (this.state.activePlayerId !== playerId) {
+      logger.warn(`[PhaseManager] Player ${playerId} is not the active player (${this.state.activePlayerId})`)
+      return null
+    }
+
+    logger.info(`[PhaseManager] completeScoringStep: Player ${playerId} completed scoring, passing turn`)
+
+    // Clear scoring step
+    this.state.isScoringStep = false
+
+    // Pass turn to next player (who will start in Preparation phase)
+    return this.passTurnToNextPlayer('scoring_complete')
   }
 
   /**
