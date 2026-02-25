@@ -29,7 +29,7 @@ let serverGetCardAbilities: ((baseId: string) => ContentAbility[]) | null = null
 
 // Try to import from server content service (only works in Node.js environment)
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   const contentModule = require('../services/content.js')
   serverGetCardAbilities = contentModule.getCardAbilities
   console.log('[autoAbilities] Server getCardAbilities loaded from content service')

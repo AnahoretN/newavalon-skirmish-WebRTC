@@ -2,8 +2,8 @@
  * Common utility functions shared across the application
  */
 
-import type { PlayerColor } from '../types.js'
-import { PLAYER_COLOR_RGB } from '../constants.js'
+import type { PlayerColor } from '@/types'
+import { PLAYER_COLOR_RGB } from '@/constants'
 
 /**
  * Deep clone a GameState using structuredClone with fallback

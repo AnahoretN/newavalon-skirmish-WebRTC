@@ -201,6 +201,7 @@ export interface CardAbilityInfo {
  */
 export function updateReadyStatuses(
   context: ReadyUpdateContext,
+  // eslint-disable-next-line no-unused-vars
   getAbilityInfo: (card: Card) => CardAbilityInfo
 ): void {
   const { gameState, cards: specificCards } = context

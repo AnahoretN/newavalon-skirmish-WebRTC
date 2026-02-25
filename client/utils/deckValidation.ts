@@ -2,8 +2,8 @@
  * @file Deck validation utilities
  */
 
-import { getCardDefinition } from '../content'
-import type { CustomDeckFile } from '../types'
+import { getCardDefinition } from '@/content'
+import type { CustomDeckFile } from '@/types'
 
 export const MAX_DECK_SIZE = 60
 

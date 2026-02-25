@@ -5,9 +5,9 @@
  * Strict validation for security
  */
 
-import { getCardDefinition, getAllCards } from '../content'
-import { resources } from '../locales'
-import type { CustomDeckFile } from '../types'
+import { getCardDefinition, getAllCards } from '@/content'
+import { resources } from '@/locales'
+import type { CustomDeckFile } from '@/types'
 import { MAX_DECK_SIZE } from './deckValidation'
 
 export const MAX_LINE_LENGTH = 200

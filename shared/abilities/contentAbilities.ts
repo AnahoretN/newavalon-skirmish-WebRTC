@@ -37,8 +37,8 @@ export interface ContentAbility {
 export function buildFilterFromString(
   filter: string,
   ownerId: number,
-  coords: { row: number; col: number }
-): ((target: Card, r?: number, c?: number) => boolean) | undefined {
+  _coords: { row: number; col: number }
+): ((_target: Card, _r?: number, _c?: number) => boolean) | undefined {
   // hasStatus_StatusName
   if (filter.startsWith('hasStatus_')) {
     const statusType = filter.replace('hasStatus_', '')
@@ -211,7 +211,7 @@ export function buildActionFromContentAbility(
         payload: { tokenId: details.tokenId }
       } as AbilityAction
 
-    case 'ENTER_MODE':
+    case 'ENTER_MODE': {
       // Build the payload based on actionType and mode
       const payload: Record<string, any> = { ...details }
 
@@ -240,6 +240,7 @@ export function buildActionFromContentAbility(
         sourceCoords: coords,
         payload
       } as AbilityAction
+    }
 
     case 'PUSH':
       // Push is handled by RIOT_PUSH mode

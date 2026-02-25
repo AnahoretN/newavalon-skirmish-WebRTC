@@ -2007,8 +2007,8 @@ const AppInner = function AppInner() {
           abilityMode.sourceCard.name.includes('Michael Falk')
         )
         if (shouldShuffle) {
-          updateState(currentState => {
-            const player = currentState.players.find(p => p.id === viewingDiscardPlayer!.id)
+          updateState((currentState: any) => {
+            const player = currentState.players.find((p: any) => p.id === viewingDiscardPlayer!.id)
             if (player) {
               player.deck = shuffleDeck(player.deck)
             }
@@ -2716,7 +2716,7 @@ const AppInner = function AppInner() {
               abilityMode={abilityMode}
               scoringLines={gameState.scoringLines || []}
               activePlayerIdForScoring={gameState.activePlayerId}
-              clickWaves={clickWaves}
+              clickWaves={clickWaves as any}
               triggerClickWave={triggerClickWave}
               visualEffects={gameState.visualEffects}
               onCancelAllModes={handleCancelAllModes}

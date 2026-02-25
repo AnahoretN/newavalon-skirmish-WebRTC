@@ -14,6 +14,9 @@ import { logger } from '../utils/logger'
 import type { PersonalizedState } from '../p2p/SimpleP2PTypes'
 import { SimpleHost, SimpleGuest } from '../p2p'
 
+// Export type for use in other files
+export type ConnectionStatus = 'Connecting' | 'Connected' | 'Disconnected'
+
 // Тип для совместимости с существующим кодом
 interface UseGameStateResult {
   gameState: GameState
@@ -36,7 +39,7 @@ interface UseGameStateResult {
   sendFullDeckToHost: (playerId: number, deck: any[], deckLength: number) => void
   shareHostDeckWithGuests: (deck: any[], deckLength: number) => void
   isReconnecting: boolean
-  reconnectProgress: { step: number; total: number } | null
+  reconnectProgress: { attempt: number; maxAttempts: number; timeRemaining: number } | null
   setDummyPlayerCount: (count: number) => void
 
   // Ready check
@@ -49,11 +52,11 @@ interface UseGameStateResult {
   assignTeams: (teams: any) => void
 
   // Player actions
-  updatePlayerName: (name: string) => void
-  changePlayerColor: (color: any) => void
+  updatePlayerName: (playerId: number, name: string) => void
+  changePlayerColor: (playerId: number, color: any) => void
   updatePlayerScore: (playerId: number, delta: number) => void
-  changePlayerDeck: (deck: any) => void
-  loadCustomDeck: (deckFile: any) => void
+  changePlayerDeck: (playerId: number, deck: any) => void
+  loadCustomDeck: (playerId: number, deckFile: any) => void
 
   // Card actions
   drawCard: (playerId?: number) => void
@@ -61,29 +64,29 @@ interface UseGameStateResult {
   handleDrop: (item: DragItem, target: any) => void
   moveItem: (item: any, target: any) => void
   updateState: (stateOrFn: any) => void
-  shufflePlayerDeck: () => void
+  shufflePlayerDeck: (playerId?: number) => void
 
   // Status effects
-  addBoardCardStatus: (coords: any, status: any) => void
+  addBoardCardStatus: (coords: any, status: any, playerId?: number) => void
   removeBoardCardStatus: (coords: any, status: any) => void
   removeBoardCardStatusByOwner: (ownerId: number) => void
   modifyBoardCardPower: (coords: any, delta: number) => void
-  addAnnouncedCardStatus: (status: any) => void
-  removeAnnouncedCardStatus: (status: any) => void
-  modifyAnnouncedCardPower: (delta: number) => void
-  addHandCardStatus: (playerId: number, cardIndex: number, status: any) => void
+  addAnnouncedCardStatus: (playerId: number, status: any, addedByPlayerId?: number) => void
+  removeAnnouncedCardStatus: (playerId: number, status: any) => void
+  modifyAnnouncedCardPower: (playerId: number, delta: number) => void
+  addHandCardStatus: (playerId: number, cardIndex: number, status: any, addedByPlayerId?: number) => void
   removeHandCardStatus: (playerId: number, cardIndex: number, status: any) => void
   flipBoardCard: (coords: any) => void
   flipBoardCardFaceDown: (coords: any) => void
-  revealHandCard: (playerId: number, cardIndex: number) => void
-  revealBoardCard: (coords: any) => void
+  revealHandCard: (playerId: number, cardIndex: number, to?: 'all' | number) => void
+  revealBoardCard: (coords: any, to?: 'all' | number) => void
   requestCardReveal: (request: any, requesterPlayerId?: number) => void
-  respondToRevealRequest: (accept: boolean) => void
+  respondToRevealRequest: (requesterPlayerId: number, accept: boolean) => void
 
   // Game lifecycle
   syncGame: () => void
   toggleActivePlayer: () => void
-  toggleAutoDraw: () => void
+  toggleAutoDraw: (playerId: number, enabled: boolean) => void
   forceReconnect: () => Promise<void>
 
   // Visual effects
@@ -126,7 +129,7 @@ interface UseGameStateResult {
   transferStatus: (from: any, to: any, type: string) => void
   transferAllCounters: (from: any, to: any) => void
   transferAllStatusesWithoutException: (from: any, to: any) => void
-  recoverDiscardedCard: (playerId: number) => void
+  recoverDiscardedCard: (playerId: number, cardIndex: number) => void
   resurrectDiscardedCard: (playerId: number) => void
   spawnToken: (token: any) => void
 
@@ -135,7 +138,7 @@ interface UseGameStateResult {
   resetDeployStatus: () => void
   removeStatusByType: (coords: { row: number; col: number }, type: string) => void
   reorderTopDeck: (playerId: number, newTopCards: any[]) => void
-  reorderCards: (playerId: number, newOrder: any[]) => void
+  reorderCards: (playerId: number, newOrder: any[], source?: string) => void
 
   // WebRTC
   webrtcHostId: string | null
@@ -376,32 +379,32 @@ export function useGameState(props: any = {}): UseGameStateResult {
   // ============================================================================
   // Игровые действия
   // ============================================================================
-  const updatePlayerName = useCallback((name: string) => {
-    sendAction('CHANGE_PLAYER_NAME', { name })
+  const updatePlayerName = useCallback((playerId: number, name: string) => {
+    sendAction('CHANGE_PLAYER_NAME', { playerId, name })
     // Локальное обновление для мгновенного отклика
     setGameState((prev: GameState) => ({
       ...prev,
       players: prev.players.map(p =>
-        p.id === localPlayerId ? { ...p, name } : p
+        p.id === playerId ? { ...p, name } : p
       )
     }))
-  }, [sendAction, localPlayerId])
+  }, [sendAction])
 
-  const changePlayerColor = useCallback((color: any) => {
-    sendAction('CHANGE_PLAYER_COLOR', { color })
+  const changePlayerColor = useCallback((playerId: number, color: any) => {
+    sendAction('CHANGE_PLAYER_COLOR', { playerId, color })
   }, [sendAction])
 
   const updatePlayerScore = useCallback((playerId: number, delta: number) => {
     sendAction('UPDATE_SCORE', { playerId, delta })
   }, [sendAction])
 
-  const changePlayerDeck = useCallback((deck: any) => {
-    sendAction('CHANGE_PLAYER_DECK', { deck })
+  const changePlayerDeck = useCallback((playerId: number, deck: any) => {
+    sendAction('CHANGE_PLAYER_DECK', { playerId, deck })
   }, [sendAction])
 
-  const loadCustomDeck = useCallback((deckFile: any) => {
-    // TODO
-  }, [])
+  const loadCustomDeck = useCallback((playerId: number, deckFile: any) => {
+    sendAction('LOAD_CUSTOM_DECK', { playerId, deckFile })
+  }, [sendAction])
 
   const drawCard = useCallback((playerId?: number) => {
     sendAction('DRAW_CARD')
@@ -518,8 +521,8 @@ export function useGameState(props: any = {}): UseGameStateResult {
     }
   }, [])
 
-  const shufflePlayerDeck = useCallback(() => {
-    sendAction('SHUFFLE_DECK')
+  const shufflePlayerDeck = useCallback((playerId?: number) => {
+    sendAction('SHUFFLE_DECK', { playerId })
   }, [sendAction])
 
   // ============================================================================
@@ -574,6 +577,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
     return {
       useVisualEffects: (props: any) => {
         if (!hook) {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
           hook = require('../useVisualEffects').useVisualEffects
         }
         return hook(props)
@@ -613,12 +617,20 @@ export function useGameState(props: any = {}): UseGameStateResult {
   // ============================================================================
   // Status effects (заглушки)
   // ============================================================================
-  const addBoardCardStatus = useCallback(() => {}, [])
-  const removeBoardCardStatus = useCallback(() => {}, [])
+  const addBoardCardStatus = useCallback((coords: any, status: any, playerId?: number) => {
+    sendAction('ADD_BOARD_STATUS', { coords, status, playerId })
+  }, [sendAction])
+  const removeBoardCardStatus = useCallback((coords: any, status: any) => {
+    sendAction('REMOVE_BOARD_STATUS', { coords, status })
+  }, [sendAction])
   const removeBoardCardStatusByOwner = useCallback(() => {}, [])
   const modifyBoardCardPower = useCallback(() => {}, [])
-  const addAnnouncedCardStatus = useCallback(() => {}, [])
-  const removeAnnouncedCardStatus = useCallback(() => {}, [])
+  const addAnnouncedCardStatus = useCallback((playerId: number, status: any, addedByPlayerId?: number) => {
+    sendAction('ADD_ANNOUNCED_STATUS', { playerId, status, addedByPlayerId })
+  }, [sendAction])
+  const removeAnnouncedCardStatus = useCallback((playerId: number, status: any) => {
+    sendAction('REMOVE_ANNOUNCED_STATUS', { playerId, status })
+  }, [sendAction])
   const modifyAnnouncedCardPower = useCallback(() => {}, [])
   const addHandCardStatus = useCallback(() => {}, [])
   const removeHandCardStatus = useCallback(() => {}, [])
@@ -626,15 +638,21 @@ export function useGameState(props: any = {}): UseGameStateResult {
   const flipBoardCardFaceDown = useCallback(() => {}, [])
   const revealHandCard = useCallback(() => {}, [])
   const revealBoardCard = useCallback(() => {}, [])
-  const requestCardReveal = useCallback(() => {}, [])
-  const respondToRevealRequest = useCallback(() => {}, [])
+  const requestCardReveal = useCallback((request: any, requesterPlayerId?: number) => {
+    sendAction('REQUEST_CARD_REVEAL', { request, requesterPlayerId })
+  }, [sendAction])
+  const respondToRevealRequest = useCallback((requesterPlayerId: number, accept: boolean) => {
+    sendAction('RESPOND_REVEAL_REQUEST', { requesterPlayerId, accept })
+  }, [sendAction])
 
   // ============================================================================
   // Game lifecycle
   // ============================================================================
   const syncGame = useCallback(() => {}, [])
   const toggleActivePlayer = useCallback(() => {}, [])
-  const toggleAutoDraw = useCallback(() => {}, [])
+  const toggleAutoDraw = useCallback((playerId: number, enabled: boolean) => {
+    sendAction('TOGGLE_AUTO_DRAW', { playerId, enabled })
+  }, [sendAction])
   const forceReconnect = useCallback(async () => {
     if (guestRef.current) {
       await guestRef.current.reconnect()
@@ -653,7 +671,9 @@ export function useGameState(props: any = {}): UseGameStateResult {
   const transferStatus = useCallback(() => {}, [])
   const transferAllCounters = useCallback(() => {}, [])
   const transferAllStatusesWithoutException = useCallback(() => {}, [])
-  const recoverDiscardedCard = useCallback(() => {}, [])
+  const recoverDiscardedCard = useCallback((playerId: number, cardIndex: number) => {
+    sendAction('RECOVER_DISCARDED', { playerId, cardIndex })
+  }, [sendAction])
   const resurrectDiscardedCard = useCallback(() => {}, [])
   const spawnToken = useCallback(() => {}, [])
 

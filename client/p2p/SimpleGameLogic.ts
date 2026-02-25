@@ -211,7 +211,7 @@ function canPlayerAct(
 
   // Dummy игроков могут контролировать все
   const player = state.players.find(p => p.id === playerId)
-  if (player?.isDummy) return true
+  if (player?.isDummy) {return true}
 
   // Все остальные действия могут выполнять любые игроки
   // (карты можно перемещать в любой ход, фазы может переключать любой игрок)
@@ -320,7 +320,7 @@ function handlePreviousPhase(state: GameState, playerId: number): GameState {
  */
 function handlePassTurn(state: GameState, playerId: number, reason: string): GameState {
   const activePlayerIds = getActivePlayerIds(state.players)
-  if (activePlayerIds.length === 0) return state
+  if (activePlayerIds.length === 0) {return state}
 
   const currentIndex = activePlayerIds.indexOf(state.activePlayerId || 1)
   const nextIndex = (currentIndex + 1) % activePlayerIds.length
@@ -386,7 +386,7 @@ function executePreparationPhase(state: GameState, activePlayerId: number): Game
   let newState = { ...state }
   const player = newState.players.find(p => p.id === activePlayerId)
 
-  if (!player) return state
+  if (!player) {return state}
 
   console.log('[executePreparationPhase] Player', activePlayerId, 'autoDraw:', state.autoDrawEnabled, 'deckSize:', player.deck?.length || 0)
 
@@ -428,12 +428,12 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
   const { cardIndex, boardCoords, faceDown = false } = data || {}
   const player = state.players.find(p => p.id === playerId)
 
-  if (!player || !boardCoords) return state
+  if (!player || !boardCoords) {return state}
 
   const cardIndexNum = cardIndex ?? player.hand.length - 1
   const card = player.hand[cardIndexNum]
 
-  if (!card) return state
+  if (!card) {return state}
 
   // Убираем карту из руки
   const newHand = [...player.hand]
@@ -518,7 +518,7 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
 function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): GameState {
   const { cardId, fromCoords, toCoords, faceDown } = data || {}
 
-  if (!fromCoords || !toCoords) return state
+  if (!fromCoords || !toCoords) {return state}
 
   const fromRow = fromCoords.row
   const fromCol = fromCoords.col
@@ -527,16 +527,16 @@ function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): G
 
   // Проверяем границы
   const gridSize = state.activeGridSize
-  if (fromRow < 0 || fromRow >= gridSize || fromCol < 0 || fromCol >= gridSize) return state
-  if (toRow < 0 || toRow >= gridSize || toCol < 0 || toCol >= gridSize) return state
+  if (fromRow < 0 || fromRow >= gridSize || fromCol < 0 || fromCol >= gridSize) {return state}
+  if (toRow < 0 || toRow >= gridSize || toCol < 0 || toCol >= gridSize) {return state}
 
   // Проверяем что исходная клетка содержит карту
   const sourceCard = state.board[fromRow]?.[fromCol]?.card
-  if (!sourceCard) return state
+  if (!sourceCard) {return state}
 
   // Проверяем что целевая клетка пуста
   const targetCell = state.board[toRow]?.[toCol]
-  if (!targetCell || targetCell.card) return state
+  if (!targetCell || targetCell.card) {return state}
 
   // Перемещаем карту
   const newBoard = state.board.map((row, r) =>
@@ -575,7 +575,7 @@ function handleMoveCard(state: GameState, playerId: number, data: any): GameStat
  */
 function handleReturnCardToHand(state: GameState, playerId: number, data: any): GameState {
   const { cardId } = data || {}
-  if (!cardId) return state
+  if (!cardId) {return state}
 
   let cardToReturn: Card | null = null
   let sourceCoords: { row: number; col: number } | null = null
@@ -592,7 +592,7 @@ function handleReturnCardToHand(state: GameState, playerId: number, data: any): 
     })
   )
 
-  if (!cardToReturn || !sourceCoords) return state
+  if (!cardToReturn || !sourceCoords) {return state}
 
   // Добавляем в руку владельцу
   const ownerId = cardToReturn.ownerId || playerId
@@ -619,7 +619,7 @@ function handleReturnCardToHand(state: GameState, playerId: number, data: any): 
  */
 function handleMoveCardToHand(state: GameState, playerId: number, data: any): GameState {
   const { cardId, source } = data || {}
-  if (!cardId) return state
+  if (!cardId) {return state}
 
   let cardToMove: Card | null = null
   let targetPlayerId = playerId
@@ -639,16 +639,16 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
     )
   } else if (source === 'discard') {
     const player = state.players.find(p => p.id === playerId)
-    if (!player) return state
+    if (!player) {return state}
     const cardIndex = player.discard?.findIndex(c => c.id === cardId)
-    if (cardIndex === undefined || cardIndex === -1) return state
+    if (cardIndex === undefined || cardIndex === -1) {return state}
     cardToMove = player.discard[cardIndex]
     targetPlayerId = playerId
     newDiscard = [...player.discard]
     newDiscard.splice(cardIndex, 1)
   }
 
-  if (!cardToMove) return state
+  if (!cardToMove) {return state}
 
   const newPlayers = state.players.map(p => {
     if (p.id === targetPlayerId) {
@@ -669,7 +669,7 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
  */
 function handleMoveCardToDeck(state: GameState, playerId: number, data: any): GameState {
   const { cardId, source } = data || {}
-  if (!cardId) return state
+  if (!cardId) {return state}
 
   let cardToMove: Card | null = null
   let targetPlayerId = playerId
@@ -690,25 +690,25 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
     )
   } else if (source === 'hand') {
     const player = state.players.find(p => p.id === playerId)
-    if (!player) return state
+    if (!player) {return state}
     const cardIndex = player.hand?.findIndex(c => c.id === cardId)
-    if (cardIndex === undefined || cardIndex === -1) return state
+    if (cardIndex === undefined || cardIndex === -1) {return state}
     cardToMove = player.hand[cardIndex]
     targetPlayerId = playerId
     newHand = [...player.hand]
     newHand.splice(cardIndex, 1)
   } else if (source === 'discard') {
     const player = state.players.find(p => p.id === playerId)
-    if (!player) return state
+    if (!player) {return state}
     const cardIndex = player.discard?.findIndex(c => c.id === cardId)
-    if (cardIndex === undefined || cardIndex === -1) return state
+    if (cardIndex === undefined || cardIndex === -1) {return state}
     cardToMove = player.discard[cardIndex]
     targetPlayerId = playerId
     newDiscard = [...player.discard]
     newDiscard.splice(cardIndex, 1)
   }
 
-  if (!cardToMove) return state
+  if (!cardToMove) {return state}
 
   const newPlayers = state.players.map(p => {
     if (p.id === targetPlayerId) {
@@ -716,7 +716,7 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
       return { ...p, deck: newDeck, deckSize: newDeck.length }
     }
     if (p.id === playerId) {
-      let updates: any = {}
+      const updates: any = {}
       if (newHand !== null) {
         updates.hand = newHand
         updates.handSize = newHand.length
@@ -738,7 +738,7 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
  */
 function handleMoveCardToDiscard(state: GameState, playerId: number, data: any): GameState {
   const { cardId, source } = data || {}
-  if (!cardId) return state
+  if (!cardId) {return state}
 
   let cardToMove: Card | null = null
   let targetPlayerId = playerId
@@ -759,25 +759,25 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
     )
   } else if (source === 'hand') {
     const player = state.players.find(p => p.id === playerId)
-    if (!player) return state
+    if (!player) {return state}
     const cardIndex = player.hand?.findIndex(c => c.id === cardId)
-    if (cardIndex === undefined || cardIndex === -1) return state
+    if (cardIndex === undefined || cardIndex === -1) {return state}
     cardToMove = player.hand[cardIndex]
     targetPlayerId = playerId
     newHand = [...player.hand]
     newHand.splice(cardIndex, 1)
   } else if (source === 'deck') {
     const player = state.players.find(p => p.id === playerId)
-    if (!player) return state
+    if (!player) {return state}
     const cardIndex = player.deck?.findIndex(c => c.id === cardId)
-    if (cardIndex === undefined || cardIndex === -1) return state
+    if (cardIndex === undefined || cardIndex === -1) {return state}
     cardToMove = player.deck[cardIndex]
     targetPlayerId = playerId
     newDeck = [...player.deck]
     newDeck.splice(cardIndex, 1)
   }
 
-  if (!cardToMove) return state
+  if (!cardToMove) {return state}
 
   const newPlayers = state.players.map(p => {
     if (p.id === targetPlayerId) {
@@ -785,7 +785,7 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
       return { ...p, discard: newDiscard, discardSize: newDiscard.length }
     }
     if (p.id === playerId) {
-      let updates: any = {}
+      const updates: any = {}
       if (newHand !== null) {
         updates.hand = newHand
         updates.handSize = newHand.length
@@ -857,7 +857,7 @@ function handleMoveHandCardToDiscard(state: GameState, playerId: number, data: a
  */
 function handleMoveAnnouncedToHand(state: GameState, playerId: number, data: any): GameState {
   const player = state.players.find(p => p.id === playerId)
-  if (!player || !player.announcedCard) return state
+  if (!player || !player.announcedCard) {return state}
 
   const cardToMove = player.announcedCard
   const newHand = [...player.hand, cardToMove]
@@ -876,7 +876,7 @@ function handleMoveAnnouncedToHand(state: GameState, playerId: number, data: any
  */
 function handleMoveAnnouncedToDeck(state: GameState, playerId: number, data: any): GameState {
   const player = state.players.find(p => p.id === playerId)
-  if (!player || !player.announcedCard) return state
+  if (!player || !player.announcedCard) {return state}
 
   const cardToMove = player.announcedCard
   const newDeck = [cardToMove, ...player.deck]
@@ -895,7 +895,7 @@ function handleMoveAnnouncedToDeck(state: GameState, playerId: number, data: any
  */
 function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, data: any): GameState {
   const player = state.players.find(p => p.id === playerId)
-  if (!player || !player.announcedCard) return state
+  if (!player || !player.announcedCard) {return state}
 
   const cardToMove = player.announcedCard
   const newDiscard = [...player.discard, cardToMove]
@@ -916,12 +916,12 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
   const { row, col, faceDown = false } = data || {}
   const player = state.players.find(p => p.id === playerId)
 
-  if (!player || !player.announcedCard) return state
-  if (row === undefined || col === undefined) return state
-  if (row < 0 || row >= state.activeGridSize || col < 0 || col >= state.activeGridSize) return state
+  if (!player || !player.announcedCard) {return state}
+  if (row === undefined || col === undefined) {return state}
+  if (row < 0 || row >= state.activeGridSize || col < 0 || col >= state.activeGridSize) {return state}
 
   // Проверяем, что клетка пуста
-  if (state.board[row]?.[col]?.card) return state
+  if (state.board[row]?.[col]?.card) {return state}
 
   const cardToPlay = { ...player.announcedCard, isFaceDown: faceDown }
 
@@ -952,10 +952,10 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
   const { cardIndex } = data || {}
   const player = state.players.find(p => p.id === playerId)
 
-  if (!player || cardIndex === undefined) return state
+  if (!player || cardIndex === undefined) {return state}
 
   const card = player.hand[cardIndex]
-  if (!card) return state
+  if (!card) {return state}
 
   // Сначала убираем LastPlayed статус со ВСЕХ карт игрока на доске
   // (только одна карта может иметь LastPlayed статус одновременно)
@@ -1011,7 +1011,7 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
  */
 function handleDestroyCard(state: GameState, playerId: number, data: any): GameState {
   const { cardId } = data || {}
-  if (!cardId) return state
+  if (!cardId) {return state}
 
   let destroyedCard: Card | null = null
   let ownerId: number | null = null
@@ -1029,7 +1029,7 @@ function handleDestroyCard(state: GameState, playerId: number, data: any): GameS
     })
   )
 
-  if (!destroyedCard || !ownerId) return state
+  if (!destroyedCard || !ownerId) {return state}
 
   // Проверяем, была ли это последняя сыгранная карта владельца
   const owner = state.players.find(p => p.id === ownerId)
@@ -1103,12 +1103,12 @@ function handleDestroyCard(state: GameState, playerId: number, data: any): GameS
  */
 function handleDrawCard(state: GameState, playerId: number): GameState {
   const player = state.players.find(p => p.id === playerId)
-  if (!player || !player.deck || player.deck.length === 0) return state
+  if (!player || !player.deck || player.deck.length === 0) {return state}
 
   const newDeck = [...player.deck]
   const card = newDeck.shift()
 
-  if (!card) return state
+  if (!card) {return state}
 
   const newPlayers = state.players.map(p =>
     p.id === playerId
@@ -1130,7 +1130,7 @@ function handleDrawCard(state: GameState, playerId: number): GameState {
  */
 function handleShuffleDeck(state: GameState, playerId: number): GameState {
   const player = state.players.find(p => p.id === playerId)
-  if (!player) return state
+  if (!player) {return state}
 
   const newDeck = shuffleDeck([...player.deck])
 
@@ -1189,10 +1189,11 @@ function handleChangePlayerColor(state: GameState, playerId: number, color: any)
  */
 function handleChangePlayerDeck(state: GameState, playerId: number, deckType: DeckType): GameState {
   // Импортируем здесь, чтобы избежать циклических зависимостей
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { createDeck } = require('../hooks/core/gameCreators')
 
   const player = state.players.find(p => p.id === playerId)
-  if (!player) return state
+  if (!player) {return state}
 
   // Создаём новую колоду
   const newDeck = createDeck(deckType, playerId, player.name)
@@ -1216,7 +1217,7 @@ function handleChangePlayerDeck(state: GameState, playerId: number, deckType: De
  * START_SCORING - начать фазу скоринга
  */
 function handleStartScoring(state: GameState, playerId: number): GameState {
-  if (state.currentPhase !== 3) return state
+  if (state.currentPhase !== 3) {return state}
 
   // Используем enterScoringPhase для правильного расчёта линий
   return enterScoringPhase(state, playerId)
@@ -1226,10 +1227,10 @@ function handleStartScoring(state: GameState, playerId: number): GameState {
  * SELECT_SCORING_LINE - выбрать линию для скоринга
  */
 function handleSelectScoringLine(state: GameState, playerId: number, data: any): GameState {
-  if (!state.isScoringStep || state.activePlayerId !== playerId) return state
+  if (!state.isScoringStep || state.activePlayerId !== playerId) {return state}
 
   const { lineType, lineIndex } = data || {}
-  if (!lineType) return state
+  if (!lineType) {return state}
 
   // Вычисляем очки на основе карт в линии
   const points = calculateLineScore(state, playerId, lineType, lineIndex)
@@ -1243,7 +1244,7 @@ function handleSelectScoringLine(state: GameState, playerId: number, data: any):
   )
 
   // Передаём ход
-  let newState = {
+  const newState = {
     ...state,
     players: newPlayers,
     isScoringStep: false,
@@ -1260,7 +1261,7 @@ function handleSelectScoringLine(state: GameState, playerId: number, data: any):
  */
 function calculateLineScore(state: GameState, playerId: number, lineType: string, lineIndex?: number): number {
   const gridSize = state.activeGridSize
-  let cellsToCheck: { row: number; col: number }[] = []
+  const cellsToCheck: { row: number; col: number }[] = []
 
   if (lineType === 'row' && lineIndex !== undefined) {
     // Горизонтальная линия
@@ -1307,7 +1308,7 @@ export function findScoringLinesWithPlayerCard(
   playerId: number
 ): Array<{ type: string; index?: number; cells: { row: number; col: number }[] }> {
   const player = state.players.find(p => p.id === playerId)
-  if (!player) return []
+  if (!player) {return []}
 
   // Ищем координаты последней сыгранной карты
   let lastPlayedCoords: { row: number; col: number } | null = null
@@ -1322,7 +1323,7 @@ export function findScoringLinesWithPlayerCard(
           break
         }
       }
-      if (lastPlayedCoords) break
+      if (lastPlayedCoords) {break}
     }
   }
 
@@ -1336,12 +1337,12 @@ export function findScoringLinesWithPlayerCard(
           break
         }
       }
-      if (lastPlayedCoords) break
+      if (lastPlayedCoords) {break}
     }
   }
 
   // Если не нашли ни одной карты - нет линий для скоринга
-  if (!lastPlayedCoords) return []
+  if (!lastPlayedCoords) {return []}
 
   const { row, col } = lastPlayedCoords
   const lines: Array<{ type: string; index?: number; cells: { row: number; col: number }[] }> = []
@@ -1522,7 +1523,7 @@ function startGame(state: GameState): GameState {
 
   // Раздаём начальные руки (6 карт каждому)
   const newPlayers = state.players.map(p => {
-    if (p.isDummy || p.isSpectator || p.isDisconnected) return p
+    if (p.isDummy || p.isSpectator || p.isDisconnected) {return p}
 
     const hand: Card[] = []
     const deck = [...p.deck]
@@ -1667,7 +1668,7 @@ function checkMatchWinner(existingWins: Record<number, number[]>, newWinners: nu
 
   // Проверяем кто выиграл 2 раунда
   for (const [id, count] of Object.entries(winCounts)) {
-    if (count >= 2) return parseInt(id)
+    if (count >= 2) {return parseInt(id)}
   }
 
   return null

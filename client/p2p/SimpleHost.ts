@@ -506,7 +506,7 @@ export class SimpleHost {
    */
   private getPeerIdForPlayer(playerId: number): string | null {
     for (const [peerId, pid] of this.peerIdToPlayerId.entries()) {
-      if (pid === playerId) return peerId
+      if (pid === playerId) {return peerId}
     }
     return null
   }

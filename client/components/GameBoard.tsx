@@ -112,7 +112,7 @@ const GridCell = memo<{
       // Scoring lines highlight - show cells that are part of scoring lines
       // MUST be declared before handleClick since handleClick uses it
       const scoringLineInfo = useMemo(() => {
-        if (!scoringLines || scoringLines.length === 0) return null
+        if (!scoringLines || scoringLines.length === 0) {return null}
         // Check if this cell is part of any scoring line (only row and col for now)
         for (const line of scoringLines) {
           const inLine =

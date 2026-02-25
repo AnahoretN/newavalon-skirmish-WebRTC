@@ -10,13 +10,13 @@
  * - createInitialState - создание начального состояния игры
  */
 
-import { DeckType, GameMode as GameModeEnum } from '../../types'
-import type { Card, Player, GameState } from '../../types'
-import { PLAYER_COLOR_NAMES } from '../../constants'
-import { getDecksData } from '../../content'
+import { DeckType, GameMode as GameModeEnum } from '@/types'
+import type { Card, Player, GameState } from '@/types'
+import { PLAYER_COLOR_NAMES } from '@/constants'
+import { getDecksData } from '@/content'
 import { shuffleDeck } from '@shared/utils/array'
 import { createInitialBoard } from '@shared/utils/boardUtils'
-import { logger } from '../../utils/logger'
+import { logger } from '@/utils/logger'
 
 /**
  * Generate a random game ID

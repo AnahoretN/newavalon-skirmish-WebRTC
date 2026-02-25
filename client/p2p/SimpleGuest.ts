@@ -101,7 +101,7 @@ export class SimpleGuest {
    * Подключиться к хосту (инициатива от гостя)
    */
   private connectToHost(hostPeerId: string): void {
-    if (!this.peer) return
+    if (!this.peer) {return}
 
     logger.info('[SimpleGuest] Connecting to host:', hostPeerId)
 
@@ -233,13 +233,13 @@ export class SimpleGuest {
    * Найти локальный playerId в состоянии
    */
   private findLocalPlayerId(): number {
-    if (!this.state) return this.localPlayerId
+    if (!this.state) {return this.localPlayerId}
 
     // Пытаемся найти по токену
     const token = localStorage.getItem('player_token')
     if (token) {
       const player = this.state.players.find((p: any) => p.playerToken === token)
-      if (player) return player.id
+      if (player) {return player.id}
     }
 
     return this.localPlayerId
