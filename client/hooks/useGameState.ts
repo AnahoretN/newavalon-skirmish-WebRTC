@@ -27,8 +27,17 @@ interface UseGameStateResult {
   // Game creation
   createGame: () => Promise<string>
   joinGameViaModal: (gameCode: string) => Promise<number>
-  joinAsInvite: (hostPeerId: string) => Promise<number>
+  joinAsInvite: (gameId: string, playerName?: string) => Promise<number>
   exitGame: () => void
+  // Additional WebRTC compatibility props (stubs)
+  initializeWebrtcHost: () => Promise<string>
+  connectAsGuest: (hostId: string) => Promise<boolean>
+  requestDeckView: (playerId: number) => void
+  sendFullDeckToHost: (playerId: number, deck: any[], deckLength: number) => void
+  shareHostDeckWithGuests: (deck: any[], deckLength: number) => void
+  isReconnecting: boolean
+  reconnectProgress: { step: number; total: number } | null
+  setDummyPlayerCount: (count: number) => void
 
   // Ready check
   playerReady: () => void
@@ -42,7 +51,7 @@ interface UseGameStateResult {
   // Player actions
   updatePlayerName: (name: string) => void
   changePlayerColor: (color: any) => void
-  updatePlayerScore: (delta: number) => void
+  updatePlayerScore: (playerId: number, delta: number) => void
   changePlayerDeck: (deck: any) => void
   loadCustomDeck: (deckFile: any) => void
 
@@ -68,7 +77,7 @@ interface UseGameStateResult {
   flipBoardCardFaceDown: (coords: any) => void
   revealHandCard: (playerId: number, cardIndex: number) => void
   revealBoardCard: (coords: any) => void
-  requestCardReveal: (request: any) => void
+  requestCardReveal: (request: any, requesterPlayerId?: number) => void
   respondToRevealRequest: (accept: boolean) => void
 
   // Game lifecycle
@@ -78,45 +87,45 @@ interface UseGameStateResult {
   forceReconnect: () => Promise<void>
 
   // Visual effects
-  triggerHighlight: (highlight: HighlightData) => void
+  triggerHighlight: (highlight: Omit<HighlightData, 'timestamp'>) => void
   latestHighlight: HighlightData | null
-  triggerNoTarget: (coords: any) => void
-  latestNoTarget: { coords: any; timestamp: number } | null
-  triggerDeckSelection: (data: DeckSelectionData) => void
-  triggerHandCardSelection: (data: HandCardSelectionData) => void
-  triggerClickWave: (data: any) => void
-  clickWaves: any[]
-  triggerFloatingText: (data: FloatingTextData) => void
+  triggerNoTarget: (coords: { row: number; col: number }) => void
+  latestNoTarget: { coords: { row: number; col: number }; timestamp: number } | null
+  triggerDeckSelection: (playerId: number, selectedByPlayerId: number) => void
+  triggerHandCardSelection: (playerId: number, cardIndex: number, selectedByPlayerId: number) => void
+  triggerClickWave: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void
+  clickWaves: Array<{ timestamp: number; location: 'board' | 'hand' | 'deck'; boardCoords?: { row: number; col: number }; handTarget?: { playerId: number, cardIndex: number }; clickedByPlayerId: number; playerColor: string }>
+  triggerFloatingText: (data: Omit<FloatingTextData, 'timestamp'> | Omit<FloatingTextData, 'timestamp'>[]) => void
   latestFloatingTexts: FloatingTextData[]
-  latestDeckSelections: DeckSelectionData[]
-  latestHandCardSelections: HandCardSelectionData[]
-  syncValidTargets: (validTargets: any[]) => void
+  latestDeckSelections: Array<{ playerId: number; selectedByPlayerId: number; timestamp: number }>
+  latestHandCardSelections: Array<{ playerId: number; cardIndex: number; selectedByPlayerId: number; timestamp: number }>
+  syncValidTargets: (options: { validHandTargets?: {playerId: number, cardIndex: number}[]; isDeckSelectable?: boolean }) => void
 
   // Targeting
-  setTargetingMode: (mode: any) => void
+  setTargetingMode: (action: any, playerId: number, sourceCoords?: { row: number; col: number }, preCalculatedTargets?: {row: number, col: number}[], commandContext?: any, preCalculatedHandTargets?: {playerId: number, cardIndex: number}[]) => void
   clearTargetingMode: () => void
 
   // Phase management
-  nextPhase: () => void
+  nextPhase: (forceTurnPass?: boolean) => void
   prevPhase: () => void
   setPhase: (phase: number) => void
   passTurn: () => void
-  markAbilityUsed: () => void
+  markAbilityUsed: (coords: any, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void
 
   // Scoring
-  scoreLine: (line: any) => void
-  scoreDiagonal: (playerId: number) => void
+  scoreLine: (r1: number, c1: number, r2: number, c2: number, playerId: number) => void
+  scoreDiagonal: (r1: number, c1: number, r2: number, c2: number, playerId: number, bonusType?: 'point_per_support' | 'draw_per_support') => void
   selectScoringLine: (lineType: string, lineIndex?: number) => void
   closeRoundEndModal: () => void
   closeRoundEndModalOnly: () => void
 
   // Card manipulation
-  destroyCard: (cardId: string) => void
-  applyGlobalEffect: (effect: any) => void
-  swapCards: (card1: any, card2: any) => void
-  transferStatus: (cardId: string, status: any) => void
-  transferAllCounters: (cardId: string, toCardId: string) => void
-  transferAllStatusesWithoutException: (cardId: string, exception: string) => void
+  destroyCard: (card: Card, boardCoords: { row: number; col: number }) => void
+  applyGlobalEffect: (source: any, targets: any[], type: string, playerId: number, isDeploy: boolean) => void
+  swapCards: (c1: any, c2: any) => void
+  transferStatus: (from: any, to: any, type: string) => void
+  transferAllCounters: (from: any, to: any) => void
+  transferAllStatusesWithoutException: (from: any, to: any) => void
   recoverDiscardedCard: (playerId: number) => void
   resurrectDiscardedCard: (playerId: number) => void
   spawnToken: (token: any) => void
@@ -124,9 +133,9 @@ interface UseGameStateResult {
   // Game reset
   resetGame: () => void
   resetDeployStatus: () => void
-  removeStatusByType: (type: string) => void
-  reorderTopDeck: (playerId: number) => void
-  reorderCards: (playerId: number, newOrder: Card[]) => void
+  removeStatusByType: (coords: { row: number; col: number }, type: string) => void
+  reorderTopDeck: (playerId: number, newTopCards: any[]) => void
+  reorderCards: (playerId: number, newOrder: any[]) => void
 
   // WebRTC
   webrtcHostId: string | null
@@ -320,8 +329,9 @@ export function useGameState(props: any = {}): UseGameStateResult {
     }
   }, [])
 
-  const joinAsInvite = useCallback((hostPeerId: string) => {
-    return joinGameViaModal(hostPeerId)
+  const joinAsInvite = useCallback((gameId: string, playerName?: string) => {
+    // For invite join, we treat gameId as hostPeerId for now
+    return joinGameViaModal(gameId)
   }, [joinGameViaModal])
 
   // ============================================================================
@@ -381,8 +391,8 @@ export function useGameState(props: any = {}): UseGameStateResult {
     sendAction('CHANGE_PLAYER_COLOR', { color })
   }, [sendAction])
 
-  const updatePlayerScore = useCallback((delta: number) => {
-    sendAction('UPDATE_SCORE', { delta })
+  const updatePlayerScore = useCallback((playerId: number, delta: number) => {
+    sendAction('UPDATE_SCORE', { playerId, delta })
   }, [sendAction])
 
   const changePlayerDeck = useCallback((deck: any) => {
@@ -515,8 +525,8 @@ export function useGameState(props: any = {}): UseGameStateResult {
   // ============================================================================
   // Фазовые действия
   // ============================================================================
-  const nextPhase = useCallback(() => {
-    sendAction('NEXT_PHASE')
+  const nextPhase = useCallback((forceTurnPass?: boolean) => {
+    sendAction('NEXT_PHASE', { forceTurnPass })
   }, [sendAction])
 
   const prevPhase = useCallback(() => {
@@ -534,17 +544,17 @@ export function useGameState(props: any = {}): UseGameStateResult {
   // ============================================================================
   // Счёт
   // ============================================================================
-  const scoreLine = useCallback((line: any) => {
-    sendAction('SELECT_SCORING_LINE', { line })
+  const scoreLine = useCallback((r1: number, c1: number, r2: number, c2: number, playerId: number) => {
+    sendAction('SELECT_SCORING_LINE', { r1, c1, r2, c2, playerId })
   }, [sendAction])
 
   const selectScoringLine = useCallback((lineType: string, lineIndex?: number) => {
     sendAction('SELECT_SCORING_LINE', { lineType, lineIndex })
   }, [sendAction])
 
-  const scoreDiagonal = useCallback((playerId: number) => {
-    // TODO
-  }, [])
+  const scoreDiagonal = useCallback((r1: number, c1: number, r2: number, c2: number, playerId: number, bonusType?: 'point_per_support' | 'draw_per_support') => {
+    sendAction('SCORE_DIAGONAL', { r1, c1, r2, c2, playerId, bonusType })
+  }, [sendAction])
 
   const closeRoundEndModal = useCallback(() => {
     sendAction('COMPLETE_ROUND')
@@ -596,7 +606,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
     clearTargetingMode,
   } = visualEffects
 
-  const syncValidTargets = useCallback((validTargets: any[]) => {
+  const syncValidTargets = useCallback((options: { validHandTargets?: {playerId: number, cardIndex: number}[]; isDeckSelectable?: boolean }) => {
     // Handled via targeting mode in P2P
   }, [])
 
@@ -634,8 +644,8 @@ export function useGameState(props: any = {}): UseGameStateResult {
   // ============================================================================
   // Card manipulation
   // ============================================================================
-  const destroyCard = useCallback((cardId: string) => {
-    sendAction('DESTROY_CARD', { cardId })
+  const destroyCard = useCallback((card: Card, boardCoords: { row: number; col: number }) => {
+    sendAction('DESTROY_CARD', { cardId: card.id, boardCoords })
   }, [sendAction])
 
   const applyGlobalEffect = useCallback(() => {}, [])
@@ -654,9 +664,19 @@ export function useGameState(props: any = {}): UseGameStateResult {
     sendAction('RESET_GAME')
   }, [sendAction])
   const resetDeployStatus = useCallback(() => {}, [])
-  const removeStatusByType = useCallback(() => {}, [])
-  const reorderTopDeck = useCallback(() => {}, [])
-  const reorderCards = useCallback(() => {}, [])
+  const removeStatusByType = useCallback((coords: { row: number; col: number }, type: string) => {
+    sendAction('REMOVE_STATUS_BY_TYPE', { coords, type })
+  }, [sendAction])
+  const reorderTopDeck = useCallback((playerId: number, newTopCards: any[]) => {
+    sendAction('REORDER_TOP_DECK', { playerId, newTopCards })
+  }, [sendAction])
+  const reorderCards = useCallback((playerId: number, newOrder: any[]) => {
+    sendAction('REORDER_CARDS', { playerId, newOrder })
+  }, [sendAction])
+
+  const markAbilityUsed = useCallback((coords: any, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => {
+    sendAction('MARK_ABILITY_USED', { coords, isDeploy, setDeployAttempted, readyStatusToRemove })
+  }, [sendAction])
 
   // ============================================================================
   // Legacy
@@ -759,7 +779,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
     nextPhase,
     prevPhase,
     setPhase,
-    markAbilityUsed: () => {}, // TODO
+    markAbilityUsed,
     applyGlobalEffect,
     swapCards,
     transferStatus,
@@ -803,9 +823,9 @@ export function useGameState(props: any = {}): UseGameStateResult {
     },
 
     // Additional WebRTC compatibility props (stubs for now)
-    requestDeckView: () => {},
-    sendFullDeckToHost: () => {},
-    shareHostDeckWithGuests: () => {},
+    requestDeckView: (playerId: number) => {},
+    sendFullDeckToHost: (playerId: number, deck: any[], deckLength: number) => {},
+    shareHostDeckWithGuests: (deck: any[], deckLength: number) => {},
     isReconnecting: false,
     reconnectProgress: null,
   }
