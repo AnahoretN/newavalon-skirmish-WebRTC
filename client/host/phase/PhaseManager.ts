@@ -16,7 +16,6 @@ import type { GameState, Card } from '../../types'
 import type {
   PhaseState,
   PhaseTransitionResult,
-  PhaseTransitionReason,
   PhaseSystemConfig,
   RoundEndInfo,
   ScoringLine,
@@ -29,7 +28,8 @@ import {
   shouldRoundEnd,
   determineRoundWinners,
   checkMatchOver,
-  DEFAULT_PHASE_CONFIG
+  DEFAULT_PHASE_CONFIG,
+  PhaseTransitionReason
 } from './PhaseTypes'
 import { logger } from '../../utils/logger'
 // Import ready status system to update card ready statuses on turn change
@@ -180,6 +180,9 @@ export class PhaseManager {
 
       case 'START_NEW_MATCH':
         return this.handleStartNewMatch(playerId)
+
+      case 'SET_PHASE':
+        return this.handleSetPhase(playerId, data?.phase)
 
       default:
         logger.warn(`[PhaseManager] Unknown action: ${action}`)
@@ -561,6 +564,73 @@ export class PhaseManager {
       newActivePlayer: newStartingPlayerId,
       reason: 'game_started' as PhaseTransitionReason,
       ...(prepResult.roundEndInfo ? { roundEndInfo: prepResult.roundEndInfo } : {})
+    }
+
+    this.notifyPhaseChange(result)
+    return result
+  }
+
+  /**
+   * Handle direct phase set (when clicking on phase names in tracker)
+   * Allows jumping to any phase directly
+   */
+  private handleSetPhase(playerId: number, targetPhase?: number): PhaseTransitionResult | null {
+    if (!this.state) return null
+
+    const oldPhase = this.state.currentPhase as GamePhase
+    const oldActivePlayer = this.state.activePlayerId
+
+    // If no target phase specified, or same as current, do nothing
+    if (targetPhase === undefined || targetPhase === oldPhase) {
+      return null
+    }
+
+    // Validate target phase
+    if (targetPhase < 0 || targetPhase > 4) {
+      logger.warn(`[PhaseManager] Invalid target phase: ${targetPhase}`)
+      return null
+    }
+
+    // Special handling for scoring phase
+    if (targetPhase === 4) {
+      // Scoring phase - must be in Commit phase
+      if (oldPhase !== GamePhase.COMMIT) {
+        logger.warn(`[PhaseManager] Cannot jump to scoring from phase ${oldPhase}`)
+        return null
+      }
+      return this.handleStartScoring(playerId)
+    }
+
+    // For other phases, just set directly
+    this.state.currentPhase = targetPhase as GamePhase
+
+    // If jumping to Preparation, also execute Preparation phase logic
+    if (targetPhase === 0) {
+      this.autoDrawnThisTurn.clear()
+      const prepResult = this.executePreparationPhase(playerId)
+
+      const result: PhaseTransitionResult = {
+        success: true,
+        oldPhase,
+        newPhase: prepResult.newPhase,
+        oldActivePlayer,
+        newActivePlayer: this.state.activePlayerId,
+        reason: PhaseTransitionReason.PHASE_SET,
+        ...(prepResult.roundEndInfo ? { roundEndInfo: prepResult.roundEndInfo } : {})
+      }
+
+      this.notifyPhaseChange(result)
+      return result
+    }
+
+    // Direct phase change
+    const result: PhaseTransitionResult = {
+      success: true,
+      oldPhase,
+      newPhase: targetPhase as GamePhase,
+      oldActivePlayer,
+      newActivePlayer: this.state.activePlayerId,
+      reason: 'phase_set' as PhaseTransitionReason
     }
 
     this.notifyPhaseChange(result)

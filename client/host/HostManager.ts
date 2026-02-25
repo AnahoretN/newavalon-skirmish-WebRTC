@@ -799,6 +799,7 @@ export class HostManager {
       6: 'ROUND_COMPLETE',
       7: 'START_NEXT_ROUND',
       8: 'START_NEW_MATCH',
+      9: 'SET_PHASE',
     }
 
     const action = actionMap[actionType]

@@ -59,6 +59,7 @@ export enum PhaseTransitionReason {
   PREVIOUS_PHASE = 'previous_phase',       // Manual previous phase button
   SCORING_COMPLETE = 'scoring_complete',   // Scoring finished, ready to pass turn
   AUTO_TRANSITION = 'auto_transition',     // Automatic transition (e.g., Setup -> Main)
+  PHASE_SET = 'phase_set',                 // Direct phase set (clicking phase name in tracker)
 }
 
 /**
