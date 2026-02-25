@@ -156,6 +156,12 @@ export function initializePhaseSystemForGuest(
       // Update last active player tracking
       lastActivePlayer = newPlayerId
 
+      // CRITICAL: Trigger React re-render by calling onStateUpdate
+      // Without this, UI won't update with new active player!
+      if (config?.onStateUpdate && config?.gameStateRef) {
+        config.onStateUpdate(config.gameStateRef.current)
+      }
+
       // Call external callback
       config?.onTurnChanged?.(oldPlayerId, newPlayerId)
     },
@@ -169,6 +175,11 @@ export function initializePhaseSystemForGuest(
         }
       }
 
+      // CRITICAL: Trigger React re-render by calling onStateUpdate
+      if (config?.onStateUpdate && config?.gameStateRef) {
+        config.onStateUpdate(config.gameStateRef.current)
+      }
+
       // Call external callback
       config?.onRoundEnded?.(info)
     },
@@ -177,6 +188,11 @@ export function initializePhaseSystemForGuest(
       // Update game state if ref provided
       if (config?.gameStateRef) {
         config.gameStateRef.current.gameWinner = winnerId
+      }
+
+      // CRITICAL: Trigger React re-render by calling onStateUpdate
+      if (config?.onStateUpdate && config?.gameStateRef) {
+        config.onStateUpdate(config.gameStateRef.current)
       }
 
       // Call external callback
@@ -189,6 +205,11 @@ export function initializePhaseSystemForGuest(
         config.gameStateRef.current.isScoringStep = true
       }
 
+      // CRITICAL: Trigger React re-render by calling onStateUpdate
+      if (config?.onStateUpdate && config?.gameStateRef) {
+        config.onStateUpdate(config.gameStateRef.current)
+      }
+
       // Call external callback
       config?.onScoringModeStarted?.(activePlayerId, validLinesCount)
     },
@@ -197,6 +218,11 @@ export function initializePhaseSystemForGuest(
       // Update game state if ref provided
       if (config?.gameStateRef) {
         config.gameStateRef.current.isScoringStep = false
+      }
+
+      // CRITICAL: Trigger React re-render by calling onStateUpdate
+      if (config?.onStateUpdate && config?.gameStateRef) {
+        config.onStateUpdate(config.gameStateRef.current)
       }
 
       // Call external callback
