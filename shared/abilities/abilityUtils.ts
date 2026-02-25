@@ -20,7 +20,7 @@ export const checkAdj = (r1: number, c1: number, r2: number, c2: number): boolea
 /**
  * Get the activation type from ability mode string
  */
-export type AbilityActivationType = 'deploy' | 'setup' | 'commit'
+export type AbilityActivationType = 'deploy' | 'setup' | 'commit' | 'pass'
 
 /**
  * Interface for card ability definition
@@ -30,7 +30,9 @@ export interface CardAbilityDefinition {
   baseIdAlt?: string[]
   activationType: AbilityActivationType
   supportRequired?: boolean
+  /* eslint-disable no-unused-vars */
   getAction: (card: Card, gameState: any, ownerId: number, coords: { row: number; col: number }) => any | null
+  /* eslint-enable no-unused-vars */
 }
 
 /**
@@ -52,8 +54,7 @@ export const createHandTargetFilter = (
   actorId: number,
   constraints: HandTargetFilter
 
-): ((card: Card) => boolean) => {
-  // eslint-disable-next-line no-unused-vars
+): ((_card: any) => boolean) => { // eslint-disable-line no-unused-vars
   return (card: Card) => {
     // Check targetType if specified
     if (constraints.targetType && !card.types?.includes(constraints.targetType)) {

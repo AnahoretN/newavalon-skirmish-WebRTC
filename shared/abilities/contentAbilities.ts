@@ -34,11 +34,13 @@ export interface ContentAbility {
 /**
  * Build a filter function from a filter string in contentDatabase.json
  */
+/* eslint-disable no-unused-vars */
 export function buildFilterFromString(
   filter: string,
   ownerId: number,
   _coords: { row: number; col: number }
 ): ((_target: Card, _r?: number, _c?: number) => boolean) | undefined {
+  /* eslint-enable no-unused-vars */
   // hasStatus_StatusName
   if (filter.startsWith('hasStatus_')) {
     const statusType = filter.replace('hasStatus_', '')
@@ -54,7 +56,7 @@ export function buildFilterFromString(
   // isAdjacent
   if (filter === 'isAdjacent') {
     return (target: Card, r?: number, c?: number) =>
-      r !== undefined && c !== undefined && checkAdj(r, c, coords.row, coords.col)
+      r !== undefined && c !== undefined && checkAdj(r, c, _coords.row, _coords.col)
   }
 
   // isOpponent

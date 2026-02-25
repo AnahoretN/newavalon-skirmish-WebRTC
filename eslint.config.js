@@ -224,6 +224,7 @@ export default [
       'coverage/**',
       '.nyc_output/**',
       'docs/**',
+      'scripts/**',
     ],
   },
 ];

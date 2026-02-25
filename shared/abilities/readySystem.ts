@@ -10,7 +10,11 @@
  * 3. Clear separation: what statuses exist vs how they're displayed
  */
 
-import type { Card, GameState } from '../../client/types.js'
+// Use 'any' for Card and GameState types to avoid conflicts between client/server type definitions
+// The server and client have slightly different Card types (ability vs abilityText)
+// but the shared code only needs access to common properties like statuses, baseId, etc.
+type Card = any
+type GameState = any
 
 // ============================================================================
 // Constants

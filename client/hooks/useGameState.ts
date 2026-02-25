@@ -13,6 +13,7 @@ import { createInitialState } from './core/gameCreators'
 import { logger } from '../utils/logger'
 import type { PersonalizedState } from '../p2p/SimpleP2PTypes'
 import { SimpleHost, SimpleGuest } from '../p2p'
+import { useVisualEffects } from './useVisualEffects'
 
 // Export type for use in other files
 export type ConnectionStatus = 'Connecting' | 'Connected' | 'Disconnected'
@@ -604,23 +605,9 @@ export function useGameState(props: any = {}): UseGameStateResult {
   // ============================================================================
   // Visual effects - using useVisualEffects hook
   // ============================================================================
-  const { useVisualEffects: useVE } = (() => {
-    // Lazy import to avoid circular dependency
-    let hook: any = null
-
-    return {
-      useVisualEffects: (props: any) => {
-        if (!hook) {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          hook = require('../useVisualEffects').useVisualEffects
-        }
-        return hook(props)
-      }
-    }
-  })()
 
   // Initialize visual effects with simpleHost if available
-  const visualEffects = useVE({
+  const visualEffects = useVisualEffects({
     simpleHost: hostRef.current,
     gameStateRef,
     localPlayerIdRef,

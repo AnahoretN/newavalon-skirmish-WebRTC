@@ -8,9 +8,9 @@
  */
 
 import { useCallback, useRef } from 'react'
-import type { HighlightData, FloatingTextData, TargetingModeData, AbilityAction, CommandContext, GameState } from '../../types'
-import { SimpleVisualEffects } from '../../p2p/SimpleVisualEffects'
-import type { SimpleHost } from '../../p2p/SimpleHost'
+import type { HighlightData, FloatingTextData, TargetingModeData, AbilityAction, CommandContext, GameState } from '../types'
+import { SimpleVisualEffects } from '../p2p/SimpleVisualEffects'
+import type { SimpleHost } from '../p2p/SimpleHost'
 
 interface UseVisualEffectsProps {
   // SimpleHost (P2P mode)
