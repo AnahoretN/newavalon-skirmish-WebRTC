@@ -22,7 +22,6 @@ npm install
 - **Adding Translations**: `update locales` - Creates/updates locale file in `client/locales/`, exports from `index.ts`, adds to `types.ts` and `LANGUAGE_NAMES`
 - **Version Bump**: `update version to x.x.x based on changes` - Updates `package.json` and `CHANGELOG.md` following semver (MAJOR.MINOR.PATCH)
 - **Creating Branch**: `checkout to new branch version-x-x-x` - Runs `git checkout -b feature/name` or `git checkout -b version-X-X-X`
-- **Committing**: `commit all, push and open PR` - Stages with `git add -A`, commits as `VERSION description`, pushes with `git push`, creates PR at GitHub
 
 ### Version Guidelines
 
