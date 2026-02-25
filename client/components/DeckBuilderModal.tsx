@@ -75,7 +75,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
     return cards.filter(({ id, card }) => {
       const localized = getCardTranslation(id)
       const name = localized?.name || card.name
-      const ability = localized?.ability || card.ability || ''
+      const ability = localized?.abilityText || card.abilityText || ''
 
       if (searchQuery) {
         const query = searchQuery.toLowerCase()

@@ -88,3 +88,14 @@ export {
   type HandTargetFilter,
   createHandTargetFilter,
 } from './abilityUtils.js'
+
+// ============================================================================
+// Content Abilities System
+// ============================================================================
+
+export {
+  buildFilterFromString,
+  buildDetailsFromContent,
+  buildActionFromContentAbility,
+  type ContentAbility,
+} from './contentAbilities.js'

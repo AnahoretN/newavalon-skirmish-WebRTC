@@ -271,14 +271,14 @@ const enCards: Record<string, CardTranslation> = {}
 cardDatabase.forEach((def, id) => {
   enCards[id] = {
     name: def.name,
-    ability: def.ability,
+    abilityText: def.abilityText,
     flavorText: def.flavorText,
   }
 })
 tokenDatabase.forEach((def, id) => {
   enCards[id] = {
     name: def.name,
-    ability: def.ability,
+    abilityText: def.abilityText,
     flavorText: def.flavorText,
   }
 })

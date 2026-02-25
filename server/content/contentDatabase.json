@@ -5,66 +5,201 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365235/SYN_IP_DEPT_AGENT_pbvh9e.webp",
       "fallbackImage": "/images/cards/SYN_IP_DEPT_AGENT.png",
       "power": 2,
-      "ability": "Deploy: Place 2 Stun tokens on a card with your Threat.\nSetup (requires Support): Gain 2 Points for each of your Threat in a chosen line.",
+      "abilityText": "Deploy: Place 2 Stun tokens on a card with your Threat.\nSetup (requires Support): Gain 2 Points for each of your Threat in a chosen line.",
       "flavorText": "- \"You've violated copyright. Open the door. We have a search warrant.\"",
       "types": ["Unit", "SynchroTech"],
       "faction": "SynchroTech",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_STACK",
+          "mode": null,
+          "details": {
+            "tokenType": "Stun",
+            "count": 2,
+            "requiredTargetStatus": "Threat",
+            "requireStatusFromSourceOwner": true,
+            "placeAllAtOnce": true
+          }
+        },
+        {
+          "type": "setup",
+          "supportRequired": true,
+          "action": "ENTER_MODE",
+          "mode": "IP_AGENT_THREAT_SCORING",
+          "details": {}
+        }
+      ]
     },
     "tacticalAgent": {
       "name": "Tactical Agent",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365237/SYN_TACTICAL_AGENT_vquxfm.webp",
       "fallbackImage": "/images/cards/SYN_TACTICAL_AGENT.png",
       "power": 3,
-      "ability": "Deploy: Place an Aim token on a card with your Threat.\nSetup: Destroy a card with your Aim token.",
+      "abilityText": "Deploy: Place an Aim token on a card with your Threat.\nSetup: Destroy a card with your Aim token.",
       "flavorText": "- \"Nobody move! SynchroTech Security Service!\"",
       "types": ["Unit", "SynchroTech"],
       "faction": "SynchroTech",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_STACK",
+          "mode": null,
+          "details": {
+            "tokenType": "Aim",
+            "count": 1,
+            "requiredTargetStatus": "Threat",
+            "requireStatusFromSourceOwner": true
+          }
+        },
+        {
+          "type": "setup",
+          "supportRequired": false,
+          "action": "ENTER_MODE",
+          "mode": "SELECT_TARGET",
+          "actionType": "DESTROY",
+          "details": {
+            "filter": "hasStatus_Aim"
+          }
+        }
+      ]
     },
     "patrolAgent": {
       "name": "Patrol Agent",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365236/SYN_PATROL_AGENT_nlyneg.webp",
       "fallbackImage": "/images/cards/SYN_PATROL_AGENT.png",
       "power": 2,
-      "ability": "Setup: Move to an empty cell in its line.\nCommit: Place a Stun token on an adjacent opponent card with your Threat.",
+      "abilityText": "Setup: Move to an empty cell in its line.\nCommit: Place a Stun token on an adjacent opponent card with your Threat.",
       "flavorText": "They say the city never sleeps. We make sure it doesn't even blink.",
       "types": ["Unit", "SynchroTech"],
       "faction": "SynchroTech",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "setup",
+          "supportRequired": false,
+          "action": "ENTER_MODE",
+          "mode": "PATROL_MOVE",
+          "details": {}
+        },
+        {
+          "type": "commit",
+          "supportRequired": false,
+          "action": "CREATE_STACK",
+          "mode": null,
+          "details": {
+            "tokenType": "Stun",
+            "count": 1,
+            "requiredTargetStatus": "Threat",
+            "onlyOpponents": true,
+            "mustBeAdjacentToSource": true
+          }
+        }
+      ]
     },
     "riotAgent": {
       "name": "Riot Agent",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365236/SYN_RIOT_AGENT_i4lk5m.webp",
       "fallbackImage": "/images/cards/SYN_RIOT_AGENT.png",
       "power": 3,
-      "ability": "Deploy: Push an adjacent opponent card 1 cell; you may move into its former cell.\nCommit: Place a Stun token on an adjacent opponent card with your Threat.",
+      "abilityText": "Deploy: Push an adjacent opponent card 1 cell; you may move into its former cell.\nCommit: Place a Stun token on an adjacent opponent card with your Threat.",
       "flavorText": "- \"Citizens, disperse! This meeting is unauthorized by SynchroTech.\"",
       "types": ["Unit", "SynchroTech"],
       "faction": "SynchroTech",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "ENTER_MODE",
+          "mode": "RIOT_PUSH",
+          "details": {}
+        },
+        {
+          "type": "commit",
+          "supportRequired": false,
+          "action": "CREATE_STACK",
+          "mode": null,
+          "details": {
+            "tokenType": "Stun",
+            "count": 1,
+            "requiredTargetStatus": "Threat",
+            "onlyOpponents": true,
+            "mustBeAdjacentToSource": true
+          }
+        }
+      ]
     },
     "threatAnalyst": {
       "name": "Threat Analyst",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365237/SYN_THREAT_ANALYST_uqxbsp.webp",
       "fallbackImage": "/images/cards/SYN_THREAT_ANALYST.png",
       "power": 2,
-      "ability": "Deploy: Place an Exploit token on any card.\nPass (requires Support): Your units can individually threaten opponent cards that have your Exploit counter.",
+      "abilityText": "Deploy: Place an Exploit token on any card.\nPass (requires Support): Your units can individually threaten opponent cards that have your Exploit counter.",
       "flavorText": "",
       "types": ["Unit", "SynchroTech"],
       "faction": "SynchroTech",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_STACK",
+          "mode": null,
+          "details": {
+            "tokenType": "Exploit",
+            "count": 1
+          }
+        },
+        {
+          "type": "pass",
+          "supportRequired": true,
+          "action": "MODIFY_THREAT_TARGETING",
+          "mode": null,
+          "details": {
+            "effect": "allyUnitsCanThreaten",
+            "targetFilter": "hasToken_Exploit",
+            "requireTokenFromSourceOwner": true
+          }
+        }
+      ]
     },
     "mrPearlDoF": {
       "name": "Mr. Pearl, Director of BioSynch",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367440/HERO_Mr._Pearl_Director_of_BioSynch_lsesol.webp",
       "fallbackImage": "/images/cards/SYN_IP_DEPT_AGENT.png",
       "power": 1,
-      "ability": "Pass: Your other units in lines get +1 power.\nDeploy: Search your deck for a unit card, put it into your hand, then shuffle.",
+      "abilityText": "Pass: Your other units in lines get +1 power.\nDeploy: Search your deck for a unit card, put it into your hand, then shuffle.",
       "flavorText": "Efficiency is the only metric that matters.",
       "types": ["Unit", "Hero", "SynchroTech"],
       "faction": "SynchroTech",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "pass",
+          "supportRequired": false,
+          "action": "BUFF_ALLY_POWER",
+          "mode": null,
+          "details": {
+            "target": "otherUnitsInLines",
+            "amount": 1
+          }
+        },
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "OPEN_MODAL",
+          "mode": "SEARCH_DECK",
+          "details": {
+            "filterType": "Unit",
+            "actionType": "RETRIEVE_FROM_DECK"
+          }
+        }
+      ]
     },
 
     "recklessProvocateur": {
@@ -72,66 +207,196 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365268/HOO_RECKLESS_PROVOCATEUR_wvfdcr.webp",
       "fallbackImage": "/images/cards/HOO_RECKLESS_PROVOCATEUR.png",
       "power": 3,
-      "ability": "Deploy: Swap places with an adjacent card.\nCommit: Move all tokens from a chosen allied card onto this card.",
+      "abilityText": "Deploy: Swap places with an adjacent card.\nCommit: Move all tokens from a chosen allied card onto this card.",
       "flavorText": "- \"Patience is a weapon. Vengeance is an art.\"",
       "types": ["Unit", "Hoods"],
       "faction": "Hoods",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "ENTER_MODE",
+          "mode": "SWAP_ADJACENT",
+          "details": {}
+        },
+        {
+          "type": "commit",
+          "supportRequired": false,
+          "action": "ENTER_MODE",
+          "mode": "SELECT_ALLIED_TRANSFER_TOKENS",
+          "details": {}
+        }
+      ]
     },
     "dataLiberator": {
       "name": "Data Liberator",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365268/HOO_DATA_LIBERATOR_qeru3j.webp",
       "fallbackImage": "/images/cards/HOO_DATA_LIBERATOR.png",
       "power": 2,
-      "ability": "Pass (requires Support): Cards with your Exploit tokens score Points for you.\nDeploy: Place an Exploit token on any card.",
+      "abilityText": "Pass (requires Support): Cards with your Exploit tokens score Points for you.\nDeploy: Place an Exploit token on any card.",
       "flavorText": "- \"Information doesn't want to be free. It needs to be.\"",
       "types": ["Unit", "Hoods"],
       "faction": "Hoods",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "pass",
+          "supportRequired": true,
+          "action": "MODIFY_SCORING",
+          "mode": null,
+          "details": {
+            "targetFilter": "hasToken_Exploit",
+            "requireTokenFromSourceOwner": true,
+            "effect": "scoreForOwner"
+          }
+        },
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_STACK",
+          "mode": null,
+          "details": {
+            "tokenType": "Exploit",
+            "count": 1
+          }
+        }
+      ]
     },
     "cautiousAvenger": {
       "name": "Cautious Avenger",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365268/HOO_CAUTIOUS_AVENGER_xzk6pd.webp",
       "fallbackImage": "/images/cards/HOO_CAUTIOUS_AVENGER.png",
       "power": 2,
-      "ability": "Deploy: Place an Aim token on a card within 2 cells.\nSetup (requires Support): Destroy a card with your Aim token.",
+      "abilityText": "Deploy: Place an Aim token on a card within 2 cells.\nSetup (requires Support): Destroy a card with your Aim token.",
       "flavorText": "- \"Patience is a weapon. Vengeance is an art.\"",
       "types": ["Unit", "Hoods"],
       "faction": "Hoods",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_STACK",
+          "mode": null,
+          "details": {
+            "tokenType": "Aim",
+            "count": 1,
+            "maxDistance": 2
+          }
+        },
+        {
+          "type": "setup",
+          "supportRequired": true,
+          "action": "ENTER_MODE",
+          "mode": "SELECT_TARGET",
+          "actionType": "DESTROY",
+          "details": {
+            "filter": "hasStatus_Aim"
+          }
+        }
+      ]
     },
     "vigilantSpotter": {
       "name": "Vigilant Spotter",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365268/HOO_VIGILANT_SPOTTER_xo8ig7.webp",
       "fallbackImage": "/images/cards/HOO_VIGILANT_SPOTTER.png",
       "power": 1,
-      "ability": "Pass (requires Support): When a revealed card of the opponent enters the battlefield, gain 2 points.\nCommit: Reveal 1 card from an opponent's hand.",
+      "abilityText": "Pass (requires Support): When a revealed card of the opponent enters the battlefield, gain 2 points.\nCommit: Reveal 1 card from an opponent's hand.",
       "flavorText": "- \"Patience is a weapon. Vengeance is an art.\"",
       "types": ["Unit", "Hoods"],
       "faction": "Hoods",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "pass",
+          "supportRequired": true,
+          "action": "TRIGGER_ON_EVENT",
+          "mode": null,
+          "details": {
+            "event": "opponentRevealedCardEntersBattlefield",
+            "effect": {
+              "action": "SCORE_POINTS",
+              "amount": 2
+            }
+          }
+        },
+        {
+          "type": "commit",
+          "supportRequired": false,
+          "action": "REVEAL_HAND",
+          "mode": null,
+          "details": {
+            "count": 1,
+            "selectFrom": "opponent"
+          }
+        }
+      ]
     },
     "inventiveMaker": {
       "name": "Inventive Maker",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365268/HOO_INVENTIVE_MAKER_sicb73.webp",
       "fallbackImage": "/images/cards/HOO_INVENTIVE_MAKER.png",
       "power": 1,
-      "ability": "Deploy: Create a Recon Drone token in an adjacent empty cell.\nSetup (requires Support): Return a Device card from your discard pile to your hand.",
+      "abilityText": "Deploy: Create a Recon Drone token in an adjacent empty cell.\nSetup (requires Support): Return a Device card from your discard pile to your hand.",
       "flavorText": "- \"Patience is a weapon. Vengeance is an art.\"",
       "types": ["Unit", "Hoods"],
       "faction": "Hoods",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_TOKEN",
+          "mode": "ADJACENT_EMPTY",
+          "details": {
+            "tokenId": "reconDrone"
+          }
+        },
+        {
+          "type": "setup",
+          "supportRequired": true,
+          "action": "RETURN_FROM_DISCARD",
+          "mode": null,
+          "details": {
+            "filter": "hasType_Device",
+            "target": "hand"
+          }
+        }
+      ]
     },
     "finnMW": {
       "name": "Finn, Most Wanted",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367436/HERO_Finn_c8637x.webp",
       "fallbackImage": "/images/cards/HOO_RECKLESS_PROVOCATEUR.png",
       "power": 2,
-      "ability": "Setup: Move any one of your cards 1 or 2 cells.\nCommit: Gain 1 point for each card that is revealed to you in opponents' hands or on the battlefield.",
+      "abilityText": "Setup: Move any one of your cards 1 or 2 cells.\nCommit: Gain 1 point for each card that is revealed to you in opponents' hands or on the battlefield.",
       "flavorText": "Catch me if you can. Spoiler: You can't.",
       "types": ["Unit", "Hero", "Hoods"],
       "faction": "Hoods",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "setup",
+          "supportRequired": false,
+          "action": "MOVE_CARD",
+          "mode": "SELECT_TARGET",
+          "details": {
+            "filter": "isOwner",
+            "distance": 2
+          }
+        },
+        {
+          "type": "commit",
+          "supportRequired": false,
+          "action": "SCORE_POINTS",
+          "mode": null,
+          "details": {
+            "amount": 1,
+            "per": "revealedToOwner"
+          }
+        }
+      ]
     },
 
     "faber": {
@@ -139,66 +404,205 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365251/OPT_FABER_cr804w.webp",
       "fallbackImage": "/images/cards/OPT_FABER.png",
       "power": 1,
-      "ability": "Deploy: Discard 1 card from your hand ⇒ Create a Walking Turret token in an adjacent empty cell.",
+      "abilityText": "Deploy: Discard 1 card from your hand ⇒ Create a Walking Turret token in an adjacent empty cell.",
       "flavorText": "In the gilded halls of the Optimates, even the tools of war are works of art.",
       "types": ["Unit", "Optimates"],
       "faction": "Optimates",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_TOKEN",
+          "mode": "ADJACENT_EMPTY",
+          "details": {
+            "tokenId": "walkingTurret",
+            "cost": {
+              "type": "DISCARD_FROM_HAND",
+              "count": 1
+            }
+          }
+        }
+      ]
     },
     "censor": {
       "name": "Censor",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365250/OPT_CENSOR_w4qijk.webp",
       "fallbackImage": "/images/cards/OPT_CENSOR.png",
       "power": 2,
-      "ability": "Deploy: Place an Exploit token on any card.\nCommit (requires Support): Replace your Exploit token on a card with a Stun token.",
+      "abilityText": "Deploy: Place an Exploit token on any card.\nCommit (requires Support): Replace your Exploit token on a card with a Stun token.",
       "flavorText": "In the gilded halls of the Optimates, even the tools of war are works of art.",
       "types": ["Unit", "Optimates"],
       "faction": "Optimates",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_STACK",
+          "mode": null,
+          "details": {
+            "tokenType": "Exploit",
+            "count": 1
+          }
+        },
+        {
+          "type": "commit",
+          "supportRequired": true,
+          "action": "REPLACE_TOKEN",
+          "mode": "SELECT_TARGET",
+          "details": {
+            "fromToken": "Exploit",
+            "toToken": "Stun",
+            "filter": "hasToken_Exploit",
+            "requireTokenFromSourceOwner": true
+          }
+        }
+      ]
     },
     "princeps": {
       "name": "Princeps",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365252/OPT_PRINCEPS_aaqakx.webp",
       "fallbackImage": "/images/cards/OPT_PRINCEPS.png",
       "power": 3,
-      "ability": "Deploy: Gain a Shield token. Place an Aim token on a card in its line.\nSetup: Destroy a card with your Aim token.",
+      "abilityText": "Deploy: Gain a Shield token. Place an Aim token on a card in its line.\nSetup: Destroy a card with your Aim token.",
       "flavorText": "Order is not requested. It is imposed.",
       "types": ["Unit", "Optimates"],
       "faction": "Optimates",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "steps": [
+            {
+              "action": "CREATE_STACK_SELF",
+              "mode": null,
+              "details": {
+                "tokenType": "Shield",
+                "count": 1
+              }
+            },
+            {
+              "action": "CREATE_STACK",
+              "mode": "LINE_TARGET",
+              "details": {
+                "tokenType": "Aim",
+                "count": 1
+              }
+            }
+          ]
+        },
+        {
+          "type": "setup",
+          "supportRequired": false,
+          "action": "ENTER_MODE",
+          "mode": "SELECT_TARGET",
+          "actionType": "DESTROY",
+          "details": {
+            "filter": "hasStatus_Aim"
+          }
+        }
+      ]
     },
     "immunis": {
       "name": "Immunis",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365252/OPT_IMMUNIS_hvlxhi.webp",
       "fallbackImage": "/images/cards/OPT_IMMUNIS.png",
       "power": 1,
-      "ability": "Deploy (requires Support): Return an Optimates card from your discard pile to an adjacent empty cell with a Resurrection token.\nAt the end of the phase, replace that Resurrection token with 2 Stun tokens.",
+      "abilityText": "Deploy (requires Support): Return an Optimates card from your discard pile to an adjacent empty cell with a Resurrection token.\nAt the end of the phase, replace that Resurrection token with 2 Stun tokens.",
       "flavorText": "In the gilded halls of the Optimates, even the tools of war are works of art.",
       "types": ["Unit", "Optimates"],
       "faction": "Optimates",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": true,
+          "action": "RETURN_FROM_DISCARD",
+          "mode": "ADJACENT_EMPTY",
+          "details": {
+            "filter": "hasFaction_Optimates",
+            "withToken": "Resurrection",
+            "endPhase": {
+              "replaceToken": "Resurrection",
+              "withToken": "Stun",
+              "count": 2
+            }
+          }
+        }
+      ]
     },
     "centurion": {
       "name": "Centurion",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365251/OPT_CENTURION_grztbi.webp",
       "fallbackImage": "/images/cards/OPT_CENTURION.png",
       "power": 2,
-      "ability": "Commit: Sacrifice an allied unit ⇒ All allied cards in that unit's lines get +1 power.",
+      "abilityText": "Commit: Sacrifice an allied unit ⇒ All allied cards in that unit's lines get +1 power.",
       "flavorText": "In the gilded halls of the Optimates, even the tools of war are works of art.",
       "types": ["Unit", "Optimates"],
       "faction": "Optimates",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "commit",
+          "supportRequired": false,
+          "action": "SACRIFICE_FOR_BUFF",
+          "mode": "SELECT_TARGET",
+          "details": {
+            "filter": "isAlly",
+            "tokenType": "Power+",
+            "amount": 1,
+            "targetArea": "lines"
+          }
+        }
+      ]
     },
     "luciusTheImmortal": {
       "name": "Lucius, The Immortal",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367435/HERO_Lucius_The_Immortal_irhhaj.webp",
       "fallbackImage": "/images/cards/OPT_PRINCEPS.png",
       "power": 2,
-      "ability": "Pass: Immunity to Stun. If exited from discard, gets +2 power.\nSetup: Discard a card ⇒ Find a command card in your deck. Put it into your hand and shuffle.",
+      "abilityText": "Pass: Immunity to Stun. If exited from discard, gets +2 power.\nSetup: Discard a card ⇒ Find a command card in your deck. Put it into your hand and shuffle.",
       "flavorText": "Death implies a cessation of function. I have simply optimized it.",
       "types": ["Unit", "Hero", "Optimates"],
       "faction": "Optimates",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "pass",
+          "supportRequired": false,
+          "action": "IMMUNITY",
+          "mode": null,
+          "details": {
+            "status": "Stun"
+          }
+        },
+        {
+          "type": "pass",
+          "supportRequired": false,
+          "action": "POWER_BONUS",
+          "mode": null,
+          "details": {
+            "amount": 2,
+            "condition": "fromDiscard"
+          }
+        },
+        {
+          "type": "setup",
+          "supportRequired": false,
+          "action": "SEARCH_DECK",
+          "mode": null,
+          "details": {
+            "cost": {
+              "type": "DISCARD_FROM_HAND",
+              "count": 1
+            },
+            "filter": "hasType_Command",
+            "target": "hand"
+          }
+        }
+      ]
     },
 
     "codeKeeper": {
@@ -206,66 +610,506 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365286/FUS_CODE_KEEPER_yhowqj.webp",
       "fallbackImage": "/images/cards/FUS_CODE_KEEPER.png",
       "power": 2,
-      "ability": "Deploy: Place 1 Exploit token on each opponent card in lines with any Threat.\nCommit (requires Support): Move an opponent card with your Exploit token 1 cell.",
+      "abilityText": "Deploy: Place 1 Exploit token on each opponent card in lines with any Threat.\nCommit (requires Support): Move an opponent card with your Exploit token 1 cell.",
       "flavorText": "The Signal is truth. All else is noise.",
       "types": ["Unit", "Fusion"],
       "faction": "Fusion",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_STACK_MULTI",
+          "mode": "LINES_WITH_THREAT",
+          "details": {
+            "tokenType": "Exploit",
+            "count": 1,
+            "target": "opponent",
+            "filter": "inLinesWithThreat"
+          }
+        },
+        {
+          "type": "commit",
+          "supportRequired": true,
+          "action": "MOVE_CARD",
+          "mode": "SELECT_TARGET",
+          "details": {
+            "filter": "hasToken_Exploit",
+            "distance": 1,
+            "requireTokenFromSourceOwner": true
+          }
+        }
+      ]
     },
     "devoutSynthetic": {
       "name": "Devout Synthetic",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365286/FUS_DEVOUT_SYNTHETIC_nkr1tx.webp",
       "fallbackImage": "/images/cards/FUS_DEVOUT_SYNTHETIC.png",
       "power": 3,
-      "ability": "Deploy: Push an adjacent opponent card 1 cell; you may move into its former cell.\nSetup: Destroy an adjacent opponent card with a Threat or Stun token.",
+      "abilityText": "Deploy: Push an adjacent opponent card 1 cell; you may move into its former cell.\nSetup: Destroy an adjacent opponent card with a Threat or Stun token.",
       "flavorText": "Flesh is a bug. The Signal is the patch.",
       "types": ["Unit", "Fusion"],
       "faction": "Fusion",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "PUSH",
+          "mode": "ADJACENT_TARGET",
+          "details": {
+            "filter": "isOpponent",
+            "distance": 1,
+            "mayMoveInto": true
+          }
+        },
+        {
+          "type": "setup",
+          "supportRequired": false,
+          "action": "ENTER_MODE",
+          "mode": "SELECT_TARGET",
+          "actionType": "DESTROY",
+          "details": {
+            "filter": "isAdjacent",
+            "additionalFilter": "hasStatus_Threat_or_Stun"
+          }
+        }
+      ]
     },
     "unwaveringIntegrator": {
       "name": "Unwavering Integrator",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365287/FUS_UNWAVERING_INTEGRATOR_g1cbag.webp",
       "fallbackImage": "/images/cards/FUS_UNWAVERING_INTEGRATOR.png",
       "power": 1,
-      "ability": "Deploy: Place an Exploit token on any card.\nSetup (requires Support): Gain 1 point for each of your Exploit tokens in a chosen line.",
+      "abilityText": "Deploy: Place an Exploit token on any card.\nSetup (requires Support): Gain 1 point for each of your Exploit tokens in a chosen line.",
       "flavorText": "The Signal is truth. All else is noise.",
       "types": ["Unit", "Fusion"],
       "faction": "Fusion",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_STACK",
+          "mode": null,
+          "details": {
+            "tokenType": "Exploit",
+            "count": 1
+          }
+        },
+        {
+          "type": "setup",
+          "supportRequired": true,
+          "action": "SCORE_POINTS",
+          "mode": "LINE_TARGET",
+          "details": {
+            "amount": 1,
+            "per": "exploitInLine",
+            "requireTokenFromSourceOwner": true
+          }
+        }
+      ]
     },
     "signalProphet": {
       "name": "Signal Prophet",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365286/FUS_SIGNAL_PROPHET_rmk9me.webp",
       "fallbackImage": "/images/cards/FUS_SIGNAL_PROPHET.png",
       "power": 2,
-      "ability": "Deploy: Place 1 Exploit token on each of your cards with Support in lines.\nCommit (requires Support): Move one of your cards with an Exploit token 1 cell.",
+      "abilityText": "Deploy: Place 1 Exploit token on each of your cards with Support in lines.\nCommit (requires Support): Move one of your cards with an Exploit token 1 cell.",
       "flavorText": "The Signal is truth. All else is noise.",
       "types": ["Unit", "Fusion"],
       "faction": "Fusion",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_STACK_MULTI",
+          "mode": "LINES_WITH_SUPPORT",
+          "details": {
+            "tokenType": "Exploit",
+            "count": 1,
+            "target": "ally",
+            "filter": "hasStatus_Support"
+          }
+        },
+        {
+          "type": "commit",
+          "supportRequired": true,
+          "action": "MOVE_CARD",
+          "mode": "SELECT_TARGET",
+          "details": {
+            "filter": "hasToken_Exploit",
+            "distance": 1,
+            "requireTokenFromSourceOwner": true
+          }
+        }
+      ]
     },
     "zealousMissionary": {
       "name": "Zealous Missionary",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365287/FUS_ZEALOUS_MISSIONARY_v7qjhw.webp",
       "fallbackImage": "/images/cards/FUS_ZEALOUS_MISSIONARY.png",
       "power": 1,
-      "ability": "Deploy: Place an Exploit token on any card.\nCommit (requires Support): Give -1 power to a card with your Exploit token.",
+      "abilityText": "Deploy: Place an Exploit token on any card.\nCommit (requires Support): Give -1 power to a card with your Exploit token.",
       "flavorText": "The Signal is truth. All else is noise.",
       "types": ["Unit", "Fusion"],
       "faction": "Fusion",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_STACK",
+          "mode": null,
+          "details": {
+            "tokenType": "Exploit",
+            "count": 1
+          }
+        },
+        {
+          "type": "commit",
+          "supportRequired": true,
+          "action": "MODIFY_POWER",
+          "mode": "SELECT_TARGET",
+          "details": {
+            "filter": "hasToken_Exploit",
+            "amount": -1,
+            "requireTokenFromSourceOwner": true
+          }
+        }
+      ]
     },
     "reverendOfTheChoir": {
       "name": "Reverend of The Choir",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367438/HERO_Reverend_of_The_Choir_njrrih.webp",
       "fallbackImage": "/images/cards/FUS_SIGNAL_PROPHET.png",
       "power": 2,
-      "ability": "Setup (requires Support): Gain 1 point for each of your Exploit tokens on the battlefield.\nDeploy: Double the number of Exploit tokens on any one card.",
+      "abilityText": "Setup (requires Support): Gain 1 point for each of your Exploit tokens on the battlefield.\nDeploy: Double the number of Exploit tokens on any one card.",
       "flavorText": "The hum of the servers is a hymn to the initiated.",
       "types": ["Unit", "Hero", "Fusion", "Device"],
       "faction": "Fusion",
-      "allowedPanels": ["DECK_BUILDER"]
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "setup",
+          "supportRequired": true,
+          "action": "SCORE_POINTS",
+          "mode": null,
+          "details": {
+            "amount": 1,
+            "per": "exploitOnBattlefield",
+            "requireTokenFromSourceOwner": true
+          }
+        },
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "DOUBLE_TOKEN",
+          "mode": "SELECT_TARGET",
+          "details": {
+            "tokenType": "Exploit",
+            "requireTokenFromSourceOwner": true
+          }
+        }
+      ]
+    },
+    
+    "abrGawain": {
+      "name": "ABR \"Gawain\"",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367446/N_Autonomous_Battle_Robot_Gawain_oni745.webp",
+      "fallbackImage": "/images/cards/FUS_DEVOUT_SYNTHETIC.png",
+      "power": 4,
+      "abilityText": "Deploy: Gain a Shield token. Place an Aim token on a card in its line.\nSetup: Destroy a card with your Aim token.",
+      "flavorText": "Protocol initiated. Threat assessment: Extreme.",
+      "types": ["Unit", "Device", "Rarity"],
+      "faction": "Neutral",
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "steps": [
+            {
+              "action": "CREATE_STACK_SELF",
+              "mode": null,
+              "details": {
+                "tokenType": "Shield",
+                "count": 1
+              }
+            },
+            {
+              "action": "CREATE_STACK",
+              "mode": "LINE_TARGET",
+              "details": {
+                "tokenType": "Aim",
+                "count": 1
+              }
+            }
+          ]
+        },
+        {
+          "type": "setup",
+          "supportRequired": false,
+          "action": "ENTER_MODE",
+          "mode": "SELECT_TARGET",
+          "actionType": "DESTROY",
+          "details": {
+            "filter": "hasStatus_Aim"
+          }
+        }
+      ]
+    },
+    "reclaimedGawain": {
+      "name": "Reclaimed \"Gawain\"",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367448/N_Reclaimed_Gawain_sjmlsp.webp",
+      "fallbackImage": "/images/cards/FUS_DEVOUT_SYNTHETIC.png",
+      "power": 4,
+      "abilityText": "Deploy: Gain a Shield token. Push an adjacent opponent card 1 cell; you may move into its former cell.\nSetup: Destroy an adjacent opponent card with Threat or Stun.",
+      "flavorText": "Once a knight of the system, now a ghost in the machine.",
+      "types": ["Unit", "Device", "Rarity"],
+      "faction": "Neutral",
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "steps": [
+            {
+              "action": "CREATE_STACK_SELF",
+              "mode": null,
+              "details": {
+                "tokenType": "Shield",
+                "count": 1
+              }
+            },
+            {
+              "action": "PUSH",
+              "mode": "ADJACENT_TARGET",
+              "details": {
+                "filter": "isOpponent",
+                "distance": 1,
+                "mayMoveInto": true
+              }
+            }
+          ]
+        },
+        {
+          "type": "setup",
+          "supportRequired": false,
+          "action": "ENTER_MODE",
+          "mode": "SELECT_TARGET",
+          "actionType": "DESTROY",
+          "details": {
+            "filter": "isAdjacent",
+            "additionalFilter": "hasStatus_Threat_or_Stun"
+          }
+        }
+      ]
+    },
+    "secretInformant": {
+      "name": "Secret Informant",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367448/N_Secret_informant_w0w6g5.webp",
+      "fallbackImage": "/images/cards/SYN_THREAT_ANALYST.png",
+      "power": 1,
+      "abilityText": "Deploy: Look at the top 3 cards of any deck. Put any number of them on the bottom of that deck. Draw 1 card.",
+      "flavorText": "Knowledge is power. And leverage.",
+      "types": ["Unit"],
+      "faction": "Neutral",
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "LOOK_AT_TOP_DECK",
+          "mode": null,
+          "details": {
+            "count": 3,
+            "putOnBottom": true,
+            "thenDraw": 1
+          }
+        }
+      ]
+    },
+
+    "FalkPD": {
+      "name": "Michael Falk, Private Detective",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367432/HERO_Michael_Falk_sv5i5c.webp",
+      "fallbackImage": "/images/cards/HOO_VIGILANT_SPOTTER.png",
+      "power": 3,
+      "abilityText": "Deploy: Find any card in your deck. Put it into your hand and shuffle.\nCommit: Reveal 1 card from an opponent's hand.",
+      "flavorText": "He finds things. Sometimes things that should stay lost.",
+      "types": ["Unit", "Hero"],
+      "faction": "Neutral",
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "SEARCH_DECK",
+          "mode": null,
+          "details": {
+            "filter": "any",
+            "target": "hand"
+          }
+        },
+        {
+          "type": "commit",
+          "supportRequired": false,
+          "action": "REVEAL_HAND",
+          "mode": null,
+          "details": {
+            "count": 1,
+            "selectFrom": "opponent"
+          }
+        }
+      ]
+    },
+    "edithByron": {
+      "name": "Edith Byron, Extreme Engineer",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367434/HERO_Edith_Byron_ny23vb.webp",
+      "fallbackImage": "/images/cards/HOO_INVENTIVE_MAKER.png",
+      "power": 3,
+      "abilityText": "Setup: Move to an empty cell in a line.\nDeploy: Gain a Shield token. Create a Recon Drone token in an adjacent empty cell.",
+      "flavorText": "Building the future, one explosion at a time.",
+      "types": ["Unit", "Hero"],
+      "faction": "Neutral",
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "setup",
+          "supportRequired": false,
+          "action": "MOVE_SELF",
+          "mode": "LINE_EMPTY",
+          "details": {}
+        },
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "steps": [
+            {
+              "action": "CREATE_STACK_SELF",
+              "mode": null,
+              "details": {
+                "tokenType": "Shield",
+                "count": 1
+              }
+            },
+            {
+              "action": "CREATE_TOKEN",
+              "mode": "ADJACENT_EMPTY",
+              "details": {
+                "tokenId": "reconDrone"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "pinkunonekoSV": {
+      "name": "Pinkunoneko, Street Vigilante",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367429/HERO_Pinkunoneko_cqhpuy.webp",
+      "fallbackImage": "/images/cards/SYN_RIOT_AGENT.png",
+      "power": 3,
+      "abilityText": "Deploy: Place a Stun token on an adjacent opponent card.\nSetup: Destroy an adjacent opponent card with Threat or Stun.",
+      "flavorText": "Neon claws in the dark alley.",
+      "types": ["Unit", "Hero"],
+      "faction": "Neutral",
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_STACK",
+          "mode": "ADJACENT_TARGET",
+          "details": {
+            "tokenType": "Stun",
+            "count": 1,
+            "filter": "isOpponent"
+          }
+        },
+        {
+          "type": "setup",
+          "supportRequired": false,
+          "action": "ENTER_MODE",
+          "mode": "SELECT_TARGET",
+          "actionType": "DESTROY",
+          "details": {
+            "filter": "isAdjacent",
+            "additionalFilter": "hasStatus_Threat_or_Stun"
+          }
+        }
+      ]
+    },
+    "EleftheriaMD": {
+      "name": "Maria \"Eleftheria\" Damanaki",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367431/HERO_Maria_Eleftheria_Damanaki_cpw12i.webp",
+      "fallbackImage": "/images/cards/SYN_TACTICAL_AGENT.png",
+      "power": 3,
+      "abilityText": "Deploy: Place an Aim token on any card.\nSetup: Destroy a card with your Aim token.",
+      "flavorText": "Freedom has a price. She collects it.",
+      "types": ["Unit", "Hero"],
+      "faction": "Neutral",
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_STACK",
+          "mode": null,
+          "details": {
+            "tokenType": "Aim",
+            "count": 1
+          }
+        },
+        {
+          "type": "setup",
+          "supportRequired": false,
+          "action": "ENTER_MODE",
+          "mode": "SELECT_TARGET",
+          "actionType": "DESTROY",
+          "details": {
+            "filter": "hasStatus_Aim"
+          }
+        }
+      ]
+    },
+    "ziusIJ": {
+      "name": "Zius, Independent Journalist",
+      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367428/HERO_Zius_xhuyxa.webp",
+      "fallbackImage": "/images/cards/FUS_UNWAVERING_INTEGRATOR.png",
+      "power": 2,
+      "abilityText": "Deploy: Place an Exploit token on any card.\nSetup (requires Support): Place an Exploit token on any card. Gain 1 point for each of your Exploit tokens in that card's line.",
+      "flavorText": "The truth is out there, and he's streaming it live.",
+      "types": ["Unit", "Hero"],
+      "faction": "Neutral",
+      "allowedPanels": ["DECK_BUILDER"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_STACK",
+          "mode": null,
+          "details": {
+            "tokenType": "Exploit",
+            "count": 1
+          }
+        },
+        {
+          "type": "setup",
+          "supportRequired": true,
+          "action": "PLACE_AND_SCORE",
+          "mode": "SELECT_TARGET",
+          "details": {
+            "tokenType": "Exploit",
+            "thenScore": {
+              "amount": 1,
+              "per": "exploitInLine",
+              "requireTokenFromSourceOwner": true
+            }
+          }
+        }
+      ]
     },
     
     "overwatch": {
@@ -273,7 +1117,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365196/CMD_OVERWATCH_djwlqo.webp",
       "fallbackImage": "/images/cards/CMD_OVERWATCH.png",
       "power": 0,
-      "ability": "● Place 1 Aim token on any card. Reveal 1 card from an opponent's hand for each of your Aim tokens on the battlefield.\n● Place 1 Aim token on any card. Draw 1 card for each of your Aim tokens on the battlefield.",
+      "abilityText": "● Place 1 Aim token on any card. Reveal 1 card from an opponent's hand for each of your Aim tokens on the battlefield.\n● Place 1 Aim token on any card. Draw 1 card for each of your Aim tokens on the battlefield.",
       "types": ["Command"],
       "faction": "Command",
       "allowedPanels": ["DECK_BUILDER"]
@@ -283,7 +1127,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365197/CMD_REPOSITIONING_uhwvrk.webp",
       "fallbackImage": "/images/cards/CMD_REPOSITIONING.png",
       "power": 0,
-      "ability": "● Move one of your units to an empty cell in its line. Draw cards equal to that unit's power.\n● Move one of your units to an empty cell in its line. Gain points equal to that unit's power.",
+      "abilityText": "● Move one of your units to an empty cell in its line. Draw cards equal to that unit's power.\n● Move one of your units to an empty cell in its line. Gain points equal to that unit's power.",
       "types": ["Command"],
       "faction": "Command",
       "allowedPanels": ["DECK_BUILDER"]
@@ -293,7 +1137,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365197/CMD_INSPIRATION_v0bi3l.webp",
       "fallbackImage": "/images/cards/CMD_INSPIRATION.png",
       "power": 0,
-      "ability": "● Remove any number of tokens from one of your units. Draw 1 card for each token removed.\n● Remove any number of tokens from one of your units. Gain 1 point for each token removed.",
+      "abilityText": "● Remove any number of tokens from one of your units. Draw 1 card for each token removed.\n● Remove any number of tokens from one of your units. Gain 1 point for each token removed.",
       "types": ["Command"],
       "faction": "Command",
       "allowedPanels": ["DECK_BUILDER"]
@@ -303,7 +1147,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365197/CMD_DATA_INTERCEPTION_gen1qw.webp",
       "fallbackImage": "/images/cards/CMD_DATA_INTERCEPTION.png",
       "power": 0,
-      "ability": "● Place 1 Exploit token on any card. Reveal 1 card from an opponent's hand for each of your Exploit tokens on the battlefield.\n● Place 1 Exploit token on any card. Move a unit with your Exploit token 1 or 2 cells.",
+      "abilityText": "● Place 1 Exploit token on any card. Reveal 1 card from an opponent's hand for each of your Exploit tokens on the battlefield.\n● Place 1 Exploit token on any card. Move a unit with your Exploit token 1 or 2 cells.",
       "types": ["Command"],
       "faction": "Command",
       "allowedPanels": ["DECK_BUILDER"]
@@ -313,7 +1157,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365197/CMD_FALSE_ORDERS_aatcmc.webp",
       "fallbackImage": "/images/cards/CMD_DATA_INTERCEPTION.png",
       "power": 0,
-      "ability": "● Place 1 Exploit token on an opponent's card. Move that opponent unit with your Exploit token 1 or 2 cells. Reveal up to 2 cards from that opponent's hand.\n● Place 1 Exploit token on an opponent's card. Move that opponent unit with your Exploit token 1 or 2 cells. Place 2 Stun tokens on it.",
+      "abilityText": "● Place 1 Exploit token on an opponent's card. Move that opponent unit with your Exploit token 1 or 2 cells. Reveal up to 2 cards from that opponent's hand.\n● Place 1 Exploit token on an opponent's card. Move that opponent unit with your Exploit token 1 or 2 cells. Place 2 Stun tokens on it.",
       "types": ["Command"],
       "faction": "Command",
       "allowedPanels": ["DECK_BUILDER"]
@@ -323,7 +1167,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367418/CMD_Experimental_Stimulants_plsnet.webp",
       "fallbackImage": "/images/cards/CMD_MOBILIZATION.png",
       "power": 0,
-      "ability": "● A unit you control on the battlefield may activate its Deploy ability one additional time.\n● Move one of your units to an empty cell in its line.",
+      "abilityText": "● A unit you control on the battlefield may activate its Deploy ability one additional time.\n● Move one of your units to an empty cell in its line.",
       "types": ["Command"],
       "faction": "Command",
       "allowedPanels": ["DECK_BUILDER"]
@@ -333,7 +1177,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367415/CMD_Logistics_Chain_odmwxq.webp",
       "fallbackImage": "/images/cards/CMD_MOBILIZATION.png",
       "power": 0,
-      "ability": "● Score points in a diagonal. Gain +1 point for each of your cards with Support in that diagonal.\n● Score points in a diagonal. Draw 1 card for each of your cards with Support in that diagonal.",
+      "abilityText": "● Score points in a diagonal. Gain +1 point for each of your cards with Support in that diagonal.\n● Score points in a diagonal. Draw 1 card for each of your cards with Support in that diagonal.",
       "types": ["Command"],
       "faction": "Command",
       "allowedPanels": ["DECK_BUILDER"]
@@ -343,7 +1187,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367414/CMD_Quick_Response_Team_xff2yt.webp",
       "fallbackImage": "/images/cards/CMD_MOBILIZATION.png",
       "power": 0,
-      "ability": "● Play a unit from your hand into an empty cell.\n● Search your deck for a unit card and put it into your hand. Then shuffle your deck.",
+      "abilityText": "● Play a unit from your hand into an empty cell.\n● Search your deck for a unit card and put it into your hand. Then shuffle your deck.",
       "types": ["Command"],
       "faction": "Command",
       "allowedPanels": ["DECK_BUILDER"]
@@ -353,7 +1197,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367411/CMD_Temporary_Shelter_podjbj.webp",
       "fallbackImage": "/images/cards/CMD_MOBILIZATION.png",
       "power": 0,
-      "ability": "● Place 1 Shield token on one of your cards. Remove all Aim tokens from that card.\n● Place 1 Shield token on one of your cards. Move that card 1 or 2 cells.",
+      "abilityText": "● Place 1 Shield token on one of your cards. Remove all Aim tokens from that card.\n● Place 1 Shield token on one of your cards. Move that card 1 or 2 cells.",
       "types": ["Command"],
       "faction": "Command",
       "allowedPanels": ["DECK_BUILDER"]
@@ -363,7 +1207,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367413/CMD_Enhanced_Interrogation_legiod.webp",
       "fallbackImage": "/images/cards/CMD_MOBILIZATION.png",
       "power": 0,
-      "ability": "● Place 1 Aim token on any card. Reveal 1 card from an opponent's hand for each of your Aim tokens on the battlefield.\n● Place 1 Aim token on any card. Move any card with your Aim token 1 or 2 cells.",
+      "abilityText": "● Place 1 Aim token on any card. Reveal 1 card from an opponent's hand for each of your Aim tokens on the battlefield.\n● Place 1 Aim token on any card. Move any card with your Aim token 1 or 2 cells.",
       "types": ["Command"],
       "faction": "Command",
       "allowedPanels": ["DECK_BUILDER"]
@@ -373,103 +1217,13 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1763894862/line_ocsoyj.png",
       "fallbackImage": "/images/cards/CMD_MOBILIZATION.png",
       "power": 0,
-      "ability": "Gain points in a chosen line of the battlefield.",
+      "abilityText": "Gain points in a chosen line of the battlefield.",
       "types": ["Command"],
       "faction": "Command",
       "allowedPanels": []
-    },
-
-    "abrGawain": {
-      "name": "ABR \"Gawain\"",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367446/N_Autonomous_Battle_Robot_Gawain_oni745.webp",
-      "fallbackImage": "/images/cards/FUS_DEVOUT_SYNTHETIC.png",
-      "power": 4,
-      "ability": "Deploy: Gain a Shield token. Place an Aim token on a card in its line.\nSetup: Destroy a card with your Aim token.",
-      "flavorText": "Protocol initiated. Threat assessment: Extreme.",
-      "types": ["Unit", "Device", "Rarity"],
-      "faction": "Neutral",
-      "allowedPanels": ["DECK_BUILDER"]
-    },
-    "reclaimedGawain": {
-      "name": "Reclaimed \"Gawain\"",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367448/N_Reclaimed_Gawain_sjmlsp.webp",
-      "fallbackImage": "/images/cards/FUS_DEVOUT_SYNTHETIC.png",
-      "power": 4,
-      "ability": "Deploy: Gain a Shield token. Push an adjacent opponent card 1 cell; you may move into its former cell.\nSetup: Destroy an adjacent opponent card with Threat or Stun.",
-      "flavorText": "Once a knight of the system, now a ghost in the machine.",
-      "types": ["Unit", "Device", "Rarity"],
-      "faction": "Neutral",
-      "allowedPanels": ["DECK_BUILDER"]
-	      },
-    "secretInformant": {
-      "name": "Secret Informant",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367448/N_Secret_informant_w0w6g5.webp",
-      "fallbackImage": "/images/cards/SYN_THREAT_ANALYST.png",
-      "power": 1,
-      "ability": "Deploy: Look at the top 3 cards of any deck. Put any number of them on the bottom of that deck. Draw 1 card.",
-      "flavorText": "Knowledge is power. And leverage.",
-      "types": ["Unit"],
-      "faction": "Neutral",
-      "allowedPanels": ["DECK_BUILDER"]
-    },
-
-    "FalkPD": {
-      "name": "Michael Falk, Private Detective",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367432/HERO_Michael_Falk_sv5i5c.webp",
-      "fallbackImage": "/images/cards/HOO_VIGILANT_SPOTTER.png",
-      "power": 3,
-      "ability": "Deploy: Find any card in your deck. Put it into your hand and shuffle.\nCommit: Reveal 1 card from an opponent's hand.",
-      "flavorText": "He finds things. Sometimes things that should stay lost.",
-      "types": ["Unit", "Hero"],
-      "faction": "Neutral",
-      "allowedPanels": ["DECK_BUILDER"]
-    },
-    "edithByron": {
-      "name": "Edith Byron, Extreme Engineer",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367434/HERO_Edith_Byron_ny23vb.webp",
-      "fallbackImage": "/images/cards/HOO_INVENTIVE_MAKER.png",
-      "power": 3,
-      "ability": "Setup: Move to an empty cell in a line.\nDeploy: Gain a Shield token. Create a Recon Drone token in an adjacent empty cell.",
-      "flavorText": "Building the future, one explosion at a time.",
-      "types": ["Unit", "Hero"],
-      "faction": "Neutral",
-      "allowedPanels": ["DECK_BUILDER"]
-    },
-    "pinkunonekoSV": {
-      "name": "Pinkunoneko, Street Vigilante",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367429/HERO_Pinkunoneko_cqhpuy.webp",
-      "fallbackImage": "/images/cards/SYN_RIOT_AGENT.png",
-      "power": 3,
-      "ability": "Deploy: Place a Stun token on an adjacent opponent card.\nSetup: Destroy an adjacent opponent card with Threat or Stun.",
-      "flavorText": "Neon claws in the dark alley.",
-      "types": ["Unit", "Hero"],
-      "faction": "Neutral",
-      "allowedPanels": ["DECK_BUILDER"]
-    },
-    "EleftheriaMD": {
-      "name": "Maria \"Eleftheria\" Damanaki",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367431/HERO_Maria_Eleftheria_Damanaki_cpw12i.webp",
-      "fallbackImage": "/images/cards/SYN_TACTICAL_AGENT.png",
-      "power": 3,
-      "ability": "Deploy: Place an Aim token on any card.\nSetup: Destroy a card with your Aim token.",
-      "flavorText": "Freedom has a price. She collects it.",
-      "types": ["Unit", "Hero"],
-      "faction": "Neutral",
-      "allowedPanels": ["DECK_BUILDER"]
-    },
-    "ziusIJ": {
-      "name": "Zius, Independent Journalist",
-      "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367428/HERO_Zius_xhuyxa.webp",
-      "fallbackImage": "/images/cards/FUS_UNWAVERING_INTEGRATOR.png",
-      "power": 2,
-      "ability": "Deploy: Place an Exploit token on any card.\nSetup (requires Support): Place an Exploit token on any card. Gain 1 point for each of your Exploit tokens in that card's line.",
-      "flavorText": "The truth is out there, and he's streaming it live.",
-      "types": ["Unit", "Hero"],
-      "faction": "Neutral",
-      "allowedPanels": ["DECK_BUILDER"]
     }
-
   },
+
   "tokenDatabase": {
     "reconDrone": {
       "baseId": "reconDrone",
@@ -477,11 +1231,31 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365220/TKN_RECON_DRONE_w3elir.webp",
       "fallbackImage": "/images/cards/TKN_RECON_DRONE.png",
       "power": 1,
-      "ability": "Setup: Move to any cell on the battlefield.\nCommit: Choose an opponent card in an adjacent cell. Reveal 1 card from that opponent's hand.",
+      "abilityText": "Setup: Move to any cell on the battlefield.\nCommit: Choose an opponent card in an adjacent cell. Reveal 1 card from that opponent's hand.",
       "flavorText": "SynchroTech has created lightweight drones to patrol the streets, but the Hoods have other plans for them.",
       "color": "bg-gray-400",
       "types": ["Unit", "Device"],
-      "allowedPanels": ["TOKEN_PANEL"]
+      "allowedPanels": ["TOKEN_PANEL"],
+      "ABILITIES": [
+        {
+          "type": "setup",
+          "supportRequired": false,
+          "action": "MOVE_SELF",
+          "mode": "ANY_EMPTY",
+          "details": {}
+        },
+        {
+          "type": "commit",
+          "supportRequired": false,
+          "action": "REVEAL_HAND",
+          "mode": "SELECT_TARGET",
+          "details": {
+            "count": 1,
+            "selectFrom": "opponent",
+            "filter": "isAdjacent"
+          }
+        }
+      ]
     },
     "walkingTurret": {
       "baseId": "walkingTurret",
@@ -489,11 +1263,33 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365220/TKN_WALKING_TURRET_c0mttm.webp",
       "fallbackImage": "/images/cards/TKN_WALKING_TURRET.png",
       "power": 2,
-      "ability": "Deploy: Place an Aim token on a card in its line.\nSetup: Give -1 power to a card with an Aim token.",
+      "abilityText": "Deploy: Place an Aim token on a card in its line.\nSetup: Give -1 power to a card with an Aim token.",
       "flavorText": "This military monster clearly has no place on the city streets.",
       "color": "bg-gray-400",
       "types": ["Unit", "Optimates", "Device"],
-      "allowedPanels": ["TOKEN_PANEL"]
+      "allowedPanels": ["TOKEN_PANEL"],
+      "ABILITIES": [
+        {
+          "type": "deploy",
+          "supportRequired": false,
+          "action": "CREATE_STACK",
+          "mode": "LINE_TARGET",
+          "details": {
+            "tokenType": "Aim",
+            "count": 1
+          }
+        },
+        {
+          "type": "setup",
+          "supportRequired": false,
+          "action": "MODIFY_POWER",
+          "mode": "SELECT_TARGET",
+          "details": {
+            "filter": "hasStatus_Aim",
+            "amount": -1
+          }
+        }
+      ]
     }
   },
 

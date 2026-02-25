@@ -321,7 +321,7 @@ export function deserializeDeckCards(base64Data: string, ownerId: number): any[]
           name: cardDef.name,
           imageUrl: cardDef.imageUrl,
           power: cardDef.power || 0,
-          ability: cardDef.ability || '',
+          abilityText: cardDef.abilityText || '',
           types: cardDef.types || [],
           faction: cardDef.faction || '',
           color: cardDef.color || 'Red',

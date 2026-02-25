@@ -6,11 +6,13 @@
  * возвращает новое состояние.
  */
 
-import type { GameState, Card, Player, DeckType } from '../types'
+import type { GameState, Card, Player, DeckType, ScoringLineData } from '../types'
 import type { ActionType } from './SimpleP2PTypes'
 import { getCardDefinition } from '../content'
 import { shuffleDeck } from '../../shared/utils/array'
 import { recalculateBoardStatuses } from '../../shared/utils/boardUtils'
+import { initializeReadyStatuses, recalculateAllReadyStatuses } from '../utils/autoAbilities'
+import { createDeck } from '../hooks/core/gameCreators'
 
 /**
  * Применить действие к состоянию игры
@@ -49,6 +51,10 @@ export function applyAction(
 
     case 'PLAY_CARD':
       newState = handlePlayCard(newState, playerId, data)
+      break
+
+    case 'MOVE_CARD_ON_BOARD':
+      newState = handleMoveCardOnBoard(newState, playerId, data)
       break
 
     case 'MOVE_CARD':
@@ -152,6 +158,10 @@ export function applyAction(
       newState = handlePlayerReady(newState, playerId)
       break
 
+    case 'RESET_GAME':
+      newState = handleResetGame(newState)
+      break
+
     case 'SET_GAME_MODE':
       newState = handleSetGameMode(newState, data?.mode)
       break
@@ -220,31 +230,41 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
 
   // Preparation (0) → Setup (1) - автоматический, обрабатывается в passTurn
   if (phase === 0) {
-    return { ...state, currentPhase: 1 }
+    const newState = { ...state, currentPhase: 1 }
+    recalculateAllReadyStatuses(newState)
+    return newState
   }
 
   // Setup (1) → Main (2) - происходит при игре карты
   if (phase === 1) {
-    return { ...state, currentPhase: 2 }
+    const newState = { ...state, currentPhase: 2 }
+    recalculateAllReadyStatuses(newState)
+    return newState
   }
 
   // Main (2) → Commit (3)
   if (phase === 2) {
-    return { ...state, currentPhase: 3 }
+    const newState = { ...state, currentPhase: 3 }
+    recalculateAllReadyStatuses(newState)
+    return newState
   }
 
   // Commit (3) → Scoring (4) или PassTurn
   if (phase === 3) {
-    // Проверяем есть ли у игрока карты со статусом "последняя сыгранная" на доске
+    // Проверяем есть ли у игрока карты со статусом "LastPlayed" на доске
+    // Статус LastPlayed добавляется когда карта сыграна из руки
     const hasLastPlayedCards = state.board.some(row =>
-      row.some(cell => cell.card?.ownerId === playerId && cell.card?.enteredThisTurn)
+      row.some(cell =>
+        cell.card?.ownerId === playerId &&
+        cell.card?.statuses?.some(s => s.type === 'LastPlayed' && s.addedByPlayerId === playerId)
+      )
     )
 
     if (hasLastPlayedCards) {
-      // Есть новые карты - переходим к Scoring
-      return { ...state, currentPhase: 4, isScoringStep: true }
+      // Есть карты со статусом LastPlayed - переходим к Scoring и вычисляем линии
+      return enterScoringPhase(state, playerId)
     } else {
-      // Нет новых карт - передаём ход
+      // Нет карт со статусом LastPlayed - передаём ход следующему игроку
       return handlePassTurn(state, playerId, 'no_new_cards')
     }
   }
@@ -255,6 +275,31 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
   }
 
   return state
+}
+
+/**
+ * Войти в фазу Scoring - вычислить линии для подсветки
+ */
+function enterScoringPhase(state: GameState, playerId: number): GameState {
+  // Находим линии, содержащие карты игрока
+  const lines = findScoringLinesWithPlayerCard(state, playerId)
+
+  // Вычисляем очки для каждой линии
+  const scoringLines: ScoringLineData[] = lines.map(line => ({
+    playerId,
+    lineType: line.type as any,
+    lineIndex: line.index,
+    score: calculateLineScore(state, playerId, line.type, line.index)
+  }))
+
+  console.log('[enterScoringPhase] Player', playerId, 'scoring lines:', scoringLines)
+
+  return {
+    ...state,
+    currentPhase: 4,
+    isScoringStep: true,
+    scoringLines
+  }
 }
 
 /**
@@ -298,11 +343,19 @@ function handlePassTurn(state: GameState, playerId: number, reason: string): Gam
     })
   )
 
+  // Очищаем lastPlayedCardId у всех игроков при передаче хода
+  const newPlayers = state.players.map(p => ({
+    ...p,
+    lastPlayedCardId: null
+  }))
+
   let newState = {
     ...state,
     board: newBoard,
+    players: newPlayers,
     activePlayerId: nextPlayerId,
     currentPhase: 0,  // Preparation
+    scoringLines: []  // Очищаем линии скоринга при передаче хода
   }
 
   // Проверяем полный круг (вернулись к начавшему игроку)
@@ -321,7 +374,9 @@ function handlePassTurn(state: GameState, playerId: number, reason: string): Gam
  */
 function handleSetPhase(state: GameState, phaseNumber: number): GameState {
   const clamped = Math.max(0, Math.min(4, phaseNumber))
-  return { ...state, currentPhase: clamped }
+  const newState = { ...state, currentPhase: clamped }
+  recalculateAllReadyStatuses(newState)
+  return newState
 }
 
 /**
@@ -355,6 +410,10 @@ function executePreparationPhase(state: GameState, activePlayerId: number): Game
   // Переход к Setup
   newState.currentPhase = 1
   console.log('[executePreparationPhase] Transition to Setup phase for player', activePlayerId)
+
+  // Recalculate ready statuses for new active player in Setup phase
+  recalculateAllReadyStatuses(newState)
+
   return newState
 }
 
@@ -380,17 +439,49 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
   const newHand = [...player.hand]
   newHand.splice(cardIndexNum, 1)
 
-  // Добавляем на доску
-  const newBoard = state.board.map((row, r) =>
+  // Сначала убираем LastPlayed статус со ВСЕХ карт игрока на доске
+  // (только одна карта может иметь LastPlayed статус одновременно)
+  const boardWithoutLastPlayed = state.board.map((row, r) =>
+    row.map((cell, c) => {
+      if (cell.card?.ownerId === playerId && cell.card?.statuses) {
+        const filteredStatuses = cell.card.statuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === playerId))
+        if (filteredStatuses.length !== cell.card.statuses.length) {
+          return {
+            card: {
+              ...cell.card,
+              statuses: filteredStatuses
+            }
+          }
+        }
+      }
+      return cell
+    })
+  )
+
+  // Теперь добавляем карту на доску с LastPlayed статусом
+  const newBoard = boardWithoutLastPlayed.map((row, r) =>
     row.map((cell, c) => {
       if (r === boardCoords.row && c === boardCoords.col) {
+        // Add LastPlayed status to the card when played from hand
+        // This status is used to determine if player can enter scoring phase
+        const lastPlayedStatus = { type: 'LastPlayed', addedByPlayerId: playerId }
+        const existingStatuses = card.statuses || []
+        // Remove any existing LastPlayed status from this card (to avoid duplicates)
+        const filteredStatuses = existingStatuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === playerId))
+
+        const boardCard = {
+          ...card,
+          ownerId: playerId,
+          isFaceDown: faceDown,
+          enteredThisTurn: true,
+          statuses: [...filteredStatuses, lastPlayedStatus]
+        }
+
+        // Initialize ready statuses for this card (readyDeploy, readySetup, readyCommit)
+        initializeReadyStatuses(boardCard, playerId, state.currentPhase)
+
         return {
-          card: {
-            ...card,
-            ownerId: playerId,
-            isFaceDown: faceDown,
-            enteredThisTurn: true
-          }
+          card: boardCard
         }
       }
       return cell
@@ -400,14 +491,15 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
   // Добавляем в boardHistory
   const newBoardHistory = [...player.boardHistory, card.id]
 
-  // Обновляем игрока
+  // Обновляем игрока - устанавливаем lastPlayedCardId
   const newPlayers = state.players.map(p =>
     p.id === playerId
       ? {
           ...p,
           hand: newHand,
           handSize: newHand.length,
-          boardHistory: newBoardHistory
+          boardHistory: newBoardHistory,
+          lastPlayedCardId: card.id
         }
       : p
   )
@@ -418,6 +510,56 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
     players: newPlayers,
     currentPhase: 2  // Main phase после игры карты
   }
+}
+
+/**
+ * MOVE_CARD_ON_BOARD - переместить карту с одной клетки на другую
+ */
+function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): GameState {
+  const { cardId, fromCoords, toCoords, faceDown } = data || {}
+
+  if (!fromCoords || !toCoords) return state
+
+  const fromRow = fromCoords.row
+  const fromCol = fromCoords.col
+  const toRow = toCoords.row
+  const toCol = toCoords.col
+
+  // Проверяем границы
+  const gridSize = state.activeGridSize
+  if (fromRow < 0 || fromRow >= gridSize || fromCol < 0 || fromCol >= gridSize) return state
+  if (toRow < 0 || toRow >= gridSize || toCol < 0 || toCol >= gridSize) return state
+
+  // Проверяем что исходная клетка содержит карту
+  const sourceCard = state.board[fromRow]?.[fromCol]?.card
+  if (!sourceCard) return state
+
+  // Проверяем что целевая клетка пуста
+  const targetCell = state.board[toRow]?.[toCol]
+  if (!targetCell || targetCell.card) return state
+
+  // Перемещаем карту
+  const newBoard = state.board.map((row, r) =>
+    row.map((cell, c) => {
+      // Очищаем исходную клетку
+      if (r === fromRow && c === fromCol) {
+        return { card: null }
+      }
+      // Размещаем карту в новой клетке
+      if (r === toRow && c === toCol) {
+        const movedCard = {
+          ...sourceCard,
+          isFaceDown: faceDown !== undefined ? faceDown : sourceCard.isFaceDown
+        }
+        return { card: movedCard }
+      }
+      return cell
+    })
+  )
+
+  console.log('[handleMoveCardOnBoard] Moved card from', fromCoords, 'to', toCoords)
+
+  return { ...state, board: newBoard }
 }
 
 /**
@@ -786,6 +928,8 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
   const newBoard = state.board.map((r, rIdx) =>
     r.map((cell, cIdx) => {
       if (rIdx === row && cIdx === col) {
+        // Initialize ready statuses for this card
+        initializeReadyStatuses(cardToPlay, playerId, state.currentPhase)
         return { card: cardToPlay }
       }
       return cell
@@ -813,6 +957,35 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
   const card = player.hand[cardIndex]
   if (!card) return state
 
+  // Сначала убираем LastPlayed статус со ВСЕХ карт игрока на доске
+  // (только одна карта может иметь LastPlayed статус одновременно)
+  const boardWithoutLastPlayed = state.board.map((row, r) =>
+    row.map((cell, c) => {
+      if (cell.card?.ownerId === playerId && cell.card?.statuses) {
+        const filteredStatuses = cell.card.statuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === playerId))
+        if (filteredStatuses.length !== cell.card.statuses.length) {
+          return {
+            card: {
+              ...cell.card,
+              statuses: filteredStatuses
+            }
+          }
+        }
+      }
+      return cell
+    })
+  )
+
+  // Add LastPlayed status to the announced card (it was played from hand)
+  const lastPlayedStatus = { type: 'LastPlayed', addedByPlayerId: playerId }
+  const existingStatuses = card.statuses || []
+  // Remove any existing LastPlayed status from this card (to avoid duplicates)
+  const filteredStatuses = existingStatuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === playerId))
+  const announcedCardWithStatus = {
+    ...card,
+    statuses: [...filteredStatuses, lastPlayedStatus]
+  }
+
   const newPlayers = state.players.map(p => {
     if (p.id === playerId) {
       const newHand = [...p.hand]
@@ -821,13 +994,16 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
         ...p,
         hand: newHand,
         handSize: newHand.length,
-        announcedCard: card
+        announcedCard: announcedCardWithStatus,
+        // Update boardHistory and lastPlayedCardId for scoring phase
+        boardHistory: [...player.boardHistory, card.id],
+        lastPlayedCardId: card.id
       }
     }
     return p
   })
 
-  return { ...state, players: newPlayers }
+  return { ...state, board: boardWithoutLastPlayed, players: newPlayers }
 }
 
 /**
@@ -839,12 +1015,14 @@ function handleDestroyCard(state: GameState, playerId: number, data: any): GameS
 
   let destroyedCard: Card | null = null
   let ownerId: number | null = null
+  let destroyedCoords: { row: number; col: number } | null = null
 
-  const newBoard = state.board.map(row =>
-    row.map(cell => {
+  const newBoard = state.board.map((row, r) =>
+    row.map((cell, c) => {
       if (cell.card?.id === cardId) {
         destroyedCard = cell.card
         ownerId = cell.card.ownerId || null
+        destroyedCoords = { row: r, col: c }
         return { card: null }
       }
       return cell
@@ -853,13 +1031,57 @@ function handleDestroyCard(state: GameState, playerId: number, data: any): GameS
 
   if (!destroyedCard || !ownerId) return state
 
+  // Проверяем, была ли это последняя сыгранная карта владельца
+  const owner = state.players.find(p => p.id === ownerId)
+  let updatedBoard = newBoard
+  let newLastPlayedCardId: string | null = null
+
+  if (owner && owner.lastPlayedCardId === cardId) {
+    // Эта карта была последней сыгранной - нужно восстановить статус предыдущей
+    // Ищем предыдущую карту в boardHistory (кроме уничтоженной)
+    const historyWithoutDestroyed = owner.boardHistory.filter(id => id !== cardId)
+
+    if (historyWithoutDestroyed.length > 0) {
+      const prevCardId = historyWithoutDestroyed[historyWithoutDestroyed.length - 1]
+      newLastPlayedCardId = prevCardId
+
+      // Находим эту карту на доске и восстанавливаем LastPlayed статус
+      updatedBoard = newBoard.map(row =>
+        row.map(cell => {
+          if (cell.card?.id === prevCardId) {
+            // Add LastPlayed status to the previous card
+            const lastPlayedStatus = { type: 'LastPlayed', addedByPlayerId: ownerId }
+            const existingStatuses = cell.card.statuses || []
+            // Remove any existing LastPlayed status from this player
+            const filteredStatuses = existingStatuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === ownerId))
+
+            return {
+              card: {
+                ...cell.card,
+                enteredThisTurn: true,
+                statuses: [...filteredStatuses, lastPlayedStatus]
+              }
+            }
+          }
+          return cell
+        })
+      )
+
+      console.log('[handleDestroyCard] Restored LastPlayed status for previous card:', prevCardId)
+    }
+  }
+
   // Добавляем в discard владельцу
   const newPlayers = state.players.map(p => {
     if (p.id === ownerId) {
+      // Обновляем boardHistory (убираем уничтоженную карту)
+      const newBoardHistory = p.boardHistory.filter(id => id !== cardId)
       return {
         ...p,
         discard: [...p.discard, destroyedCard],
-        discardSize: p.discard.length + 1
+        discardSize: p.discard.length + 1,
+        boardHistory: newBoardHistory,
+        lastPlayedCardId: p.id === ownerId ? newLastPlayedCardId : p.lastPlayedCardId
       }
     }
     return p
@@ -867,7 +1089,7 @@ function handleDestroyCard(state: GameState, playerId: number, data: any): GameS
 
   return {
     ...state,
-    board: newBoard,
+    board: updatedBoard,
     players: newPlayers
   }
 }
@@ -996,7 +1218,8 @@ function handleChangePlayerDeck(state: GameState, playerId: number, deckType: De
 function handleStartScoring(state: GameState, playerId: number): GameState {
   if (state.currentPhase !== 3) return state
 
-  return { ...state, currentPhase: 4, isScoringStep: true }
+  // Используем enterScoringPhase для правильного расчёта линий
+  return enterScoringPhase(state, playerId)
 }
 
 /**
@@ -1005,8 +1228,14 @@ function handleStartScoring(state: GameState, playerId: number): GameState {
 function handleSelectScoringLine(state: GameState, playerId: number, data: any): GameState {
   if (!state.isScoringStep || state.activePlayerId !== playerId) return state
 
-  // Добавляем очки (упрощённо)
-  const points = data?.points || 0
+  const { lineType, lineIndex } = data || {}
+  if (!lineType) return state
+
+  // Вычисляем очки на основе карт в линии
+  const points = calculateLineScore(state, playerId, lineType, lineIndex)
+
+  console.log('[handleSelectScoringLine] Player', playerId, 'selected', lineType, lineIndex, 'score:', points)
+
   const newPlayers = state.players.map(p =>
     p.id === playerId
       ? { ...p, score: p.score + points }
@@ -1017,10 +1246,124 @@ function handleSelectScoringLine(state: GameState, playerId: number, data: any):
   let newState = {
     ...state,
     players: newPlayers,
-    isScoringStep: false
+    isScoringStep: false,
+    scoringLines: []  // Очищаем линии скоринга
   }
 
   return handlePassTurn(newState, playerId, 'scoring_complete')
+}
+
+/**
+ * Вычислить очки для линии
+ * lineType: 'row' | 'col' | 'diagonal' | 'anti-diagonal'
+ * lineIndex: номер строки/колонки (0-based), или undefined для диагоналей
+ */
+function calculateLineScore(state: GameState, playerId: number, lineType: string, lineIndex?: number): number {
+  const gridSize = state.activeGridSize
+  let cellsToCheck: { row: number; col: number }[] = []
+
+  if (lineType === 'row' && lineIndex !== undefined) {
+    // Горизонтальная линия
+    for (let c = 0; c < gridSize; c++) {
+      cellsToCheck.push({ row: lineIndex, col: c })
+    }
+  } else if (lineType === 'col' && lineIndex !== undefined) {
+    // Вертикальная линия
+    for (let r = 0; r < gridSize; r++) {
+      cellsToCheck.push({ row: r, col: lineIndex })
+    }
+  } else if (lineType === 'diagonal') {
+    // Главная диагональ (top-left to bottom-right)
+    for (let i = 0; i < gridSize; i++) {
+      cellsToCheck.push({ row: i, col: i })
+    }
+  } else if (lineType === 'anti-diagonal') {
+    // Побочная диагональ (top-right to bottom-left)
+    for (let i = 0; i < gridSize; i++) {
+      cellsToCheck.push({ row: i, col: gridSize - 1 - i })
+    }
+  }
+
+  // Считаем сумму сил всех карт игрока в этой линии
+  let score = 0
+  for (const { row, col } of cellsToCheck) {
+    const cell = state.board[row]?.[col]
+    if (cell.card?.ownerId === playerId) {
+      const power = cell.card.power || 0
+      const powerModifier = cell.card.powerModifier || 0
+      score += power + powerModifier
+    }
+  }
+
+  return score
+}
+
+/**
+ * Найти все линии, содержащие карту игрока
+ * Возвращает массив линий, которые можно подсветить для скоринга
+ */
+export function findScoringLinesWithPlayerCard(
+  state: GameState,
+  playerId: number
+): Array<{ type: string; index?: number; cells: { row: number; col: number }[] }> {
+  const player = state.players.find(p => p.id === playerId)
+  if (!player) return []
+
+  // Ищем координаты последней сыгранной карты
+  let lastPlayedCoords: { row: number; col: number } | null = null
+
+  if (player.lastPlayedCardId) {
+    // Ищем по lastPlayedCardId
+    for (let r = 0; r < state.activeGridSize; r++) {
+      for (let c = 0; c < state.activeGridSize; c++) {
+        const cell = state.board[r]?.[c]
+        if (cell.card?.id === player.lastPlayedCardId) {
+          lastPlayedCoords = { row: r, col: c }
+          break
+        }
+      }
+      if (lastPlayedCoords) break
+    }
+  }
+
+  // Если не нашли последнюю сыгранную, ищем любую карту с enteredThisTurn
+  if (!lastPlayedCoords) {
+    for (let r = 0; r < state.activeGridSize; r++) {
+      for (let c = 0; c < state.activeGridSize; c++) {
+        const cell = state.board[r]?.[c]
+        if (cell.card?.ownerId === playerId && cell.card.enteredThisTurn) {
+          lastPlayedCoords = { row: r, col: c }
+          break
+        }
+      }
+      if (lastPlayedCoords) break
+    }
+  }
+
+  // Если не нашли ни одной карты - нет линий для скоринга
+  if (!lastPlayedCoords) return []
+
+  const { row, col } = lastPlayedCoords
+  const lines: Array<{ type: string; index?: number; cells: { row: number; col: number }[] }> = []
+
+  // Горизонтальная линия (row)
+  const rowCells: { row: number; col: number }[] = []
+  for (let c = 0; c < state.activeGridSize; c++) {
+    rowCells.push({ row, col: c })
+  }
+  lines.push({ type: 'row', index: row, cells: rowCells })
+
+  // Вертикальная линия (col)
+  const colCells: { row: number; col: number }[] = []
+  for (let r = 0; r < state.activeGridSize; r++) {
+    colCells.push({ row: r, col })
+  }
+  lines.push({ type: 'col', index: col, cells: colCells })
+
+  // Диагональные линии пока не используются в фазе скоринга
+  // (могут использоваться в способностях карт)
+
+  return lines
 }
 
 // ============================================================================
@@ -1094,6 +1437,77 @@ function handlePlayerReady(state: GameState, playerId: number): GameState {
   }
 
   return { ...state, players: newPlayers }
+}
+
+/**
+ * RESET_GAME - сбросить игру в начальное состояние (лобби)
+ * Сохраняет игроков и их выбор колод, но сбрасывает всё остальное
+ */
+function handleResetGame(state: GameState): GameState {
+  console.log('[handleResetGame] Resetting game to lobby state')
+
+  // Сохраняем данные игроков для восстановления
+  const playersToKeep = state.players.map(p => {
+    const deckType = p.selectedDeck || 'SynchroTech'
+    return {
+      ...p,
+      // Сбрасываем игровые данные
+      hand: [],
+      deck: createDeck(deckType, p.id, p.name),
+      discard: [],
+      discardSize: 0,
+      handSize: 0,
+      deckSize: createDeck(deckType, p.id, p.name).length,
+      score: 0,
+      isReady: false,  // Сбрасываем готовность
+      announcedCard: null,
+      boardHistory: [],
+      lastPlayedCardId: null,
+      // Сохраняем настройки
+      autoDrawEnabled: p.autoDrawEnabled !== false,
+    }
+  })
+
+  // Создаём пустую доску с сохранённым размером
+  const gridSize = state.activeGridSize || 8
+  const newBoard: Array<Array<{ card: Card | null }>> = []
+  for (let i = 0; i < gridSize; i++) {
+    const row: Array<{ card: Card | null }> = []
+    for (let j = 0; j < gridSize; j++) {
+      row.push({ card: null })
+    }
+    newBoard.push(row)
+  }
+
+  return {
+    ...state,
+    // Сброс игровых флагов
+    isGameStarted: false,
+    isReadyCheckActive: false,
+    currentPhase: 0,
+    currentRound: 1,
+    turnNumber: 1,
+    activePlayerId: null,
+    startingPlayerId: null,
+    // Сброс раунда и матча
+    roundWinners: {},
+    gameWinner: null,
+    roundEndTriggered: false,
+    isRoundEndModalOpen: false,
+    scoringLines: [],
+    isScoringStep: false,
+    // Очистка визуальных эффектов
+    floatingTexts: [],
+    highlights: [],
+    deckSelections: [],
+    handCardSelections: [],
+    targetingMode: null,
+    clickWaves: [],
+    visualEffects: new Map(),
+    // Новая доска и игроки
+    board: newBoard,
+    players: playersToKeep,
+  }
 }
 
 /**

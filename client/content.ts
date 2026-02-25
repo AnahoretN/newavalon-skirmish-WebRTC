@@ -214,7 +214,7 @@ function buildDecksData(): Record<string, Card[]> {
       imageUrl: tokenDef.imageUrl,
       fallbackImage: tokenDef.fallbackImage,
       power: tokenDef.power,
-      ability: tokenDef.ability,
+      abilityText: tokenDef.abilityText,
       color: tokenDef.color,
       types: types,
       flavorText: tokenDef.flavorText,
@@ -332,4 +332,59 @@ export function getTokenDatabaseMap(): Map<string, CardDefinition> {
  */
 export function getDecksData(): Record<string, Card[]> {
   return _decksData
+}
+
+// ============================================================================
+// CARD ABILITIES SYSTEM
+// ============================================================================
+
+/**
+ * Raw ability structure from contentDatabase.json
+ */
+export interface ContentAbility {
+  type: 'deploy' | 'setup' | 'commit' | 'pass'
+  supportRequired?: boolean
+  action?: string
+  mode?: string | null
+  actionType?: string
+  details?: Record<string, any>
+  steps?: Array<{
+    action: string
+    mode?: string | null
+    details: Record<string, any>
+  }>
+}
+
+/**
+ * Get ABILITIES array for a card from contentDatabase
+ * This is the client-side version that reads from the embedded database.
+ * @param baseId - The card's base ID
+ * @returns Array of ContentAbility objects or empty array if not found
+ */
+export function getCardAbilities(baseId: string): ContentAbility[] {
+  const card = _cardDatabase.get(baseId)
+  if (!card) {
+    console.warn(`[content.ts] Card not found in database: ${baseId}`)
+    return []
+  }
+  if (!(card as any).ABILITIES) {
+    console.log(`[content.ts] Card ${baseId} has no ABILITIES field`)
+    return []
+  }
+  const abilities = (card as any).ABILITIES as ContentAbility[]
+  console.log(`[content.ts] Card ${baseId} has ${abilities.length} abilities:`, abilities.map(a => a.type))
+  return abilities
+}
+
+/**
+ * Get token ABILITIES array from tokenDatabase
+ * @param tokenId - The token's ID
+ * @returns Array of ContentAbility objects or empty array if not found
+ */
+export function getTokenAbilities(tokenId: string): ContentAbility[] {
+  const token = _tokenDatabase.get(tokenId)
+  if (!token || !(token as any).ABILITIES) {
+    return []
+  }
+  return (token as any).ABILITIES as ContentAbility[]
 }

@@ -104,7 +104,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, ownerPla
           {/* Core Stats */}
           <div className="bg-gray-900 p-4 rounded-lg">
             <p><strong className="text-indigo-400 text-lg">Power:</strong> <span className="text-xl font-bold">{displayCard.power}</span></p>
-            <p className="mt-2"><strong className="text-indigo-400 text-lg">Ability:</strong> <span className="text-gray-200 text-base">{formatAbilityText(displayCard.ability, abilityKeywords)}</span></p>
+            <p className="mt-2"><strong className="text-indigo-400 text-lg">Ability:</strong> <span className="text-gray-200 text-base">{formatAbilityText(displayCard.abilityText, abilityKeywords)}</span></p>
           </div>
 
           {/* Owner Info */}

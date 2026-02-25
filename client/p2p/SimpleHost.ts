@@ -465,7 +465,8 @@ export class SimpleHost {
             deck: player.deck,
             discard: player.discard,
             announcedCard: player.announcedCard ? { ...player.announcedCard } : null,
-            boardHistory: player.boardHistory
+            boardHistory: player.boardHistory,
+            lastPlayedCardId: player.lastPlayedCardId || null
           }
         } else {
           const pData = {
@@ -485,7 +486,8 @@ export class SimpleHost {
             deckSize: player.deck?.length || 0,
             discardSize: player.discard?.length || 0,
             // Делаем глубокую копию announcedCard для избежания проблем с ссылками
-            announcedCard: player.announcedCard ? { ...player.announcedCard } : null
+            announcedCard: player.announcedCard ? { ...player.announcedCard } : null,
+            lastPlayedCardId: player.lastPlayedCardId || null
           }
           // Логируем announcedCard для отладки
           if (player.announcedCard) {
@@ -579,6 +581,26 @@ export class SimpleHost {
    */
   getPeerId(): string | null {
     return this.peer?.id || null
+  }
+
+  /**
+   * Получить текущую версию состояния
+   */
+  getVersion(): number {
+    return this.version
+  }
+
+  /**
+   * Broadcast visual effect message to all guests
+   * Used for highlights, floating text, targeting mode, etc.
+   */
+  broadcast(message: any): void {
+    this.connections.forEach((conn, peerId) => {
+      conn.send({
+        ...message,
+        timestamp: Date.now()
+      })
+    })
   }
 
   /**

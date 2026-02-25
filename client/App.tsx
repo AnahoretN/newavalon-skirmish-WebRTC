@@ -139,6 +139,7 @@ const AppInner = function AppInner() {
     resetGame,
     resetDeployStatus,
     scoreDiagonal,
+    selectScoringLine,
     removeStatusByType,
     reorderTopDeck,
     reorderCards,
@@ -449,6 +450,51 @@ const AppInner = function AppInner() {
       setViewingCard({ card, player })
     }
   }
+
+  // Handle scoring line selection when in scoring phase
+  const handleScoringLineClick = useCallback((boardCoords: { row: number; col: number }) => {
+    // Only allow scoring if we're in scoring step and the player is the active player
+    if (!gameState.isScoringStep || gameState.activePlayerId !== localPlayerId) {
+      return
+    }
+
+    // Find which scoring line was clicked based on the cell coordinates
+    const scoringLines = gameState.scoringLines || []
+    const clickedLine = scoringLines.find(line => {
+      if (line.lineType === 'row' && line.lineIndex === boardCoords.row) {
+        return true
+      }
+      if (line.lineType === 'col' && line.lineIndex === boardCoords.col) {
+        return true
+      }
+      if (line.lineType === 'diagonal' && boardCoords.row === boardCoords.col) {
+        return true
+      }
+      // Anti-diagonal: row + col = gridSize - 1 (e.g., for 7x7: 0+6=6, 1+5=6, etc.)
+      if (line.lineType === 'anti-diagonal') {
+        const gridSize = 7 // TODO: use actual grid size from gameState.activeGridSize
+        if (boardCoords.row + boardCoords.col === gridSize - 1) {
+          return true
+        }
+      }
+      return false
+    })
+
+    if (clickedLine) {
+      selectScoringLine(clickedLine.lineType, clickedLine.lineIndex)
+    }
+  }, [gameState.isScoringStep, gameState.activePlayerId, gameState.scoringLines, gameState.activeGridSize, localPlayerId, selectScoringLine])
+
+  // Create a wrapper for handleEmptyCellClick that includes scoring line handling
+  const handleEmptyCellClickWithScoring = useCallback((boardCoords: { row: number; col: number }) => {
+    // Check if this is a scoring line click
+    if (gameState.isScoringStep && gameState.activePlayerId === localPlayerId) {
+      handleScoringLineClick(boardCoords)
+      return
+    }
+    // Otherwise, use the original handler
+    handleEmptyCellClick(boardCoords)
+  }, [gameState.isScoringStep, gameState.activePlayerId, localPlayerId, handleScoringLineClick, handleEmptyCellClick])
 
   const {
     cursorFollowerRef,
@@ -2658,7 +2704,7 @@ const AppInner = function AppInner() {
               currentPhase={gameState.currentPhase}
               activePlayerId={gameState.activePlayerId}
               onCardClick={handleBoardCardClick}
-              onEmptyCellClick={handleEmptyCellClick}
+              onEmptyCellClick={handleEmptyCellClickWithScoring}
               validTargets={validTargets}
               targetingMode={gameState.targetingMode}
               noTargetOverlay={noTargetOverlay}
@@ -2668,6 +2714,8 @@ const AppInner = function AppInner() {
               abilitySourceCoords={abilityMode?.sourceCoords || null}
               abilityCheckKey={abilityCheckKey}
               abilityMode={abilityMode}
+              scoringLines={gameState.scoringLines || []}
+              activePlayerIdForScoring={gameState.activePlayerId}
               clickWaves={clickWaves}
               triggerClickWave={triggerClickWave}
               visualEffects={gameState.visualEffects}

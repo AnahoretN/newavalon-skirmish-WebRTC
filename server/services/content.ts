@@ -65,7 +65,7 @@ export async function initializeContent() {
       for (const [id, card] of Object.entries(cards)) {
         processed[id] = {
           ...card,
-          ability: processAbilityText(card.ability),
+          abilityText: processAbilityText(card.abilityText),
           flavorText: processAbilityText(card.flavorText),
         };
       }
@@ -130,7 +130,7 @@ export async function updateContent(newContent: any) {
       for (const [id, card] of Object.entries(cards)) {
         processed[id] = {
           ...card,
-          ability: processAbilityText(card.ability),
+          abilityText: processAbilityText(card.abilityText),
           flavorText: processAbilityText(card.flavorText),
         };
       }
@@ -189,4 +189,117 @@ export function setTokenDatabase(tokens: Record<string, any>) {
  */
 export function setDeckFiles(decks: any[]) {
   deckFiles = decks;
+}
+
+// ============================================================================
+// CARD ABILITIES SYSTEM
+// ============================================================================
+
+/**
+ * Raw ability structure from contentDatabase.json
+ */
+export interface ContentAbility {
+  type: 'deploy' | 'setup' | 'commit' | 'pass'
+  supportRequired?: boolean
+  action?: string
+  mode?: string | null
+  actionType?: string
+  details?: Record<string, any>
+  steps?: Array<{
+    action: string
+    mode?: string | null
+    details: Record<string, any>
+  }>
+}
+
+/**
+ * Get ABILITIES array for a card from contentDatabase
+ * @param baseId - The card's base ID
+ * @returns Array of ContentAbility objects or empty array if not found
+ */
+export function getCardAbilities(baseId: string): ContentAbility[] {
+  const card = cardDatabase[baseId]
+  if (!card || !card.ABILITIES) {
+    return []
+  }
+  return card.ABILITIES as ContentAbility[]
+}
+
+/**
+ * Get ability types for a card (deploy, setup, commit, pass)
+ * @param baseId - The card's base ID
+ * @returns Array of ability type strings
+ */
+export function getCardAbilityTypes(baseId: string): string[] {
+  const abilities = getCardAbilities(baseId)
+  const types = abilities.map(a => a.type)
+  return [...new Set(types)]
+}
+
+/**
+ * Check if card has a specific ability type
+ * @param baseId - The card's base ID
+ * @param type - The ability type to check
+ * @returns true if card has this ability type
+ */
+export function hasCardAbilityType(baseId: string, type: 'deploy' | 'setup' | 'commit' | 'pass'): boolean {
+  const abilities = getCardAbilities(baseId)
+  return abilities.some(a => a.type === type)
+}
+
+/**
+ * Get abilities of a specific type for a card
+ * @param baseId - The card's base ID
+ * @param type - The ability type to filter by
+ * @returns Array of ContentAbility objects of the specified type
+ */
+export function getCardAbilitiesByType(
+  baseId: string,
+  type: 'deploy' | 'setup' | 'commit' | 'pass'
+): ContentAbility[] {
+  const abilities = getCardAbilities(baseId)
+  return abilities.filter(a => a.type === type)
+}
+
+/**
+ * Get card ability info for ready status system
+ * @param baseId - The card's base ID
+ * @returns CardAbilityInfo object
+ */
+export function getCardAbilityInfoFromContent(baseId: string): {
+  hasDeployAbility: boolean
+  hasSetupAbility: boolean
+  hasCommitAbility: boolean
+  setupRequiresSupport: boolean
+  commitRequiresSupport: boolean
+} {
+  const abilities = getCardAbilities(baseId)
+
+  const hasDeployAbility = abilities.some(a => a.type === 'deploy')
+  const hasSetupAbility = abilities.some(a => a.type === 'setup')
+  const hasCommitAbility = abilities.some(a => a.type === 'commit')
+
+  const setupAbility = abilities.find(a => a.type === 'setup')
+  const commitAbility = abilities.find(a => a.type === 'commit')
+
+  return {
+    hasDeployAbility,
+    hasSetupAbility,
+    hasCommitAbility,
+    setupRequiresSupport: setupAbility?.supportRequired ?? false,
+    commitRequiresSupport: commitAbility?.supportRequired ?? false,
+  }
+}
+
+/**
+ * Get token ABILITIES array from tokenDatabase
+ * @param tokenId - The token's ID
+ * @returns Array of ContentAbility objects or empty array if not found
+ */
+export function getTokenAbilities(tokenId: string): ContentAbility[] {
+  const token = tokenDatabase[tokenId]
+  if (!token || !token.ABILITIES) {
+    return []
+  }
+  return token.ABILITIES as ContentAbility[]
 }

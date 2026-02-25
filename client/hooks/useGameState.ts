@@ -106,6 +106,7 @@ interface UseGameStateResult {
   // Scoring
   scoreLine: (line: any) => void
   scoreDiagonal: (playerId: number) => void
+  selectScoringLine: (lineType: string, lineIndex?: number) => void
   closeRoundEndModal: () => void
   closeRoundEndModalOnly: () => void
 
@@ -424,6 +425,15 @@ export function useGameState(props: any = {}): UseGameStateResult {
           col: target.boardCoords.col,
           faceDown: item.card?.isFaceDown
         }
+      } else if (item.source === 'board') {
+        // Перемещение карты с одной клетки поля боя на другую
+        action = 'MOVE_CARD_ON_BOARD'
+        actionData = {
+          cardId: item.card?.id,
+          fromCoords: item.boardCoords,
+          toCoords: target.boardCoords,
+          faceDown: item.card?.isFaceDown
+        }
       }
 
       sendAction(action, actionData)
@@ -528,6 +538,10 @@ export function useGameState(props: any = {}): UseGameStateResult {
     sendAction('SELECT_SCORING_LINE', { line })
   }, [sendAction])
 
+  const selectScoringLine = useCallback((lineType: string, lineIndex?: number) => {
+    sendAction('SELECT_SCORING_LINE', { lineType, lineIndex })
+  }, [sendAction])
+
   const scoreDiagonal = useCallback((playerId: number) => {
     // TODO
   }, [])
@@ -541,42 +555,49 @@ export function useGameState(props: any = {}): UseGameStateResult {
   }, [])
 
   // ============================================================================
-  // Visual effects (заглушки)
+  // Visual effects - using useVisualEffects hook
   // ============================================================================
-  const triggerHighlight = useCallback((highlight: HighlightData) => {
-    latestHighlightRef.current = highlight
-  }, [])
+  const { useVisualEffects: useVE } = (() => {
+    // Lazy import to avoid circular dependency
+    let hook: any = null
 
-  const triggerNoTarget = useCallback((coords: any) => {
-    latestNoTargetRef.current = { coords, timestamp: Date.now() }
-  }, [])
+    return {
+      useVisualEffects: (props: any) => {
+        if (!hook) {
+          hook = require('../useVisualEffects').useVisualEffects
+        }
+        return hook(props)
+      }
+    }
+  })()
 
-  const triggerDeckSelection = useCallback((data: DeckSelectionData) => {
-    latestDeckSelectionsRef.current.push(data)
-  }, [])
+  // Initialize visual effects with simpleHost if available
+  const visualEffects = useVE({
+    simpleHost: simpleHostRef.current,
+    gameStateRef,
+    localPlayerIdRef,
+    setLatestHighlight,
+    setLatestFloatingTexts,
+    setLatestNoTarget,
+    setLatestDeckSelections,
+    setLatestHandCardSelections,
+    setClickWaves,
+    setGameState,
+  })
 
-  const triggerHandCardSelection = useCallback((data: HandCardSelectionData) => {
-    latestHandCardSelectionsRef.current.push(data)
-  }, [])
-
-  const triggerClickWave = useCallback((data: any) => {
-    clickWavesRef.current.push(data)
-  }, [])
-
-  const triggerFloatingText = useCallback((data: FloatingTextData) => {
-    latestFloatingTextsRef.current.push(data)
-  }, [])
+  const {
+    triggerHighlight,
+    triggerNoTarget,
+    triggerDeckSelection,
+    triggerHandCardSelection,
+    triggerClickWave,
+    triggerFloatingText,
+    setTargetingMode,
+    clearTargetingMode,
+  } = visualEffects
 
   const syncValidTargets = useCallback((validTargets: any[]) => {
-    // TODO
-  }, [])
-
-  const setTargetingMode = useCallback(() => {
-    // TODO
-  }, [])
-
-  const clearTargetingMode = useCallback(() => {
-    // TODO
+    // Handled via targeting mode in P2P
   }, [])
 
   // ============================================================================
@@ -629,7 +650,9 @@ export function useGameState(props: any = {}): UseGameStateResult {
   // ============================================================================
   // Game reset
   // ============================================================================
-  const resetGame = useCallback(() => {}, [])
+  const resetGame = useCallback(() => {
+    sendAction('RESET_GAME')
+  }, [sendAction])
   const resetDeployStatus = useCallback(() => {}, [])
   const removeStatusByType = useCallback(() => {}, [])
   const reorderTopDeck = useCallback(() => {}, [])
@@ -748,6 +771,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
     spawnToken,
     scoreLine,
     scoreDiagonal,
+    selectScoringLine,
     closeRoundEndModal,
     closeRoundEndModalOnly,
     resetGame,

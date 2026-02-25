@@ -18,7 +18,7 @@ export const CommandModal: React.FC<CommandModalProps> = ({ isOpen, card, player
 
   const localized = card.baseId ? getCardTranslation(card.baseId) : undefined
   const displayCard = localized ? { ...card, ...localized } : card
-  const abilityText = displayCard.ability || ''
+  const abilityText = displayCard.abilityText || ''
 
   // Parse Ability Text for N Options
   // Expected format: "● Option 1 Text... \n● Option 2 Text..."

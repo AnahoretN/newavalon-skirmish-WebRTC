@@ -699,7 +699,7 @@ export function decodeCardState(
           name: cardDef?.name || baseId,
           imageUrl: cardDef?.imageUrl || '',
           power: cardDef?.power || 0,
-          ability: cardDef?.ability || '',
+          abilityText: cardDef?.abilityText || '',
           types: cardDef?.types || [],
           faction: cardDef?.faction || '',
           ownerId: player.id,
@@ -724,7 +724,7 @@ export function decodeCardState(
           name: cardDef?.name || baseId,
           imageUrl: cardDef?.imageUrl || '',
           power: cardDef?.power || 0,
-          ability: cardDef?.ability || '',
+          abilityText: cardDef?.abilityText || '',
           types: cardDef?.types || [],
           faction: cardDef?.faction || '',
           ownerId: player.id,
@@ -749,7 +749,7 @@ export function decodeCardState(
           name: cardDef?.name || baseId,
           imageUrl: cardDef?.imageUrl || '',
           power: cardDef?.power || 0,
-          ability: cardDef?.ability || '',
+          abilityText: cardDef?.abilityText || '',
           types: cardDef?.types || [],
           faction: cardDef?.faction || '',
           ownerId: player.id,
@@ -793,7 +793,7 @@ export function decodeCardState(
           name: cardDef?.name || baseId,
           imageUrl: cardDef?.imageUrl || '',
           power: cardDef?.power || 0,
-          ability: cardDef?.ability || '',
+          abilityText: cardDef?.abilityText || '',
           types: cardDef?.types || [],
           faction: cardDef?.faction || '',
           ownerId: player.id,
@@ -817,7 +817,7 @@ export function decodeCardState(
           name: cardDef?.name || baseId,
           imageUrl: cardDef?.imageUrl || '',
           power: cardDef?.power || 0,
-          ability: cardDef?.ability || '',
+          abilityText: cardDef?.abilityText || '',
           types: cardDef?.types || [],
           faction: cardDef?.faction || '',
           ownerId: player.id,
@@ -841,7 +841,7 @@ export function decodeCardState(
           name: cardDef?.name || baseId,
           imageUrl: cardDef?.imageUrl || '',
           power: cardDef?.power || 0,
-          ability: cardDef?.ability || '',
+          abilityText: cardDef?.abilityText || '',
           types: cardDef?.types || [],
           faction: cardDef?.faction || '',
           ownerId: player.id,
@@ -883,7 +883,7 @@ export function decodeCardState(
           imageUrl: cardDef?.imageUrl || '',
           power: cardDef?.power || 0,
           powerModifier: 0,
-          ability: cardDef?.ability || '',
+          abilityText: cardDef?.abilityText || '',
           types: cardDef?.types || [],
           faction: cardDef?.faction || '',
           color: player.color,
@@ -909,7 +909,7 @@ export function decodeCardState(
           name: cardDef?.name || baseId,
           imageUrl: cardDef?.imageUrl || '',
           power: cardDef?.power || 0,
-          ability: cardDef?.ability || '',
+          abilityText: cardDef?.abilityText || '',
           types: cardDef?.types || [],
           faction: cardDef?.faction || '',
           ownerId: player.id,
@@ -1006,7 +1006,7 @@ function decodeCardRef(data: Uint8Array, offset: number): { card: Card, bytesCon
       name: cardDef?.name || baseId,
       imageUrl: cardDef?.imageUrl || '',
       power,
-      ability: cardDef?.ability || '',
+      abilityText: cardDef?.abilityText || '',
       types: cardDef?.types || [],
       faction: cardDef?.faction || '',
       ownerId,
@@ -1023,7 +1023,7 @@ function decodeCardRef(data: Uint8Array, offset: number): { card: Card, bytesCon
  * Get card definition from local contentDatabase
  * Uses the content module which imports embeddedDatabase
  */
-function getCardDefinitionFromLocal(baseId: string): { name: string, imageUrl: string, power: number, ability: string, types: string[], faction: string } | null {
+function getCardDefinitionFromLocal(baseId: string): { name: string, imageUrl: string, power: number, abilityText: string, types: string[], faction: string } | null {
   try {
     // Try rawJsonData first (populated after fetchContentDatabase)
     if (rawJsonData) {
@@ -1034,7 +1034,7 @@ function getCardDefinitionFromLocal(baseId: string): { name: string, imageUrl: s
           name: card.name || baseId,
           imageUrl: card.imageUrl || card.fallbackImage || '',
           power: card.power || 0,
-          ability: card.ability || '',
+          abilityText: card.abilityText || '',
           types: card.types || [],
           faction: card.faction || ''
         }
@@ -1047,7 +1047,7 @@ function getCardDefinitionFromLocal(baseId: string): { name: string, imageUrl: s
           name: token.name || baseId,
           imageUrl: token.imageUrl || token.fallbackImage || '',
           power: token.power || 0,
-          ability: token.ability || '',
+          abilityText: token.abilityText || '',
           types: token.types || [],
           faction: token.faction || ''
         }
@@ -1062,7 +1062,7 @@ function getCardDefinitionFromLocal(baseId: string): { name: string, imageUrl: s
         name: cardDef.name || baseId,
         imageUrl: cardDef.imageUrl || '',
         power: cardDef.power || 0,
-        ability: cardDef.ability || '',
+        abilityText: cardDef.abilityText || '',
         types: cardDef.types || [],
         faction: cardDef.faction || ''
       }

@@ -6,7 +6,7 @@
  * 2. STATE - от хоста всем клиентам (полное состояние)
  */
 
-import type { GameState } from '../types'
+import type { GameState, ScoringLineData } from '../types'
 
 /**
  * Действие которое может выполнить игрок
@@ -23,6 +23,7 @@ export type ActionType =
   | 'PLAY_CARD_FROM_DECK'
   | 'PLAY_CARD_FROM_DISCARD'
   | 'MOVE_CARD'
+  | 'MOVE_CARD_ON_BOARD'
   | 'RETURN_CARD_TO_HAND'
   | 'ANNOUNCE_CARD'
   | 'DESTROY_CARD'
@@ -62,6 +63,9 @@ export type ActionType =
 
   // Ready check
   | 'PLAYER_READY'
+
+  // Game reset
+  | 'RESET_GAME'
 
   // Игровые настройки
   | 'SET_GAME_MODE'
@@ -110,6 +114,7 @@ export interface PersonalizedState {
   startingPlayerId: GameState['startingPlayerId']
   currentPhase: GameState['currentPhase']
   isScoringStep: GameState['isScoringStep']
+  scoringLines: ScoringLineData[]  // Lines available for scoring
   preserveDeployAbilities: GameState['preserveDeployAbilities']
   autoAbilitiesEnabled: GameState['autoAbilitiesEnabled']
   autoDrawEnabled: GameState['autoDrawEnabled']
@@ -151,6 +156,7 @@ export interface PersonalizedPlayer {
   position: GameState['players'][0]['position']
   selectedDeck: GameState['players'][0]['selectedDeck']
   announcedCard?: GameState['players'][0]['announcedCard']  // Витрина видна всем
+  lastPlayedCardId?: string | null  // Последняя сыгранная карта (для скоринга)
 
   // Для локального игрока: полные данные
   hand?: GameState['players'][0]['hand']

@@ -15,8 +15,61 @@ import {
   READY_STATUS,
   // type ReadyStatusType,  // eslint-disable-line - unused
   type AbilityActivationType,
-  type CardAbilityInfo
+  type CardAbilityInfo,
+  // Import content abilities building logic
+  buildActionFromContentAbility,
+  buildDetailsFromContent,
+  buildFilterFromString,
+  type ContentAbility,
 } from '../../shared/abilities/index.js'
+
+// Import content access functions - server-only
+// This is imported conditionally to avoid bundling Node.js modules in client build
+let serverGetCardAbilities: ((baseId: string) => ContentAbility[]) | null = null
+
+// Try to import from server content service (only works in Node.js environment)
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const contentModule = require('../services/content.js')
+  serverGetCardAbilities = contentModule.getCardAbilities
+  console.log('[autoAbilities] Server getCardAbilities loaded from content service')
+} catch (e) {
+  // Not in Node.js environment, will use client-side provider
+  console.log('[autoAbilities] Not in Node.js, using client provider:', e)
+}
+
+// Client-side provider for getCardAbilities (set by client code)
+let clientGetCardAbilitiesProvider: ((baseId: string) => ContentAbility[]) | null = null
+
+/**
+ * Set the client-side provider for getCardAbilities
+ * Called by client code to provide browser-safe implementation
+ */
+export function setClientGetCardAbilitiesProvider(provider: (baseId: string) => ContentAbility[]): void {
+  clientGetCardAbilitiesProvider = provider
+}
+
+/**
+ * Get card abilities from content database
+ * Uses server implementation in Node.js, client implementation in browser
+ */
+function getCardAbilities(baseId: string): ContentAbility[] {
+  console.log(`[autoAbilities] getCardAbilities called for: ${baseId}`)
+  console.log(`[autoAbilities] serverGetCardAbilities: ${!!serverGetCardAbilities}, clientGetCardAbilitiesProvider: ${!!clientGetCardAbilitiesProvider}`)
+
+  if (serverGetCardAbilities) {
+    const result = serverGetCardAbilities(baseId)
+    console.log(`[autoAbilities] Server returned ${result.length} abilities`)
+    return result
+  }
+  if (clientGetCardAbilitiesProvider) {
+    const result = clientGetCardAbilitiesProvider(baseId)
+    console.log(`[autoAbilities] Client provider returned ${result.length} abilities`)
+    return result
+  }
+  console.warn(`[autoAbilities] No getCardAbilities provider available for card: ${baseId}`)
+  return []
+}
 
 // Re-export for backwards compatibility
 export type { AbilityActivationType }
@@ -37,19 +90,29 @@ export const READY_STATUS_COMMIT = READY_STATUS.COMMIT
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // Parameters with _ prefix are used in nested functions/reducers, disable warning
-//
-// READY STATUS SYSTEM
-// ============================================================================
-// Now imported from shared/abilities/readyStatus.ts
-//
-// Each card has hidden statuses that control ability availability:
-// - readyDeploy: Card can use Deploy ability (once per game, after entering battlefield)
-// - readySetup: Card can use Setup ability (reset each turn)
-// - readyCommit: Card can use Commit ability (reset each turn)
 
 // ============================================================================
-// CARD ABILITY DEFINITIONS
+// DYNAMIC ABILITY SYSTEM
 // ============================================================================
+//
+// Card abilities are now loaded from contentDatabase.json as the SINGLE SOURCE OF TRUTH.
+// Each ability in contentDatabase.json contains:
+// - type: when this ability can be used ('deploy', 'setup', 'commit', 'pass')
+// - supportRequired: if true, requires Support status to use
+// - action: the action type (CREATE_STACK, ENTER_MODE, etc.)
+// - mode: the targeting mode (SELECT_TARGET, PATROL_MOVE, etc.)
+// - details: additional parameters for the action
+// - steps: array of steps for multi-step abilities
+//
+// This system reads abilities dynamically and generates getAction functions on demand.
+// The actual building functions are imported from shared/abilities/contentAbilities.ts
+
+// ============================================================================
+// LEGACY CARD_ABILITIES ARRAY
+// ============================================================================
+//
+// DEPRECATED: This array is kept for backward compatibility during migration.
+// New code should use getAbilitiesForCard which reads from contentDatabase.json.
 //
 // Each ability has:
 // - baseId: the card's base ID
@@ -57,7 +120,7 @@ export const READY_STATUS_COMMIT = READY_STATUS.COMMIT
 // - getAction: function that returns the AbilityAction for this ability
 // - supportRequired: if true, requires Support status to use
 //
-// This is the SINGLE SOURCE OF TRUTH for all card abilities.
+// TODO: Remove this array after migration is complete
 
 interface CardAbilityDefinition {
   baseId: string
@@ -896,43 +959,69 @@ export const CARD_ABILITIES: CardAbilityDefinition[] = [
 ]
 
 // ============================================================================
-// PUBLIC API - Functions that use the CARD_ABILITIES definitions
+// PUBLIC API - Dynamic ability system using contentDatabase.json
 // ============================================================================
 
 /**
- * Get all ability definitions for a card (by baseId or alt names)
+ * Get all ability definitions for a card.
+ * NOW READS FROM CONTENT DATABASE - the single source of truth.
+ *
+ * @param card - The card to get abilities for
+ * @returns Array of CardAbilityDefinition objects with dynamic getAction functions
  */
 export const getAbilitiesForCard = (card: Card): CardAbilityDefinition[] => {
   const baseId = card.baseId || ''
-  return CARD_ABILITIES.filter(ability =>
-    ability.baseId === baseId || ability.baseIdAlt?.includes(baseId)
-  )
+  const contentAbilities = getCardAbilities(baseId)
+
+  // Convert ContentAbility to CardAbilityDefinition with dynamic getAction
+  return contentAbilities.map((contentAbility): CardAbilityDefinition => ({
+    baseId,
+    activationType: contentAbility.type,
+    supportRequired: contentAbility.supportRequired,
+    getAction: (_card: Card, gameState: GameState, ownerId: number, coords: { row: number; col: number }) =>
+      buildActionFromContentAbility(contentAbility, card, gameState, ownerId, coords)
+  }))
 }
 
 /**
- * Get ability types for a card (used for ready status initialization)
+ * Get ability types for a card (used for ready status initialization).
+ * NOW READS FROM CONTENT DATABASE.
+ *
+ * @param card - The card to get ability types for
+ * @returns Array of ability type strings ('deploy', 'setup', 'commit')
  */
 export const getCardAbilityTypes = (card: Card): AbilityActivationType[] => {
-  const abilities = getAbilitiesForCard(card)
-  const types = abilities.map(a => a.activationType)
+  const baseId = card.baseId || ''
+  const abilities = getCardAbilities(baseId)
+
+  const types: AbilityActivationType[] = []
+  for (const ability of abilities) {
+    if (ability.type === 'deploy' || ability.type === 'setup' || ability.type === 'commit') {
+      types.push(ability.type)
+    }
+  }
+
   // Remove duplicates
   return [...new Set(types)]
 }
 
 /**
- * Get all cards that have a specific ability type (includes both baseId and baseIdAlt)
- */
-/**
- * Get ability info for a card - provides data needed by shared ready system
+ * Get ability info for a card - provides data needed by shared ready system.
+ * NOW READS FROM CONTENT DATABASE.
+ *
+ * @param card - The card to get ability info for
+ * @returns CardAbilityInfo object
  */
 function getCardAbilityInfo(card: Card): CardAbilityInfo {
-  const abilities = getAbilitiesForCard(card)
-  const hasDeployAbility = abilities.some(a => a.activationType === 'deploy')
-  const hasSetupAbility = abilities.some(a => a.activationType === 'setup')
-  const hasCommitAbility = abilities.some(a => a.activationType === 'commit')
+  const baseId = card.baseId || ''
+  const abilities = getCardAbilities(baseId)
 
-  const setupAbility = abilities.find(a => a.activationType === 'setup')
-  const commitAbility = abilities.find(a => a.activationType === 'commit')
+  const hasDeployAbility = abilities.some(a => a.type === 'deploy')
+  const hasSetupAbility = abilities.some(a => a.type === 'setup')
+  const hasCommitAbility = abilities.some(a => a.type === 'commit')
+
+  const setupAbility = abilities.find(a => a.type === 'setup')
+  const commitAbility = abilities.find(a => a.type === 'commit')
 
   return {
     hasDeployAbility,

@@ -105,7 +105,13 @@ export const READY_STATUS_SETUP = 'readySetup'
 export const READY_STATUS_COMMIT = 'readyCommit'
 
 // Import getCardAbilityTypes from server (works via @server alias in Vite)
-import { getCardAbilityTypes as serverGetCardAbilityTypes, getAbilitiesForCard } from '@server/utils/autoAbilities'
+import { getCardAbilityTypes as serverGetCardAbilityTypes, getAbilitiesForCard, setClientGetCardAbilitiesProvider } from '@server/utils/autoAbilities'
+import { getCardAbilities as clientGetCardAbilities, type ContentAbility } from '@/content'
+
+// Set the client-side provider for getCardAbilities
+setClientGetCardAbilitiesProvider((baseId: string): ContentAbility[] => {
+  return clientGetCardAbilities(baseId)
+})
 
 // Re-export for convenience
 export { serverGetCardAbilityTypes, getAbilitiesForCard }

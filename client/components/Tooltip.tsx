@@ -88,7 +88,7 @@ export const CardTooltipContent: React.FC<CardTooltipContentProps> = ({ card, st
   // Get localized card data if available
   const localized = card.baseId ? getCardTranslation(card.baseId) : undefined
   const displayName = localized?.name || card.name
-  const displayAbility = localized?.ability || card.ability
+  const displayAbility = localized?.abilityText || card.abilityText
 
   // Calculate the display string for types with translation.
   // If there are specific types, translate and join them.
@@ -116,7 +116,7 @@ export const CardTooltipContent: React.FC<CardTooltipContentProps> = ({ card, st
 
   // Heuristic to determine if we should enforce a wrap width (approx 35 chars).
   // 16rem is roughly 256px, which fits ~35 characters of standard text.
-  const abilityLen = card.ability ? card.ability.length : 0
+  const abilityLen = card.abilityText ? card.abilityText.length : 0
   // Estimate status text length (approx 10 chars per status group)
   const statusLen = hasStatuses ? Object.keys(statusCountsByType).length * 10 : 0
 

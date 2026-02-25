@@ -1,5 +1,5 @@
 import React, { memo, useMemo, useCallback, useState } from 'react'
-import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerColor, HighlightData, FloatingTextData, TargetingModeData, ClickWave, CursorStackState, AbilityAction, VisualEffect, VisualEffectsState, FloatingTextEffect, NoTargetEffect, ClickWaveEffect } from '@/types'
+import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerColor, HighlightData, FloatingTextData, TargetingModeData, ClickWave, CursorStackState, AbilityAction, VisualEffect, VisualEffectsState, FloatingTextEffect, NoTargetEffect, ClickWaveEffect, ScoringLineData } from '@/types'
 import { ClickWave as ClickWaveComponent } from './ClickWave'
 import { Card } from './Card'
 import { PLAYER_COLORS, FLOATING_TEXT_COLORS, PLAYER_COLOR_RGB } from '@/constants'
@@ -36,6 +36,8 @@ interface GameBoardProps {
   abilityCheckKey?: number;
   targetingMode?: TargetingModeData | null; // Shared targeting mode from gameState
   abilityMode?: AbilityAction | null; // For line selection mode highlight color
+  scoringLines?: ScoringLineData[]; // Lines available for scoring during Scoring phase
+  activePlayerIdForScoring?: number | null; // Player who is scoring (for correct color)
   clickWaves?: ClickWave[];
   triggerClickWave?: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
   // NEW: ID-based visual effects
@@ -58,6 +60,7 @@ const GridCell = memo<{
   col: number;
   cell: { card: CardType | null };
   isGameStarted: boolean;
+  activeGridSize: GridSize;
   handleDrop: (item: DragItem, target: DropTarget) => void;
   draggedItem: DragItem | null;
   setDraggedItem: (item: DragItem | null) => void;
@@ -85,23 +88,43 @@ const GridCell = memo<{
   abilitySourceCoords?: { row: number, col: number } | null;
   abilityCheckKey?: number;
   abilityMode?: AbilityAction | null; // For line selection mode highlight color
+  scoringLines?: ScoringLineData[]; // Lines available for scoring
+  activePlayerIdForScoring?: number | null; // Player who is scoring
   setCursorStack?: (value: CursorStackState | null) => void;
   onCancelAllModes?: () => void;
   triggerClickWave?: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
 }>((props) => {
   const {
-      row, col, cell, isGameStarted, handleDrop, draggedItem, setDraggedItem,
+      row, col, cell, isGameStarted, activeGridSize, handleDrop, draggedItem, setDraggedItem,
       openContextMenu, playMode, setPlayMode, playerColorMap, localPlayerId,
       onCardDoubleClick, onEmptyCellDoubleClick, imageRefreshVersion, cursorStack,
       currentPhase, activePlayerId, onCardClick, onEmptyCellClick,
       isValidTarget, isTargetingModeValidTarget, targetingModePlayerId,
       targetingModeOriginalOwnerId, targetingModeActionMode,
       showNoTarget, disableActiveHighlights, preserveDeployAbilities,
-      abilitySourceCoords, abilityCheckKey, abilityMode, setCursorStack: _setCursorStack, onCancelAllModes,
+      abilitySourceCoords, abilityCheckKey, abilityMode, scoringLines, activePlayerIdForScoring,
+      setCursorStack: _setCursorStack, onCancelAllModes,
       triggerClickWave,
   } = props
 
   const [isOver, setIsOver] = useState(false)
+
+      // Scoring lines highlight - show cells that are part of scoring lines
+      // MUST be declared before handleClick since handleClick uses it
+      const scoringLineInfo = useMemo(() => {
+        if (!scoringLines || scoringLines.length === 0) return null
+        // Check if this cell is part of any scoring line (only row and col for now)
+        for (const line of scoringLines) {
+          const inLine =
+            (line.lineType === 'row' && line.lineIndex === row) ||
+            (line.lineType === 'col' && line.lineIndex === col)
+          if (inLine) {
+            return { line, score: line.score }
+          }
+        }
+        return null
+      }, [scoringLines, row, col, activeGridSize])
+      const showScoringHighlight = scoringLineInfo !== null
 
       const onDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault()
@@ -112,6 +135,12 @@ const GridCell = memo<{
       }, [draggedItem, handleDrop, row, col])
 
       const handleClick = useCallback(() => {
+        // Handle scoring line selection - clicking any cell in a scoring line selects it
+        if (showScoringHighlight && scoringLineInfo && onEmptyCellClick) {
+          onEmptyCellClick({ row, col })
+          return
+        }
+
         // Trigger click wave for empty cells
         if (!cell.card && triggerClickWave && localPlayerId !== null) {
           triggerClickWave('board', { row, col })
@@ -129,7 +158,7 @@ const GridCell = memo<{
         } else if (!cell.card && onEmptyCellClick) {
           onEmptyCellClick({ row, col })
         }
-      }, [playMode, cell.card, onCardClick, onEmptyCellClick, handleDrop, setPlayMode, row, col, triggerClickWave, localPlayerId])
+      }, [showScoringHighlight, scoringLineInfo, onEmptyCellClick, playMode, cell.card, onCardClick, handleDrop, setPlayMode, row, col, triggerClickWave, localPlayerId])
 
       const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault()
@@ -221,6 +250,8 @@ const GridCell = memo<{
       const showDragHighlight = !isOccupied && isDraggingCard && isOver && localPlayerId !== null
       // 2. For play mode: highlight all empty cells as valid targets
       const showPlayModeHighlight = !isOccupied && isInPlayMode && localPlayerId !== null
+      // 3. Scoring lines highlight - show cells that are part of scoring lines (declared earlier before handleClick)
+      // scoringLineInfo and showScoringHighlight are now declared above to avoid TDZ error
 
       // Only add cursor pointer for interactive cells - visual highlight comes from shared highlights
       const targetClasses = isInteractive ? 'cursor-pointer z-10' : ''
@@ -290,6 +321,30 @@ const GridCell = memo<{
                   background: `radial-gradient(circle at center, transparent 40%, ${rgba(rgb, 0.2)} 100%)`,
                 }}
               />
+            )
+          })()}
+
+          {/* Scoring line highlight - shows cells that are part of available scoring lines */}
+          {showScoringHighlight && scoringLineInfo && (() => {
+            const playerColor = activePlayerIdForScoring !== undefined
+              ? playerColorMap.get(activePlayerIdForScoring!)
+              : playerColorMap.get(localPlayerId!)
+            const rgb = playerColor && PLAYER_COLOR_RGB[playerColor]
+              ? PLAYER_COLOR_RGB[playerColor]
+              : { r: 255, g: 215, b: 0 }  // Gold color for scoring
+            return (
+              <div
+                className="absolute inset-0 rounded-md pointer-events-none animate-pulse"
+                style={{
+                  zIndex: 45,
+                  boxShadow: `0 0 15px 3px ${rgba(rgb, 0.7)}`,
+                  border: '3px solid',
+                  borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
+                  background: `radial-gradient(circle at center, transparent 30%, ${rgba(rgb, 0.3)} 100%)`,
+                }}
+              >
+                {/* Score badge removed - only showing highlight now */}
+              </div>
             )
           })()}
 
@@ -510,6 +565,8 @@ export const GameBoard = memo<GameBoardProps>(({
   abilityCheckKey,
   targetingMode,
   abilityMode = null,
+  scoringLines = [],
+  activePlayerIdForScoring = null,
   clickWaves,
   visualEffects,
 }) => {
@@ -645,6 +702,7 @@ export const GameBoard = memo<GameBoardProps>(({
                 col={originalColIndex}
                 cell={cell}
                 isGameStarted={isGameStarted}
+                activeGridSize={activeGridSize}
                 handleDrop={handleDrop}
                 draggedItem={draggedItem}
                 setDraggedItem={setDraggedItem}
@@ -672,6 +730,8 @@ export const GameBoard = memo<GameBoardProps>(({
                 abilitySourceCoords={abilitySourceCoords}
                 abilityCheckKey={abilityCheckKey}
                 abilityMode={abilityMode}
+                scoringLines={scoringLines}
+                activePlayerIdForScoring={activePlayerIdForScoring}
               />
               {/* Legacy floating texts (for backward compatibility) */}
               {cellFloatingTexts.map(ft => (

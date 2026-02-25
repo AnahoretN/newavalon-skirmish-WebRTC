@@ -71,7 +71,7 @@ export interface Card {
   power: number;
   powerModifier?: number; // Adjustment to the base power.
   bonusPower?: number; // Temporary power bonus from passive effects (recalculated on board updates).
-  ability: string;
+  abilityText: string;
   flavorText?: string;
   color?: string; // Used for counters or simple tokens to define their display color.
   ownerId?: number; // Player ID of the card's original owner.
@@ -114,6 +114,7 @@ export interface Player {
   isReady?: boolean; // For the pre-game ready check.
   teamId?: number; // The team this player belongs to.
   boardHistory: string[]; // Stack of card IDs currently on the board, used to track 'LastPlayed' status fallback.
+  lastPlayedCardId?: string | null; // The most recent card this player played from hand to board (for scoring phase).
   autoDrawEnabled?: boolean; // Whether this player has auto-draw enabled.
   isSpectator?: boolean; // True if this "player" is actually a spectator in the players array.
   disconnectTimestamp?: number; // Timestamp when player disconnected (for timeout tracking)
@@ -140,6 +141,16 @@ export type Board = Cell[][];
  * Defines the possible sizes for the active grid on the game board.
  */
 export type GridSize = 4 | 5 | 6 | 7;
+
+/**
+ * Represents a scoring line available during Scoring phase.
+ */
+export interface ScoringLineData {
+  playerId: number; // The player who can score this line
+  lineType: 'row' | 'col' | 'diagonal' | 'anti-diagonal';
+  lineIndex?: number; // For row/col, the index; for diagonals, undefined
+  score: number; // The calculated score for this line
+}
 
 /**
  * Represents a unique identifier for a card's location, whether on the board or in a hand.
@@ -222,6 +233,7 @@ export interface GameState {
   startingPlayerId: number | null; // The ID of the player who started the game (Turn 1 Player 1)
   currentPhase: number; // 0 (hidden Preparation phase), 1-4 representing phases (Setup=1, Main=2, Commit=3, Scoring=4)
   isScoringStep: boolean; // True when waiting for the active player to score a line after Commit phase
+  scoringLines: ScoringLineData[]; // Lines available for scoring during Scoring phase
 
   // Auto-abilities settings
   preserveDeployAbilities: boolean; // If true, deploy abilities remain available after auto-transition to Main

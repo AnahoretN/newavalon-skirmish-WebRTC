@@ -2,7 +2,7 @@ export type LanguageCode = 'en' | 'ru' | 'de' | 'fr' | 'it' | 'pt' | 'zh' | 'hi'
 
 export interface CardTranslation {
   name: string;
-  ability: string;
+  abilityText: string;
   flavorText?: string;
 }
 

@@ -136,6 +136,7 @@ export function createInitialState(): GameState {
     startingPlayerId: null, // Aligned with server default (null)
     currentPhase: 0,
     isScoringStep: false,
+    scoringLines: [],
     preserveDeployAbilities: false,
     autoAbilitiesEnabled: true, // Match server default
     autoDrawEnabled: true, // Match server default
