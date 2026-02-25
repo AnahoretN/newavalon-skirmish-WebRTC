@@ -111,6 +111,10 @@ export function initializePhaseSystemForGuest(
       if (config?.gameStateRef) {
         config.gameStateRef.current.currentPhase = newPhase
         config.gameStateRef.current.activePlayerId = newActivePlayer
+        // CRITICAL: Set isScoringStep when entering Scoring phase (phase 4)
+        // This ensures guests see the scoring UI when entering Scoring phase
+        // Also clear it when leaving Scoring phase
+        config.gameStateRef.current.isScoringStep = (newPhase === 4)
       }
 
       // Update last active player tracking

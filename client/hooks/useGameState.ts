@@ -4532,6 +4532,20 @@ export const useGameState = (props: UseGameStateProps = {}) => {
         }
         break
 
+      // Phase messages - handled by GuestPhaseHandler
+      case 'PHASE_STATE_UPDATE':
+      case 'PHASE_TRANSITION':
+      case 'TURN_CHANGE':
+      case 'ROUND_END':
+      case 'MATCH_END':
+      case 'SCORING_MODE_START':
+      case 'SCORING_MODE_COMPLETE':
+      case 'PHASE_ACTION_RESULT':
+        // These are handled by GuestPhaseHandler via GuestConnectionManager
+        // The handler is subscribed to GuestConnection events and processes these messages
+        logger.debug(`[handleWebrtcMessage] Phase message: ${message.type}`)
+        break
+
       default:
         // Log unknown message types for debugging
         logger.warn(`[handleWebrtcMessage] Unknown message type: ${message.type}`, message)
