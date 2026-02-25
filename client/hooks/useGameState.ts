@@ -587,7 +587,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
 
   // Initialize visual effects with simpleHost if available
   const visualEffects = useVE({
-    simpleHost: simpleHostRef.current,
+    simpleHost: hostRef.current,
     gameStateRef,
     localPlayerIdRef,
     setLatestHighlight,
