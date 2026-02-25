@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple P2P Test - New Avalon Skirmish</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #1a1a2e;
+      color: #eee;
+    }
+    h1 { color: #4ecca3; }
+    .card {
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+    button {
+      background: #4ecca3;
+      color: #1a1a2e;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      margin-right: 10px;
+    }
+    button:hover { background: #45b891; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    input {
+      background: #0f3460;
+      border: 1px solid #4ecca3;
+      color: #eee;
+      padding: 8px 12px;
+      border-radius: 4px;
+    }
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+    .status.connected { background: #1b4332; color: #4ecca3; }
+    .status.disconnected { background: #4a1e1e; color: #e63946; }
+    .status.connecting { background: #4a3e1e; color: #f4a261; }
+    .log {
+      background: #0f3460;
+      padding: 10px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .log-entry { margin: 2px 0; }
+    .log-info { color: #4ecca3; }
+    .log-warn { color: #f4a261; }
+    .log-error { color: #e63946; }
+  </style>
+</head>
+<body>
+  <h1>🎮 Simple P2P Test</h1>
+  <p>Тестирование новой упрощённой P2P системы</p>
+
+  <div class="card">
+    <h2>Connection</h2>
+    <div id="connectionStatus" class="status disconnected">Disconnected</div>
+
+    <div style="margin: 15px 0;">
+      <label>Your Name: </label>
+      <input type="text" id="playerName" value="Player" />
+    </div>
+
+    <div style="margin: 15px 0;">
+      <button id="createHostBtn">Create Host</button>
+      <button id="joinGuestBtn">Join as Guest</button>
+    </div>
+
+    <div id="joinSection" style="display: none; margin: 15px 0;">
+      <label>Host Peer ID: </label>
+      <input type="text" id="hostPeerId" placeholder="Enter host peer ID" />
+      <button id="connectBtn">Connect</button>
+    </div>
+
+    <div id="hostPeerIdDisplay" style="display: none; margin: 15px 0;">
+      <strong>Your Peer ID:</strong> <code id="peerId"></code>
+      <button onclick="copyPeerId()">Copy</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Game State</h2>
+    <div id="gameInfo">
+      <p>Phase: <span id="phase">-</span></p>
+      <p>Active Player: <span id="activePlayer">-</span></p>
+      <p>Your Player ID: <span id="localPlayerId">-</span></p>
+      <p>Round: <span id="round">-</span></p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Actions</h2>
+    <button id="readyBtn" disabled>Ready</button>
+    <button id="nextPhaseBtn" disabled>Next Phase</button>
+    <button id="passTurnBtn" disabled>Pass Turn</button>
+    <button id="drawCardBtn" disabled>Draw Card</button>
+  </div>
+
+  <div class="card">
+    <h2>Players</h2>
+    <div id="playersList"></div>
+  </div>
+
+  <div class="card">
+    <h2>Log</h2>
+    <div id="log" class="log"></div>
+  </div>
+
+  <script type="module">
+    import { SimpleHost } from './p2p/index.js'
+    import { SimpleGuest } from './p2p/index.js'
+
+    // Global state
+    let host = null
+    let guest = null
+    let isHost = false
+
+    // DOM elements
+    const connectionStatus = document.getElementById('connectionStatus')
+    const hostPeerIdDisplay = document.getElementById('hostPeerIdDisplay')
+    const peerIdEl = document.getElementById('peerId')
+    const joinSection = document.getElementById('joinSection')
+    const phaseEl = document.getElementById('phase')
+    const activePlayerEl = document.getElementById('activePlayer')
+    const localPlayerIdEl = document.getElementById('localPlayerId')
+    const roundEl = document.getElementById('round')
+    const playersListEl = document.getElementById('playersList')
+    const logEl = document.getElementById('log')
+
+    // Buttons
+    const createHostBtn = document.getElementById('createHostBtn')
+    const joinGuestBtn = document.getElementById('joinGuestBtn')
+    const connectBtn = document.getElementById('connectBtn')
+    const readyBtn = document.getElementById('readyBtn')
+    const nextPhaseBtn = document.getElementById('nextPhaseBtn')
+    const passTurnBtn = document.getElementById('passTurnBtn')
+    const drawCardBtn = document.getElementById('drawCardBtn')
+
+    // Logging
+    function log(message, type = 'info') {
+      const entry = document.createElement('div')
+      entry.className = `log-entry log-${type}`
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`
+      logEl.appendChild(entry)
+      logEl.scrollTop = logEl.scrollHeight
+      console.log(`[${type}] ${message}`)
+    }
+
+    function copyPeerId() {
+      navigator.clipboard.writeText(peerIdEl.textContent)
+      log('Peer ID copied to clipboard')
+    }
+
+    // Update connection status
+    function updateStatus(status) {
+      connectionStatus.className = `status ${status}`
+      connectionStatus.textContent = status.charAt(0).toUpperCase() + status.slice(1)
+    }
+
+    // Update game state display
+    function updateGameState(state) {
+      phaseEl.textContent = state.currentPhase ?? '-'
+      activePlayerEl.textContent = state.activePlayerId ?? '-'
+      roundEl.textContent = state.currentRound ?? '-'
+
+      // Update players list
+      playersListEl.innerHTML = state.players.map(p => `
+        <div style="padding: 8px; margin: 4px 0; background: #0f3460; border-radius: 4px;">
+          <strong>${p.name}</strong> (ID: ${p.id}) - Score: ${p.score}
+          ${p.isReady ? ' ✅ Ready' : ''}
+          ${p.isDisconnected ? ' ❌ Disconnected' : ''}
+          ${state.activePlayerId === p.id ? ' 👑 Active' : ''}
+        </div>
+      `).join('')
+
+      // Enable/disable buttons based on state
+      const isMyTurn = state.activePlayerId === guest?.getLocalPlayerId() || (isHost && state.activePlayerId === 1)
+      readyBtn.disabled = !state.isReadyCheckActive && state.isGameStarted
+      nextPhaseBtn.disabled = !isMyTurn || !state.isGameStarted
+      passTurnBtn.disabled = !isMyTurn || !state.isGameStarted
+      drawCardBtn.disabled = !isMyTurn || !state.isGameStarted
+    }
+
+    // Create host
+    createHostBtn.addEventListener('click', async () => {
+      const playerName = document.getElementById('playerName').value || 'Host'
+      localStorage.setItem('player_name', playerName)
+
+      try {
+        log('Creating host...')
+        updateStatus('connecting')
+
+        host = new SimpleHost({
+          players: [],
+          onStateUpdate: (state) => {
+            localPlayerIdEl.textContent = '1 (Host)'
+            updateGameState(state)
+          },
+          onPlayerJoin: (playerId) => {
+            log(`Player ${playerId} joined!`)
+          },
+          onPlayerLeave: (playerId) => {
+            log(`Player ${playerId} left`)
+          }
+        })
+
+        const peerId = await host.initialize()
+        peerIdEl.textContent = peerId
+        hostPeerIdDisplay.style.display = 'block'
+
+        isHost = true
+        updateStatus('connected')
+        log('Host created! Share your Peer ID with friends.')
+
+        createHostBtn.disabled = true
+        joinGuestBtn.disabled = true
+      } catch (e) {
+        log(`Failed to create host: ${e.message}`, 'error')
+        updateStatus('disconnected')
+      }
+    })
+
+    // Join as guest
+    joinGuestBtn.addEventListener('click', () => {
+      joinSection.style.display = 'block'
+    })
+
+    // Connect to host
+    connectBtn.addEventListener('click', async () => {
+      const hostPeerId = document.getElementById('hostPeerId').value
+      const playerName = document.getElementById('playerName').value || 'Guest'
+
+      if (!hostPeerId) {
+        log('Please enter host Peer ID', 'warn')
+        return
+      }
+
+      localStorage.setItem('player_name', playerName)
+
+      try {
+        log(`Connecting to ${hostPeerId}...`)
+        updateStatus('connecting')
+
+        guest = new SimpleGuest({
+          localPlayerId: 0,
+          onStateUpdate: (state) => {
+            localPlayerIdEl.textContent = guest.getLocalPlayerId()
+            updateGameState(state)
+          },
+          onConnected: () => {
+            updateStatus('connected')
+            log('Connected to host!')
+          },
+          onDisconnected: () => {
+            updateStatus('disconnected')
+            log('Disconnected from host', 'warn')
+          },
+          onError: (error) => {
+            log(`Error: ${error}`, 'error')
+          }
+        })
+
+        await guest.connect(hostPeerId)
+
+        joinGuestBtn.disabled = true
+        createHostBtn.disabled = true
+        joinSection.style.display = 'none'
+      } catch (e) {
+        log(`Failed to connect: ${e.message}`, 'error')
+        updateStatus('disconnected')
+      }
+    })
+
+    // Action buttons
+    readyBtn.addEventListener('click', () => {
+      if (isHost && host) {
+        host.hostAction('PLAYER_READY')
+      } else if (guest) {
+        guest.sendAction('PLAYER_READY')
+      }
+      log('Sent: PLAYER_READY')
+    })
+
+    nextPhaseBtn.addEventListener('click', () => {
+      if (isHost && host) {
+        host.hostAction('NEXT_PHASE')
+      } else if (guest) {
+        guest.sendAction('NEXT_PHASE')
+      }
+      log('Sent: NEXT_PHASE')
+    })
+
+    passTurnBtn.addEventListener('click', () => {
+      if (isHost && host) {
+        host.hostAction('PASS_TURN', { reason: 'manual' })
+      } else if (guest) {
+        guest.sendAction('PASS_TURN', { reason: 'manual' })
+      }
+      log('Sent: PASS_TURN')
+    })
+
+    drawCardBtn.addEventListener('click', () => {
+      if (isHost && host) {
+        host.hostAction('DRAW_CARD')
+      } else if (guest) {
+        guest.sendAction('DRAW_CARD')
+      }
+      log('Sent: DRAW_CARD')
+    })
+
+    // Initial log
+    log('Simple P2P Test loaded. Create a host or join as guest.')
+  </script>
+</body>
+</html>

@@ -3,7 +3,14 @@
  */
 import React, { useEffect, useState } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { clearWebrtcData } from '@/host/WebrtcStatePersistence'
+
+// Clear WebRTC-related localStorage data
+function clearWebrtcData() {
+  localStorage.removeItem('webrtc_host_peer_id')
+  localStorage.removeItem('webrtc_guest_data')
+  localStorage.removeItem('webrtc_state')
+  localStorage.removeItem('player_token')
+}
 
 interface ReconnectingModalProps {
   isOpen: boolean
