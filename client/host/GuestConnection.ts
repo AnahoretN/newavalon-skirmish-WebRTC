@@ -110,7 +110,7 @@ export class GuestConnectionManager {
   private handleMessage(message: WebrtcMessage): void {
     // Log important messages for debugging
     if (message.type === 'SET_TARGETING_MODE' || message.type === 'CLEAR_TARGETING_MODE' || message.type === 'JOIN_ACCEPT_MINIMAL' || message.type === 'JOIN_ACCEPT' ||
-        message.type === 'PHASE_STATE_UPDATE' || message.type === 'PHASE_TRANSITION' || message.type === 'TURN_CHANGE') {
+        message.type === 'PHASE_STATE_UPDATE' || message.type === 'PHASE_TRANSITION' || message.type === 'TURN_CHANGE' || message.type === 'GUEST_AUTO_DRAW') {
       logger.info(`[GuestConnection] Received ${message.type} from host`, {
         senderId: message.senderId,
         playerId: message.playerId,
@@ -157,7 +157,9 @@ export class GuestConnectionManager {
    */
   private handlePhaseMessage(message: WebrtcMessage): void {
     const handler = (this as any)._guestPhaseHandler
-    if (!handler) return
+    if (!handler) {
+      return
+    }
 
     try {
       switch (message.type) {
@@ -311,7 +313,7 @@ export class GuestConnectionManager {
 
     // CRITICAL: Log peer ID and connection status for REQUEST_TURN_PASS
     if (message.type === 'REQUEST_TURN_PASS') {
-      console.log('[GuestConnection.sendMessage] PRE-SEND CHECK:', {
+      logger.info('[GuestConnection.sendMessage] PRE-SEND CHECK:', {
         hostPeerId: this.hostPeerId,
         myPeerId: this.webrtcPeer.getPeerId(),
         connectionExists: this.webrtcPeer.getConnection(this.hostPeerId) !== undefined,

@@ -166,6 +166,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   // This prevents race conditions where an older state update arrives after a newer one
   const lastCardStateTimestampRef = useRef<number>(0)
 
+  // Ref to hold drawCard for useWebRTC (will be set after cardOperations is available)
+  const drawCardForWebrtcRef = useRef<((playerId: number) => void) | null>(null)
+
   // WebRTC P2P hook - handles WebRTC host/guest functions
   const webrtc = useWebRTC({
     webrtcManagerRef,
@@ -176,6 +179,8 @@ export const useGameState = (props: UseGameStateProps = {}) => {
     gameStateRef,
     localPlayerIdRef,
     setGameState, // Pass setGameState so host can configure onStateUpdate callback
+    fullGameStateRef: gameStateRef, // Full game state ref for guest phase system
+    drawCard: (playerId: number) => drawCardForWebrtcRef.current?.(playerId), // Draw card callback for guest auto-draw
   })
 
   // Destructure WebRTC functions for direct access
@@ -5020,6 +5025,9 @@ export const useGameState = (props: UseGameStateProps = {}) => {
   useEffect(() => {
     drawCardRef.current = drawCard
   }, [drawCard])
+
+  // Set drawCard for WebRTC guest auto-draw
+  drawCardForWebrtcRef.current = drawCard
 
   // Game settings functions from useGameSettings hook
   const {

@@ -15,6 +15,10 @@ import { logger } from '../../utils/logger'
 import { broadcastHostPeerId, saveHostData } from '../../host/WebrtcStatePersistence'
 import { getHostManager, type HostManager } from '../../host/HostManager'
 import { GuestConnectionManager } from '../../host/GuestConnection'
+// Import phase integration modules to ensure prototype extension is loaded
+// This extends GuestConnectionManager with initializePhaseSystem method
+import '../../host/HostPhaseIntegration'
+import '../../host/GuestPhaseIntegration'
 
 export type WebRTCManager = HostManager | GuestConnectionManager
 
@@ -32,6 +36,10 @@ export interface UseWebRTCProps {
   localPlayerIdRef: React.MutableRefObject<number | null>
   // Game state setter - used for host's onStateUpdate callback
   setGameState?: React.Dispatch<React.SetStateAction<any>>
+  // Full game state ref - needed for guest phase system
+  fullGameStateRef?: React.MutableRefObject<any>
+  // Draw card callback - needed for guest auto-draw
+  drawCard?: (playerId: number) => void
 }
 
 export function useWebRTC(props: UseWebRTCProps) {
@@ -44,6 +52,8 @@ export function useWebRTC(props: UseWebRTCProps) {
     gameStateRef,
     localPlayerIdRef,
     setGameState,
+    fullGameStateRef,
+    drawCard,
   } = props
 
   /**
@@ -136,13 +146,28 @@ export function useWebRTC(props: UseWebRTCProps) {
 
       await guestManager.connect(hostId)
       setConnectionStatus('Connected')
+
+      // Initialize phase system for guest (handles phase transitions and auto-draw)
+      // Call initializePhaseSystem method on GuestConnectionManager (extended via prototype)
+      if (fullGameStateRef && drawCard) {
+        // The phase system is initialized via the prototype method that was extended
+        // @ts-ignore - initializePhaseSystem is added via prototype extension
+        guestManager.initializePhaseSystem({
+          gameStateRef: fullGameStateRef,
+          localPlayerId: localPlayerIdRef.current,
+          onDrawCard: drawCard,
+          onStateUpdate: setGameState
+        })
+        logger.info('[connectAsGuest] Phase system initialized for guest')
+      }
+
       return true
     } catch (err) {
       logger.error('Failed to connect as guest:', err)
       setConnectionStatus('Disconnected')
       return false
     }
-  }, [setWebrtcIsHost, setConnectionStatus, setWebrtcHostId, webrtcManagerRef])
+  }, [setWebrtcIsHost, setConnectionStatus, setWebrtcHostId, webrtcManagerRef, fullGameStateRef, localPlayerIdRef, drawCard, setGameState])
 
   /**
    * Send action to host via WebRTC (guest only)
