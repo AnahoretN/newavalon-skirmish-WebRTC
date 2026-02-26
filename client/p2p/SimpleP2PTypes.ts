@@ -87,6 +87,10 @@ export type ActionType =
   // Card orientation
   | 'FLIP_CARD'
 
+  // Deck reordering
+  | 'REORDER_CARDS'
+  | 'REORDER_TOP_DECK'
+
   // Visual effects
   | 'CLICK_WAVE'
 

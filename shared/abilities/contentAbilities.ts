@@ -262,6 +262,19 @@ export function buildActionFromContentAbility(
         payload: details
       } as AbilityAction
 
+    case 'LOOK_AT_TOP_DECK':
+      // Secret Informant - Look at top cards, put any on bottom, then draw
+      return {
+        type: 'ENTER_MODE',
+        mode: 'SELECT_DECK',
+        sourceCard: card,
+        sourceCoords: coords,
+        payload: {
+          ...details,
+          actionType: 'LOOK_AT_TOP_DECK'
+        }
+      } as AbilityAction
+
     case 'MODIFY_SCORING':
     case 'BUFF_ALLY_POWER':
     case 'MODIFY_THREAT_TARGETING':

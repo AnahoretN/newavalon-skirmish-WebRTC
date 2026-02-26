@@ -191,5 +191,14 @@ export function handleTargetingModeCardClick(
     return true
   }
 
+  // Handle LOOK_AT_TOP_DECK (Secret Informant)
+  if (payload.actionType === 'LOOK_AT_TOP_DECK') {
+    if (card.ownerId !== undefined) {
+      triggerDeckSelection(card.ownerId)
+    }
+    props.markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
+    return true
+  }
+
   return false
 }

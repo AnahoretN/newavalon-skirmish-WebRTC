@@ -114,7 +114,7 @@ export function activateAbility(
         : { type: 'ABILITY_COMPLETE' }
     }
 
-    // Execute the action (which will check targets and show no-target if needed)
+    // Execute the action
     handleActionExecution(actionWithComplete, boardCoords)
     return actionWithComplete
   }

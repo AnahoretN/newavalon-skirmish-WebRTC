@@ -537,7 +537,8 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           boardCoords: target.boardCoords,
           statusType: item.statusType,
           ownerId: item.ownerId,
-          replaceStatusType: item.replaceStatusType
+          replaceStatusType: item.replaceStatusType,
+          count: item.count || 1
         }
         console.log('[useGameState] Sending ADD_STATUS_TO_BOARD_CARD:', actionData)
       } else if (item.source === 'token_panel') {
@@ -591,6 +592,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
         if (cardId) {
           sendAction('MOVE_CARD_TO_HAND', {
             cardId,
+            cardIndex: item.cardIndex, // Pass cardIndex for deck/discard sources
             source: item.source,
             playerId: item.playerId
           })
@@ -651,9 +653,127 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     }
   }, [sendAction])
 
-  const moveItem = useCallback(() => {
-    // TODO
-  }, [])
+  const moveItem = useCallback((item: DragItem, target: any) => {
+    // Reuse handleDrop logic for moveItem
+    if (target.target === 'board') {
+      let action = 'PLAY_CARD'
+      let actionData: any = {
+        cardIndex: item.cardIndex,
+        boardCoords: target.boardCoords,
+        faceDown: item.card?.isFaceDown,
+        playerId: item.playerId
+      }
+
+      if (item.source === 'counter_panel') {
+        action = 'ADD_STATUS_TO_BOARD_CARD'
+        actionData = {
+          boardCoords: target.boardCoords,
+          statusType: item.statusType,
+          ownerId: item.ownerId,
+          replaceStatusType: item.replaceStatusType,
+          count: item.count || 1
+        }
+      } else if (item.source === 'token_panel') {
+        action = 'PLAY_TOKEN_CARD'
+        actionData = {
+          card: item.card,
+          boardCoords: target.boardCoords,
+          ownerId: item.ownerId
+        }
+      } else if (item.source === 'deck') {
+        action = 'PLAY_CARD_FROM_DECK'
+        actionData.cardIndex = item.cardIndex ?? 0
+        actionData.playerId = item.playerId
+      } else if (item.source === 'discard') {
+        action = 'PLAY_CARD_FROM_DISCARD'
+        actionData.cardIndex = item.cardIndex
+        actionData.playerId = item.playerId
+      } else if (item.source === 'announced') {
+        action = 'PLAY_ANNOUNCED_TO_BOARD'
+        actionData = {
+          row: target.boardCoords.row,
+          col: target.boardCoords.col,
+          faceDown: item.card?.isFaceDown,
+          playerId: item.playerId
+        }
+      } else if (item.source === 'board') {
+        action = 'MOVE_CARD_ON_BOARD'
+        actionData = {
+          cardId: item.card?.id,
+          fromCoords: item.boardCoords,
+          toCoords: target.boardCoords,
+          faceDown: item.card?.isFaceDown,
+          playerId: item.playerId
+        }
+      }
+
+      sendAction(action, actionData)
+    } else if (target.target === 'hand') {
+      if (item.source === 'announced') {
+        sendAction('MOVE_ANNOUNCED_TO_HAND', {
+          playerId: item.playerId
+        })
+      } else {
+        const cardId = item.card?.id
+        if (cardId) {
+          sendAction('MOVE_CARD_TO_HAND', {
+            cardId,
+            cardIndex: item.cardIndex,
+            source: item.source,
+            playerId: item.playerId
+          })
+        }
+      }
+    } else if (target.target === 'deck') {
+      if (item.source === 'hand') {
+        sendAction('MOVE_HAND_CARD_TO_DECK', {
+          cardIndex: item.cardIndex,
+          playerId: item.playerId
+        })
+      } else if (item.source === 'board') {
+        const cardId = item.card?.id
+        if (cardId) {
+          sendAction('MOVE_CARD_TO_DECK', {
+            cardId,
+            source: 'board',
+            playerId: item.playerId
+          })
+        }
+      } else if (item.source === 'announced') {
+        sendAction('MOVE_ANNOUNCED_TO_DECK', {
+          playerId: item.playerId
+        })
+      }
+    } else if (target.target === 'discard') {
+      if (item.source === 'hand') {
+        sendAction('MOVE_HAND_CARD_TO_DISCARD', {
+          cardIndex: item.cardIndex,
+          playerId: item.playerId
+        })
+      } else if (item.source === 'board') {
+        const cardId = item.card?.id
+        if (cardId) {
+          sendAction('MOVE_CARD_TO_DISCARD', {
+            cardId,
+            source: 'board',
+            playerId: item.playerId
+          })
+        }
+      } else if (item.source === 'announced') {
+        sendAction('MOVE_ANNOUNCED_TO_DISCARD', {
+          playerId: item.playerId
+        })
+      }
+    } else if (target.target === 'announced') {
+      sendAction('ANNOUNCE_CARD', {
+        cardId: item.card?.id,
+        source: item.source,
+        cardIndex: item.cardIndex,
+        playerId: item.playerId
+      })
+    }
+  }, [sendAction])
+
 
   const updateState = useCallback((_stateOrFn: any) => {
     if (isHostRef.current) {

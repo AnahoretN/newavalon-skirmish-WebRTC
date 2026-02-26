@@ -268,7 +268,7 @@ function handleGlobalAutoApply(
       if (action.chainedAction) {
         setTimeout(() => execAction(action.chainedAction!, sourceCoords), 500)
       }
-      markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+      // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
       return
     }
 
@@ -335,7 +335,7 @@ function handleGlobalAutoApply(
       }
     } else {
       triggerNoTarget(sourceCoords)
-      markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+      // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
     }
     return
   }
@@ -420,12 +420,13 @@ function handleOpenModal(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
-  const { gameState, localPlayerId, commandContext, setViewingDiscard, markAbilityUsed } = props
+  const { gameState, localPlayerId, commandContext, setViewingDiscard, markAbilityUsed, triggerNoTarget } = props
 
   const hasTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
 
   if (!hasTargets) {
-    markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+    triggerNoTarget(action.sourceCoords || sourceCoords)
+    // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
     return
   }
 
@@ -436,9 +437,7 @@ function handleOpenModal(
         player,
         pickConfig: { filterType: 'Device', action: 'recover' },
       })
-      if (sourceCoords.row >= 0) {
-        markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
-      }
+      markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
     }
   } else if (action.mode === 'IMMUNIS_RETRIEVE') {
     const player = gameState.players.find(p => p.id === action.sourceCard?.ownerId)
@@ -447,6 +446,7 @@ function handleOpenModal(
         player,
         pickConfig: { filterType: 'Optimates', action: 'resurrect' },
       })
+      markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
     }
   } else if (action.mode === 'SEARCH_DECK') {
     const player = gameState.players.find(p => p.id === action.sourceCard?.ownerId)
@@ -459,13 +459,9 @@ function handleOpenModal(
           isDeck: true,
         },
       })
-      if (sourceCoords.row >= 0) {
-        markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
-      }
+      markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
     }
   }
-
-  markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
 }
 
 /**
@@ -476,7 +472,7 @@ function handleEnterMode(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
-  const { gameState, localPlayerId, commandContext, triggerNoTarget, setAbilityMode, markAbilityUsed, addBoardCardStatus, setTargetingMode, handleActionExecution: execAction } = props
+  const { gameState, localPlayerId, commandContext, triggerNoTarget, setAbilityMode, addBoardCardStatus, setTargetingMode, handleActionExecution: execAction } = props
 
   const mode = action.mode
 
@@ -566,7 +562,7 @@ function handleEnterMode(
     const hasPushTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
     if (!hasPushTargets) {
       triggerNoTarget(action.sourceCoords || sourceCoords)
-      markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+      // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
       return
     }
     setAbilityMode(action)
@@ -580,7 +576,7 @@ function handleEnterMode(
     const hasSwapTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
     if (!hasSwapTargets) {
       triggerNoTarget(action.sourceCoords || sourceCoords)
-      markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+      // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
       return
     }
     setAbilityMode(action)
@@ -594,7 +590,7 @@ function handleEnterMode(
     const hasPatrolTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
     if (!hasPatrolTargets) {
       triggerNoTarget(action.sourceCoords || sourceCoords)
-      markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+      // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
       return
     }
     setAbilityMode(action)
@@ -613,11 +609,61 @@ function handleEnterMode(
     const hasTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
     if (!hasTargets) {
       triggerNoTarget(action.sourceCoords || sourceCoords)
-      markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+      // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
       return
     }
     setAbilityMode(action)
     setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, undefined, commandContext)
+    return
+  }
+
+  // IP_AGENT_THREAT_SCORING - IP Dept Agent Setup
+  // Select a line (row or column) to score Threats
+  if (mode === 'IP_AGENT_THREAT_SCORING') {
+    const ownerId = action.sourceCard?.ownerId ?? 0
+    const { row, col } = sourceCoords
+    const gridSize = gameState.activeGridSize
+
+    // Check for adjacent Support
+    const hasSupport = (r: number, c: number): boolean => {
+      if (r < 0 || r >= gridSize || c < 0 || c >= gridSize) return false
+      const cell = gameState.board[r]?.[c]
+      if (!cell?.card) return false
+      return cell.card.statuses?.some((s: any) => s.type === 'Support' && s.addedByPlayerId === ownerId) ?? false
+    }
+
+    const hasAdjacentSupport =
+      hasSupport(row - 1, col) ||
+      hasSupport(row + 1, col) ||
+      hasSupport(row, col - 1) ||
+      hasSupport(row, col + 1)
+
+    if (!hasAdjacentSupport) {
+      triggerNoTarget(sourceCoords)
+      // DON'T mark ability as used - preserve ready status so ability can be used when Support appears
+      return
+    }
+
+    // Generate valid targets: all cells in the same row or column
+    const boardTargets: { row: number; col: number }[] = []
+    for (let i = 0; i < gridSize; i++) {
+      boardTargets.push({ row: row, col: i }) // Entire row
+      boardTargets.push({ row: i, col: col }) // Entire column
+    }
+
+    // Set up targeting mode with custom payload for line selection
+    const targetingAction: AbilityAction = {
+      ...action,
+      payload: {
+        ...action.payload,
+        sourceRow: row,
+        sourceCol: col,
+        boardTargets
+      }
+    }
+
+    setAbilityMode(targetingAction)
+    setTargetingMode(targetingAction, getSafePlayerId(action, localPlayerId), sourceCoords, boardTargets, commandContext)
     return
   }
 

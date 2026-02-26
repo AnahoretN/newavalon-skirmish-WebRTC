@@ -253,6 +253,14 @@ export function applyAction(
       newState = GameSettingsHandlers.handleSetDummyPlayerCount(newState, data?.count)
       break
 
+    case 'REORDER_CARDS':
+      newState = handleReorderCards(newState, playerId, data)
+      break
+
+    case 'REORDER_TOP_DECK':
+      newState = handleReorderTopDeck(newState, playerId, data)
+      break
+
     default:
       console.warn(`[SimpleGameLogic] Unknown action: ${action}`)
   }
@@ -778,16 +786,18 @@ function handleReturnCardToHand(state: GameState, playerId: number, data: any): 
 }
 
 /**
- * MOVE_CARD_TO_HAND - move card from board/discard to hand
+ * MOVE_CARD_TO_HAND - move card from board/discard/deck to hand
  */
 function handleMoveCardToHand(state: GameState, playerId: number, data: any): GameState {
-  const { cardId, source } = data || {}
+  const { cardId, source, cardIndex: dataCardIndex } = data || {}
   if (!cardId) {return state}
 
   let cardToMove: Card | null = null
   let targetPlayerId = playerId
   let newBoard = state.board
   let newDiscard: Card[] | null = null
+  let newDeck: Card[] | null = null
+  let newState = state
 
   if (source === 'board') {
     newBoard = state.board.map((row, _r) =>
@@ -808,20 +818,39 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
   } else if (source === 'discard') {
     const player = state.players.find(p => p.id === playerId)
     if (!player) {return state}
-    const cardIndex = player.discard?.findIndex(c => c.id === cardId)
-    if (cardIndex === undefined || cardIndex === -1) {return state}
-    cardToMove = player.discard[cardIndex]
+    const idx = player.discard?.findIndex(c => c.id === cardId)
+    if (idx === undefined || idx === -1) {return state}
+    cardToMove = player.discard[idx]
     targetPlayerId = playerId
     newDiscard = [...player.discard]
-    newDiscard.splice(cardIndex, 1)
+    newDiscard.splice(idx, 1)
+  } else if (source === 'deck') {
+    const player = state.players.find(p => p.id === playerId)
+    if (!player || !player.deck) {return state}
+    // For deck, use cardIndex if provided, otherwise find by cardId
+    let idx = dataCardIndex
+    if (idx === undefined) {
+      idx = player.deck.findIndex(c => c.id === cardId)
+    }
+    if (idx === undefined || idx === -1) {return state}
+    cardToMove = player.deck[idx]
+    targetPlayerId = playerId
+    // Update player deck by removing card
+    newDeck = [...player.deck]
+    newDeck.splice(idx, 1)
+    // Update players array with new deck
+    const playersWithUpdatedDeck = newState.players.map(p =>
+      p.id === playerId ? { ...p, deck: newDeck!, deckSize: newDeck!.length } : p
+    )
+    newState = { ...newState, players: playersWithUpdatedDeck as Player[] }
   }
 
-  if (!cardToMove) {return state}
+  if (!cardToMove) {return newState}
 
   // If card is a token, destroy it instead of adding to hand
   if (isToken(cardToMove)) {
     // Token is removed from source and not added to destination
-    return { ...state, board: newBoard, players: state.players.map(p => {
+    return { ...newState, board: newBoard, players: newState.players.map(p => {
       if (p.id === playerId && newDiscard !== null) {
         return { ...p, discard: newDiscard, discardSize: newDiscard.length }
       }
@@ -829,7 +858,7 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
     })}
   }
 
-  const newPlayers = state.players.map(p => {
+  const newPlayers = newState.players.map(p => {
     if (p.id === targetPlayerId) {
       const newHand = [...p.hand, cardToMove]
       return { ...p, hand: newHand, handSize: newHand.length }
@@ -840,7 +869,7 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
     return p
   })
 
-  return { ...state, board: newBoard, players: newPlayers as Player[] }
+  return { ...newState, board: newBoard, players: newPlayers as Player[] }
 }
 
 /**
@@ -1616,9 +1645,10 @@ function handlePlayCardFromDiscard(state: GameState, playerId: number, data: any
  * ADD_STATUS_TO_BOARD_CARD - add status (token) to card on battlefield
  * Supports token stacking: up to 99 tokens of same type can be added
  * Exception: singleton statuses (Threat, Support, Revealed) remain single
+ * Supports count parameter for placing multiple tokens at once
  */
 function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: any): GameState {
-  const { boardCoords, statusType, ownerId, replaceStatusType } = data || {}
+  const { boardCoords, statusType, ownerId, replaceStatusType, count = 1 } = data || {}
   if (!boardCoords || !statusType || ownerId === undefined) {
     return state
   }
@@ -1662,23 +1692,34 @@ function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: a
       logger.info(`[handleAddStatusToBoardCard] Blocked duplicate ${statusType} from player ${ownerId} on card at [${row},${col}]`)
       return state
     }
-  } else {
-    // For stackable tokens, count existing tokens of this type from this owner
-    const existingTokenCount = filteredStatuses.filter(s => s.type === statusType && s.addedByPlayerId === ownerId).length
-    const MAX_TOKENS_PER_TYPE = 99
+  }
 
-    if (existingTokenCount >= MAX_TOKENS_PER_TYPE) {
-      // Already at max capacity, don't add more
-      logger.info(`[handleAddStatusToBoardCard] Max capacity (${MAX_TOKENS_PER_TYPE}) reached for ${statusType} on card at [${row},${col}]`)
-      return state
+  // Add the new status(es) - supports count parameter for placing multiple tokens at once
+  let newStatuses = [...filteredStatuses]
+  const MAX_TOKENS_PER_TYPE = 99
+
+  for (let i = 0; i < count; i++) {
+    if (isSingletonStatus) {
+      // For singleton, only add if not already present (checked above)
+      const newStatus = { type: statusType, addedByPlayerId: ownerId }
+      newStatuses = [...newStatuses, newStatus]
+      break // Only add one for singleton statuses
+    } else {
+      // For stackable tokens, count existing tokens of this type from this owner
+      const existingTokenCount = newStatuses.filter(s => s.type === statusType && s.addedByPlayerId === ownerId).length
+
+      if (existingTokenCount >= MAX_TOKENS_PER_TYPE) {
+        // Already at max capacity, don't add more
+        logger.info(`[handleAddStatusToBoardCard] Max capacity (${MAX_TOKENS_PER_TYPE}) reached for ${statusType} on card at [${row},${col}]`)
+        break
+      }
+
+      const newStatus = { type: statusType, addedByPlayerId: ownerId }
+      newStatuses = [...newStatuses, newStatus]
     }
   }
 
-  // Add the new status
-  const newStatus = { type: statusType, addedByPlayerId: ownerId }
-  const newStatuses = [...filteredStatuses, newStatus]
-
-  logger.info(`[handleAddStatusToBoardCard] Adding ${statusType} from player ${ownerId} to card at [${row},${col}]. Total statuses: ${newStatuses.length}`)
+  logger.info(`[handleAddStatusToBoardCard] Adding ${count}x ${statusType} from player ${ownerId} to card at [${row},${col}]. Total statuses: ${newStatuses.length}`)
 
   const newCard = {
     ...targetCard,
@@ -1822,3 +1863,67 @@ function handleFlipCard(state: GameState, _playerId: number, data: any): GameSta
   logger.info(`[handleFlipCard] Flipped card at [${row},${col}] to faceDown=${faceDown}`)
   return { ...state, board: newBoard }
 }
+
+/**
+ * REORDER_CARDS - Reorder cards in a player's deck or discard
+ * Used by DeckViewModal when player drags cards to reorder them
+ */
+function handleReorderCards(state: GameState, _playerId: number, data: any): GameState {
+  const { playerId: targetPlayerId, newOrder } = data || {}
+  if (!targetPlayerId || !newOrder || !Array.isArray(newOrder)) {
+    return state
+  }
+
+  const player = state.players.find(p => p.id === targetPlayerId)
+  if (!player) {
+    return state
+  }
+
+  // Determine if we're updating deck or discard based on card count
+  // Deck typically has many cards, discard is usually smaller
+  const isDeck = newOrder.length > 10 || (player.deckSize && newOrder.length === player.deckSize)
+
+  const newPlayers = state.players.map(p => {
+    if (p.id === targetPlayerId) {
+      if (isDeck) {
+        return { ...p, deck: newOrder, deckSize: newOrder.length }
+      } else {
+        return { ...p, discard: newOrder, discardSize: newOrder.length }
+      }
+    }
+    return p
+  })
+
+  return { ...state, players: newPlayers as Player[] }
+}
+
+/**
+ * REORDER_TOP_DECK - Reorder top cards of a deck (for TopDeckView)
+ * Updates the player's deck with the reordered top cards
+ */
+function handleReorderTopDeck(state: GameState, _playerId: number, data: any): GameState {
+  const { playerId: targetPlayerId, newTopCards } = data || {}
+  if (!targetPlayerId || !newTopCards || !Array.isArray(newTopCards)) {
+    return state
+  }
+
+  const player = state.players.find(p => p.id === targetPlayerId)
+  if (!player || !player.deck) {
+    return state
+  }
+
+  // Reorder: replace top cards with new order, keep rest of deck unchanged
+  const topCount = newTopCards.length
+  const remainingDeck = player.deck.slice(topCount)
+  const newDeck = [...newTopCards, ...remainingDeck]
+
+  const newPlayers = state.players.map(p => {
+    if (p.id === targetPlayerId) {
+      return { ...p, deck: newDeck, deckSize: newDeck.length }
+    }
+    return p
+  })
+
+  return { ...state, players: newPlayers as Player[] }
+}
+
