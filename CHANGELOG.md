@@ -6,38 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [0.2.14] - 2026-02-26
-
-### Added
-- **Card Swap in Showcase**: When announcing a card to an occupied showcase, cards swap places
-  - Existing announced card returns to owner's hand
-  - New card takes its place in showcase
-- **Drag Visual Feedback**: Improved drag-and-drop UX
-  - Tooltips automatically hide when any card drag starts
-  - "Forbidden" cursor shown when dragging over occupied board cells
-- **Game Logic Refactoring**: Split SimpleGameLogic.ts into focused modules
-  - `handlers/scoringHandlers.ts` - scoring, rounds, matches (273 lines)
-  - `handlers/gameSettingsHandlers.ts` - game config, dummy players (267 lines)
-  - SimpleGameLogic.ts reduced from 2213 to 1704 lines (-509 lines)
-
-### Fixed
-- Cards can no longer be placed on occupied board cells (state unchanged)
-- Card ownership now properly tracked when dragging dummy players' cards
-
 ## [0.2.11] - 2026-02-15
 
 ### Added
-- **WebRTC P2P Optimization**: Implemented binary serialization for reduced bandwidth
-  - MessagePack binary encoding (~72% size reduction vs JSON)
-  - Differential compression for state deltas
-  - Card serialization by reference (id + stats only, tokens tracked separately)
-  - Optimized delta format with short property keys
-  - Compact reconnect snapshot for faster guest reconnection
+- **SimpleWebRTC P2P System**: Complete rewrite of WebRTC P2P mode
+  - Peer-to-peer gameplay without central server during game
+  - Host authority with personalized state broadcasting
+  - 30-second reconnection window for disconnected guests
+  - localStorage persistence for F5 (page refresh) support
+  - Automatic dummy player conversion after timeout
+  - Visual effects synchronization (highlights, floating text, targeting modes, click waves)
+  - Phase management and round progression
+  - Full game state tracking and synchronization
 - **Unified Modal System**: Complete modal management with React Context
-  - Created `useModals.tsx` with React Context-based state management (replaced Zustand v5 due to reactivity issues)
+  - Created `useModals.tsx` with React Context-based state management
   - Added `ModalsRenderer` component for centralized modal rendering
-  - Implemented React.lazy for menu modals (Settings, Rules, Deck Builder, Join Game)
-  - Code splitting: ~47 KB moved to lazy-loaded chunks
+  - Available in both MainMenu and Game views
   - Convenience hooks: `useSettingsModal()`, `useRulesModal()`, `useDeckBuilderModal()`, etc.
 
 ### Changed
@@ -82,12 +66,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.10] - 2026-02-15
 
 ### Added
-- **WebRTC P2P Mode**: Added peer-to-peer WebRTC support for direct player connections
-  - Host can create P2P games without requiring external server
-  - Guest can connect directly to host using peer ID
-  - State synchronization optimized for P2P with state deltas
-  - Reconnection support after page reload
+- **SimpleWebRTC P2P Mode**: Peer-to-peer WebRTC support for direct player connections
+  - Host creates P2P game without requiring external server
+  - Guest connects using host's peer ID
+  - Direct state synchronization between all players
+  - Reconnection support after page reload (sessionStorage)
   - Visual effects broadcasting across P2P connections
+  - Phase management and round progression for P2P games
 
 ### Changed
 - **IP Dept Agent**: Modified ability - now enters "IP_AGENT_THREAT_SCORING" mode instead of direct scoring
