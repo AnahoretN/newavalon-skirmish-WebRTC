@@ -1,9 +1,9 @@
 /**
  * Simple Game Logic
  *
- * Вся логика игры в одном месте.
- * Функция applyAction принимает текущее состояние и действие,
- * возвращает новое состояние.
+ * All game logic in one place.
+ * The applyAction function takes current state and action,
+ * returns new state.
  */
 
 import type { GameState, Card, Player, DeckType, ScoringLineData } from '../types'
@@ -14,28 +14,28 @@ import { initializeReadyStatuses, recalculateAllReadyStatuses } from '../utils/a
 import { createDeck } from '../hooks/core/gameCreators'
 
 /**
- * Проверить является ли карта токеном
+ * Check if card is a token
  */
 function isToken(card: Card): boolean {
   return card.deck === 'counter'
 }
 
 /**
- * Очистить все статусы карты кроме Revealed
- * Вызывается при перемещении карты с поля боя
+ * Clear all card statuses except Revealed
+ * Called when moving card from battlefield
  */
 function clearAllStatusesExceptRevealed(card: Card): void {
   if (!card.statuses) {
     card.statuses = []
     return
   }
-  // Сохраняем только статусы Revealed, удаляем все остальные
+  // Keep only Revealed statuses, remove all others
   card.statuses = card.statuses.filter(s => s.type === 'Revealed')
 }
 
 /**
- * Применить действие к состоянию игры
- * Это единственное место где изменяется состояние игры!
+ * Apply action to game state
+ * This is the only place where game state is modified!
  */
 export function applyAction(
   state: GameState,
@@ -43,7 +43,7 @@ export function applyAction(
   action: ActionType,
   data?: any
 ): GameState {
-  // Валидация - можно ли этому игроку выполнять это действие
+  // Validation - can this player perform this action
   if (!canPlayerAct(state, playerId, action, data)) {
     console.warn(`[SimpleGameLogic] Player ${playerId} cannot ${action}`)
     return state
@@ -96,7 +96,7 @@ export function applyAction(
       newState = handleAnnounceCard(newState, playerId, data)
       break
 
-    // Перемещение между зонами
+    // Movement between zones
     case 'MOVE_CARD_TO_HAND':
       newState = handleMoveCardToHand(newState, playerId, data)
       break
@@ -225,14 +225,14 @@ export function applyAction(
       console.warn(`[SimpleGameLogic] Unknown action: ${action}`)
   }
 
-  // Всегда пересчитываем статусы карт на доске
+  // Always recalculate board card statuses
   newState.board = recalculateBoardStatuses(newState)
 
   return newState
 }
 
 /**
- * Проверить может ли игрок выполнить это действие
+ * Check if player can perform this action
  */
 function canPlayerAct(
   state: GameState,
@@ -240,38 +240,38 @@ function canPlayerAct(
   action: ActionType,
   _data?: any
 ): boolean {
-  // Настройки игры может делать любой игрок в лобби
+  // Any player can do game settings in lobby
   if (!state.isGameStarted) {
     return ['PLAYER_READY', 'CHANGE_PLAYER_NAME', 'CHANGE_PLAYER_COLOR',
             'CHANGE_PLAYER_DECK', 'SET_GAME_MODE', 'SET_GRID_SIZE',
             'SET_PRIVACY', 'ASSIGN_TEAMS'].includes(action)
   }
 
-  // Игроки могут менять свои настройки
+  // Players can change their settings
   if (action === 'CHANGE_PLAYER_NAME' || action === 'CHANGE_PLAYER_COLOR') {
     return true
   }
 
-  // Dummy игроков могут контролировать все
+  // Dummy players can control all
   const player = state.players.find(p => p.id === playerId)
   if (player?.isDummy) {return true}
 
-  // Все остальные действия могут выполнять любые игроки
-  // (карты можно перемещать в любой ход, фазы может переключать любой игрок)
+  // All other actions can be performed by any player
+  // (cards can be moved any turn, phases can be switched by any player)
   return true
 }
 
 // ============================================================================
-// Фазовые действия
+// Phase actions
 // ============================================================================
 
 /**
- * NEXT_PHASE - переход к следующей фазе
+ * NEXT_PHASE - transition to next phase
  */
 function handleNextPhase(state: GameState, playerId: number): GameState {
   const phase = state.currentPhase
 
-  // Preparation (0) → Setup (1) - автоматический, обрабатывается в passTurn
+  // Preparation (0) → Setup (1) - automatic, handled in passTurn
   if (phase === 0) {
     const newState = { ...state, currentPhase: 1 }
     // Clear scoring mode if somehow active
@@ -281,7 +281,7 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
     return newState
   }
 
-  // Setup (1) → Main (2) - происходит при игре карты
+  // Setup (1) → Main (2) - happens when playing card
   if (phase === 1) {
     const newState = { ...state, currentPhase: 2 }
     // Clear scoring mode if somehow active
@@ -301,10 +301,10 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
     return newState
   }
 
-  // Commit (3) → Scoring (4) или PassTurn
+  // Commit (3) → Scoring (4) or PassTurn
   if (phase === 3) {
-    // Проверяем есть ли у игрока карты со статусом "LastPlayed" на доске
-    // Статус LastPlayed добавляется когда карта сыграна из руки
+    // Check if player has cards with "LastPlayed" status on board
+    // LastPlayed status is added when card is played from hand
     const hasLastPlayedCards = state.board.some(row =>
       row.some(cell =>
         cell.card?.ownerId === playerId &&
@@ -313,10 +313,10 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
     )
 
     if (hasLastPlayedCards) {
-      // Есть карты со статусом LastPlayed - переходим к Scoring и вычисляем линии
+      // Has cards with LastPlayed status - enter Scoring and calculate lines
       return enterScoringPhase(state, playerId)
     } else {
-      // Нет карт со статусом LastPlayed - передаём ход следующему игроку
+      // No cards with LastPlayed status - pass turn to next player
       return handlePassTurn(state, playerId, 'no_new_cards')
     }
   }
@@ -330,13 +330,13 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
 }
 
 /**
- * Войти в фазу Scoring - вычислить линии для подсветки
+ * Enter Scoring phase - calculate lines for highlighting
  */
 function enterScoringPhase(state: GameState, playerId: number): GameState {
-  // Находим линии, содержащие карты игрока
+  // Find lines containing player's cards
   const lines = findScoringLinesWithPlayerCard(state, playerId)
 
-  // Вычисляем очки для каждой линии
+  // Calculate points for each line
   const scoringLines: ScoringLineData[] = lines.map(line => ({
     playerId,
     lineType: line.type as any,
@@ -355,7 +355,7 @@ function enterScoringPhase(state: GameState, playerId: number): GameState {
 }
 
 /**
- * PREVIOUS_PHASE - возврат к предыдущей фазе
+ * PREVIOUS_PHASE - return to previous phase
  */
 function handlePreviousPhase(state: GameState, _playerId: number): GameState {
   const phase = state.currentPhase
@@ -368,7 +368,7 @@ function handlePreviousPhase(state: GameState, _playerId: number): GameState {
 }
 
 /**
- * PASS_TURN - передать ход следующему игроку
+ * PASS_TURN - pass turn to next player
  */
 function handlePassTurn(state: GameState, playerId: number, reason: string): GameState {
   const activePlayerIds = getActivePlayerIds(state.players)
@@ -380,13 +380,13 @@ function handlePassTurn(state: GameState, playerId: number, reason: string): Gam
 
   console.log('[handlePassTurn] Turn passed from', playerId, 'to', nextPlayerId, 'reason:', reason)
 
-  // Сбрасываем enteredThisTurn у всех карт на доске при передаче хода
-  // Также очищаем setupUsedThisTurn и commitUsedThisTurn (но не deployUsedThisTurn!)
+  // Reset enteredThisTurn on all board cards when passing turn
+  // Also clear setupUsedThisTurn and commitUsedThisTurn (but not deployUsedThisTurn!)
   const newBoard = state.board.map(row =>
     row.map(cell => {
       if (cell.card) {
         const newStatuses = cell.card.statuses?.filter((s: any) => {
-          // Сохраняем все статусы кроме setupUsedThisTurn и commitUsedThisTurn
+          // Keep all statuses except setupUsedThisTurn and commitUsedThisTurn
           if (s.type === 'setupUsedThisTurn') return false
           if (s.type === 'commitUsedThisTurn') return false
           return true
@@ -404,7 +404,7 @@ function handlePassTurn(state: GameState, playerId: number, reason: string): Gam
     })
   )
 
-  // Очищаем lastPlayedCardId у всех игроков при передаче хода
+  // Clear lastPlayedCardId for all players when passing turn
   const newPlayers = state.players.map(p => ({
     ...p,
     lastPlayedCardId: null
@@ -416,22 +416,22 @@ function handlePassTurn(state: GameState, playerId: number, reason: string): Gam
     players: newPlayers,
     activePlayerId: nextPlayerId,
     currentPhase: 0,  // Preparation
-    scoringLines: []  // Очищаем линии скоринга при передаче хода
+    scoringLines: []  // Clear scoring lines when passing turn
   }
 
-  // Проверяем полный круг (вернулись к начавшему игроку)
+  // Check full cycle (returned to starting player)
   if (nextPlayerId === state.startingPlayerId) {
     newState.turnNumber = (state.turnNumber || 0) + 1
   }
 
-  // Preparation phase: auto-draw для нового активного игрока
+  // Preparation phase: auto-draw for new active player
   newState = executePreparationPhase(newState, nextPlayerId)
 
   return newState
 }
 
 /**
- * SET_PHASE - установить конкретную фазу
+ * SET_PHASE - set specific phase
  */
 function handleSetPhase(state: GameState, phaseNumber: number): GameState {
   const clamped = Math.max(0, Math.min(4, phaseNumber))
@@ -480,7 +480,7 @@ function handleSetPhase(state: GameState, phaseNumber: number): GameState {
 }
 
 /**
- * Preparation phase - auto-draw и проверка окончания раунда
+ * Preparation phase - auto-draw and check round end
  */
 function executePreparationPhase(state: GameState, activePlayerId: number): GameState {
   let newState = { ...state }
@@ -490,7 +490,7 @@ function executePreparationPhase(state: GameState, activePlayerId: number): Game
 
   console.log('[executePreparationPhase] Player', activePlayerId, 'autoDraw:', state.autoDrawEnabled, 'deckSize:', player.deck?.length || 0)
 
-  // Auto-draw если включен и есть карты в колоде
+  // Auto-draw if enabled and deck has cards
   if (state.autoDrawEnabled && player.deck && player.deck.length > 0) {
     const drawnCard = player.deck.shift()
     if (drawnCard) {
@@ -501,13 +501,13 @@ function executePreparationPhase(state: GameState, activePlayerId: number): Game
     }
   }
 
-  // Проверка окончания раунда
+  // Check round end
   if (shouldRoundEnd(newState)) {
     newState = endRound(newState)
     return newState
   }
 
-  // Переход к Setup
+  // Transition to Setup
   newState.currentPhase = 1
   console.log('[executePreparationPhase] Transition to Setup phase for player', activePlayerId)
 
@@ -518,11 +518,11 @@ function executePreparationPhase(state: GameState, activePlayerId: number): Game
 }
 
 // ============================================================================
-// Карточные действия
+// Card actions
 // ============================================================================
 
 /**
- * PLAY_CARD - сыграть карту из руки на доску
+ * PLAY_CARD - play card from hand to board
  * Also supports direct card parameter for playing from deck/discard
  */
 function handlePlayCard(state: GameState, playerId: number, data: any): GameState {
@@ -546,7 +546,7 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
 
     if (!cardToPlay) {return state}
 
-    // Убираем карту из руки
+    // Remove card from hand
     newHand = [...player.hand]
     newHand.splice(cardIndexNum, 1)
     newHandSize = newHand.length
@@ -554,8 +554,8 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
 
   if (!cardToPlay) {return state}
 
-  // Сначала убираем LastPlayed статус со ВСЕХ карт игрока на доске
-  // (только одна карта может иметь LastPlayed статус одновременно)
+  // First remove LastPlayed status from ALL player's cards on board
+  // (only one card can have LastPlayed status at a time)
   const boardWithoutLastPlayed = state.board.map((row, _r) =>
     row.map((cell, _c) => {
       if (cell.card?.ownerId === playerId && cell.card?.statuses) {
@@ -573,7 +573,7 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
     })
   )
 
-  // Теперь добавляем карту на доску с LastPlayed статусом
+  // Now add card to board with LastPlayed status
   const newBoard = boardWithoutLastPlayed.map((row, r) =>
     row.map((cell, c) => {
       if (r === boardCoords.row && c === boardCoords.col) {
@@ -603,10 +603,10 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
     })
   )
 
-  // Добавляем в boardHistory
+  // Add to boardHistory
   const newBoardHistory = [...player.boardHistory, cardToPlay.id]
 
-  // Обновляем игрока - устанавливаем lastPlayedCardId
+  // Update player - set lastPlayedCardId
   const newPlayers = state.players.map(p =>
     p.id === playerId
       ? {
@@ -623,12 +623,12 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
     ...state,
     board: newBoard,
     players: newPlayers,
-    currentPhase: 2  // Main phase после игры карты
+    currentPhase: 2  // Main phase after playing card
   }
 }
 
 /**
- * MOVE_CARD_ON_BOARD - переместить карту с одной клетки на другую
+ * MOVE_CARD_ON_BOARD - move card from one cell to another
  */
 function handleMoveCardOnBoard(state: GameState, _playerId: number, data: any): GameState {
   const { fromCoords, toCoords, faceDown } = data || {}
@@ -640,27 +640,27 @@ function handleMoveCardOnBoard(state: GameState, _playerId: number, data: any): 
   const toRow = toCoords.row
   const toCol = toCoords.col
 
-  // Проверяем границы
+  // Check boundaries
   const gridSize = state.activeGridSize
   if (fromRow < 0 || fromRow >= gridSize || fromCol < 0 || fromCol >= gridSize) {return state}
   if (toRow < 0 || toRow >= gridSize || toCol < 0 || toCol >= gridSize) {return state}
 
-  // Проверяем что исходная клетка содержит карту
+  // Check if source cell contains card
   const sourceCard = state.board[fromRow]?.[fromCol]?.card
   if (!sourceCard) {return state}
 
-  // Проверяем что целевая клетка пуста
+  // Check if target cell is empty
   const targetCell = state.board[toRow]?.[toCol]
   if (!targetCell || targetCell.card) {return state}
 
-  // Перемещаем карту
+  // Move card
   const newBoard = state.board.map((row, r) =>
     row.map((cell, c) => {
-      // Очищаем исходную клетку
+      // Clear source cell
       if (r === fromRow && c === fromCol) {
         return { card: null }
       }
-      // Размещаем карту в новой клетке
+      // Place card in new cell
       if (r === toRow && c === toCol) {
         const movedCard = {
           ...sourceCard,
@@ -678,15 +678,15 @@ function handleMoveCardOnBoard(state: GameState, _playerId: number, data: any): 
 }
 
 /**
- * MOVE_CARD - переместить карту
+ * MOVE_CARD - move card
  */
 function handleMoveCard(state: GameState, _playerId: number, _data: any): GameState {
-  // TODO: реализовать перемещение карт
+  // TODO: implement card movement
   return state
 }
 
 /**
- * RETURN_CARD_TO_HAND - вернуть карту в руку
+ * RETURN_CARD_TO_HAND - return card to hand
  */
 function handleReturnCardToHand(state: GameState, playerId: number, data: any): GameState {
   const { cardId } = data || {}
@@ -712,7 +712,7 @@ function handleReturnCardToHand(state: GameState, playerId: number, data: any): 
 
   if (!cardToReturn || !sourceCoords) {return state}
 
-  // Добавляем в руку владельцу
+  // Add to owner's hand
   // cardToReturn is non-null here due to the check above
   const finalCard: Card = cardToReturn
   const ownerId = finalCard.ownerId ?? playerId
@@ -735,7 +735,7 @@ function handleReturnCardToHand(state: GameState, playerId: number, data: any): 
 }
 
 /**
- * MOVE_CARD_TO_HAND - переместить карту с доски/сброса в руку
+ * MOVE_CARD_TO_HAND - move card from board/discard to hand
  */
 function handleMoveCardToHand(state: GameState, playerId: number, data: any): GameState {
   const { cardId, source } = data || {}
@@ -801,7 +801,7 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
 }
 
 /**
- * MOVE_CARD_TO_DECK - переместить карту с доски/руки/сброса в колоду
+ * MOVE_CARD_TO_DECK - move card from board/hand/discard to deck
  */
 function handleMoveCardToDeck(state: GameState, playerId: number, data: any): GameState {
   const { cardId, source } = data || {}
@@ -895,7 +895,7 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
 }
 
 /**
- * MOVE_CARD_TO_DISCARD - переместить карту с доски/руки/колоды в сброс
+ * MOVE_CARD_TO_DISCARD - move card from board/hand/deck to discard
  */
 function handleMoveCardToDiscard(state: GameState, playerId: number, data: any): GameState {
   const { cardId, source } = data || {}
@@ -989,7 +989,7 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
 }
 
 /**
- * MOVE_HAND_CARD_TO_DECK - переместить карту из руки в колоду
+ * MOVE_HAND_CARD_TO_DECK - move card from hand to deck
  */
 function handleMoveHandCardToDeck(state: GameState, playerId: number, data: any): GameState {
   const { cardIndex } = data || {}
@@ -1014,7 +1014,7 @@ function handleMoveHandCardToDeck(state: GameState, playerId: number, data: any)
 }
 
 /**
- * MOVE_HAND_CARD_TO_DISCARD - переместить карту из руки в сброс
+ * MOVE_HAND_CARD_TO_DISCARD - move card from hand to discard
  */
 function handleMoveHandCardToDiscard(state: GameState, playerId: number, data: any): GameState {
   const { cardIndex } = data || {}
@@ -1039,7 +1039,7 @@ function handleMoveHandCardToDiscard(state: GameState, playerId: number, data: a
 }
 
 /**
- * MOVE_ANNOUNCED_TO_HAND - переместить карту из витрины в руку
+ * MOVE_ANNOUNCED_TO_HAND - move card from showcase to hand
  */
 function handleMoveAnnouncedToHand(state: GameState, playerId: number, _data: any): GameState {
   const player = state.players.find(p => p.id === playerId)
@@ -1058,7 +1058,7 @@ function handleMoveAnnouncedToHand(state: GameState, playerId: number, _data: an
 }
 
 /**
- * MOVE_ANNOUNCED_TO_DECK - переместить карту из витрины в колоду
+ * MOVE_ANNOUNCED_TO_DECK - move card from showcase to deck
  */
 function handleMoveAnnouncedToDeck(state: GameState, playerId: number, _data: any): GameState {
   const player = state.players.find(p => p.id === playerId)
@@ -1077,7 +1077,7 @@ function handleMoveAnnouncedToDeck(state: GameState, playerId: number, _data: an
 }
 
 /**
- * MOVE_ANNOUNCED_TO_DISCARD - переместить карту из витрины в сброс
+ * MOVE_ANNOUNCED_TO_DISCARD - move card from showcase to discard
  */
 function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, _data: any): GameState {
   const player = state.players.find(p => p.id === playerId)
@@ -1096,7 +1096,7 @@ function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, _data:
 }
 
 /**
- * PLAY_ANNOUNCED_TO_BOARD - сыграть карту из витрины на поле боя
+ * PLAY_ANNOUNCED_TO_BOARD - play card from showcase to battlefield
  */
 function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: any): GameState {
   const { row, col, faceDown = false } = data || {}
@@ -1106,7 +1106,7 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
   if (row === undefined || col === undefined) {return state}
   if (row < 0 || row >= state.activeGridSize || col < 0 || col >= state.activeGridSize) {return state}
 
-  // Проверяем, что клетка пуста
+  // Check if cell is empty
   if (state.board[row]?.[col]?.card) {return state}
 
   const cardToPlay = { ...player.announcedCard, isFaceDown: faceDown }
@@ -1132,7 +1132,7 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
 }
 
 /**
- * ANNOUNCE_CARD - объявить карту
+ * ANNOUNCE_CARD - announce card
  */
 function handleAnnounceCard(state: GameState, playerId: number, data: any): GameState {
   const { cardIndex } = data || {}
@@ -1143,8 +1143,8 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
   const card = player.hand[cardIndex]
   if (!card) {return state}
 
-  // Сначала убираем LastPlayed статус со ВСЕХ карт игрока на доске
-  // (только одна карта может иметь LastPlayed статус одновременно)
+  // First remove LastPlayed status from ALL player's cards on board
+  // (only one card can have LastPlayed status at a time)
   const boardWithoutLastPlayed = state.board.map((row, _r) =>
     row.map((cell, _c) => {
       if (cell.card?.ownerId === playerId && cell.card?.statuses) {
@@ -1193,7 +1193,7 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
 }
 
 /**
- * DESTROY_CARD - уничтожить карту
+ * DESTROY_CARD - destroy card
  */
 function handleDestroyCard(state: GameState, _playerId: number, data: any): GameState {
   const { cardId } = data || {}
@@ -1222,21 +1222,21 @@ function handleDestroyCard(state: GameState, _playerId: number, data: any): Game
   // This allows deploy ability to be used again when card returns to battlefield
   clearAllStatusesExceptRevealed(destroyedCard)
 
-  // Проверяем, была ли это последняя сыгранная карта владельца
+  // Check if this was the owner's last played card
   const owner = state.players.find(p => p.id === ownerId)
   let updatedBoard = newBoard
   let newLastPlayedCardId: string | null = null
 
   if (owner && owner.lastPlayedCardId === cardId) {
-    // Эта карта была последней сыгранной - нужно восстановить статус предыдущей
-    // Ищем предыдущую карту в boardHistory (кроме уничтоженной)
+    // This card was the last played - need to restore previous card's status
+    // Find previous card in boardHistory (except destroyed)
     const historyWithoutDestroyed = owner.boardHistory.filter(id => id !== cardId)
 
     if (historyWithoutDestroyed.length > 0) {
       const prevCardId = historyWithoutDestroyed[historyWithoutDestroyed.length - 1]
       newLastPlayedCardId = prevCardId
 
-      // Находим эту карту на доске и восстанавливаем LastPlayed статус
+      // Find this card on board and restore LastPlayed status
       updatedBoard = newBoard.map(row =>
         row.map(cell => {
           if (cell.card?.id === prevCardId) {
@@ -1263,10 +1263,10 @@ function handleDestroyCard(state: GameState, _playerId: number, data: any): Game
     }
   }
 
-  // Добавляем в discard владельцу
+  // Add to owner's discard
   const newPlayers = state.players.map(p => {
     if (p.id === ownerId) {
-      // Обновляем boardHistory (убираем уничтоженную карту)
+      // Update boardHistory (remove destroyed card)
       const newBoardHistory = p.boardHistory.filter(id => id !== cardId)
       return {
         ...p,
@@ -1287,11 +1287,11 @@ function handleDestroyCard(state: GameState, _playerId: number, data: any): Game
 }
 
 // ============================================================================
-// Управление колодой
+// Deck control
 // ============================================================================
 
 /**
- * DRAW_CARD - взять карту из колоды
+ * DRAW_CARD - draw card from deck
  */
 function handleDrawCard(state: GameState, playerId: number): GameState {
   const player = state.players.find(p => p.id === playerId)
@@ -1318,7 +1318,7 @@ function handleDrawCard(state: GameState, playerId: number): GameState {
 }
 
 /**
- * SHUFFLE_DECK - перемешать колоду
+ * SHUFFLE_DECK - shuffle deck
  */
 function handleShuffleDeck(state: GameState, playerId: number): GameState {
   const player = state.players.find(p => p.id === playerId)
@@ -1336,11 +1336,11 @@ function handleShuffleDeck(state: GameState, playerId: number): GameState {
 }
 
 // ============================================================================
-// Счёт и статус игрока
+// Score and player status
 // ============================================================================
 
 /**
- * UPDATE_SCORE - обновить счёт игрока
+ * UPDATE_SCORE - update player score
  */
 function handleUpdateScore(state: GameState, playerId: number, delta: number): GameState {
   const newPlayers = state.players.map(p => {
@@ -1354,7 +1354,7 @@ function handleUpdateScore(state: GameState, playerId: number, delta: number): G
 }
 
 /**
- * CHANGE_PLAYER_NAME - изменить имя игрока
+ * CHANGE_PLAYER_NAME - change player name
  */
 function handleChangePlayerName(state: GameState, playerId: number, name: string): GameState {
   const newPlayers = state.players.map(p =>
@@ -1365,7 +1365,7 @@ function handleChangePlayerName(state: GameState, playerId: number, name: string
 }
 
 /**
- * CHANGE_PLAYER_COLOR - изменить цвет игрока
+ * CHANGE_PLAYER_COLOR - change player color
  */
 function handleChangePlayerColor(state: GameState, playerId: number, color: any): GameState {
   const newPlayers = state.players.map(p =>
@@ -1376,14 +1376,14 @@ function handleChangePlayerColor(state: GameState, playerId: number, color: any)
 }
 
 /**
- * CHANGE_PLAYER_DECK - изменить колоду игрока
- * Создаёт новую колоду выбранного типа
+ * CHANGE_PLAYER_DECK - change player deck
+ * Creates new deck of selected type
  */
 function handleChangePlayerDeck(state: GameState, playerId: number, deckType: DeckType): GameState {
   const player = state.players.find(p => p.id === playerId)
   if (!player) {return state}
 
-  // Создаём новую колоду
+  // Create new deck
   const newDeck = createDeck(deckType, playerId, player.name)
 
   const newPlayers = state.players.map(p =>
@@ -1398,21 +1398,21 @@ function handleChangePlayerDeck(state: GameState, playerId: number, deckType: De
 }
 
 // ============================================================================
-// Скоринг
+// Scoring
 // ============================================================================
 
 /**
- * START_SCORING - начать фазу скоринга
+ * START_SCORING - start scoring phase
  */
 function handleStartScoring(state: GameState, playerId: number): GameState {
   if (state.currentPhase !== 3) {return state}
 
-  // Используем enterScoringPhase для правильного расчёта линий
+  // Use enterScoringPhase for proper line calculation
   return enterScoringPhase(state, playerId)
 }
 
 /**
- * SELECT_SCORING_LINE - выбрать линию для скоринга
+ * SELECT_SCORING_LINE - select line for scoring
  */
 function handleSelectScoringLine(state: GameState, playerId: number, data: any): GameState {
   if (!state.isScoringStep || state.activePlayerId !== playerId) {return state}
@@ -1420,7 +1420,7 @@ function handleSelectScoringLine(state: GameState, playerId: number, data: any):
   const { lineType, lineIndex } = data || {}
   if (!lineType) {return state}
 
-  // Вычисляем очки на основе карт в линии
+  // Calculate points based on cards in line
   const points = calculateLineScore(state, playerId, lineType, lineIndex)
 
   console.log('[handleSelectScoringLine] Player', playerId, 'selected', lineType, lineIndex, 'score:', points)
@@ -1431,49 +1431,49 @@ function handleSelectScoringLine(state: GameState, playerId: number, data: any):
       : p
   )
 
-  // Передаём ход
+  // Pass turn
   const newState = {
     ...state,
     players: newPlayers,
     isScoringStep: false,
-    scoringLines: []  // Очищаем линии скоринга
+    scoringLines: []  // Clear scoring lines
   }
 
   return handlePassTurn(newState, playerId, 'scoring_complete')
 }
 
 /**
- * Вычислить очки для линии
+ * Calculate points for line
  * lineType: 'row' | 'col' | 'diagonal' | 'anti-diagonal'
- * lineIndex: номер строки/колонки (0-based), или undefined для диагоналей
+ * lineIndex: row/column number (0-based), or undefined for diagonals
  */
 function calculateLineScore(state: GameState, playerId: number, lineType: string, lineIndex?: number): number {
   const gridSize = state.activeGridSize
   const cellsToCheck: { row: number; col: number }[] = []
 
   if (lineType === 'row' && lineIndex !== undefined) {
-    // Горизонтальная линия
+    // Horizontal line
     for (let c = 0; c < gridSize; c++) {
       cellsToCheck.push({ row: lineIndex, col: c })
     }
   } else if (lineType === 'col' && lineIndex !== undefined) {
-    // Вертикальная линия
+    // Vertical line
     for (let r = 0; r < gridSize; r++) {
       cellsToCheck.push({ row: r, col: lineIndex })
     }
   } else if (lineType === 'diagonal') {
-    // Главная диагональ (top-left to bottom-right)
+    // Main diagonal (top-left to bottom-right)
     for (let i = 0; i < gridSize; i++) {
       cellsToCheck.push({ row: i, col: i })
     }
   } else if (lineType === 'anti-diagonal') {
-    // Побочная диагональ (top-right to bottom-left)
+    // Anti-diagonal (top-right to bottom-left)
     for (let i = 0; i < gridSize; i++) {
       cellsToCheck.push({ row: i, col: gridSize - 1 - i })
     }
   }
 
-  // Считаем сумму сил всех карт игрока в этой линии
+  // Count sum of power of all player's cards in this line
   let score = 0
   for (const { row, col } of cellsToCheck) {
     const cell = state.board[row]?.[col]
@@ -1488,8 +1488,8 @@ function calculateLineScore(state: GameState, playerId: number, lineType: string
 }
 
 /**
- * Найти все линии, содержащие карту игрока
- * Возвращает массив линий, которые можно подсветить для скоринга
+ * Find all lines containing player's card
+ * Returns array of lines that can be highlighted for scoring
  */
 export function findScoringLinesWithPlayerCard(
   state: GameState,
@@ -1498,11 +1498,11 @@ export function findScoringLinesWithPlayerCard(
   const player = state.players.find(p => p.id === playerId)
   if (!player) {return []}
 
-  // Ищем координаты последней сыгранной карты
+  // Find coordinates of last played card
   let lastPlayedCoords: { row: number; col: number } | null = null
 
   if (player.lastPlayedCardId) {
-    // Ищем по lastPlayedCardId
+    // Search by lastPlayedCardId
     for (let r = 0; r < state.activeGridSize; r++) {
       for (let c = 0; c < state.activeGridSize; c++) {
         const cell = state.board[r]?.[c]
@@ -1515,7 +1515,7 @@ export function findScoringLinesWithPlayerCard(
     }
   }
 
-  // Если не нашли последнюю сыгранную, ищем любую карту с enteredThisTurn
+  // If last played not found, look for any card with enteredThisTurn
   if (!lastPlayedCoords) {
     for (let r = 0; r < state.activeGridSize; r++) {
       for (let c = 0; c < state.activeGridSize; c++) {
@@ -1529,52 +1529,52 @@ export function findScoringLinesWithPlayerCard(
     }
   }
 
-  // Если не нашли ни одной карты - нет линий для скоринга
+  // If no card found - no lines for scoring
   if (!lastPlayedCoords) {return []}
 
   const { row, col } = lastPlayedCoords
   const lines: Array<{ type: string; index?: number; cells: { row: number; col: number }[] }> = []
 
-  // Горизонтальная линия (row)
+  // Horizontal line (row)
   const rowCells: { row: number; col: number }[] = []
   for (let c = 0; c < state.activeGridSize; c++) {
     rowCells.push({ row, col: c })
   }
   lines.push({ type: 'row', index: row, cells: rowCells })
 
-  // Вертикальная линия (col)
+  // Vertical line (col)
   const colCells: { row: number; col: number }[] = []
   for (let r = 0; r < state.activeGridSize; r++) {
     colCells.push({ row: r, col })
   }
   lines.push({ type: 'col', index: col, cells: colCells })
 
-  // Диагональные линии пока не используются в фазе скоринга
-  // (могут использоваться в способностях карт)
+  // Diagonal lines not currently used in scoring phase
+  // (may be used in card abilities)
 
   return lines
 }
 
 // ============================================================================
-// Раунд и матч
+// Round and match
 // ============================================================================
 
 /**
- * COMPLETE_ROUND - закрыть модалку окончания раунда
+ * COMPLETE_ROUND - close round end modal
  */
 function handleCompleteRound(state: GameState): GameState {
   return { ...state, isRoundEndModalOpen: false }
 }
 
 /**
- * START_NEXT_ROUND - начать следующий раунд
+ * START_NEXT_ROUND - start next round
  */
 function handleStartNextRound(state: GameState): GameState {
   const newRound = (state.currentRound || 1) + 1
 
   const newPlayers = state.players.map(p => ({
     ...p,
-    score: 0  // Сброс счёта
+    score: 0  // Reset score
   }))
 
   return {
@@ -1587,7 +1587,7 @@ function handleStartNextRound(state: GameState): GameState {
 }
 
 /**
- * START_NEW_MATCH - начать новую игру
+ * START_NEW_MATCH - start new match
  */
 function handleStartNewMatch(state: GameState): GameState {
   const newPlayers = state.players.map(p => ({
@@ -1610,17 +1610,17 @@ function handleStartNewMatch(state: GameState): GameState {
 // ============================================================================
 
 /**
- * PLAYER_READY - игрок готов
+ * PLAYER_READY - player is ready
  */
 function handlePlayerReady(state: GameState, playerId: number): GameState {
   const newPlayers = state.players.map(p =>
     p.id === playerId ? { ...p, isReady: true } : p
   )
 
-  // Проверяем все ли готовы
+  // Check if everyone is ready
   const allReady = newPlayers.every(p => p.isReady || p.isDummy || p.isSpectator)
 
-  // Если все готовы - начинаем игру
+  // If all ready - start game
   if (allReady) {
     return startGame({ ...state, players: newPlayers })
   }
@@ -1629,18 +1629,18 @@ function handlePlayerReady(state: GameState, playerId: number): GameState {
 }
 
 /**
- * RESET_GAME - сбросить игру в начальное состояние (лобби)
- * Сохраняет игроков и их выбор колод, но сбрасывает всё остальное
+ * RESET_GAME - reset game to initial state (lobby)
+ * Preserves players and their deck choices, but resets everything else
  */
 function handleResetGame(state: GameState): GameState {
   console.log('[handleResetGame] Resetting game to lobby state')
 
-  // Сохраняем данные игроков для восстановления
+  // Preserve player data for restoration
   const playersToKeep = state.players.map(p => {
     const deckType = p.selectedDeck || 'SynchroTech'
     return {
       ...p,
-      // Сбрасываем игровые данные
+      // Reset game data
       hand: [],
       deck: createDeck(deckType, p.id, p.name),
       discard: [],
@@ -1648,16 +1648,16 @@ function handleResetGame(state: GameState): GameState {
       handSize: 0,
       deckSize: createDeck(deckType, p.id, p.name).length,
       score: 0,
-      isReady: false,  // Сбрасываем готовность
+      isReady: false,  // Reset ready status
       announcedCard: null,
       boardHistory: [],
       lastPlayedCardId: null,
-      // Сохраняем настройки
+      // Preserve settings
       autoDrawEnabled: p.autoDrawEnabled !== false,
     }
   })
 
-  // Создаём пустую доску с сохранённым размером
+  // Create empty board with preserved size
   const gridSize = state.activeGridSize || 8
   const newBoard: Array<Array<{ card: Card | null }>> = []
   for (let i = 0; i < gridSize; i++) {
@@ -1670,7 +1670,7 @@ function handleResetGame(state: GameState): GameState {
 
   return {
     ...state,
-    // Сброс игровых флагов
+    // Reset game flags
     isGameStarted: false,
     isReadyCheckActive: false,
     currentPhase: 0,
@@ -1678,14 +1678,14 @@ function handleResetGame(state: GameState): GameState {
     turnNumber: 1,
     activePlayerId: null,
     startingPlayerId: null,
-    // Сброс раунда и матча
+    // Reset round and match
     roundWinners: {},
     gameWinner: null,
     roundEndTriggered: false,
     isRoundEndModalOpen: false,
     scoringLines: [],
     isScoringStep: false,
-    // Очистка визуальных эффектов
+    // Clear visual effects
     floatingTexts: [],
     highlights: [],
     deckSelections: [],
@@ -1693,23 +1693,23 @@ function handleResetGame(state: GameState): GameState {
     targetingMode: null,
     clickWaves: [],
     visualEffects: new Map(),
-    // Новая доска и игроки
+    // New board and players
     board: newBoard,
     players: playersToKeep,
   }
 }
 
 /**
- * Начать игру
+ * Start game
  */
 function startGame(state: GameState): GameState {
-  // Выбираем случайного начального игрока
+  // Select random starting player
   const activePlayers = state.players.filter(p => !p.isDisconnected && !p.isSpectator)
   const startingPlayer = activePlayers[Math.floor(Math.random() * activePlayers.length)]
 
   console.log('[startGame] Starting player:', startingPlayer.id, startingPlayer.name)
 
-  // Раздаём начальные руки (6 карт каждому)
+  // Deal initial hands (6 cards to each player)
   const newPlayers = state.players.map(p => {
     if (p.isDummy || p.isSpectator || p.isDisconnected) {return p}
 
@@ -1733,7 +1733,7 @@ function startGame(state: GameState): GameState {
     }
   })
 
-  // Начальный игрок получает 7-ю карту (преимущество первого хода)
+  // Starting player gets 7th card (first turn advantage)
   const startingPlayerIndex = newPlayers.findIndex(p => p.id === startingPlayer.id)
   if (startingPlayerIndex >= 0 && newPlayers[startingPlayerIndex].deck.length > 0) {
     const sp = newPlayers[startingPlayerIndex]
@@ -1753,13 +1753,13 @@ function startGame(state: GameState): GameState {
     isReadyCheckActive: false,
     startingPlayerId: startingPlayer.id,
     activePlayerId: startingPlayer.id,
-    currentPhase: 1,  // Setup - можно сразу играть карты
+    currentPhase: 1,  // Setup - can play cards immediately
     turnNumber: 1
   }
 }
 
 // ============================================================================
-// Игровые настройки
+// Game settings
 // ============================================================================
 
 function handleSetGameMode(state: GameState, mode: any): GameState {
@@ -1784,11 +1784,11 @@ function handleAssignTeams(state: GameState, teams: any): GameState {
 }
 
 // ============================================================================
-// Вспомогательные функции
+// Helper functions
 // ============================================================================
 
 /**
- * Получить ID активных игроков (не отключённые, не зрители)
+ * Get active player IDs (not disconnected, not spectators)
  */
 function getActivePlayerIds(players: Player[]): number[] {
   return players
@@ -1797,7 +1797,7 @@ function getActivePlayerIds(players: Player[]): number[] {
 }
 
 /**
- * Проверить должен ли закончиться раунд
+ * Check if round should end
  */
 function shouldRoundEnd(state: GameState): boolean {
   const threshold = 10 + (state.currentRound * 10)  // 20, 30, 40
@@ -1805,13 +1805,13 @@ function shouldRoundEnd(state: GameState): boolean {
 }
 
 /**
- * Завершить раунд
+ * End round
  */
 function endRound(state: GameState): GameState {
   const maxScore = Math.max(...state.players.map(p => p.score))
   const winners = state.players.filter(p => p.score === maxScore).map(p => p.id)
 
-  // Проверяем победу в матче (2 раунда)
+  // Check match victory (2 rounds)
   const roundWins = Object.values(state.roundWinners || {})
   const matchWinner = checkMatchWinner(roundWins, winners)
 
@@ -1834,12 +1834,12 @@ function endRound(state: GameState): GameState {
 }
 
 /**
- * Проверить победителя матча (2 раунда из 3)
+ * Check match winner (2 out of 3 rounds)
  */
 function checkMatchWinner(existingWins: Record<number, number[]>, newWinners: number[]): number | null {
   const allWins = { ...existingWins }
 
-  // Считаем победы для каждого раунда
+  // Count wins for each round
   const winCounts: Record<number, number> = {}
   Object.values(allWins).flat().forEach(id => {
     winCounts[id] = (winCounts[id] || 0) + 1
@@ -1848,7 +1848,7 @@ function checkMatchWinner(existingWins: Record<number, number[]>, newWinners: nu
     winCounts[id] = (winCounts[id] || 0) + 1
   })
 
-  // Проверяем кто выиграл 2 раунда
+  // Check who won 2 rounds
   for (const [id, count] of Object.entries(winCounts)) {
     if (count >= 2) {return parseInt(id)}
   }
@@ -1857,8 +1857,8 @@ function checkMatchWinner(existingWins: Record<number, number[]>, newWinners: nu
 }
 
 /**
- * MARK_ABILITY_USED - пометить способность как использованную
- * Удаляет готовый статус и добавляет маркер использования
+ * MARK_ABILITY_USED - mark ability as used
+ * Removes ready status and adds usage marker
  */
 function handleMarkAbilityUsed(state: GameState, data: any): GameState {
   const { coords, isDeploy, readyStatusToRemove } = data || {}
@@ -1914,7 +1914,7 @@ function handleMarkAbilityUsed(state: GameState, data: any): GameState {
 }
 
 /**
- * REMOVE_STATUS_BY_TYPE - удалить статус определённого типа с карты
+ * REMOVE_STATUS_BY_TYPE - remove status of specific type from card
  */
 function handleRemoveStatusByType(state: GameState, data: any): GameState {
   const { coords, type } = data || {}
@@ -1938,7 +1938,7 @@ function handleRemoveStatusByType(state: GameState, data: any): GameState {
 }
 
 /**
- * PLAY_CARD_FROM_DECK - сыграть верхнюю карту колоды на поле боя
+ * PLAY_CARD_FROM_DECK - play top card from deck to battlefield
  */
 function handlePlayCardFromDeck(state: GameState, playerId: number, data: any): GameState {
   const { cardIndex, boardCoords, faceDown } = data || {}
@@ -1969,7 +1969,7 @@ function handlePlayCardFromDeck(state: GameState, playerId: number, data: any): 
 }
 
 /**
- * PLAY_CARD_FROM_DISCARD - сыграть карту из сброса на поле боя
+ * PLAY_CARD_FROM_DISCARD - play card from discard to battlefield
  */
 function handlePlayCardFromDiscard(state: GameState, playerId: number, data: any): GameState {
   const { cardIndex, boardCoords, faceDown } = data || {}
@@ -2000,7 +2000,7 @@ function handlePlayCardFromDiscard(state: GameState, playerId: number, data: any
 }
 
 /**
- * ADD_STATUS_TO_BOARD_CARD - добавить статус (жетон) на карту на поле боя
+ * ADD_STATUS_TO_BOARD_CARD - add status (token) to card on battlefield
  */
 function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: any): GameState {
   const { boardCoords, statusType, ownerId, replaceStatusType } = data || {}
@@ -2060,9 +2060,9 @@ function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: a
 }
 
 /**
- * PLAY_TOKEN_CARD - разместить карту-токен на поле боя
- * Токен НЕ удаляется из панели (может использоваться многократно)
- * Владелец = игрок который разместил (или dummy если активен)
+ * PLAY_TOKEN_CARD - place token card on battlefield
+ * Token is NOT removed from panel (can be used multiple times)
+ * Owner = player who placed it (or dummy if active)
  */
 function handlePlayTokenCard(state: GameState, playerId: number, data: any): GameState {
   const { card, boardCoords, ownerId } = data || {}

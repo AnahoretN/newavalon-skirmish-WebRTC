@@ -1,13 +1,13 @@
 /**
- * gameCreators - Модуль для создания игровых сущностей
+ * gameCreators - Module for creating game entities
  *
- * Вынесено из useGameState.ts для разделения ответственности
+ * Extracted from useGameState.ts for separation of concerns
  *
- * Функции:
- * - generateGameId - генерация уникального ID игры
- * - createDeck - создание колоды для игрока
- * - createNewPlayer - создание нового игрока
- * - createInitialState - создание начального состояния игры
+ * Functions:
+ * - generateGameId - generate unique game ID
+ * - createDeck - create deck for player
+ * - createNewPlayer - create new player
+ * - createInitialState - create initial game state
  */
 
 import { DeckType, GameMode as GameModeEnum } from '@/types'

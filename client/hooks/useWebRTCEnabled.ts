@@ -1,8 +1,8 @@
 /**
- * useWebRTCEnabled - Хук для проверки режима WebRTC
+ * useWebRTCEnabled - Hook for checking WebRTC mode
  *
- * Кэширует результат localStorage.getItem('webrtc_enabled')
- * чтобы избежать множественных обращений к localStorage
+ * Caches localStorage.getItem('webrtc_enabled') result
+ * to avoid multiple localStorage accesses
  */
 
 import { useMemo } from 'react'

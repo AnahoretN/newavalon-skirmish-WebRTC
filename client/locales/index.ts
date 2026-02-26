@@ -316,13 +316,19 @@ const enAbilityKeywords = {
 
 const enCardTypes = {
   unit: 'Unit',
+  Unit: 'Unit',
   command: 'Command',
+  Command: 'Command',
   hero: 'Hero',
+  Hero: 'Hero',
   rarity: 'Rarity',
-  structure: 'Structure',
-  gear: 'Gear',
-  event: 'Event',
-  attachment: 'Attachment',
+  Rarity: 'Rarity',
+  device: 'Device',
+  Device: 'Device',
+  SynchroTech: 'SynchroTech',
+  Hoods: 'Hoods',
+  Optimates: 'Optimates',
+  Fusion: 'Fusion',
 }
 
 const enDeckNames = {

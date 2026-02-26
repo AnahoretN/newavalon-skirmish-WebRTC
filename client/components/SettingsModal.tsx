@@ -292,7 +292,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                   </div>
                   <p className="text-xs text-gray-400 mt-1">
-                    WebSocket URL сервера игры (ws:// или wss://)
+                    Game server WebSocket URL (ws:// or wss://)
                   </p>
                 </div>
 

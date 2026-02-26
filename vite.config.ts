@@ -62,15 +62,15 @@ export default defineConfig(({ mode }) => {
           entryFileNames: `assets/[name]-[hash]-${APP_VERSION}.js`,
           assetFileNames: `assets/[name]-[hash]-${APP_VERSION}.[ext]`,
           manualChunks: (id) => {
-            // Vendor chunk - React и основные зависимости
+            // Vendor chunk - React and core dependencies
             if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
               return 'vendor-react'
             }
-            // WebRTC зависимости (PeerJS тяжелый)
+            // WebRTC dependencies (PeerJS is heavy)
             if (id.includes('node_modules/peerjs')) {
               return 'vendor-webrtc'
             }
-            // Другие vendor библиотеки
+            // Other vendor libraries
             if (id.includes('node_modules')) {
               return 'vendor'
             }
@@ -78,7 +78,7 @@ export default defineConfig(({ mode }) => {
             if (id.includes('/utils/webrtc') || id.includes('compactCodec') || id.includes('cardRegistry')) {
               return 'game-logic'
             }
-            // Hooks и shared utilities
+            // Hooks and shared utilities
             if (id.includes('/hooks/') || id.includes('/shared/')) {
               return 'game-logic'
             }

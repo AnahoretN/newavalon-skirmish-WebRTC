@@ -1,8 +1,8 @@
 /**
  * SimpleGuest
  *
- * Упрощённый гость для P2P игры.
- * Отправляет действия хосту, получает состояние.
+ * Simplified guest for P2P game.
+ * Sends actions to host, receives state.
  */
 
 import { loadPeerJS } from './PeerJSLoader'
@@ -10,7 +10,7 @@ import type { PersonalizedState, SimpleGuestConfig, P2PMessage } from './SimpleP
 import { logger } from '../utils/logger'
 
 /**
- * SimpleGuest - упрощённый гость
+ * SimpleGuest - simplified guest
  */
 export class SimpleGuest {
   private peer: any = null  // Peer instance
@@ -18,14 +18,14 @@ export class SimpleGuest {
   private hostPeerId: string | null = null
   private localPlayerId: number
 
-  // Состояние
+  // State
   private state: PersonalizedState | null = null
   private lastVersion: number = 0
 
-  // Конфигурация
+  // Configuration
   private config: SimpleGuestConfig
 
-  // Callbacks для Promise из connect()
+  // Callbacks for Promise from connect()
   private resolveJoin: (() => void) | null = null
   private rejectJoin: ((err: any) => void) | null = null
 
@@ -35,7 +35,7 @@ export class SimpleGuest {
   }
 
   /**
-   * Подключиться к хосту
+   * Connect to host
    */
   async connect(hostPeerId: string): Promise<void> {
     this.hostPeerId = hostPeerId
@@ -66,13 +66,13 @@ export class SimpleGuest {
         this.peer.on('open', (peerId) => {
           logger.info('[SimpleGuest] Peer opened with ID:', peerId)
 
-          // Подключаемся к хосту
+          // Connect to host
           this.connectToHost(hostPeerId)
         })
 
         this.peer.on('connection', (conn) => {
           logger.info('[SimpleGuest] Incoming connection from:', conn.peer)
-          // Используем первое входящее соединение как хоста
+          // Use first incoming connection as host
           if (!this.hostConnection) {
             this.hostConnection = conn
             this.setupHostConnection(conn)
@@ -84,12 +84,12 @@ export class SimpleGuest {
           this.rejectJoin?.(err)
         })
 
-        // Таймаут на подключение
+        // Connection timeout
         setTimeout(() => {
           if (!joinResolved) {
             this.rejectJoin?.(new Error('Connection timeout'))
           }
-        }, 15000) // 15 секунд
+        }, 15000) // 15 seconds
 
       } catch (e) {
         this.rejectJoin?.(e)
@@ -98,7 +98,7 @@ export class SimpleGuest {
   }
 
   /**
-   * Подключиться к хосту (инициатива от гостя)
+   * Connect to host (guest initiates)
    */
   private connectToHost(hostPeerId: string): void {
     if (!this.peer) {return}
@@ -114,13 +114,13 @@ export class SimpleGuest {
   }
 
   /**
-   * Настроить соединение с хостом
+   * Setup host connection
    */
   private setupHostConnection(conn: any): void {
     conn.on('open', () => {
       logger.info('[SimpleGuest] Connected to host')
 
-      // Отправляем запрос на присоединение
+      // Send join request
       conn.send({
         type: 'JOIN_REQUEST',
         playerName: localStorage.getItem('player_name') || `Player ${this.localPlayerId}`,
@@ -147,7 +147,7 @@ export class SimpleGuest {
   }
 
   /**
-   * Обработка входящего сообщения от хоста
+   * Handle incoming message from host
    */
   private handleMessage(data: P2PMessage): void {
     if (data.type === 'STATE') {
@@ -176,10 +176,10 @@ export class SimpleGuest {
   }
 
   /**
-   * Обработка сообщения о состоянии
+   * Handle state message
    */
   private handleState(data: any): void {
-    // Версионный контроль - применяем только новые состояния
+    // Version control - only apply new states
     if (data.version <= this.lastVersion) {
       logger.debug('[SimpleGuest] Ignoring old state:', data.version, '<=', this.lastVersion)
       return
@@ -189,7 +189,7 @@ export class SimpleGuest {
     this.state = data.state
     this.localPlayerId = this.findLocalPlayerId()
 
-    // Логируем все announcedCard для отладки
+    // Log all announcedCard for debugging
     const announcedCards = this.state.players
       .filter((p: any) => p.announcedCard)
       .map((p: any) => `Player${p.id}:${p.announcedCard.name}`)
@@ -202,12 +202,12 @@ export class SimpleGuest {
       'phase:', this.state.currentPhase,
       'activePlayer:', this.state.activePlayerId)
 
-    // Уведомляем
+    // Notify
     if (this.config.onStateUpdate) {
       this.config.onStateUpdate(this.state)
     }
 
-    // Резолвим Promise при первом получении состояния с gameId
+    // Resolve Promise on first state receipt with gameId
     if (this.resolveJoin && this.state.gameId) {
       this.resolveJoin()
       this.resolveJoin = null
@@ -216,14 +216,14 @@ export class SimpleGuest {
   }
 
   /**
-   * Обработка подтверждения присоединения
+   * Handle join acceptance
    */
   private handleJoinAccept(data: any): void {
     this.localPlayerId = data.playerId
     this.state = data.state
     this.lastVersion = data.version
 
-    // Сохраняем токен для переподключения
+    // Save token for reconnection
     if (data.state?.players) {
       const player = data.state.players.find((p: any) => p.id === this.localPlayerId)
       if (player?.playerToken) {
@@ -237,7 +237,7 @@ export class SimpleGuest {
       this.config.onStateUpdate(this.state)
     }
 
-    // Резолвим Promise - теперь мы полностью подключились
+    // Resolve Promise - now fully connected
     if (this.resolveJoin) {
       this.resolveJoin()
       this.resolveJoin = null
@@ -246,12 +246,12 @@ export class SimpleGuest {
   }
 
   /**
-   * Найти локальный playerId в состоянии
+   * Find local playerId in state
    */
   private findLocalPlayerId(): number {
     if (!this.state) {return this.localPlayerId}
 
-    // Пытаемся найти по токену
+    // Try to find by token
     const token = localStorage.getItem('player_token')
     if (token) {
       const player = this.state.players.find((p: any) => p.playerToken === token)
@@ -262,7 +262,7 @@ export class SimpleGuest {
   }
 
   /**
-   * Отправить действие хосту
+   * Send action to host
    */
   sendAction(action: string, data?: any): void {
     if (!this.hostConnection) {
@@ -288,7 +288,7 @@ export class SimpleGuest {
   }
 
   /**
-   * Переподключиться
+   * Reconnect
    */
   async reconnect(newHostPeerId?: string): Promise<void> {
     const hostId = newHostPeerId || this.hostPeerId
@@ -299,12 +299,12 @@ export class SimpleGuest {
 
     logger.info('[SimpleGuest] Reconnecting to:', hostId)
 
-    // Закрываем старое соединение
+    // Close old connection
     if (this.hostConnection) {
       this.hostConnection.close()
     }
 
-    // Если даём новый peerId, создаём новый Peer
+    // If new peerId provided, create new Peer
     if (newHostPeerId && this.peer) {
       this.peer.destroy()
       this.peer = null
@@ -312,7 +312,7 @@ export class SimpleGuest {
 
     await this.connect(hostId)
 
-    // Отправляем запрос на переподключение
+    // Send reconnect request
     if (this.hostConnection) {
       this.hostConnection.send({
         type: 'RECONNECT',
@@ -323,21 +323,21 @@ export class SimpleGuest {
   }
 
   /**
-   * Получить текущее состояние
+   * Get current state
    */
   getState(): PersonalizedState | null {
     return this.state
   }
 
   /**
-   * Получить локальный ID игрока
+   * Get local player ID
    */
   getLocalPlayerId(): number {
     return this.localPlayerId
   }
 
   /**
-   * Обработка подсветки ячейки
+   * Handle cell highlight
    */
   private handleHighlight(data: any): void {
     const highlightData = data.data
@@ -345,7 +345,7 @@ export class SimpleGuest {
   }
 
   /**
-   * Обработка плавающего текста
+   * Handle floating text
    */
   private handleFloatingText(data: any): void {
     const { batch } = data.data
@@ -353,7 +353,7 @@ export class SimpleGuest {
   }
 
   /**
-   * Обработка установки режима таргетинга
+   * Handle targeting mode set
    */
   private handleTargetingMode(data: any): void {
     const { targetingMode } = data.data
@@ -361,14 +361,14 @@ export class SimpleGuest {
   }
 
   /**
-   * Обработка очистки режима таргетинга
+   * Handle targeting mode clear
    */
   private handleClearTargetingMode(): void {
     this.config.onClearTargetingMode?.()
   }
 
   /**
-   * Обработка overlay "нет цели"
+   * Handle no target overlay
    */
   private handleNoTarget(data: any): void {
     const { coords } = data.data
@@ -376,7 +376,7 @@ export class SimpleGuest {
   }
 
   /**
-   * Обработка выбора колоды
+   * Handle deck selection
    */
   private handleDeckSelection(data: any): void {
     const { playerId, selectedByPlayerId } = data.data
@@ -384,7 +384,7 @@ export class SimpleGuest {
   }
 
   /**
-   * Обработка выбора карты из руки
+   * Handle hand card selection
    */
   private handleHandCardSelection(data: any): void {
     const { playerId, cardIndex, selectedByPlayerId } = data.data
@@ -392,7 +392,7 @@ export class SimpleGuest {
   }
 
   /**
-   * Обработка клик-волны
+   * Handle click wave
    */
   private handleClickWave(data: any): void {
     const wave = data.data
@@ -400,7 +400,7 @@ export class SimpleGuest {
   }
 
   /**
-   * Завершить работу
+   * Shutdown
    */
   destroy(): void {
     if (this.hostConnection) {

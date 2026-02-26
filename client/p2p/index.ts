@@ -1,11 +1,11 @@
 /**
- * Simple P2P - Упрощённая система P2P
+ * Simple P2P - Simplified P2P system
  *
- * Два типа сообщений:
- * - ACTION: от клиента к хосту
- * - STATE: от хоста всем клиентам
+ * Two message types:
+ * - ACTION: from client to host
+ * - STATE: from host to all clients
  *
- * Экспортирует основные классы и типы
+ * Exports main classes and types
  */
 
 export { SimpleHost } from './SimpleHost'

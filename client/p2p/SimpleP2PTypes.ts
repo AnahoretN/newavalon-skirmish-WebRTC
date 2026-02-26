@@ -1,24 +1,24 @@
 /**
  * Simple P2P Types
  *
- * Упрощённая система P2P с 2 типами сообщений:
- * 1. ACTION - от клиента к хосту (запрос на изменение)
- * 2. STATE - от хоста всем клиентам (полное состояние)
+ * Simplified P2P system with 2 message types:
+ * 1. ACTION - from client to host (change request)
+ * 2. STATE - from host to all clients (full state)
  */
 
 import type { GameState, ScoringLineData } from '../types'
 
 /**
- * Действие которое может выполнить игрок
+ * Action that a player can perform
  */
 export type ActionType =
-  // Фазовые действия
+  // Phase actions
   | 'NEXT_PHASE'
   | 'PREVIOUS_PHASE'
   | 'PASS_TURN'
   | 'SET_PHASE'
 
-  // Карточные действия
+  // Card actions
   | 'PLAY_CARD'
   | 'PLAY_CARD_FROM_DECK'
   | 'PLAY_CARD_FROM_DISCARD'
@@ -28,7 +28,7 @@ export type ActionType =
   | 'ANNOUNCE_CARD'
   | 'DESTROY_CARD'
 
-  // Перемещение между зонами
+  // Movement between zones
   | 'MOVE_CARD_TO_HAND'
   | 'MOVE_CARD_TO_DECK'
   | 'MOVE_CARD_TO_DISCARD'
@@ -36,27 +36,27 @@ export type ActionType =
   | 'MOVE_HAND_CARD_TO_DECK'
   | 'MOVE_HAND_CARD_TO_DISCARD'
 
-  // Перемещение из витрины (showcase)
+  // Movement from showcase
   | 'MOVE_ANNOUNCED_TO_HAND'
   | 'MOVE_ANNOUNCED_TO_DECK'
   | 'MOVE_ANNOUNCED_TO_DISCARD'
   | 'PLAY_ANNOUNCED_TO_BOARD'
 
-  // Управление колодой
+  // Deck control
   | 'DRAW_CARD'
   | 'SHUFFLE_DECK'
 
-  // Счёт и статус
+  // Score and status
   | 'UPDATE_SCORE'
   | 'CHANGE_PLAYER_NAME'
   | 'CHANGE_PLAYER_COLOR'
   | 'CHANGE_PLAYER_DECK'
 
-  // Скоринг
+  // Scoring
   | 'START_SCORING'
   | 'SELECT_SCORING_LINE'
 
-  // Раунд и матч
+  // Round and match
   | 'COMPLETE_ROUND'
   | 'START_NEXT_ROUND'
   | 'START_NEW_MATCH'
@@ -67,7 +67,7 @@ export type ActionType =
   // Game reset
   | 'RESET_GAME'
 
-  // Игровые настройки
+  // Game settings
   | 'SET_GAME_MODE'
   | 'SET_GRID_SIZE'
   | 'SET_PRIVACY'
@@ -84,7 +84,7 @@ export type ActionType =
   | 'PLAY_TOKEN_CARD'
 
 /**
- * Сообщение от клиента к хосту - запрос на действие
+ * Message from client to host - action request
  */
 export interface ActionMessage {
   type: 'ACTION'
@@ -95,22 +95,22 @@ export interface ActionMessage {
 }
 
 /**
- * Сообщение от хоста всем клиентам - полное состояние
+ * Message from host to all clients - full state
  */
 export interface StateMessage {
   type: 'STATE'
-  version: number  // monotonic counter для порядка сообщений
+  version: number  // monotonic counter for message ordering
   state: PersonalizedState
   timestamp: number
 }
 
 /**
- * Персонализированное состояние для конкретного игрока
- * - Для локального игрока: полные hand/deck/discard
- * - Для других: только размеры (handSize, deckSize, discardSize)
+ * Personalized state for specific player
+ * - For local player: full hand/deck/discard
+ * - For others: only sizes (handSize, deckSize, discardSize)
  */
 export interface PersonalizedState {
-  // Общие данные (одинаковые для всех)
+  // Common data (same for everyone)
   board: GameState['board']
   activeGridSize: GameState['activeGridSize']
   gameId: GameState['gameId']
@@ -144,13 +144,13 @@ export interface PersonalizedState {
   visualEffects: GameState['visualEffects']
   autoDrawnPlayers: GameState['autoDrawnPlayers']
 
-  // Персонализированные данные игроков
+  // Personalized player data
   players: PersonalizedPlayer[]
   spectators: GameState['spectators']
 }
 
 /**
- * Персонализированные данные игрока
+ * Personalized player data
  */
 export interface PersonalizedPlayer {
   id: number
@@ -165,23 +165,23 @@ export interface PersonalizedPlayer {
   isSpectator: GameState['players'][0]['isSpectator']
   position: GameState['players'][0]['position']
   selectedDeck: GameState['players'][0]['selectedDeck']
-  announcedCard?: GameState['players'][0]['announcedCard']  // Витрина видна всем
-  lastPlayedCardId?: string | null  // Последняя сыгранная карта (для скоринга)
+  announcedCard?: GameState['players'][0]['announcedCard']  // Showcase visible to all
+  lastPlayedCardId?: string | null  // Last played card (for scoring)
 
-  // Для локального игрока: полные данные
+  // For local player: full data
   hand?: GameState['players'][0]['hand']
   deck?: GameState['players'][0]['deck']
   discard?: GameState['players'][0]['discard']
   boardHistory?: GameState['players'][0]['boardHistory']
 
-  // Для других игроков: только размеры
+  // For other players: only sizes
   handSize?: number
   deckSize?: number
   discardSize?: number
 }
 
 /**
- * Визуальный эффект (подсветка ячейки)
+ * Visual effect (cell highlight)
  */
 export interface HighlightMessage {
   type: 'HIGHLIGHT'
@@ -195,7 +195,7 @@ export interface HighlightMessage {
 }
 
 /**
- * Плавающий текст
+ * Floating text
  */
 export interface FloatingTextMessage {
   type: 'FLOATING_TEXT'
@@ -281,7 +281,7 @@ export interface ClickWaveMessage {
 }
 
 /**
- * Тип входящего P2P сообщения
+ * Incoming P2P message type
  */
 export type P2PMessage =
   | ActionMessage
@@ -296,7 +296,7 @@ export type P2PMessage =
   | ClickWaveMessage
 
 /**
- * Конфигурация SimpleHost
+ * SimpleHost configuration
  */
 export interface SimpleHostConfig {
   onStateUpdate?: (state: PersonalizedState) => void
@@ -306,7 +306,7 @@ export interface SimpleHostConfig {
 }
 
 /**
- * Конфигурация SimpleGuest
+ * SimpleGuest configuration
  */
 export interface SimpleGuestConfig {
   localPlayerId: number

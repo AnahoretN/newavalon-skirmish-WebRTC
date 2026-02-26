@@ -1,8 +1,8 @@
 /**
  * PeerJS Loader
  *
- * Загружает PeerJS по требованию.
- * Позволяет избежать проблем с импортом на клиенте.
+ * Loads PeerJS on demand.
+ * Avoids import issues on the client.
  */
 
 let peerjsModule: any = null
@@ -19,7 +19,7 @@ export async function loadPeerJS(): Promise<any> {
 
   loadPromise = (async () => {
     try {
-      // Пытаемся импортировать PeerJS
+      // Try to import PeerJS
       peerjsModule = await import('peerjs')
       return peerjsModule
     } catch (e) {
