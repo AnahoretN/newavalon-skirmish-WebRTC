@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import type { Card as CardType } from '@/types'
 import { getAvailableCounters, STATUS_ICONS, STATUS_DESCRIPTIONS } from '@/constants'
 import { Tooltip, CardTooltipContent } from './Tooltip'
@@ -32,6 +32,18 @@ export const CountersModal: React.FC<CountersModalProps> = ({
   // Get available counters dynamically - will update when data is loaded from server
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const availableCounters = useMemo(() => getAvailableCounters(), [getCardDatabaseMap().size])
+
+  // Hide tooltip when any card drag starts
+  useEffect(() => {
+    const handleDragStart = () => {
+      setTooltipCard(null)
+    }
+
+    window.addEventListener('cardDragStart', handleDragStart)
+    return () => {
+      window.removeEventListener('cardDragStart', handleDragStart)
+    }
+  }, [])
 
   if (!isOpen || !anchorEl) {
     return null

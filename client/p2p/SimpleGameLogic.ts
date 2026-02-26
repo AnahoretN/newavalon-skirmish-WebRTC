@@ -1,17 +1,34 @@
 /**
  * Simple Game Logic
  *
- * All game logic in one place.
+ * Core game logic for WebRTC P2P mode.
  * The applyAction function takes current state and action,
  * returns new state.
+ *
+ * Some specialized handlers are split into separate modules:
+ * - handlers/scoringHandlers.ts - scoring and round management
+ * - handlers/gameSettingsHandlers.ts - game configuration
  */
 
-import type { GameState, Card, Player, DeckType, ScoringLineData } from '../types'
+import type { GameState, Card, Player, ScoringLineData } from '../types'
+import { DeckType } from '../types'
 import type { ActionType } from './SimpleP2PTypes'
 import { shuffleDeck } from '../../shared/utils/array'
 import { recalculateBoardStatuses } from '../../shared/utils/boardUtils'
 import { initializeReadyStatuses, recalculateAllReadyStatuses } from '../utils/autoAbilities'
 import { createDeck } from '../hooks/core/gameCreators'
+
+// Import handlers from separate modules
+import * as ScoringHandlers from './handlers/scoringHandlers'
+import * as GameSettingsHandlers from './handlers/gameSettingsHandlers'
+
+// Import helper functions used internally
+import { findScoringLinesWithPlayerCard, getActivePlayerIds, shouldRoundEnd, endRound, calculateLineScore } from './handlers/scoringHandlers'
+
+// Re-export helper functions that are used externally
+export { findScoringLinesWithPlayerCard }
+export { getActivePlayerIds, shouldRoundEnd, endRound }
+export { startGame } from './handlers/gameSettingsHandlers'
 
 /**
  * Check if card is a token
@@ -138,7 +155,7 @@ export function applyAction(
       break
 
     case 'DRAW_CARD':
-      newState = handleDrawCard(newState, playerId)
+      newState = handleDrawCard(newState, playerId, data)
       break
 
     case 'SHUFFLE_DECK':
@@ -146,47 +163,47 @@ export function applyAction(
       break
 
     case 'UPDATE_SCORE':
-      newState = handleUpdateScore(newState, playerId, data?.delta || 0)
+      newState = handleUpdateScore(newState, data?.playerId ?? playerId, data?.delta || 0)
       break
 
     case 'CHANGE_PLAYER_NAME':
-      newState = handleChangePlayerName(newState, playerId, data?.name)
+      newState = handleChangePlayerName(newState, data?.playerId ?? playerId, data?.name)
       break
 
     case 'CHANGE_PLAYER_COLOR':
-      newState = handleChangePlayerColor(newState, playerId, data?.color)
+      newState = handleChangePlayerColor(newState, data?.playerId ?? playerId, data?.color)
       break
 
     case 'CHANGE_PLAYER_DECK':
-      newState = handleChangePlayerDeck(newState, playerId, data?.deck)
+      newState = handleChangePlayerDeck(newState, data?.playerId ?? playerId, data?.deck)
       break
 
     case 'START_SCORING':
-      newState = handleStartScoring(newState, playerId)
+      newState = ScoringHandlers.handleStartScoring(newState, playerId, enterScoringPhase)
       break
 
     case 'SELECT_SCORING_LINE':
-      newState = handleSelectScoringLine(newState, playerId, data)
+      newState = ScoringHandlers.handleSelectScoringLine(newState, playerId, data, handlePassTurn)
       break
 
     case 'COMPLETE_ROUND':
-      newState = handleCompleteRound(newState)
+      newState = ScoringHandlers.handleCompleteRound(newState)
       break
 
     case 'START_NEXT_ROUND':
-      newState = handleStartNextRound(newState)
+      newState = ScoringHandlers.handleStartNextRound(newState)
       break
 
     case 'START_NEW_MATCH':
-      newState = handleStartNewMatch(newState)
+      newState = ScoringHandlers.handleStartNewMatch(newState)
       break
 
     case 'PLAYER_READY':
-      newState = handlePlayerReady(newState, playerId)
+      newState = GameSettingsHandlers.handlePlayerReady(newState, playerId, GameSettingsHandlers.startGame)
       break
 
     case 'RESET_GAME':
-      newState = handleResetGame(newState)
+      newState = GameSettingsHandlers.handleResetGame(newState)
       break
 
     case 'MARK_ABILITY_USED':
@@ -206,19 +223,23 @@ export function applyAction(
       break
 
     case 'SET_GAME_MODE':
-      newState = handleSetGameMode(newState, data?.mode)
+      newState = GameSettingsHandlers.handleSetGameMode(newState, data?.mode)
       break
 
     case 'SET_GRID_SIZE':
-      newState = handleSetGridSize(newState, data?.size)
+      newState = GameSettingsHandlers.handleSetGridSize(newState, data?.size)
       break
 
     case 'SET_PRIVACY':
-      newState = handleSetPrivacy(newState, data?.isPrivate)
+      newState = GameSettingsHandlers.handleSetPrivacy(newState, data?.isPrivate)
       break
 
     case 'ASSIGN_TEAMS':
-      newState = handleAssignTeams(newState, data?.teams)
+      newState = GameSettingsHandlers.handleAssignTeams(newState, data?.teams)
+      break
+
+    case 'SET_DUMMY_PLAYER_COUNT':
+      newState = GameSettingsHandlers.handleSetDummyPlayerCount(newState, data?.count)
       break
 
     default:
@@ -244,7 +265,7 @@ function canPlayerAct(
   if (!state.isGameStarted) {
     return ['PLAYER_READY', 'CHANGE_PLAYER_NAME', 'CHANGE_PLAYER_COLOR',
             'CHANGE_PLAYER_DECK', 'SET_GAME_MODE', 'SET_GRID_SIZE',
-            'SET_PRIVACY', 'ASSIGN_TEAMS'].includes(action)
+            'SET_PRIVACY', 'ASSIGN_TEAMS', 'SET_DUMMY_PLAYER_COUNT'].includes(action)
   }
 
   // Players can change their settings
@@ -526,10 +547,18 @@ function executePreparationPhase(state: GameState, activePlayerId: number): Game
  * Also supports direct card parameter for playing from deck/discard
  */
 function handlePlayCard(state: GameState, playerId: number, data: any): GameState {
-  const { card, cardIndex, boardCoords, faceDown = false } = data || {}
-  const player = state.players.find(p => p.id === playerId)
+  const { card, cardIndex, boardCoords, faceDown = false, playerId: targetPlayerId } = data || {}
+  const actualPlayerId = targetPlayerId ?? playerId
+  const player = state.players.find(p => p.id === actualPlayerId)
 
   if (!player || !boardCoords) {return state}
+
+  // Check if target cell is already occupied - if so, do nothing
+  const targetCell = state.board[boardCoords.row]?.[boardCoords.col]
+  if (targetCell?.card) {
+    // Cell is occupied, return state unchanged
+    return state
+  }
 
   let cardToPlay: Card | null = null
   let newHand = player.hand
@@ -558,8 +587,8 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
   // (only one card can have LastPlayed status at a time)
   const boardWithoutLastPlayed = state.board.map((row, _r) =>
     row.map((cell, _c) => {
-      if (cell.card?.ownerId === playerId && cell.card?.statuses) {
-        const filteredStatuses = cell.card.statuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === playerId))
+      if (cell.card?.ownerId === actualPlayerId && cell.card?.statuses) {
+        const filteredStatuses = cell.card.statuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === actualPlayerId))
         if (filteredStatuses.length !== cell.card.statuses.length) {
           return {
             card: {
@@ -579,21 +608,21 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
       if (r === boardCoords.row && c === boardCoords.col) {
         // Add LastPlayed status to the card when played from hand
         // This status is used to determine if player can enter scoring phase
-        const lastPlayedStatus = { type: 'LastPlayed', addedByPlayerId: playerId }
+        const lastPlayedStatus = { type: 'LastPlayed', addedByPlayerId: actualPlayerId }
         const existingStatuses = cardToPlay.statuses || []
         // Remove any existing LastPlayed status from this card (to avoid duplicates)
-        const filteredStatuses = existingStatuses.filter((s: any) => !(s.type === 'LastPlayed' && s.addedByPlayerId === playerId))
+        const filteredStatuses = existingStatuses.filter((s: any) => !(s.type === 'LastPlayed' && s.addedByPlayerId === actualPlayerId))
 
         const boardCard = {
           ...cardToPlay,
-          ownerId: playerId,
+          ownerId: actualPlayerId,
           isFaceDown: faceDown,
           enteredThisTurn: true,
           statuses: [...filteredStatuses, lastPlayedStatus]
         }
 
         // Initialize ready statuses for this card (readyDeploy, readySetup, readyCommit)
-        initializeReadyStatuses(boardCard, playerId, state.currentPhase)
+        initializeReadyStatuses(boardCard, actualPlayerId, state.currentPhase)
 
         return {
           card: boardCard
@@ -608,7 +637,7 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
 
   // Update player - set lastPlayedCardId
   const newPlayers = state.players.map(p =>
-    p.id === playerId
+    p.id === actualPlayerId
       ? {
           ...p,
           hand: newHand,
@@ -992,8 +1021,9 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
  * MOVE_HAND_CARD_TO_DECK - move card from hand to deck
  */
 function handleMoveHandCardToDeck(state: GameState, playerId: number, data: any): GameState {
-  const { cardIndex } = data || {}
-  const player = state.players.find(p => p.id === playerId)
+  const { cardIndex, playerId: targetPlayerId } = data || {}
+  const actualPlayerId = targetPlayerId ?? playerId
+  const player = state.players.find(p => p.id === actualPlayerId)
 
   if (!player || cardIndex === undefined || cardIndex < 0 || cardIndex >= player.hand.length) {
     return state
@@ -1005,7 +1035,7 @@ function handleMoveHandCardToDeck(state: GameState, playerId: number, data: any)
   const newDeck = [cardToMove, ...player.deck]
 
   const newPlayers = state.players.map(p =>
-    p.id === playerId
+    p.id === actualPlayerId
       ? { ...p, hand: newHand, handSize: newHand.length, deck: newDeck, deckSize: newDeck.length }
       : p
   )
@@ -1017,8 +1047,9 @@ function handleMoveHandCardToDeck(state: GameState, playerId: number, data: any)
  * MOVE_HAND_CARD_TO_DISCARD - move card from hand to discard
  */
 function handleMoveHandCardToDiscard(state: GameState, playerId: number, data: any): GameState {
-  const { cardIndex } = data || {}
-  const player = state.players.find(p => p.id === playerId)
+  const { cardIndex, playerId: targetPlayerId } = data || {}
+  const actualPlayerId = targetPlayerId ?? playerId
+  const player = state.players.find(p => p.id === actualPlayerId)
 
   if (!player || cardIndex === undefined || cardIndex < 0 || cardIndex >= player.hand.length) {
     return state
@@ -1030,7 +1061,7 @@ function handleMoveHandCardToDiscard(state: GameState, playerId: number, data: a
   const newDiscard = [...player.discard, cardToMove]
 
   const newPlayers = state.players.map(p =>
-    p.id === playerId
+    p.id === actualPlayerId
       ? { ...p, hand: newHand, handSize: newHand.length, discard: newDiscard, discardSize: newDiscard.length }
       : p
   )
@@ -1041,15 +1072,17 @@ function handleMoveHandCardToDiscard(state: GameState, playerId: number, data: a
 /**
  * MOVE_ANNOUNCED_TO_HAND - move card from showcase to hand
  */
-function handleMoveAnnouncedToHand(state: GameState, playerId: number, _data: any): GameState {
-  const player = state.players.find(p => p.id === playerId)
+function handleMoveAnnouncedToHand(state: GameState, playerId: number, data: any): GameState {
+  const { playerId: targetPlayerId } = data || {}
+  const actualPlayerId = targetPlayerId ?? playerId
+  const player = state.players.find(p => p.id === actualPlayerId)
   if (!player || !player.announcedCard) {return state}
 
   const cardToMove = player.announcedCard
   const newHand = [...player.hand, cardToMove]
 
   const newPlayers = state.players.map(p =>
-    p.id === playerId
+    p.id === actualPlayerId
       ? { ...p, hand: newHand, handSize: newHand.length, announcedCard: null }
       : p
   )
@@ -1060,15 +1093,17 @@ function handleMoveAnnouncedToHand(state: GameState, playerId: number, _data: an
 /**
  * MOVE_ANNOUNCED_TO_DECK - move card from showcase to deck
  */
-function handleMoveAnnouncedToDeck(state: GameState, playerId: number, _data: any): GameState {
-  const player = state.players.find(p => p.id === playerId)
+function handleMoveAnnouncedToDeck(state: GameState, playerId: number, data: any): GameState {
+  const { playerId: targetPlayerId } = data || {}
+  const actualPlayerId = targetPlayerId ?? playerId
+  const player = state.players.find(p => p.id === actualPlayerId)
   if (!player || !player.announcedCard) {return state}
 
   const cardToMove = player.announcedCard
   const newDeck = [cardToMove, ...player.deck]
 
   const newPlayers = state.players.map(p =>
-    p.id === playerId
+    p.id === actualPlayerId
       ? { ...p, deck: newDeck, deckSize: newDeck.length, announcedCard: null }
       : p
   )
@@ -1079,15 +1114,17 @@ function handleMoveAnnouncedToDeck(state: GameState, playerId: number, _data: an
 /**
  * MOVE_ANNOUNCED_TO_DISCARD - move card from showcase to discard
  */
-function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, _data: any): GameState {
-  const player = state.players.find(p => p.id === playerId)
+function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, data: any): GameState {
+  const { playerId: targetPlayerId } = data || {}
+  const actualPlayerId = targetPlayerId ?? playerId
+  const player = state.players.find(p => p.id === actualPlayerId)
   if (!player || !player.announcedCard) {return state}
 
   const cardToMove = player.announcedCard
   const newDiscard = [...player.discard, cardToMove]
 
   const newPlayers = state.players.map(p =>
-    p.id === playerId
+    p.id === actualPlayerId
       ? { ...p, discard: newDiscard, discardSize: newDiscard.length, announcedCard: null }
       : p
   )
@@ -1099,8 +1136,9 @@ function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, _data:
  * PLAY_ANNOUNCED_TO_BOARD - play card from showcase to battlefield
  */
 function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: any): GameState {
-  const { row, col, faceDown = false } = data || {}
-  const player = state.players.find(p => p.id === playerId)
+  const { row, col, faceDown = false, playerId: targetPlayerId } = data || {}
+  const actualPlayerId = targetPlayerId ?? playerId
+  const player = state.players.find(p => p.id === actualPlayerId)
 
   if (!player || !player.announcedCard) {return state}
   if (row === undefined || col === undefined) {return state}
@@ -1115,7 +1153,7 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
     r.map((cell, cIdx) => {
       if (rIdx === row && cIdx === col) {
         // Initialize ready statuses for this card
-        initializeReadyStatuses(cardToPlay, playerId, state.currentPhase)
+        initializeReadyStatuses(cardToPlay, actualPlayerId, state.currentPhase)
         return { card: cardToPlay }
       }
       return cell
@@ -1123,7 +1161,7 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
   )
 
   const newPlayers = state.players.map(p =>
-    p.id === playerId
+    p.id === actualPlayerId
       ? { ...p, announcedCard: null }
       : p
   )
@@ -1133,22 +1171,37 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
 
 /**
  * ANNOUNCE_CARD - announce card
+ * If player already has an announced card, they are swapped:
+ * - The existing announced card returns to player's hand
+ * - The new card from hand becomes the announced card
  */
 function handleAnnounceCard(state: GameState, playerId: number, data: any): GameState {
-  const { cardIndex } = data || {}
-  const player = state.players.find(p => p.id === playerId)
+  const { cardIndex, playerId: targetPlayerId } = data || {}
+  const actualPlayerId = targetPlayerId ?? playerId
+  const player = state.players.find(p => p.id === actualPlayerId)
 
   if (!player || cardIndex === undefined) {return state}
 
-  const card = player.hand[cardIndex]
-  if (!card) {return state}
+  // Get the card to announce from the original hand (before any modifications)
+  const cardToAnnounce = player.hand[cardIndex]
+  if (!cardToAnnounce) {return state}
+
+  // Build new hand array
+  // If there's an existing announced card, add it to the end of hand first
+  const existingAnnouncedCard = player.announcedCard
+  let newHand = [...player.hand]
+  if (existingAnnouncedCard) {
+    newHand = [...newHand, existingAnnouncedCard]
+  }
+  // Remove the card being announced from hand
+  newHand.splice(cardIndex, 1)
 
   // First remove LastPlayed status from ALL player's cards on board
   // (only one card can have LastPlayed status at a time)
   const boardWithoutLastPlayed = state.board.map((row, _r) =>
     row.map((cell, _c) => {
-      if (cell.card?.ownerId === playerId && cell.card?.statuses) {
-        const filteredStatuses = cell.card.statuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === playerId))
+      if (cell.card?.ownerId === actualPlayerId && cell.card?.statuses) {
+        const filteredStatuses = cell.card.statuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === actualPlayerId))
         if (filteredStatuses.length !== cell.card.statuses.length) {
           return {
             card: {
@@ -1163,27 +1216,25 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
   )
 
   // Add LastPlayed status to the announced card (it was played from hand)
-  const lastPlayedStatus = { type: 'LastPlayed', addedByPlayerId: playerId }
-  const existingStatuses = card.statuses || []
+  const lastPlayedStatus = { type: 'LastPlayed', addedByPlayerId: actualPlayerId }
+  const existingStatuses = cardToAnnounce.statuses || []
   // Remove any existing LastPlayed status from this card (to avoid duplicates)
-  const filteredStatuses = existingStatuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === playerId))
+  const filteredStatuses = existingStatuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === actualPlayerId))
   const announcedCardWithStatus = {
-    ...card,
+    ...cardToAnnounce,
     statuses: [...filteredStatuses, lastPlayedStatus]
   }
 
   const newPlayers = state.players.map(p => {
-    if (p.id === playerId) {
-      const newHand = [...p.hand]
-      newHand.splice(cardIndex, 1)
+    if (p.id === actualPlayerId) {
       return {
         ...p,
         hand: newHand,
         handSize: newHand.length,
         announcedCard: announcedCardWithStatus,
         // Update boardHistory and lastPlayedCardId for scoring phase
-        boardHistory: [...player.boardHistory, card.id],
-        lastPlayedCardId: card.id
+        boardHistory: [...p.boardHistory, cardToAnnounce.id],
+        lastPlayedCardId: cardToAnnounce.id
       }
     }
     return p
@@ -1293,8 +1344,11 @@ function handleDestroyCard(state: GameState, _playerId: number, data: any): Game
 /**
  * DRAW_CARD - draw card from deck
  */
-function handleDrawCard(state: GameState, playerId: number): GameState {
-  const player = state.players.find(p => p.id === playerId)
+function handleDrawCard(state: GameState, playerId: number, data?: any): GameState {
+  // Use targetPlayerId if specified (for drawing cards for dummy players)
+  // Otherwise use the playerId of who sent the action
+  const targetPlayerId = data?.targetPlayerId ?? playerId
+  const player = state.players.find(p => p.id === targetPlayerId)
   if (!player || !player.deck || player.deck.length === 0) {return state}
 
   const newDeck = [...player.deck]
@@ -1303,7 +1357,7 @@ function handleDrawCard(state: GameState, playerId: number): GameState {
   if (!card) {return state}
 
   const newPlayers = state.players.map(p =>
-    p.id === playerId
+    p.id === targetPlayerId
       ? {
           ...p,
           deck: newDeck,
@@ -1396,466 +1450,6 @@ function handleChangePlayerDeck(state: GameState, playerId: number, deckType: De
 
   return { ...state, players: newPlayers }
 }
-
-// ============================================================================
-// Scoring
-// ============================================================================
-
-/**
- * START_SCORING - start scoring phase
- */
-function handleStartScoring(state: GameState, playerId: number): GameState {
-  if (state.currentPhase !== 3) {return state}
-
-  // Use enterScoringPhase for proper line calculation
-  return enterScoringPhase(state, playerId)
-}
-
-/**
- * SELECT_SCORING_LINE - select line for scoring
- */
-function handleSelectScoringLine(state: GameState, playerId: number, data: any): GameState {
-  if (!state.isScoringStep || state.activePlayerId !== playerId) {return state}
-
-  const { lineType, lineIndex } = data || {}
-  if (!lineType) {return state}
-
-  // Calculate points based on cards in line
-  const points = calculateLineScore(state, playerId, lineType, lineIndex)
-
-  console.log('[handleSelectScoringLine] Player', playerId, 'selected', lineType, lineIndex, 'score:', points)
-
-  const newPlayers = state.players.map(p =>
-    p.id === playerId
-      ? { ...p, score: p.score + points }
-      : p
-  )
-
-  // Pass turn
-  const newState = {
-    ...state,
-    players: newPlayers,
-    isScoringStep: false,
-    scoringLines: []  // Clear scoring lines
-  }
-
-  return handlePassTurn(newState, playerId, 'scoring_complete')
-}
-
-/**
- * Calculate points for line
- * lineType: 'row' | 'col' | 'diagonal' | 'anti-diagonal'
- * lineIndex: row/column number (0-based), or undefined for diagonals
- */
-function calculateLineScore(state: GameState, playerId: number, lineType: string, lineIndex?: number): number {
-  const gridSize = state.activeGridSize
-  const cellsToCheck: { row: number; col: number }[] = []
-
-  if (lineType === 'row' && lineIndex !== undefined) {
-    // Horizontal line
-    for (let c = 0; c < gridSize; c++) {
-      cellsToCheck.push({ row: lineIndex, col: c })
-    }
-  } else if (lineType === 'col' && lineIndex !== undefined) {
-    // Vertical line
-    for (let r = 0; r < gridSize; r++) {
-      cellsToCheck.push({ row: r, col: lineIndex })
-    }
-  } else if (lineType === 'diagonal') {
-    // Main diagonal (top-left to bottom-right)
-    for (let i = 0; i < gridSize; i++) {
-      cellsToCheck.push({ row: i, col: i })
-    }
-  } else if (lineType === 'anti-diagonal') {
-    // Anti-diagonal (top-right to bottom-left)
-    for (let i = 0; i < gridSize; i++) {
-      cellsToCheck.push({ row: i, col: gridSize - 1 - i })
-    }
-  }
-
-  // Count sum of power of all player's cards in this line
-  let score = 0
-  for (const { row, col } of cellsToCheck) {
-    const cell = state.board[row]?.[col]
-    if (cell.card?.ownerId === playerId) {
-      const power = cell.card.power || 0
-      const powerModifier = cell.card.powerModifier || 0
-      score += power + powerModifier
-    }
-  }
-
-  return score
-}
-
-/**
- * Find all lines containing player's card
- * Returns array of lines that can be highlighted for scoring
- */
-export function findScoringLinesWithPlayerCard(
-  state: GameState,
-  playerId: number
-): Array<{ type: string; index?: number; cells: { row: number; col: number }[] }> {
-  const player = state.players.find(p => p.id === playerId)
-  if (!player) {return []}
-
-  // Find coordinates of last played card
-  let lastPlayedCoords: { row: number; col: number } | null = null
-
-  if (player.lastPlayedCardId) {
-    // Search by lastPlayedCardId
-    for (let r = 0; r < state.activeGridSize; r++) {
-      for (let c = 0; c < state.activeGridSize; c++) {
-        const cell = state.board[r]?.[c]
-        if (cell.card?.id === player.lastPlayedCardId) {
-          lastPlayedCoords = { row: r, col: c }
-          break
-        }
-      }
-      if (lastPlayedCoords) {break}
-    }
-  }
-
-  // If last played not found, look for any card with enteredThisTurn
-  if (!lastPlayedCoords) {
-    for (let r = 0; r < state.activeGridSize; r++) {
-      for (let c = 0; c < state.activeGridSize; c++) {
-        const cell = state.board[r]?.[c]
-        if (cell.card?.ownerId === playerId && cell.card.enteredThisTurn) {
-          lastPlayedCoords = { row: r, col: c }
-          break
-        }
-      }
-      if (lastPlayedCoords) {break}
-    }
-  }
-
-  // If no card found - no lines for scoring
-  if (!lastPlayedCoords) {return []}
-
-  const { row, col } = lastPlayedCoords
-  const lines: Array<{ type: string; index?: number; cells: { row: number; col: number }[] }> = []
-
-  // Horizontal line (row)
-  const rowCells: { row: number; col: number }[] = []
-  for (let c = 0; c < state.activeGridSize; c++) {
-    rowCells.push({ row, col: c })
-  }
-  lines.push({ type: 'row', index: row, cells: rowCells })
-
-  // Vertical line (col)
-  const colCells: { row: number; col: number }[] = []
-  for (let r = 0; r < state.activeGridSize; r++) {
-    colCells.push({ row: r, col })
-  }
-  lines.push({ type: 'col', index: col, cells: colCells })
-
-  // Diagonal lines not currently used in scoring phase
-  // (may be used in card abilities)
-
-  return lines
-}
-
-// ============================================================================
-// Round and match
-// ============================================================================
-
-/**
- * COMPLETE_ROUND - close round end modal
- */
-function handleCompleteRound(state: GameState): GameState {
-  return { ...state, isRoundEndModalOpen: false }
-}
-
-/**
- * START_NEXT_ROUND - start next round
- */
-function handleStartNextRound(state: GameState): GameState {
-  const newRound = (state.currentRound || 1) + 1
-
-  const newPlayers = state.players.map(p => ({
-    ...p,
-    score: 0  // Reset score
-  }))
-
-  return {
-    ...state,
-    currentRound: newRound,
-    players: newPlayers,
-    isRoundEndModalOpen: false,
-    gameWinner: null
-  }
-}
-
-/**
- * START_NEW_MATCH - start new match
- */
-function handleStartNewMatch(state: GameState): GameState {
-  const newPlayers = state.players.map(p => ({
-    ...p,
-    score: 0
-  }))
-
-  return {
-    ...state,
-    currentRound: 1,
-    players: newPlayers,
-    roundWinners: {},
-    gameWinner: null,
-    isRoundEndModalOpen: false
-  }
-}
-
-// ============================================================================
-// Ready check
-// ============================================================================
-
-/**
- * PLAYER_READY - player is ready
- */
-function handlePlayerReady(state: GameState, playerId: number): GameState {
-  const newPlayers = state.players.map(p =>
-    p.id === playerId ? { ...p, isReady: true } : p
-  )
-
-  // Check if everyone is ready
-  const allReady = newPlayers.every(p => p.isReady || p.isDummy || p.isSpectator)
-
-  // If all ready - start game
-  if (allReady) {
-    return startGame({ ...state, players: newPlayers })
-  }
-
-  return { ...state, players: newPlayers }
-}
-
-/**
- * RESET_GAME - reset game to initial state (lobby)
- * Preserves players and their deck choices, but resets everything else
- */
-function handleResetGame(state: GameState): GameState {
-  console.log('[handleResetGame] Resetting game to lobby state')
-
-  // Preserve player data for restoration
-  const playersToKeep = state.players.map(p => {
-    const deckType = p.selectedDeck || 'SynchroTech'
-    return {
-      ...p,
-      // Reset game data
-      hand: [],
-      deck: createDeck(deckType, p.id, p.name),
-      discard: [],
-      discardSize: 0,
-      handSize: 0,
-      deckSize: createDeck(deckType, p.id, p.name).length,
-      score: 0,
-      isReady: false,  // Reset ready status
-      announcedCard: null,
-      boardHistory: [],
-      lastPlayedCardId: null,
-      // Preserve settings
-      autoDrawEnabled: p.autoDrawEnabled !== false,
-    }
-  })
-
-  // Create empty board with preserved size
-  const gridSize = state.activeGridSize || 8
-  const newBoard: Array<Array<{ card: Card | null }>> = []
-  for (let i = 0; i < gridSize; i++) {
-    const row: Array<{ card: Card | null }> = []
-    for (let j = 0; j < gridSize; j++) {
-      row.push({ card: null })
-    }
-    newBoard.push(row)
-  }
-
-  return {
-    ...state,
-    // Reset game flags
-    isGameStarted: false,
-    isReadyCheckActive: false,
-    currentPhase: 0,
-    currentRound: 1,
-    turnNumber: 1,
-    activePlayerId: null,
-    startingPlayerId: null,
-    // Reset round and match
-    roundWinners: {},
-    gameWinner: null,
-    roundEndTriggered: false,
-    isRoundEndModalOpen: false,
-    scoringLines: [],
-    isScoringStep: false,
-    // Clear visual effects
-    floatingTexts: [],
-    highlights: [],
-    deckSelections: [],
-    handCardSelections: [],
-    targetingMode: null,
-    clickWaves: [],
-    visualEffects: new Map(),
-    // New board and players
-    board: newBoard,
-    players: playersToKeep,
-  }
-}
-
-/**
- * Start game
- */
-function startGame(state: GameState): GameState {
-  // Select random starting player
-  const activePlayers = state.players.filter(p => !p.isDisconnected && !p.isSpectator)
-  const startingPlayer = activePlayers[Math.floor(Math.random() * activePlayers.length)]
-
-  console.log('[startGame] Starting player:', startingPlayer.id, startingPlayer.name)
-
-  // Deal initial hands (6 cards to each player)
-  const newPlayers = state.players.map(p => {
-    if (p.isDummy || p.isSpectator || p.isDisconnected) {return p}
-
-    const hand: Card[] = []
-    const deck = [...p.deck]
-
-    for (let i = 0; i < 6; i++) {
-      if (deck.length > 0) {
-        hand.push(deck.shift()!)
-      }
-    }
-
-    console.log(`[startGame] Player ${p.id} (${p.name}) drew 6 cards`)
-
-    return {
-      ...p,
-      hand,
-      deck,
-      handSize: hand.length,
-      deckSize: deck.length
-    }
-  })
-
-  // Starting player gets 7th card (first turn advantage)
-  const startingPlayerIndex = newPlayers.findIndex(p => p.id === startingPlayer.id)
-  if (startingPlayerIndex >= 0 && newPlayers[startingPlayerIndex].deck.length > 0) {
-    const sp = newPlayers[startingPlayerIndex]
-    const card = sp.deck.shift()
-    if (card) {
-      sp.hand.push(card)
-      sp.handSize = sp.hand.length
-      sp.deckSize = sp.deck.length
-      console.log(`[startGame] Starting player ${sp.id} drew 7th card`)
-    }
-  }
-
-  return {
-    ...state,
-    players: newPlayers,
-    isGameStarted: true,
-    isReadyCheckActive: false,
-    startingPlayerId: startingPlayer.id,
-    activePlayerId: startingPlayer.id,
-    currentPhase: 1,  // Setup - can play cards immediately
-    turnNumber: 1
-  }
-}
-
-// ============================================================================
-// Game settings
-// ============================================================================
-
-function handleSetGameMode(state: GameState, mode: any): GameState {
-  return { ...state, gameMode: mode }
-}
-
-function handleSetGridSize(state: GameState, size: any): GameState {
-  return { ...state, activeGridSize: size }
-}
-
-function handleSetPrivacy(state: GameState, isPrivate: boolean): GameState {
-  return { ...state, isPrivate }
-}
-
-function handleAssignTeams(state: GameState, teams: any): GameState {
-  const newPlayers = state.players.map(p => ({
-    ...p,
-    teamId: teams[p.id]
-  }))
-
-  return { ...state, players: newPlayers }
-}
-
-// ============================================================================
-// Helper functions
-// ============================================================================
-
-/**
- * Get active player IDs (not disconnected, not spectators)
- */
-function getActivePlayerIds(players: Player[]): number[] {
-  return players
-    .filter(p => !p.isDisconnected && !p.isSpectator)
-    .map(p => p.id)
-}
-
-/**
- * Check if round should end
- */
-function shouldRoundEnd(state: GameState): boolean {
-  const threshold = 10 + (state.currentRound * 10)  // 20, 30, 40
-  return state.players.some(p => p.score >= threshold)
-}
-
-/**
- * End round
- */
-function endRound(state: GameState): GameState {
-  const maxScore = Math.max(...state.players.map(p => p.score))
-  const winners = state.players.filter(p => p.score === maxScore).map(p => p.id)
-
-  // Check match victory (2 rounds)
-  const roundWins = Object.values(state.roundWinners || {})
-  const matchWinner = checkMatchWinner(roundWins, winners)
-
-  const newRoundWinners = {
-    ...(state.roundWinners || {}),
-    [state.currentRound]: winners
-  }
-
-  const newState = {
-    ...state,
-    roundWinners: newRoundWinners,
-    isRoundEndModalOpen: true
-  }
-
-  if (matchWinner) {
-    newState.gameWinner = matchWinner
-  }
-
-  return newState
-}
-
-/**
- * Check match winner (2 out of 3 rounds)
- */
-function checkMatchWinner(existingWins: Record<number, number[]>, newWinners: number[]): number | null {
-  const allWins = { ...existingWins }
-
-  // Count wins for each round
-  const winCounts: Record<number, number> = {}
-  Object.values(allWins).flat().forEach(id => {
-    winCounts[id] = (winCounts[id] || 0) + 1
-  })
-  newWinners.forEach(id => {
-    winCounts[id] = (winCounts[id] || 0) + 1
-  })
-
-  // Check who won 2 rounds
-  for (const [id, count] of Object.entries(winCounts)) {
-    if (count >= 2) {return parseInt(id)}
-  }
-
-  return null
-}
-
 /**
  * MARK_ABILITY_USED - mark ability as used
  * Removes ready status and adds usage marker
@@ -1941,8 +1535,9 @@ function handleRemoveStatusByType(state: GameState, data: any): GameState {
  * PLAY_CARD_FROM_DECK - play top card from deck to battlefield
  */
 function handlePlayCardFromDeck(state: GameState, playerId: number, data: any): GameState {
-  const { cardIndex, boardCoords, faceDown } = data || {}
-  const player = state.players.find(p => p.id === playerId)
+  const { cardIndex, boardCoords, faceDown, playerId: targetPlayerId } = data || {}
+  const actualPlayerId = targetPlayerId ?? playerId
+  const player = state.players.find(p => p.id === actualPlayerId)
   if (!player || !player.deck || player.deck.length === 0) return state
 
   // Get the card to play (top card from deck by default)
@@ -1961,19 +1556,20 @@ function handlePlayCardFromDeck(state: GameState, playerId: number, data: any): 
     deckSize: newDeck.length
   }
 
-  const newPlayers = state.players.map(p => p.id === playerId ? updatedPlayer : p)
+  const newPlayers = state.players.map(p => p.id === actualPlayerId ? updatedPlayer : p)
 
   // Use handlePlayCard logic to place the card on board
   const newState = { ...state, players: newPlayers }
-  return handlePlayCard(newState, playerId, { card: cardToPlay, boardCoords, faceDown })
+  return handlePlayCard(newState, actualPlayerId, { card: cardToPlay, boardCoords, faceDown })
 }
 
 /**
  * PLAY_CARD_FROM_DISCARD - play card from discard to battlefield
  */
 function handlePlayCardFromDiscard(state: GameState, playerId: number, data: any): GameState {
-  const { cardIndex, boardCoords, faceDown } = data || {}
-  const player = state.players.find(p => p.id === playerId)
+  const { cardIndex, boardCoords, faceDown, playerId: targetPlayerId } = data || {}
+  const actualPlayerId = targetPlayerId ?? playerId
+  const player = state.players.find(p => p.id === actualPlayerId)
   if (!player || !player.discard || player.discard.length === 0) return state
 
   // Get the card to play (top card from discard by default)
@@ -1992,11 +1588,11 @@ function handlePlayCardFromDiscard(state: GameState, playerId: number, data: any
     discardSize: newDiscard.length
   }
 
-  const newPlayers = state.players.map(p => p.id === playerId ? updatedPlayer : p)
+  const newPlayers = state.players.map(p => p.id === actualPlayerId ? updatedPlayer : p)
 
   // Use handlePlayCard logic to place the card on board
   const newState = { ...state, players: newPlayers }
-  return handlePlayCard(newState, playerId, { card: cardToPlay, boardCoords, faceDown })
+  return handlePlayCard(newState, actualPlayerId, { card: cardToPlay, boardCoords, faceDown })
 }
 
 /**
@@ -2089,7 +1685,7 @@ function handlePlayTokenCard(state: GameState, playerId: number, data: any): Gam
   // Create token card with proper owner
   const tokenCard: Card = {
     ...card,
-    id: `token_${Date.now()}_${row}_${col}_${Math.random().toString(36).substr(2, 9)}`,
+    id: `token_${Date.now()}_${row}_${col}_${Math.random().toString(36).substring(2, 11)}`,
     ownerId: ownerId ?? playerId,
     enteredThisTurn: true,
     statuses: []

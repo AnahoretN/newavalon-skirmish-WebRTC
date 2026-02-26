@@ -451,6 +451,10 @@ export function useGameState(props: any = {}): UseGameStateResult {
     sendAction('SET_GRID_SIZE', { size })
   }, [sendAction])
 
+  const setDummyPlayerCount = useCallback((count: number) => {
+    sendAction('SET_DUMMY_PLAYER_COUNT', { count })
+  }, [sendAction])
+
   const assignTeams = useCallback((teams: any) => {
     sendAction('ASSIGN_TEAMS', { teams })
   }, [sendAction])
@@ -486,7 +490,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
   }, [sendAction])
 
   const drawCard = useCallback((playerId?: number) => {
-    sendAction('DRAW_CARD')
+    sendAction('DRAW_CARD', { targetPlayerId: playerId })
   }, [sendAction])
 
   const drawCardsBatch = useCallback((count: number, playerId?: number) => {
@@ -500,7 +504,8 @@ export function useGameState(props: any = {}): UseGameStateResult {
       let actionData: any = {
         cardIndex: item.cardIndex,
         boardCoords: target.boardCoords,
-        faceDown: item.card?.isFaceDown
+        faceDown: item.card?.isFaceDown,
+        playerId: item.playerId // Owner of the card being played
       }
 
       if (item.source === 'counter_panel') {
@@ -524,16 +529,19 @@ export function useGameState(props: any = {}): UseGameStateResult {
       } else if (item.source === 'deck') {
         action = 'PLAY_CARD_FROM_DECK'
         actionData.cardIndex = item.cardIndex ?? 0
+        actionData.playerId = item.playerId
       } else if (item.source === 'discard') {
         action = 'PLAY_CARD_FROM_DISCARD'
         actionData.cardIndex = item.cardIndex
+        actionData.playerId = item.playerId
       } else if (item.source === 'announced') {
         // Перетаскивание из витрины на поле боя
         action = 'PLAY_ANNOUNCED_TO_BOARD'
         actionData = {
           row: target.boardCoords.row,
           col: target.boardCoords.col,
-          faceDown: item.card?.isFaceDown
+          faceDown: item.card?.isFaceDown,
+          playerId: item.playerId
         }
       } else if (item.source === 'board') {
         // Перемещение карты с одной клетки поля боя на другую
@@ -542,7 +550,8 @@ export function useGameState(props: any = {}): UseGameStateResult {
           cardId: item.card?.id,
           fromCoords: item.boardCoords,
           toCoords: target.boardCoords,
-          faceDown: item.card?.isFaceDown
+          faceDown: item.card?.isFaceDown,
+          playerId: item.playerId
         }
       }
 
@@ -551,13 +560,16 @@ export function useGameState(props: any = {}): UseGameStateResult {
       // Перемещение в руку
       if (item.source === 'announced') {
         // Из витрины в руку
-        sendAction('MOVE_ANNOUNCED_TO_HAND', {})
+        sendAction('MOVE_ANNOUNCED_TO_HAND', {
+          playerId: item.playerId
+        })
       } else {
         const cardId = item.card?.id
         if (cardId) {
           sendAction('MOVE_CARD_TO_HAND', {
             cardId,
-            source: item.source
+            source: item.source,
+            playerId: item.playerId
           })
         }
       }
@@ -565,44 +577,53 @@ export function useGameState(props: any = {}): UseGameStateResult {
       // Перемещение в колоду
       if (item.source === 'hand') {
         sendAction('MOVE_HAND_CARD_TO_DECK', {
-          cardIndex: item.cardIndex
+          cardIndex: item.cardIndex,
+          playerId: item.playerId
         })
       } else if (item.source === 'board') {
         const cardId = item.card?.id
         if (cardId) {
           sendAction('MOVE_CARD_TO_DECK', {
             cardId,
-            source: 'board'
+            source: 'board',
+            playerId: item.playerId
           })
         }
       } else if (item.source === 'announced') {
         // Из витрины в колоду
-        sendAction('MOVE_ANNOUNCED_TO_DECK', {})
+        sendAction('MOVE_ANNOUNCED_TO_DECK', {
+          playerId: item.playerId
+        })
       }
     } else if (target.target === 'discard') {
       // Перемещение в сброс
       if (item.source === 'hand') {
         sendAction('MOVE_HAND_CARD_TO_DISCARD', {
-          cardIndex: item.cardIndex
+          cardIndex: item.cardIndex,
+          playerId: item.playerId
         })
       } else if (item.source === 'board') {
         const cardId = item.card?.id
         if (cardId) {
           sendAction('MOVE_CARD_TO_DISCARD', {
             cardId,
-            source: 'board'
+            source: 'board',
+            playerId: item.playerId
           })
         }
       } else if (item.source === 'announced') {
         // Из витрины в сброс
-        sendAction('MOVE_ANNOUNCED_TO_DISCARD', {})
+        sendAction('MOVE_ANNOUNCED_TO_DISCARD', {
+          playerId: item.playerId
+        })
       }
     } else if (target.target === 'announced') {
       // Перемещение в витрину (announce)
       sendAction('ANNOUNCE_CARD', {
         cardId: item.card?.id,
         source: item.source,
-        cardIndex: item.cardIndex
+        cardIndex: item.cardIndex,
+        playerId: item.playerId
       })
     }
   }, [sendAction])
@@ -801,6 +822,12 @@ export function useGameState(props: any = {}): UseGameStateResult {
   // ============================================================================
   const setDraggedItem = useCallback((item: DragItem | null) => {
     setDraggedItemState(item)
+    // Dispatch custom event to hide tooltips when drag starts
+    if (item !== null) {
+      window.dispatchEvent(new CustomEvent('cardDragStart'))
+    } else {
+      window.dispatchEvent(new CustomEvent('cardDragEnd'))
+    }
   }, [])
 
   // ============================================================================
@@ -839,6 +866,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
     setGameMode,
     setGamePrivacy,
     setActiveGridSize,
+    setDummyPlayerCount,
     updatePlayerName,
     changePlayerColor,
     updatePlayerScore,

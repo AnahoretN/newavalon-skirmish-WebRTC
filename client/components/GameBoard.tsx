@@ -163,8 +163,16 @@ const GridCell = memo<{
       const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault()
         const isCounter = draggedItem?.source === 'counter_panel'
-        if (!cell.card || (cell.card && isCounter)) {
+        const cellIsEmpty = !cell.card
+        const canDrop = cellIsEmpty || (cell.card && isCounter)
+
+        if (canDrop) {
           setIsOver(true)
+          e.dataTransfer.dropEffect = 'move'
+        } else {
+          // Cell is occupied and we can't place here - show forbidden cursor
+          e.dataTransfer.dropEffect = 'none'
+          setIsOver(false)
         }
       }, [draggedItem, cell.card])
 

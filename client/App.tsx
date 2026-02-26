@@ -2639,7 +2639,7 @@ const AppInner = function AppInner() {
               onScoreChange={(delta) => updatePlayerScore(localPlayer.id, delta)}
               onDeckChange={(deckType) => changePlayerDeck(localPlayer.id, deckType)}
               onLoadCustomDeck={(deckFile) => loadCustomDeck(localPlayer.id, deckFile)}
-              onDrawCard={() => drawCard(localPlayer.id)}
+              onDrawCard={(playerId) => drawCard(playerId)}
               handleDrop={handleDrop}
               draggedItem={draggedItem}
               setDraggedItem={setDraggedItem}
@@ -2744,7 +2744,7 @@ const AppInner = function AppInner() {
                     onScoreChange={(delta) => updatePlayerScore(player.id, delta)}
                     onDeckChange={(deckType) => changePlayerDeck(player.id, deckType)}
                     onLoadCustomDeck={(deckFile) => loadCustomDeck(player.id, deckFile)}
-                    onDrawCard={() => drawCard(player.id)}
+                    onDrawCard={(playerId) => drawCard(playerId)}
                     handleDrop={handleDrop}
                     draggedItem={draggedItem}
                     setDraggedItem={setDraggedItem}

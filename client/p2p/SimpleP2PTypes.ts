@@ -72,6 +72,7 @@ export type ActionType =
   | 'SET_GRID_SIZE'
   | 'SET_PRIVACY'
   | 'ASSIGN_TEAMS'
+  | 'SET_DUMMY_PLAYER_COUNT'
 
   // Ability tracking
   | 'MARK_ABILITY_USED'

@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.2.14] - 2026-02-26
+
+### Added
+- **Card Swap in Showcase**: When announcing a card to an occupied showcase, cards swap places
+  - Existing announced card returns to owner's hand
+  - New card takes its place in showcase
+- **Drag Visual Feedback**: Improved drag-and-drop UX
+  - Tooltips automatically hide when any card drag starts
+  - "Forbidden" cursor shown when dragging over occupied board cells
+- **Game Logic Refactoring**: Split SimpleGameLogic.ts into focused modules
+  - `handlers/scoringHandlers.ts` - scoring, rounds, matches (273 lines)
+  - `handlers/gameSettingsHandlers.ts` - game config, dummy players (267 lines)
+  - SimpleGameLogic.ts reduced from 2213 to 1704 lines (-509 lines)
+
+### Fixed
+- Cards can no longer be placed on occupied board cells (state unchanged)
+- Card ownership now properly tracked when dragging dummy players' cards
+
 ## [0.2.11] - 2026-02-15
 
 ### Added

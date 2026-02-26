@@ -213,6 +213,22 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     setHighlightDismissed(false)
   }, [activePhaseIndex, abilityCheckKey])
 
+  // Hide tooltip when any card drag starts
+  useEffect(() => {
+    const handleDragStart = () => {
+      if (tooltipTimeoutRef.current) {
+        clearTimeout(tooltipTimeoutRef.current)
+        tooltipTimeoutRef.current = null
+      }
+      setTooltipVisible(false)
+    }
+
+    window.addEventListener('cardDragStart', handleDragStart)
+    return () => {
+      window.removeEventListener('cardDragStart', handleDragStart)
+    }
+  }, [])
+
   useEffect(() => {
     if (!disableActiveHighlights) {
       setHighlightDismissed(false)

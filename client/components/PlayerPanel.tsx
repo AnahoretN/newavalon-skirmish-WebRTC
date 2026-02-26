@@ -90,7 +90,7 @@ interface PlayerPanelProps {
   onScoreChange: (delta: number) => void;
   onDeckChange: (deckType: DeckTypeEnum) => void;
   onLoadCustomDeck: (deckFile: CustomDeckFile) => void;
-  onDrawCard: () => void;
+  onDrawCard: (playerId?: number) => void;
   handleDrop: (item: DragItem, target: DropTarget) => void;
   draggedItem: DragItem | null;
   setDraggedItem: (item: DragItem | null) => void;
@@ -561,7 +561,13 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
     if (isDeckSelectable && onDeckClick) {
       onDeckClick(player.id)
     } else if (canPerformActions) {
-      onDrawCard()
+      // For dummy players, pass their ID so they draw the card
+      // For local player, don't pass ID - they will draw for themselves
+      if (player.isDummy) {
+        onDrawCard(player.id)
+      } else {
+        onDrawCard()
+      }
     }
   }
 
