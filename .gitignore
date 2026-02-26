@@ -45,4 +45,3 @@ config.yml
 *.pem
 *.timestamp-*.mjs
 .ngrok.exe.old
-/docs/assets/
