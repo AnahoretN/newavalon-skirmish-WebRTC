@@ -84,6 +84,12 @@ export type ActionType =
   // Token cards
   | 'PLAY_TOKEN_CARD'
 
+  // Card orientation
+  | 'FLIP_CARD'
+
+  // Visual effects
+  | 'CLICK_WAVE'
+
 /**
  * Message from client to host - action request
  */
@@ -142,7 +148,7 @@ export interface PersonalizedState {
   targetingMode: GameState['targetingMode']
   abilityMode: GameState['abilityMode']
   clickWaves: GameState['clickWaves']
-  visualEffects: GameState['visualEffects']
+  visualEffects: GameState['visualEffects'] | Record<string, any>  // Allow plain object for PeerJS
   autoDrawnPlayers: GameState['autoDrawnPlayers']
 
   // Personalized player data
@@ -166,6 +172,7 @@ export interface PersonalizedPlayer {
   isSpectator: GameState['players'][0]['isSpectator']
   position: GameState['players'][0]['position']
   selectedDeck: GameState['players'][0]['selectedDeck']
+  playerToken?: string  // Only for local player identification
   announcedCard?: GameState['players'][0]['announcedCard']  // Showcase visible to all
   lastPlayedCardId?: string | null  // Last played card (for scoring)
 
@@ -282,6 +289,17 @@ export interface ClickWaveMessage {
 }
 
 /**
+ * Join accept - sent by host to accept guest connection
+ */
+export interface JoinAcceptMessage {
+  type: 'JOIN_ACCEPT'
+  data: {
+    playerId: number
+    playerToken: string
+  }
+}
+
+/**
  * Incoming P2P message type
  */
 export type P2PMessage =
@@ -295,6 +313,7 @@ export type P2PMessage =
   | DeckSelectionMessage
   | HandCardSelectionMessage
   | ClickWaveMessage
+  | JoinAcceptMessage
 
 /**
  * SimpleHost configuration
@@ -304,6 +323,15 @@ export interface SimpleHostConfig {
   onPlayerJoin?: (playerId: number) => void
   onPlayerLeave?: (playerId: number) => void
   onError?: (error: string) => void
+  // Visual effect callbacks (for host-local display)
+  onClickWave?: (wave: {
+    timestamp: number
+    location: 'board' | 'hand' | 'deck'
+    boardCoords?: { row: number; col: number }
+    handTarget?: { playerId: number; cardIndex: number }
+    clickedByPlayerId: number
+    playerColor: string
+  }) => void
 }
 
 /**

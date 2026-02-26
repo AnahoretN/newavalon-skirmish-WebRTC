@@ -15,8 +15,10 @@ import { DeckType } from '../types'
 import type { ActionType } from './SimpleP2PTypes'
 import { shuffleDeck } from '../../shared/utils/array'
 import { recalculateBoardStatuses } from '../../shared/utils/boardUtils'
-import { initializeReadyStatuses, recalculateAllReadyStatuses } from '../utils/autoAbilities'
+import { initializeReadyStatuses, recalculateAllReadyStatuses, getCardAbilityInfo } from '../utils/autoAbilities'
+import { READY_STATUS } from '@shared/abilities/index.js'
 import { createDeck } from '../hooks/core/gameCreators'
+import { logger } from '../utils/logger'
 
 // Import handlers from separate modules
 import * as ScoringHandlers from './handlers/scoringHandlers'
@@ -60,6 +62,11 @@ export function applyAction(
   action: ActionType,
   data?: any
 ): GameState {
+  // Debug logging for ADD_STATUS_TO_BOARD_CARD
+  if (action === 'ADD_STATUS_TO_BOARD_CARD') {
+    console.log('[SimpleGameLogic] applyAction: ADD_STATUS_TO_BOARD_CARD', { playerId, data })
+  }
+
   // Validation - can this player perform this action
   if (!canPlayerAct(state, playerId, action, data)) {
     console.warn(`[SimpleGameLogic] Player ${playerId} cannot ${action}`)
@@ -220,6 +227,10 @@ export function applyAction(
 
     case 'PLAY_TOKEN_CARD':
       newState = handlePlayTokenCard(newState, playerId, data)
+      break
+
+    case 'FLIP_CARD':
+      newState = handleFlipCard(newState, playerId, data)
       break
 
     case 'SET_GAME_MODE':
@@ -622,7 +633,10 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
         }
 
         // Initialize ready statuses for this card (readyDeploy, readySetup, readyCommit)
-        initializeReadyStatuses(boardCard, actualPlayerId, state.currentPhase)
+        // Only add ready statuses if card is face-up (face-down cards shouldn't get readyDeploy)
+        if (!faceDown) {
+          initializeReadyStatuses(boardCard, actualPlayerId, state.currentPhase)
+        }
 
         return {
           card: boardCard
@@ -1153,7 +1167,10 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
     r.map((cell, cIdx) => {
       if (rIdx === row && cIdx === col) {
         // Initialize ready statuses for this card
-        initializeReadyStatuses(cardToPlay, actualPlayerId, state.currentPhase)
+        // Only add ready statuses if card is face-up (face-down cards shouldn't get readyDeploy)
+        if (!faceDown) {
+          initializeReadyStatuses(cardToPlay, actualPlayerId, state.currentPhase)
+        }
         return { card: cardToPlay }
       }
       return cell
@@ -1597,6 +1614,8 @@ function handlePlayCardFromDiscard(state: GameState, playerId: number, data: any
 
 /**
  * ADD_STATUS_TO_BOARD_CARD - add status (token) to card on battlefield
+ * Supports token stacking: up to 99 tokens of same type can be added
+ * Exception: singleton statuses (Threat, Support, Revealed) remain single
  */
 function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: any): GameState {
   const { boardCoords, statusType, ownerId, replaceStatusType } = data || {}
@@ -1629,14 +1648,37 @@ function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: a
     filteredStatuses = existingStatuses.filter(s => s.type !== replaceStatusType)
   }
 
-  // Check if status already exists (avoid duplicates)
-  const alreadyHasStatus = filteredStatuses.some(s => s.type === statusType && s.addedByPlayerId === ownerId)
-  if (alreadyHasStatus) {
-    return state
+  // Singleton statuses that cannot stack (only one instance allowed per owner)
+  const SINGLETON_STATUSES = ['Threat', 'Support', 'Revealed']
+
+  // Check if this is a singleton status
+  const isSingletonStatus = SINGLETON_STATUSES.includes(statusType)
+
+  if (isSingletonStatus) {
+    // For singleton statuses, check if this owner already has this status on the card
+    const alreadyHasStatus = filteredStatuses.some(s => s.type === statusType && s.addedByPlayerId === ownerId)
+    if (alreadyHasStatus) {
+      // Card already has this singleton status from this owner - don't add another
+      logger.info(`[handleAddStatusToBoardCard] Blocked duplicate ${statusType} from player ${ownerId} on card at [${row},${col}]`)
+      return state
+    }
+  } else {
+    // For stackable tokens, count existing tokens of this type from this owner
+    const existingTokenCount = filteredStatuses.filter(s => s.type === statusType && s.addedByPlayerId === ownerId).length
+    const MAX_TOKENS_PER_TYPE = 99
+
+    if (existingTokenCount >= MAX_TOKENS_PER_TYPE) {
+      // Already at max capacity, don't add more
+      logger.info(`[handleAddStatusToBoardCard] Max capacity (${MAX_TOKENS_PER_TYPE}) reached for ${statusType} on card at [${row},${col}]`)
+      return state
+    }
   }
 
   // Add the new status
-  const newStatuses = [...filteredStatuses, { type: statusType, addedByPlayerId: ownerId }]
+  const newStatus = { type: statusType, addedByPlayerId: ownerId }
+  const newStatuses = [...filteredStatuses, newStatus]
+
+  logger.info(`[handleAddStatusToBoardCard] Adding ${statusType} from player ${ownerId} to card at [${row},${col}]. Total statuses: ${newStatuses.length}`)
 
   const newCard = {
     ...targetCard,
@@ -1700,5 +1742,83 @@ function handlePlayTokenCard(state: GameState, playerId: number, data: any): Gam
     })
   )
 
+  return { ...state, board: newBoard }
+}
+
+/**
+ * FLIP_CARD - flip a card face-up or face-down on the battlefield
+ *
+ * When flipping face-up:
+ * - Card immediately receives readyDeploy status if it has a deploy ability
+ * - Card starts receiving ready statuses in future updates
+ *
+ * When flipping face-down:
+ * - Card loses all ready statuses (handled by updateCardReadyStatuses)
+ * - Card stops receiving ready statuses until flipped face-up again
+ */
+function handleFlipCard(state: GameState, _playerId: number, data: any): GameState {
+  const { boardCoords, faceDown } = data || {}
+  if (!boardCoords || faceDown === undefined) {
+    return state
+  }
+
+  const { row, col } = boardCoords
+  if (row === undefined || col === undefined) {
+    return state
+  }
+
+  // Validate bounds
+  if (row < 0 || row >= state.board.length || col < 0 || col >= state.board[row]?.length) {
+    return state
+  }
+
+  const cell = state.board[row][col]
+  if (!cell || !cell.card) {
+    return state
+  }
+
+  // Create new card with flipped isFaceDown value
+  const targetCard = cell.card
+  let newCard = {
+    ...targetCard,
+    isFaceDown: faceDown
+  }
+
+  // When flipping face-up, immediately add readyDeploy if card has deploy ability
+  if (!faceDown && targetCard.ownerId !== undefined) {
+    const abilityInfo = getCardAbilityInfo(targetCard)
+
+    if (abilityInfo.hasDeployAbility && targetCard.statuses) {
+      // Check if deploy ability hasn't been used yet
+      const deployAlreadyUsed = targetCard.statuses.some(
+        (s: any) => s.type === 'deployUsedThisTurn'
+      )
+
+      if (!deployAlreadyUsed) {
+        // Add readyDeploy status
+        if (!targetCard.statuses.some((s: any) => s.type === READY_STATUS.DEPLOY)) {
+          newCard = {
+            ...newCard,
+            statuses: [
+              ...(newCard.statuses || []),
+              { type: READY_STATUS.DEPLOY, addedByPlayerId: targetCard.ownerId }
+            ]
+          }
+          logger.info(`[handleFlipCard] Added readyDeploy to flipped card at [${row},${col}]`)
+        }
+      }
+    }
+  }
+
+  const newBoard = state.board.map((r, rIdx) =>
+    r.map((c, cIdx) => {
+      if (rIdx === row && cIdx === col) {
+        return { card: newCard }
+      }
+      return c
+    })
+  )
+
+  logger.info(`[handleFlipCard] Flipped card at [${row},${col}] to faceDown=${faceDown}`)
   return { ...state, board: newBoard }
 }

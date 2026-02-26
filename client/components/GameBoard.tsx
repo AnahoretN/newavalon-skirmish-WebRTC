@@ -1,5 +1,5 @@
 import React, { memo, useMemo, useCallback, useState } from 'react'
-import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerColor, HighlightData, FloatingTextData, TargetingModeData, ClickWave, CursorStackState, AbilityAction, VisualEffect, VisualEffectsState, FloatingTextEffect, NoTargetEffect, ClickWaveEffect, ScoringLineData } from '@/types'
+import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerColor, HighlightData, FloatingTextData, TargetingModeData, ClickWave, CursorStackState, AbilityAction, VisualEffect, VisualEffectsState, FloatingTextEffect, ClickWaveEffect, ScoringLineData, Player } from '@/types'
 import { ClickWave as ClickWaveComponent } from './ClickWave'
 import { Card } from './Card'
 import { PLAYER_COLORS, FLOATING_TEXT_COLORS, PLAYER_COLOR_RGB } from '@/constants'
@@ -45,6 +45,8 @@ interface GameBoardProps {
   // Mode cancellation props (right-click to cancel)
   setCursorStack?: (value: CursorStackState | null) => void;
   onCancelAllModes?: () => void;
+  // Players array for checking dummy status
+  players?: Player[];
 }
 
 // Helper to check if an ability mode is a line selection mode
@@ -93,6 +95,7 @@ const GridCell = memo<{
   setCursorStack?: (value: CursorStackState | null) => void;
   onCancelAllModes?: () => void;
   triggerClickWave?: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
+  players?: Player[]; // Players array for checking dummy status
 }>((props) => {
   const {
       row, col, cell, isGameStarted, activeGridSize, handleDrop, draggedItem, setDraggedItem,
@@ -104,7 +107,7 @@ const GridCell = memo<{
       showNoTarget, disableActiveHighlights, preserveDeployAbilities,
       abilitySourceCoords, abilityCheckKey, abilityMode, scoringLines, activePlayerIdForScoring,
       setCursorStack: _setCursorStack, onCancelAllModes,
-      triggerClickWave,
+      triggerClickWave, players,
   } = props
 
   const [isOver, setIsOver] = useState(false)
@@ -271,14 +274,45 @@ const GridCell = memo<{
           return false
         }
 
+        // Face-down cards show card back to EVERYONE (including owner)
+        // Only revealed cards show face-up
         const isRevealedToAll = card.revealedTo === 'all'
         const isRevealedToMeExplicitly = localPlayerId !== null && Array.isArray(card.revealedTo) && card.revealedTo.includes(localPlayerId)
-        const isRevealedByRequest = localPlayerId !== null && card.statuses?.some(s => s.type === 'Revealed' && s.addedByPlayerId === localPlayerId)
-        // Card owner always sees their own card
-        const isMyCard = card.ownerId === localPlayerId
+        const hasRevealedStatus = localPlayerId !== null && (card.statuses ?? []).some(s => s.type === 'Revealed' && s.addedByPlayerId === localPlayerId)
 
-        return !card.isFaceDown || isRevealedToAll || isRevealedToMeExplicitly || isRevealedByRequest || isMyCard || false
+        return (!card.isFaceDown) || isRevealedToAll || !!isRevealedToMeExplicitly || !!hasRevealedStatus
       }, [cell.card, localPlayerId])
+
+      // Tooltip and context menu visibility for face-down cards
+      // Only owner sees tooltip on face-down cards, unless it's a dummy player's card
+      const shouldDisableTooltip = useMemo(() => {
+        const card = cell.card
+        if (!card || !card.isFaceDown) {
+          return false // Face-up cards always show tooltip
+        }
+        // Check if card is revealed to this player via token
+        const hasRevealedStatus = localPlayerId !== null && (card.statuses ?? []).some(s => s.type === 'Revealed' && s.addedByPlayerId === localPlayerId)
+        if (hasRevealedStatus) {
+          return false // Revealed cards show tooltip
+        }
+        // Check if card is revealed to this player explicitly
+        const isRevealedToMeExplicitly = localPlayerId !== null && Array.isArray(card.revealedTo) && card.revealedTo.includes(localPlayerId)
+        if (isRevealedToMeExplicitly) {
+          return false // Explicitly revealed cards show tooltip
+        }
+        // Check if owner is dummy player (dummy cards show tooltip to everyone)
+        const owner = players?.find(p => p.id === card.ownerId)
+        if (owner?.isDummy) {
+          return false // Dummy cards show tooltip to all players
+        }
+        // Check if local player is the owner (owner sees tooltip on their own face-down cards)
+        const isOwner = card.ownerId === localPlayerId
+        if (isOwner) {
+          return false // Owner sees tooltip on their own face-down cards
+        }
+        // Face-down cards hide tooltip for non-owners
+        return true
+      }, [cell.card, localPlayerId, players])
 
       return (
         <div
@@ -448,6 +482,7 @@ const GridCell = memo<{
                 onCardClick={onCardClick}
                 targetingMode={!!targetingModePlayerId}
                 triggerClickWave={triggerClickWave}
+                disableTooltip={shouldDisableTooltip}
               />
             </div>
           )}
@@ -508,7 +543,6 @@ const VisualEffectOverlay = memo<{ effect: VisualEffect; playerColorMap: Map<num
     }
 
     case 'noTarget': {
-      const nt = effect as NoTargetEffect
       return (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[50]">
           <div className="text-6xl font-black text-red-500" style={{ textShadow: '2px 2px 0 #000' }}>
@@ -577,6 +611,10 @@ export const GameBoard = memo<GameBoardProps>(({
   activePlayerIdForScoring = null,
   clickWaves,
   visualEffects,
+  setCursorStack,
+  onCancelAllModes,
+  triggerClickWave,
+  players,
 }) => {
 
   const activeBoard = useMemo(() => {
@@ -651,6 +689,32 @@ export const GameBoard = memo<GameBoardProps>(({
     const boardTargetsArray = Array.isArray(targetingMode?.boardTargets) ? targetingMode.boardTargets : []
     const targetingModeTargetsSet = new Set(boardTargetsArray.map((t: {row: number, col: number}) => `${t.row}-${t.col}`))
 
+    // OPTIMIZATION: Create lookup Maps instead of filtering for each cell
+    // This changes complexity from O(cells * items) to O(items) + O(cells)
+    const clickWavesMap = new Map<string, any[]>()
+    if (clickWaves) {
+      for (const wave of clickWaves) {
+        if (wave.location === 'board' && wave.boardCoords) {
+          const key = `${wave.boardCoords.row}-${wave.boardCoords.col}`
+          if (!clickWavesMap.has(key)) {
+            clickWavesMap.set(key, [])
+          }
+          clickWavesMap.get(key)!.push(wave)
+        }
+      }
+    }
+
+    const floatingTextsMap = new Map<string, any[]>()
+    if (activeFloatingTexts) {
+      for (const ft of activeFloatingTexts) {
+        const key = `${ft.row}-${ft.col}`
+        if (!floatingTextsMap.has(key)) {
+          floatingTextsMap.set(key, [])
+        }
+        floatingTextsMap.get(key)!.push(ft)
+      }
+    }
+
     // Convert visualEffects Map to array for filtering
     const visualEffectsArray = visualEffects ? Array.from(visualEffects.values()) : []
 
@@ -678,6 +742,7 @@ export const GameBoard = memo<GameBoardProps>(({
           return false
         })
 
+        // OPTIMIZATION: Use Map lookup instead of filtering - O(1) instead of O(n)
         return {
           cellKey,
           originalRowIndex,
@@ -687,8 +752,8 @@ export const GameBoard = memo<GameBoardProps>(({
           isTargetingModeValidTarget,
           targetingModeActionMode: targetingMode?.action?.mode,
           isNoTarget: noTargetOverlay?.row === originalRowIndex && noTargetOverlay.col === originalColIndex,
-          cellFloatingTexts: activeFloatingTexts?.filter(t => t.row === originalRowIndex && t.col === originalColIndex) || [],
-          cellClickWaves: clickWaves?.filter(e => e.location === 'board' && e.boardCoords?.row === originalRowIndex && e.boardCoords?.col === originalColIndex) || [],
+          cellFloatingTexts: floatingTextsMap.get(cellKey) || [],
+          cellClickWaves: clickWavesMap.get(cellKey) || [],
           cellVisualEffects, // NEW: ID-based effects for this cell
         }
       }),
@@ -704,7 +769,7 @@ export const GameBoard = memo<GameBoardProps>(({
             isTargetingModeValidTarget, targetingModeActionMode, isNoTarget, cellFloatingTexts,
             cellClickWaves, cellVisualEffects,
           }) => (
-            <div key={cellKey} className="relative w-full h-full">
+            <div key={cellKey} className="relative w-full h-full" data-row={originalRowIndex} data-col={originalColIndex}>
               <GridCell
                 row={originalRowIndex}
                 col={originalColIndex}
@@ -740,6 +805,10 @@ export const GameBoard = memo<GameBoardProps>(({
                 abilityMode={abilityMode}
                 scoringLines={scoringLines}
                 activePlayerIdForScoring={activePlayerIdForScoring}
+                setCursorStack={setCursorStack}
+                onCancelAllModes={onCancelAllModes}
+                triggerClickWave={triggerClickWave}
+                players={players}
               />
               {/* Legacy floating texts (for backward compatibility) */}
               {cellFloatingTexts.map(ft => (
@@ -757,13 +826,14 @@ export const GameBoard = memo<GameBoardProps>(({
                   playerColorMap={playerColorMap}
                 />
               ))}
-              {cellClickWaves.map(wave => (
+              {/* React wave disabled - using instant direct DOM approach only */}
+              {/* {cellClickWaves.map(wave => (
                 <ClickWaveComponent
                   key={wave.timestamp}
                   timestamp={wave.timestamp}
                   playerColor={wave.playerColor}
                 />
-              ))}
+              ))} */}
             </div>
           )),
         )}

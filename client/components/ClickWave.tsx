@@ -2,10 +2,10 @@
  * @file ClickWave component
  * Displays a colored ripple animation when a player clicks on a card or cell
  * 3 waves expanding outward, colored by the clicking player's color
- * Replaces the old TargetSelectionEffect component
+ * Optimized for instant display using CSS animations
  */
 
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import { PLAYER_COLOR_RGB } from '@/constants'
 import type { PlayerColor } from '@/types'
 
@@ -15,56 +15,8 @@ interface ClickWaveProps {
   onComplete?: () => void
 }
 
-interface Wave {
-  id: number
-  startTime: number
-}
-
 export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, onComplete }) => {
-  const [elapsed, setElapsed] = useState(0)
-
   const colorRgb = PLAYER_COLOR_RGB[playerColor] || { r: 255, g: 255, b: 255 }
-
-  useEffect(() => {
-    const startTime = Date.now()
-    const totalDuration = 600
-
-    const animate = () => {
-      const currentTime = Date.now()
-      const newElapsed = currentTime - startTime
-      setElapsed(newElapsed)
-
-      if (newElapsed < totalDuration) {
-        requestAnimationFrame(animate)
-      } else if (onComplete) {
-        onComplete()
-      }
-    }
-
-    requestAnimationFrame(animate)
-  }, [timestamp, onComplete])
-
-  const waves: Wave[] = [
-    { id: 1, startTime: 0 },
-    { id: 2, startTime: 150 },
-    { id: 3, startTime: 300 },
-  ]
-
-  const getWaveStyle = (wave: Wave) => {
-    const waveElapsed = elapsed - wave.startTime
-    if (waveElapsed < 0) {
-      return null
-    }
-
-    const duration = 300
-    const progress = Math.min(waveElapsed / duration, 1)
-    const scale = 1.0 + (progress * 0.2)
-    const opacity = 0.8 - (progress * 0.8)
-    const borderWidth = Math.max(0.5, 3 - (progress * 2))
-
-    return { opacity, scale, borderWidth }
-  }
-
   const borderColorAlpha = `rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}`
 
   return (
@@ -80,31 +32,136 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
         zIndex: 100,
       }}
     >
-      {waves.map((wave) => {
-        const style = getWaveStyle(wave)
-        if (!style) {
-          return null
-        }
+      {/* Wave 1 - starts immediately */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          borderRadius: '8px',
+          border: `4px solid ${borderColorAlpha}, 1)`,
+          background: `radial-gradient(circle, transparent 0%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.5) 100%)`,
+          transform: 'scale(0.98)',
+          transformOrigin: 'center',
+          opacity: '1',
+          animation: 'click-wave-expand 330ms ease-out forwards',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          borderRadius: '8px',
+          border: `4px solid ${borderColorAlpha}, 1)`,
+          transformOrigin: 'center',
+          opacity: '1',
+          animation: 'click-wave-expand-border 330ms ease-out forwards',
+        }}
+      />
 
-        return (
-          <div
-            key={wave.id}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              borderRadius: '8px',
-              border: `${style.borderWidth}px solid ${borderColorAlpha}, ${style.opacity})`,
-              transform: `scale(${style.scale})`,
-              transformOrigin: 'center',
-              opacity: style.opacity,
-              boxShadow: `0 0 ${8 * style.opacity}px ${borderColorAlpha}, ${style.opacity * 0.3})`,
-            }}
-          />
-        )
-      })}
+      {/* Wave 2 - starts after 100ms */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          borderRadius: '8px',
+          border: `4px solid ${borderColorAlpha}, 1)`,
+          background: `radial-gradient(circle, transparent 0%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.5) 100%)`,
+          transform: 'scale(0.98)',
+          transformOrigin: 'center',
+          opacity: '0',
+          animation: 'click-wave-expand 330ms ease-out 100ms forwards',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          borderRadius: '8px',
+          border: `4px solid ${borderColorAlpha}, 1)`,
+          transformOrigin: 'center',
+          opacity: '0',
+          animation: 'click-wave-expand-border 330ms ease-out 100ms forwards',
+        }}
+      />
+
+      {/* Wave 3 - starts after 200ms */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          borderRadius: '8px',
+          border: `4px solid ${borderColorAlpha}, 1)`,
+          background: `radial-gradient(circle, transparent 0%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.5) 100%)`,
+          transform: 'scale(0.98)',
+          transformOrigin: 'center',
+          opacity: '0',
+          animation: 'click-wave-expand 330ms ease-out 200ms forwards',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          borderRadius: '8px',
+          border: `4px solid ${borderColorAlpha}, 1)`,
+          transformOrigin: 'center',
+          opacity: '0',
+          animation: 'click-wave-expand-border 330ms ease-out 200ms forwards',
+        }}
+      />
+
+      {/* Inline keyframes for instant animation */}
+      <style>{`
+        @keyframes click-wave-expand {
+          0% {
+            transform: scale(0.98);
+            opacity: 1;
+          }
+          40% {
+            transform: scale(1.1);
+            opacity: 1;
+          }
+          100% {
+            transform: scale(1.25);
+            opacity: 0;
+          }
+        }
+        @keyframes click-wave-expand-border {
+          0% {
+            transform: scale(1.0);
+            opacity: 1;
+            border-width: 4px;
+          }
+          40% {
+            transform: scale(1.1);
+            opacity: 1;
+            border-width: 4px;
+          }
+          100% {
+            transform: scale(1.25);
+            opacity: 0;
+            border-width: 2px;
+          }
+        }
+      `}</style>
     </div>
   )
 }

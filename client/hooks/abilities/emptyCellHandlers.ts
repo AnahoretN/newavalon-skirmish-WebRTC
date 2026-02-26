@@ -68,7 +68,6 @@ export function handleEmptyCellClick(
     updatePlayerScore,
     triggerFloatingText,
     handleLineSelection: _handleLineSelection,
-    updateState,
     nextPhase,
     modifyBoardCardPower,
     scoreLine,
@@ -539,7 +538,6 @@ export function handleEmptyCellClick(
         scoreLine: scoreLine || (() => {}),
         scoreDiagonal: scoreDiagonal || (() => {}),
         commandContext,
-        updateState,
         isWebRTCMode: props.isWebRTCMode,
       })
     } else {

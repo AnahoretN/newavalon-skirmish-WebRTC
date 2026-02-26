@@ -133,7 +133,6 @@ export const useAppAbilities = ({
    * Defined BEFORE handleActionExecution to avoid circular dependency
    */
   const handleLineSelection = useCallback((coords: { row: number; col: number }) => {
-    const isWebRTCMode = getWebRTCEnabled()
     handleLineSelectionModule(coords, {
       gameState,
       localPlayerId,
@@ -310,7 +309,7 @@ export const useAppAbilities = ({
         // IMPORTANT: ownerId determines who "owns" the token (for abilities that check for your tokens)
         const effectiveActorId = cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId ?? gameState.activePlayerId ?? localPlayerId ?? 1
         moveItem({
-          card: { id: 'dummy', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
+          card: { id: 'dummy', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, abilityText: '', types: [] },
           source: 'counter_panel',
           statusType: cursorStack.type,
           ownerId: effectiveActorId,

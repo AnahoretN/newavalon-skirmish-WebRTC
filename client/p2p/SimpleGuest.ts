@@ -63,14 +63,14 @@ export class SimpleGuest {
       try {
         this.peer = new Peer()
 
-        this.peer.on('open', (peerId) => {
-          logger.info('[SimpleGuest] Peer opened with ID:', peerId)
+        this.peer.on('open', (_peerId: string) => {
+          logger.info('[SimpleGuest] Peer opened')
 
           // Connect to host
           this.connectToHost(hostPeerId)
         })
 
-        this.peer.on('connection', (conn) => {
+        this.peer.on('connection', (conn: any) => {
           logger.info('[SimpleGuest] Incoming connection from:', conn.peer)
           // Use first incoming connection as host
           if (!this.hostConnection) {
@@ -79,7 +79,7 @@ export class SimpleGuest {
           }
         })
 
-        this.peer.on('error', (err) => {
+        this.peer.on('error', (err: any) => {
           logger.error('[SimpleGuest] Peer error:', err)
           this.rejectJoin?.(err)
         })
@@ -150,10 +150,10 @@ export class SimpleGuest {
    * Handle incoming message from host
    */
   private handleMessage(data: P2PMessage): void {
-    if (data.type === 'STATE') {
-      this.handleState(data)
-    } else if (data.type === 'JOIN_ACCEPT') {
+    if (data.type === 'JOIN_ACCEPT') {
       this.handleJoinAccept(data)
+    } else if (data.type === 'STATE') {
+      this.handleState(data)
     } else if (data.type === 'HIGHLIGHT') {
       this.handleHighlight(data)
     } else if (data.type === 'FLOATING_TEXT') {
@@ -176,6 +176,45 @@ export class SimpleGuest {
   }
 
   /**
+   * Handle join accept - host accepted the connection
+   * Host sends: { type: 'JOIN_ACCEPT', playerId, state, version }
+   */
+  private handleJoinAccept(data: any): void {
+    const playerId = data.playerId
+    const state = data.state
+    const version = data.version
+
+    logger.info('[SimpleGuest] Join accepted - playerId:', playerId, 'version:', version)
+
+    // Update local player ID
+    this.localPlayerId = playerId
+
+    // If state included, process it (accept initial state version 0 or newer)
+    if (state && version >= this.lastVersion) {
+      this.lastVersion = version
+      this.state = state
+
+      // Find and store player token from personalized state
+      const myPlayer = state.players.find((p: any) => p.id === playerId)
+      if (myPlayer?.playerToken) {
+        localStorage.setItem('player_token', myPlayer.playerToken)
+      }
+
+      // Notify about state update
+      if (this.config.onStateUpdate) {
+        this.config.onStateUpdate(state)
+      }
+    }
+
+    // Resolve join promise
+    if (this.resolveJoin) {
+      this.resolveJoin()
+      this.resolveJoin = null
+      this.rejectJoin = null
+    }
+  }
+
+  /**
    * Handle state message
    */
   private handleState(data: any): void {
@@ -190,7 +229,7 @@ export class SimpleGuest {
     this.localPlayerId = this.findLocalPlayerId()
 
     // Log all announcedCard for debugging
-    const announcedCards = this.state.players
+    const announcedCards = this.state?.players
       .filter((p: any) => p.announcedCard)
       .map((p: any) => `Player${p.id}:${p.announcedCard.name}`)
       .join(', ')
@@ -199,46 +238,16 @@ export class SimpleGuest {
     }
 
     logger.info('[SimpleGuest] State updated, version:', data.version,
-      'phase:', this.state.currentPhase,
-      'activePlayer:', this.state.activePlayerId)
+      'phase:', this.state?.currentPhase,
+      'activePlayer:', this.state?.activePlayerId)
 
     // Notify
-    if (this.config.onStateUpdate) {
+    if (this.config.onStateUpdate && this.state) {
       this.config.onStateUpdate(this.state)
     }
 
     // Resolve Promise on first state receipt with gameId
-    if (this.resolveJoin && this.state.gameId) {
-      this.resolveJoin()
-      this.resolveJoin = null
-      this.rejectJoin = null
-    }
-  }
-
-  /**
-   * Handle join acceptance
-   */
-  private handleJoinAccept(data: any): void {
-    this.localPlayerId = data.playerId
-    this.state = data.state
-    this.lastVersion = data.version
-
-    // Save token for reconnection
-    if (data.state?.players) {
-      const player = data.state.players.find((p: any) => p.id === this.localPlayerId)
-      if (player?.playerToken) {
-        localStorage.setItem('player_token', player.playerToken)
-      }
-    }
-
-    logger.info('[SimpleGuest] Joined as player:', this.localPlayerId, 'gameId:', this.state?.gameId)
-
-    if (this.config.onStateUpdate) {
-      this.config.onStateUpdate(this.state)
-    }
-
-    // Resolve Promise - now fully connected
-    if (this.resolveJoin) {
+    if (this.resolveJoin && this.state?.gameId) {
       this.resolveJoin()
       this.resolveJoin = null
       this.rejectJoin = null

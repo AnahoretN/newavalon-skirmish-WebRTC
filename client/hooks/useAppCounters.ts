@@ -177,7 +177,7 @@ export const useAppCounters = ({
 
               // Allow placing Revealed token on any player's hand card
               handleDrop({
-                card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
+                card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, abilityText: '', types: [] },
                 source: 'counter_panel',
                 ownerId: cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId ?? effectiveActorId ?? undefined,
                 statusType: cursorStack.type,
@@ -235,7 +235,7 @@ export const useAppCounters = ({
             }
 
             handleDrop({
-              card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
+              card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, abilityText: '', types: [] },
               source: 'counter_panel',
               ownerId: cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId, // Use originalOwnerId (command card owner) for status ownership
               statusType: cursorStack.type,
@@ -264,6 +264,7 @@ export const useAppCounters = ({
         const boardCell = target?.closest('[data-board-coords]')
         if (boardCell) {
           const coords = boardCell.getAttribute('data-board-coords')
+          console.log('[useAppCounters] Board cell detected, coords:', coords)
           if (coords) {
             const [rowStr, colStr] = coords.split(',')
             const row = parseInt(rowStr, 10)
@@ -277,6 +278,7 @@ export const useAppCounters = ({
               gameState.board[row][col]
             ) {
               const targetCard = gameState.board[row][col].card
+              console.log('[useAppCounters] Target card:', targetCard ? { id: targetCard.id, name: targetCard.name, isFaceDown: targetCard.isFaceDown, ownerId: targetCard.ownerId, statuses: targetCard.statuses } : 'NO CARD')
 
               if (targetCard?.ownerId !== undefined) {
                 const constraints = {
@@ -292,15 +294,20 @@ export const useAppCounters = ({
                   tokenType: cursorStack.type,
                 }
 
+                console.log('[useAppCounters] Board drop attempt:', { cardId: targetCard.id, cardName: targetCard.name, isFaceDown: targetCard.isFaceDown, ownerId: targetCard.ownerId, tokenType: cursorStack.type, effectiveActorId })
+
                 const isValid = validateTarget(
                   { card: targetCard, ownerId: targetCard.ownerId, location: 'board', boardCoords: { row, col } },
                   constraints,
                   effectiveActorId,
                   gameState.players,
                 )
+                console.log('[useAppCounters] Validation result:', isValid)
+
                 if (!isValid) {
                   // Invalid target - keep cursor stack active to allow retry
                   // Don't close selection mode on invalid target
+                  console.warn('[useAppCounters] INVALID target for', cursorStack.type, 'on card', targetCard.name)
                   return
                 }
 
@@ -314,8 +321,10 @@ export const useAppCounters = ({
               if (targetCard) {
                 const amountToDrop = cursorStack.placeAllAtOnce ? cursorStack.count : 1
 
+                console.log('[useAppCounters] Calling handleDrop with:', { statusType: cursorStack.type, ownerId: cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId, boardCoords: { row, col } })
+
                 handleDrop({
-                  card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
+                  card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, abilityText: '', types: [] },
                   source: 'counter_panel',
                   ownerId: cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId, // Use originalOwnerId (command card owner) for status ownership
                   statusType: cursorStack.type,

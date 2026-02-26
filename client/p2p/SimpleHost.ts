@@ -25,7 +25,7 @@ import type { DeckType } from '../types'
  */
 export class SimpleHost {
   private peer: any = null  // Peer instance
-  private connections: Map<string, any> = new Map()  // peerId -> DataConnection
+  private connections: Map<string, any> = new Map()  // _peerId -> DataConnection
   private playerIdCounter: number = 2  // Start with 2, since host is already player 1
   private peerIdToPlayerId: Map<string, number> = new Map()
 
@@ -64,7 +64,7 @@ export class SimpleHost {
 
     if (playableDeckKeys.length === 0) {
       logger.warn('[SimpleHost] No playable decks found, using fallback')
-      return 'SynchroTech' // fallback
+      return 'SynchroTech' as DeckType // fallback
     }
 
     const randomDeck = playableDeckKeys[Math.floor(Math.random() * playableDeckKeys.length)]
@@ -125,18 +125,18 @@ export class SimpleHost {
       try {
         this.peer = new Peer()
 
-        this.peer.on('open', (peerId) => {
-          logger.info('[SimpleHost] Peer opened with ID:', peerId, 'gameId:', gameId)
+        this.peer.on('open', (_peerId: string) => {
+          logger.info('[SimpleHost] Peer opened with ID:', _peerId, 'gameId:', gameId)
           // Notify about initial state
           this.notifyStateUpdate()
-          resolve(peerId)
+          resolve(_peerId)
         })
 
-        this.peer.on('connection', (conn) => {
+        this.peer.on('connection', (conn: any) => {
           this.handleNewConnection(conn)
         })
 
-        this.peer.on('error', (err) => {
+        this.peer.on('error', (err: any) => {
           logger.error('[SimpleHost] Peer error:', err)
           reject(err)
         })
@@ -150,29 +150,29 @@ export class SimpleHost {
    * Handle new connection
    */
   private handleNewConnection(conn: any): void {
-    const peerId = conn.peer
+    const _peerId = conn.peer
 
-    logger.info('[SimpleHost] New connection from:', peerId)
+    logger.info('[SimpleHost] New connection from:', _peerId)
 
     // Store connection
-    this.connections.set(peerId, conn)
+    this.connections.set(_peerId, conn)
 
     // Set up message handlers
     conn.on('data', (data: any) => {
-      this.handleMessage(data, peerId)
+      this.handleMessage(data, _peerId)
     })
 
     conn.on('open', () => {
-      logger.info('[SimpleHost] Connection opened:', peerId)
+      logger.info('[SimpleHost] Connection opened:', _peerId)
     })
 
     conn.on('close', () => {
-      logger.warn('[SimpleHost] Connection closed:', peerId)
-      this.handleDisconnect(peerId)
+      logger.warn('[SimpleHost] Connection closed:', _peerId)
+      this.handleDisconnect(_peerId)
     })
 
     conn.on('error', (err: any) => {
-      logger.error('[SimpleHost] Connection error:', peerId, err)
+      logger.error('[SimpleHost] Connection error:', _peerId, err)
     })
   }
 
@@ -201,14 +201,20 @@ export class SimpleHost {
 
     logger.info('[SimpleHost] Action:', playerId, action, data)
 
-    // For actions from host (local), skip peerId verification
+    // For actions from host (local), skip _peerId verification
     if (fromPeerId !== 'host') {
-      // Verify playerId matches peerId
+      // Verify playerId matches _peerId
       const expectedPeerId = this.getPeerIdForPlayer(playerId)
       if (expectedPeerId !== fromPeerId) {
         logger.warn('[SimpleHost] PlayerId mismatch:', playerId, 'from', fromPeerId)
         return
       }
+    }
+
+    // Visual effects - broadcast without state change
+    if (action === 'CLICK_WAVE') {
+      this.broadcastClickWave(data, fromPeerId)
+      return
     }
 
     // Apply action to state
@@ -296,12 +302,16 @@ export class SimpleHost {
 
     this.peerIdToPlayerId.set(fromPeerId, newPlayerId)
 
+    // Increment version so existing guests know state changed
+    this.version++
+
     // Create personalized state
     const personalizedState = this.personalizeForPlayer(newPlayerId)
     const myPlayer = personalizedState.players.find((p: any) => p.id === newPlayerId)
 
     logger.info('[SimpleHost] Sending JOIN_ACCEPT to player', newPlayerId,
-      'with playerToken:', myPlayer?.playerToken ? 'YES' : 'NO')
+      'with playerToken:', myPlayer?.playerToken ? 'YES' : 'NO',
+      'version:', this.version)
 
     // Send confirmation
     const conn = this.connections.get(fromPeerId)
@@ -328,17 +338,8 @@ export class SimpleHost {
   private handleReconnect(data: any, fromPeerId: string): void {
     const { playerId } = data
 
-    // Update peerId -> playerId mapping
+    // Update _peerId -> playerId mapping
     this.peerIdToPlayerId.set(fromPeerId, playerId)
-
-    // Send current state
-    const conn = this.connections.get(fromPeerId)
-    conn?.send({
-      type: 'STATE',
-      version: this.version,
-      state: this.personalizeForPlayer(playerId),
-      timestamp: Date.now()
-    })
 
     // Mark as connected
     this.state = {
@@ -350,7 +351,19 @@ export class SimpleHost {
       )
     }
 
-    // Broadcast
+    // Increment version so guests know state changed
+    this.version++
+
+    // Send current state to reconnected player
+    const conn = this.connections.get(fromPeerId)
+    conn?.send({
+      type: 'STATE',
+      version: this.version,
+      state: this.personalizeForPlayer(playerId),
+      timestamp: Date.now()
+    })
+
+    // Broadcast to all
     this.broadcastAll()
 
     logger.info('[SimpleHost] Player reconnected:', playerId)
@@ -359,8 +372,8 @@ export class SimpleHost {
   /**
    * Handle disconnect
    */
-  private handleDisconnect(peerId: string): void {
-    const playerId = this.peerIdToPlayerId.get(peerId)
+  private handleDisconnect(_peerId: string): void {
+    const playerId = this.peerIdToPlayerId.get(_peerId)
 
     if (playerId) {
       // Mark as disconnected
@@ -373,14 +386,17 @@ export class SimpleHost {
         )
       }
 
+      // Increment version so guests know state changed
+      this.version++
+
       // Broadcast
       this.broadcastAll()
 
       this.config.onPlayerLeave?.(playerId)
     }
 
-    this.connections.delete(peerId)
-    this.peerIdToPlayerId.delete(peerId)
+    this.connections.delete(_peerId)
+    this.peerIdToPlayerId.delete(_peerId)
   }
 
   /**
@@ -396,8 +412,8 @@ export class SimpleHost {
     // Also notify host
     this.notifyStateUpdate()
 
-    this.connections.forEach((conn, peerId) => {
-      const playerId = this.peerIdToPlayerId.get(peerId)
+    this.connections.forEach((conn, _peerId) => {
+      const playerId = this.peerIdToPlayerId.get(_peerId)
 
       if (playerId) {
         // Personalize state for this player
@@ -419,6 +435,46 @@ export class SimpleHost {
         })
       }
     })
+  }
+
+  /**
+   * Broadcast click wave effect to all players
+   * @param data - Wave data
+   * @param excludePeerId - Peer ID to exclude from broadcast (the sender)
+   */
+  private broadcastClickWave(data: any, excludePeerId?: string): void {
+    const wave = {
+      timestamp: Date.now(),
+      location: data.location || 'board',
+      boardCoords: data.boardCoords,
+      handTarget: data.handTarget,
+      clickedByPlayerId: data.clickedByPlayerId,
+      playerColor: data.playerColor
+    }
+
+    const message = {
+      type: 'CLICK_WAVE',
+      data: wave
+    }
+
+    // Send to all connected guests except the sender
+    this.connections.forEach((conn, peerId) => {
+      // Skip the sender - they already have the wave locally
+      if (peerId === excludePeerId) {
+        return
+      }
+      try {
+        conn.send(message)
+      } catch (e) {
+        logger.error('[SimpleHost] Failed to send click wave:', e)
+      }
+    })
+
+    // Notify host locally via callback for waves from guests
+    // (host's own clicks are handled locally via triggerClickWave)
+    if (!data._local) {
+      this.config.onClickWave?.(wave)
+    }
   }
 
   /**
@@ -498,15 +554,15 @@ export class SimpleHost {
       }) as PersonalizedPlayer[]
     }
 
-    return result
+    return result as PersonalizedState
   }
 
   /**
-   * Get peerId for player
+   * Get _peerId for player
    */
   private getPeerIdForPlayer(playerId: number): string | null {
-    for (const [peerId, pid] of this.peerIdToPlayerId.entries()) {
-      if (pid === playerId) {return peerId}
+    for (const [_peerId, pid] of this.peerIdToPlayerId.entries()) {
+      if (pid === playerId) {return _peerId}
     }
     return null
   }
@@ -577,7 +633,7 @@ export class SimpleHost {
   }
 
   /**
-   * Get peerId
+   * Get _peerId
    */
   getPeerId(): string | null {
     return this.peer?.id || null
@@ -595,7 +651,7 @@ export class SimpleHost {
    * Used for highlights, floating text, targeting mode, etc.
    */
   broadcast(message: any): void {
-    this.connections.forEach((conn, peerId) => {
+    this.connections.forEach((conn, _peerId) => {
       conn.send({
         ...message,
         timestamp: Date.now()

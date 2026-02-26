@@ -101,7 +101,7 @@ export function handleHandCardClick(
           card.statuses.push({ type: 'Revealed', addedByPlayerId: effectiveActorId })
           // Update state via moveItem to properly sync
           moveItem({
-            card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
+            card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, abilityText: '', types: [] },
             source: 'counter_panel',
             statusType: 'Revealed',
             count: 1,

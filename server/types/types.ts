@@ -72,6 +72,7 @@ export interface Card {
   powerModifier?: number; // Adjustment to the base power.
   bonusPower?: number; // Temporary power bonus from passive effects (recalculated on board updates).
   ability: string;
+  abilityText: string; // Alias for ability, used by client for consistency
   flavorText?: string;
   color?: string; // Used for counters or simple tokens to define their display color.
   ownerId?: number; // Player ID of the card's original owner.

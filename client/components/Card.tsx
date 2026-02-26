@@ -503,15 +503,13 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   }, [shouldHighlight, localPlayerId, card, onCardClick, boardCoords, triggerClickWave])
 
   // Aggregate statuses by TYPE and PLAYER ID to allow separate icons for different players.
-  // Filter out internal statuses - they are always invisible to players:
-  // - readyDeploy, readySetup, readyCommit: control ability availability
-  // - deployUsedThisTurn, setupUsedThisTurn, commitUsedThisTurn: track ability usage
-  // DEV NOTE: These statuses are internal-only and intentionally hidden from the UI.
-  // They control ability availability and are managed by the auto-abilities system.
+  // DEBUG: All statuses are now visible for debugging ability readiness.
+  // Normally hidden: readyDeploy, readySetup, readyCommit, deployUsedThisTurn, setupUsedThisTurn, commitUsedThisTurn
   const statusGroups = useMemo(() => {
-    const hiddenStatusTypes = ['readyDeploy', 'readySetup', 'readyCommit', 'deployUsedThisTurn', 'setupUsedThisTurn', 'commitUsedThisTurn']
-    return (card.statuses ?? []).reduce((acc, status) => {
-      // Skip readiness statuses - they should not be displayed
+    // Empty array = all statuses visible (debug mode)
+    const hiddenStatusTypes: string[] = []
+    const groups = (card.statuses ?? []).reduce((acc, status) => {
+      // Skip hidden statuses (empty for debug - all visible)
       if (hiddenStatusTypes.includes(status.type)) {
         return acc
       }
@@ -522,7 +520,15 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
       acc[key].count++
       return acc
     }, {} as Record<string, { type: string, playerId: number, count: number }>)
-  }, [card.statuses])
+
+    // Debug logging for Revealed status
+    const revealedGroups = Object.values(groups).filter(g => g.type === 'Revealed')
+    if (revealedGroups.length > 0) {
+      console.log(`[Card.tsx] Card ${card.id} has ${revealedGroups.length} Revealed status(es)`, revealedGroups)
+    }
+
+    return groups
+  }, [card.statuses, card.id])
 
   // Memoized values (must be called before any conditional returns)
   const ownerColorData = useMemo(() => {
@@ -589,6 +595,11 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
           const lastPlayedGroup = uniqueStatusGroups.find(g => g.type === 'LastPlayed')
           const revealedGroups = uniqueStatusGroups.filter(g => g.type === 'Revealed')
 
+          // Debug logging for Revealed status on face-down cards
+          if (revealedGroups.length > 0) {
+            console.log(`[Card.tsx] Face-down card ${card.id}: Revealed status`, revealedGroups)
+          }
+
           return (
             <div
               onMouseEnter={handleMouseEnter}
@@ -627,6 +638,12 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
           const positiveGroups = uniqueStatusGroups.filter(g => positiveStatusTypesList.includes(g.type))
           const negativeGroups = uniqueStatusGroups.filter(g => !positiveStatusTypesList.includes(g.type) && g.type !== 'LastPlayed')
           const lastPlayedGroup = uniqueStatusGroups.find(g => g.type === 'LastPlayed')
+
+          // Debug: Check if Revealed is in negativeGroups
+          const revealedInNegative = negativeGroups.filter(g => g.type === 'Revealed')
+          if (revealedInNegative.length > 0) {
+            console.log(`[Card.tsx] Face-up card ${card.id}: Revealed in negativeGroups`, revealedInNegative)
+          }
 
           const combinedPositiveGroups = lastPlayedGroup
             ? [lastPlayedGroup, ...positiveGroups]

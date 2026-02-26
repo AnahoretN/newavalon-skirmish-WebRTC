@@ -276,6 +276,9 @@ export function updateReadyStatuses(
 /**
  * Update ready statuses for a single card.
  * This determines what statuses SHOULD exist and syncs the card's statuses.
+ *
+ * IMPORTANT: Face-down cards on battlefield should NOT receive ready statuses.
+ * They only get ready statuses when flipped face-up.
  */
 export function updateCardReadyStatuses(
   card: Card,
@@ -285,6 +288,14 @@ export function updateCardReadyStatuses(
 ): void {
   if (!card.ownerId || !card.statuses) {
     card.statuses = card.statuses || []
+    return
+  }
+
+  // Face-down cards on battlefield do not receive ready statuses
+  // They will get ready statuses when flipped face-up
+  if (card.isFaceDown) {
+    // Remove any existing ready statuses from face-down cards
+    syncCardStatuses(card, new Set()) // Empty set = remove all ready statuses
     return
   }
 

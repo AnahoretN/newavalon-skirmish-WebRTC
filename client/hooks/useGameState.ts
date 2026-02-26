@@ -8,12 +8,14 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react'
-import type { GameState, Player, Card, DragItem, HighlightData, FloatingTextData, DeckSelectionData, HandCardSelectionData, AbilityAction } from '../types'
+import { flushSync } from 'react-dom'
+import type { GameState, Card, DragItem, HighlightData, FloatingTextData, DeckSelectionData, HandCardSelectionData } from '../types'
 import { createInitialState } from './core/gameCreators'
 import { logger } from '../utils/logger'
 import type { PersonalizedState } from '../p2p/SimpleP2PTypes'
 import { SimpleHost, SimpleGuest } from '../p2p'
 import { useVisualEffects } from './useVisualEffects'
+import { triggerDirectClickWave } from './useDirectClickWave'
 
 // Export type for use in other files
 export type ConnectionStatus = 'Connecting' | 'Connected' | 'Disconnected'
@@ -90,9 +92,9 @@ interface UseGameStateResult {
   toggleAutoDraw: (playerId: number, enabled: boolean) => void
   forceReconnect: () => Promise<void>
 
-  // Visual effects
+  // Visual effects (accept union types for P2P compatibility)
   triggerHighlight: (highlight: Omit<HighlightData, 'timestamp'>) => void
-  latestHighlight: HighlightData | null
+  latestHighlight: HighlightData | { row: number; col: number; color: string; duration?: number; timestamp: number } | null
   triggerNoTarget: (coords: { row: number; col: number }) => void
   latestNoTarget: { coords: { row: number; col: number }; timestamp: number } | null
   triggerDeckSelection: (playerId: number, selectedByPlayerId: number) => void
@@ -100,7 +102,7 @@ interface UseGameStateResult {
   triggerClickWave: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void
   clickWaves: Array<{ timestamp: number; location: 'board' | 'hand' | 'deck'; boardCoords?: { row: number; col: number }; handTarget?: { playerId: number, cardIndex: number }; clickedByPlayerId: number; playerColor: string }>
   triggerFloatingText: (data: Omit<FloatingTextData, 'timestamp'> | Omit<FloatingTextData, 'timestamp'>[]) => void
-  latestFloatingTexts: FloatingTextData[]
+  latestFloatingTexts: FloatingTextData[] | { text: string; coords?: { row: number; col: number }; color: string; timestamp: number }[]
   latestDeckSelections: Array<{ playerId: number; selectedByPlayerId: number; timestamp: number }>
   latestHandCardSelections: Array<{ playerId: number; cardIndex: number; selectedByPlayerId: number; timestamp: number }>
   syncValidTargets: (options: { validHandTargets?: {playerId: number, cardIndex: number}[]; isDeckSelectable?: boolean }) => void
@@ -197,7 +199,7 @@ function personalToGameState(personal: PersonalizedState, localPlayerId: number)
   return result
 }
 
-export function useGameState(props: any = {}): UseGameStateResult {
+export function useGameState(_props: any = {}): UseGameStateResult {
   // Состояние игры
   const [gameState, setGameState] = useState<GameState>(createInitialState())
   const [localPlayerId, setLocalPlayerId] = useState<number>(1)
@@ -224,18 +226,20 @@ export function useGameState(props: any = {}): UseGameStateResult {
   }, [localPlayerId])
 
   // States for visual effects
-  const [latestHighlight, setLatestHighlight] = useState<HighlightData | null>(null)
-  const [latestFloatingTexts, setLatestFloatingTexts] = useState<FloatingTextData[] | null>(null)
+  // Note: latestHighlight can be HighlightData (client) or P2P highlight format
+  const [latestHighlight, setLatestHighlight] = useState<HighlightData | { row: number; col: number; color: string; duration?: number; timestamp: number } | null>(null)
+  // Note: latestFloatingTexts can be FloatingTextData[] (client) or P2P batch format
+  const [latestFloatingTexts, setLatestFloatingTexts] = useState<FloatingTextData[] | { text: string; coords?: { row: number; col: number }; color: string; timestamp: number }[] | null>(null)
   const [latestNoTarget, setLatestNoTarget] = useState<{ coords: { row: number; col: number }; timestamp: number } | null>(null)
-  const [latestDeckSelections, setLatestDeckSelections] = useState<Array<{ playerId: number; selectedByPlayerId: number; timestamp: number }>>([])
-  const [latestHandCardSelections, setLatestHandCardSelections] = useState<Array<{ playerId: number; cardIndex: number; selectedByPlayerId: number; timestamp: number }>>([])
+  const [_latestDeckSelections, setLatestDeckSelections] = useState<Array<{ playerId: number; selectedByPlayerId: number; timestamp: number }>>([])
+  const [_latestHandCardSelections, setLatestHandCardSelections] = useState<Array<{ playerId: number; cardIndex: number; selectedByPlayerId: number; timestamp: number }>>([])
   const [clickWaves, setClickWaves] = useState<Array<any>>([])
 
   // Refs для совместимости (остальные)
-  const latestHighlightRef = useRef<HighlightData | null>(null)
+  const latestHighlightRef = useRef<HighlightData | { row: number; col: number; color: string; duration?: number; timestamp: number } | null>(null)
   const latestNoTargetRef = useRef<{ coords: any; timestamp: number } | null>(null)
   const clickWavesRef = useRef<any[]>([])
-  const latestFloatingTextsRef = useRef<FloatingTextData[]>([])
+  const latestFloatingTextsRef = useRef<FloatingTextData[] | { text: string; coords?: { row: number; col: number }; color: string; timestamp: number }[]>([])
   const latestDeckSelectionsRef = useRef<DeckSelectionData[]>([])
   const latestHandCardSelectionsRef = useRef<HandCardSelectionData[]>([])
 
@@ -272,6 +276,18 @@ export function useGameState(props: any = {}): UseGameStateResult {
         },
         onPlayerLeave: (playerId) => {
           logger.info('[useGameState] Player left:', playerId)
+        },
+        onClickWave: (wave) => {
+          // INSTANT: Show wave via direct DOM manipulation
+          triggerDirectClickWave(wave as any)
+          // Also update React state for debugging/compatibility
+          flushSync(() => {
+            setClickWaves(prev => [...prev, wave])
+          })
+          // Auto-remove after animation completes (700ms to match ClickWave totalDuration)
+          setTimeout(() => {
+            setClickWaves(prev => prev.filter(w => w.timestamp !== wave.timestamp))
+          }, 700)
         }
       })
 
@@ -287,7 +303,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
       setConnectionStatus('Disconnected')
       throw e
     }
-  }, [])
+  }, [setClickWaves])
 
   // ============================================================================
   // Подключение как гость
@@ -392,10 +408,16 @@ export function useGameState(props: any = {}): UseGameStateResult {
           }, 1000)
         },
         onClickWave: (wave) => {
-          setClickWaves(prev => [...prev, wave])
+          // INSTANT: Show wave via direct DOM manipulation
+          triggerDirectClickWave(wave as any)
+          // Also update React state for debugging/compatibility
+          flushSync(() => {
+            setClickWaves(prev => [...prev, wave])
+          })
+          // Auto-remove after animation completes (700ms to match ClickWave totalDuration)
           setTimeout(() => {
             setClickWaves(prev => prev.filter(w => w.timestamp !== wave.timestamp))
-          }, 600)
+          }, 700)
         }
       })
 
@@ -411,7 +433,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
     }
   }, [])
 
-  const joinAsInvite = useCallback((gameId: string, playerName?: string) => {
+  const joinAsInvite = useCallback((gameId: string, _playerName?: string) => {
     // For invite join, we treat gameId as hostPeerId for now
     return joinGameViaModal(gameId)
   }, [joinGameViaModal])
@@ -493,7 +515,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
     sendAction('DRAW_CARD', { targetPlayerId: playerId })
   }, [sendAction])
 
-  const drawCardsBatch = useCallback((count: number, playerId?: number) => {
+  const drawCardsBatch = useCallback((_count: number, _playerId?: number) => {
     // TODO
   }, [])
 
@@ -517,6 +539,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
           ownerId: item.ownerId,
           replaceStatusType: item.replaceStatusType
         }
+        console.log('[useGameState] Sending ADD_STATUS_TO_BOARD_CARD:', actionData)
       } else if (item.source === 'token_panel') {
         // Размещение карты-токена на пустую клетку поля боя
         // Токен НЕ удаляется из панели (может использоваться многократно)
@@ -632,7 +655,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
     // TODO
   }, [])
 
-  const updateState = useCallback((stateOrFn: any) => {
+  const updateState = useCallback((_stateOrFn: any) => {
     if (isHostRef.current) {
       // Хост может обновлять состояние напрямую
       // TODO: интегрировать с applyAction
@@ -692,6 +715,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
   // Initialize visual effects with simpleHost if available
   const visualEffects = useVisualEffects({
     simpleHost: hostRef.current,
+    simpleGuest: guestRef.current,
     gameStateRef,
     localPlayerIdRef,
     setLatestHighlight,
@@ -714,7 +738,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
     clearTargetingMode,
   } = visualEffects
 
-  const syncValidTargets = useCallback((options: { validHandTargets?: {playerId: number, cardIndex: number}[]; isDeckSelectable?: boolean }) => {
+  const syncValidTargets = useCallback((_options: { validHandTargets?: {playerId: number, cardIndex: number}[]; isDeckSelectable?: boolean }) => {
     // Handled via targeting mode in P2P
   }, [])
 
@@ -738,8 +762,17 @@ export function useGameState(props: any = {}): UseGameStateResult {
   const modifyAnnouncedCardPower = useCallback(() => {}, [])
   const addHandCardStatus = useCallback(() => {}, [])
   const removeHandCardStatus = useCallback(() => {}, [])
-  const flipBoardCard = useCallback(() => {}, [])
-  const flipBoardCardFaceDown = useCallback(() => {}, [])
+  const flipBoardCard = useCallback((coords: any) => {
+    if (!coords) return
+    sendAction('FLIP_CARD', { boardCoords: coords, faceDown: false })
+    console.log('[useGameState] flipBoardCard: Flipping card face-up at', coords)
+  }, [sendAction])
+
+  const flipBoardCardFaceDown = useCallback((coords: any) => {
+    if (!coords) return
+    sendAction('FLIP_CARD', { boardCoords: coords, faceDown: true })
+    console.log('[useGameState] flipBoardCardFaceDown: Flipping card face-down at', coords)
+  }, [sendAction])
   const revealHandCard = useCallback(() => {}, [])
   const revealBoardCard = useCallback(() => {}, [])
   const requestCardReveal = useCallback((request: any, requesterPlayerId?: number) => {
@@ -910,6 +943,7 @@ export function useGameState(props: any = {}): UseGameStateResult {
     nextPhase,
     prevPhase,
     setPhase,
+    passTurn,
     markAbilityUsed,
     applyGlobalEffect,
     swapCards,
@@ -954,9 +988,9 @@ export function useGameState(props: any = {}): UseGameStateResult {
     },
 
     // Additional WebRTC compatibility props (stubs for now)
-    requestDeckView: (playerId: number) => {},
-    sendFullDeckToHost: (playerId: number, deck: any[], deckLength: number) => {},
-    shareHostDeckWithGuests: (deck: any[], deckLength: number) => {},
+    requestDeckView: (_playerId: number) => {},
+    sendFullDeckToHost: (_playerId: number, _deck: any[], _deckLength: number) => {},
+    shareHostDeckWithGuests: (_deck: any[], _deckLength: number) => {},
     isReconnecting: false,
     reconnectProgress: null,
   }

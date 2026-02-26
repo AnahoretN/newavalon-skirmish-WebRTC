@@ -121,7 +121,6 @@ export function handleModeCardClick(
       scoreLine,
       scoreDiagonal,
       commandContext,
-      updateState,
       isWebRTCMode,
     } = props
 
@@ -139,7 +138,6 @@ export function handleModeCardClick(
       scoreLine: scoreLine || (() => {}),
       scoreDiagonal: scoreDiagonal || (() => {}),
       commandContext,
-      updateState,
       isWebRTCMode,
     })
     return true
@@ -279,7 +277,7 @@ function handleSelectTargetWithToken(
   }
 
   moveItem({
-    card: { id: 'dummy', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, ability: '', types: [] },
+    card: { id: 'dummy', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, abilityText: '', types: [] },
     source: 'counter_panel',
     statusType: payload.tokenType,
     count: payload.count || 1,
@@ -300,7 +298,8 @@ function handleSelectTargetWithToken(
       recordContext: true,
     }
     handleActionExecution(nextAction, boardCoords)
-    setTimeout(() => triggerClickWave('board', boardCoords), 100)
+    // Immediate wave for chained action - no delay needed
+    triggerClickWave('board', boardCoords)
     if (nextAction.type !== 'ENTER_MODE') {
       setAbilityMode(null)
       clearValidTargets()

@@ -220,8 +220,8 @@ const AppInner = function AppInner() {
   const [contextMenuProps, setContextMenuProps] = useState<ContextMenuParams | null>(null)
   const [playMode, setPlayMode] = useState<{ card: Card; sourceItem: DragItem; faceDown?: boolean } | null>(null)
 
-  const [highlight, setHighlight] = useState<HighlightData | null>(null)
-  const [activeFloatingTexts, setActiveFloatingTexts] = useState<FloatingTextData[]>([])
+  const [highlight, setHighlight] = useState<HighlightData | { row: number; col: number; color: string; duration?: number; timestamp: number } | null>(null)
+  const [activeFloatingTexts, setActiveFloatingTexts] = useState<FloatingTextData[] | { id: string; text: string; coords?: { row: number; col: number }; color: string; timestamp: number }[]>([])
 
   // Track when we last received highlights from server (to prevent clearing them prematurely)
   const [isAutoAbilitiesEnabled, setIsAutoAbilitiesEnabled] = useState(() => {
@@ -1344,11 +1344,29 @@ const AppInner = function AppInner() {
 
   useEffect(() => {
     if (latestFloatingTexts && latestFloatingTexts.length > 0) {
-      const newTexts = latestFloatingTexts.map(ft => ({ ...ft, id: `float_${Date.now()}_${Math.random()}` }))
-      setActiveFloatingTexts(prev => [...prev, ...newTexts])
+      // Convert P2P format to FloatingTextData format
+      const newTexts = latestFloatingTexts.map(ft => {
+        const base = {
+          id: `float_${Date.now()}_${Math.random()}`,
+          text: ft.text,
+          timestamp: ft.timestamp || Date.now()
+        }
+        // Check if it's P2P format (has coords) or FloatingTextData format (has row, col)
+        if ('coords' in ft && ft.coords) {
+          // P2P format - use playerId 0 as default, color is handled separately
+          return { ...base, row: ft.coords.row, col: ft.coords.col, playerId: 0, _color: (ft as any).color }
+        } else if ('row' in ft && 'col' in ft) {
+          // FloatingTextData format
+          return { ...base, row: ft.row, col: ft.col, playerId: ft.playerId }
+        }
+        // Fallback - include _color if present
+        return { ...base, _color: (ft as any).color }
+      }) as Array<FloatingTextData | { id: string; text: string; row?: number; col?: number; playerId?: number; _color?: string; timestamp: number }>
+
+      setActiveFloatingTexts(prev => [...prev, ...newTexts] as any)
 
       const timer = setTimeout(() => {
-        setActiveFloatingTexts(prev => prev.filter(item => !newTexts.find(nt => nt.id === item.id)))
+        setActiveFloatingTexts((prev: any) => prev.filter((item: any) => !newTexts.find((nt: any) => nt.id === item.id)))
       }, 2000)
 
       return () => clearTimeout(timer)
@@ -1814,14 +1832,15 @@ const AppInner = function AppInner() {
     }
   }
 
-  const handleDoubleClickEmptyCell = (boardCoords: { row: number, col: number }) => {
+  const handleDoubleClickEmptyCell = (_boardCoords: { row: number, col: number }) => {
     if (abilityMode || cursorStack) {
       return
     }
     if (interactionLock.current) {
       return
     }
-    handleTriggerHighlight({ type: 'cell', row: boardCoords.row, col: boardCoords.col })
+    // Empty double-click - only click wave effect remains (triggered separately in GameBoard)
+    // Thick highlight effect removed per user request
   }
 
   // Cancels all active modes (abilityMode, cursorStack, playMode, targetingMode)
@@ -2060,9 +2079,7 @@ const AppInner = function AppInner() {
     const { type, data, x, y } = contextMenuProps
     let items: ContextMenuItem[] = []
     if (type === 'emptyBoardCell') {
-      items.push({ label: t('highlightCell'), onClick: () => handleTriggerHighlight({ type: 'cell', row: data.boardCoords.row, col: data.boardCoords.col }) })
-      items.push({ label: t('highlightColumn'), onClick: () => handleTriggerHighlight({ type: 'col', col: data.boardCoords.col }) })
-      items.push({ label: t('highlightRow'), onClick: () => handleTriggerHighlight({ type: 'row', row: data.boardCoords.row }) })
+      items.push({ label: t('highlightCell'), onClick: () => triggerClickWave('board', { row: data.boardCoords.row, col: data.boardCoords.col }) })
     } else if (type === 'boardItem' || type === 'announcedCard') {
       const isBoardItem = type === 'boardItem'
       let card = isBoardItem ? gameState.board[data.boardCoords.row][data.boardCoords.col].card : data.card
@@ -2082,7 +2099,9 @@ const AppInner = function AppInner() {
       const canControl = isOwner || isDummyCard
       const isRevealedByRequest = card.statuses?.some((s: any) => s.type === 'Revealed' && (s.addedByPlayerId === localPlayerId))
       const isVisible = !card.isFaceDown || card.revealedTo === 'all' || (Array.isArray(card.revealedTo) && card.revealedTo.includes(localPlayerId)) || isRevealedByRequest
-      if (isVisible || (isOwner && card.isFaceDown)) {
+      // View option: only shown if card is visible (face-up or revealed)
+      // Face-down cards show card back to everyone, including owner (owner sees tooltip on hover instead)
+      if (isVisible) {
         items.push({ label: t('view'), isBold: true, onClick: () => setViewingCard({ card, player: owner }) })
       }
       if (!isBoardItem && canControl && card.deck === DeckType.Command) {
@@ -2111,7 +2130,9 @@ const AppInner = function AppInner() {
       if (items.length > 0) {
         items.push({ isDivider: true })
       }
-      if (canControl && isVisible) {
+      // Movement options: owner can move their cards even if face-down
+      // Dummy cards can be moved by all players (canControl = true for dummies)
+      if (canControl && (isVisible || card.isFaceDown)) {
         items.push({ label: t('toHand'), disabled: isSpecialItem, onClick: () => moveItem(sourceItem, { target: 'hand', playerId: ownerId }) })
         if (ownerId) {
           const discardLabel = isSpecialItem ? t('remove') : t('toDiscard')
@@ -2122,9 +2143,9 @@ const AppInner = function AppInner() {
       }
       if (isBoardItem) {
         items.push({ isDivider: true })
-        items.push({ label: t('highlightCell'), onClick: () => handleTriggerHighlight({ type: 'cell', row: data.boardCoords.row, col: data.boardCoords.col }) })
-        items.push({ label: t('highlightColumn'), onClick: () => handleTriggerHighlight({ type: 'col', col: data.boardCoords.col }) })
-        items.push({ label: t('highlightRow'), onClick: () => handleTriggerHighlight({ type: 'row', row: data.boardCoords.row }) })
+        items.push({ label: t('highlightCell'), onClick: () => triggerClickWave('board', { row: data.boardCoords.row, col: data.boardCoords.col }) })
+        items.push({ label: t('highlightColumn'), onClick: () => triggerClickWave('board', { row: data.boardCoords.row, col: data.boardCoords.col }) })
+        items.push({ label: t('highlightRow'), onClick: () => triggerClickWave('board', { row: data.boardCoords.row, col: data.boardCoords.col }) })
       }
       if (isVisible && (canControl || isBoardItem)) {
         const allStatusTypes = ['Aim', 'Exploit', 'Stun', 'Shield', 'Support', 'Threat', 'Revealed']
@@ -2693,7 +2714,7 @@ const AppInner = function AppInner() {
               openContextMenu={openContextMenu}
               playMode={playMode}
               setPlayMode={setPlayMode}
-              highlight={highlight}
+              highlight={highlight as HighlightData | null}
               playerColorMap={playerColorMap}
               localPlayerId={localPlayerId}
               onCardDoubleClick={handleDoubleClickBoardCard}
@@ -2710,7 +2731,7 @@ const AppInner = function AppInner() {
               noTargetOverlay={noTargetOverlay}
               disableActiveHighlights={isTargetingMode}
               preserveDeployAbilities={justAutoTransitioned}
-              activeFloatingTexts={activeFloatingTexts}
+              activeFloatingTexts={activeFloatingTexts as FloatingTextData[]}
               abilitySourceCoords={abilityMode?.sourceCoords || null}
               abilityCheckKey={abilityCheckKey}
               abilityMode={abilityMode}
@@ -2720,6 +2741,7 @@ const AppInner = function AppInner() {
               triggerClickWave={triggerClickWave}
               visualEffects={gameState.visualEffects}
               onCancelAllModes={handleCancelAllModes}
+              players={gameState.players}
             />
           </div>
         </div>

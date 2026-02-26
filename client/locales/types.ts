@@ -147,7 +147,7 @@ export interface TranslationResource {
     effects: string;
     status: string;
     deploy: string;
-    ability: string;
+    abilityText: string;
     recover: string;
     resurrect: string;
     destroy: string;

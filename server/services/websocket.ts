@@ -188,6 +188,7 @@ function routeMessage(ws, data) {
     'ADD_COMMAND': handleAddCommand,
     'CANCEL_PENDING_COMMAND': handleCancelPendingCommand,
     'EXECUTE_PENDING_COMMAND': handleExecutePendingCommand,
+    'FLIP_CARD': handleFlipCard,
     'START_READY_CHECK': handleStartReadyCheck,
     'CANCEL_READY_CHECK': handleCancelReadyCheck,
     'TRIGGER_HIGHLIGHT': handleTriggerHighlight,
@@ -399,6 +400,7 @@ const handleReturnCardToHand = () => handleClientSideAction();
 const handleAddCommand = () => handleClientSideAction();
 const handleCancelPendingCommand = () => handleClientSideAction();
 const handleExecutePendingCommand = () => handleClientSideAction();
+const handleFlipCard = () => handleClientSideAction();
 
 // Note: CHAT_MESSAGE is not yet implemented
 const handleChatMessage = () => {

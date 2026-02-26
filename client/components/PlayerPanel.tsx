@@ -335,9 +335,10 @@ const RemoteScore: React.FC<{ score: number, onChange: (delta: number) => void, 
   )
 }
 
-const RemotePile: React.FC<{ label: string, count: number, onClick?: () => void, children?: React.ReactNode, className?: string, style?: React.CSSProperties, delta?: number | null }> = ({ label, count, onClick, children, className, style, delta }) => (
+const RemotePile: React.FC<{ label: string, count: number, onClick?: () => void, children?: React.ReactNode, className?: string, style?: React.CSSProperties, delta?: number | null, dataDeck?: number }> = ({ label, count, onClick, children, className, style, delta, dataDeck }) => (
   <div
     onClick={onClick}
+    data-deck={dataDeck}
     className={`w-full h-full rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-sm select-none text-white border border-gray-600 relative overflow-hidden ${className || ''}`}
     style={style}
   >
@@ -422,20 +423,6 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
     // Otherwise use deckSize metadata (for remote players in WebRTC)
     if (player.deckSize !== undefined) {
       return player.deckSize
-    }
-    return 0
-  }
-
-  // Helper: Get effective hand size
-  // Use handSize metadata for WebRTC optimized states where hand array may be empty
-  const getHandSize = (): number => {
-    // If hand array has cards, use its length (source of truth for local player)
-    if (player.hand.length > 0) {
-      return player.hand.length
-    }
-    // Otherwise use handSize metadata (for remote players in WebRTC)
-    if (player.handSize !== undefined) {
-      return player.handSize
     }
     return 0
   }
@@ -706,6 +693,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     )}
                     <div
                       onClick={handleDeckInteraction}
+                      data-deck={player.id}
                       className={`absolute inset-0 rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-md select-none text-white ${PLAYER_COLORS[player.color]?.bg || 'bg-card-back'}`}
                       style={deckHighlightStyle}
                     >
@@ -813,6 +801,21 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                 // so we can use player.hand directly
                 const cardsToRender = player.hand || []
 
+                // OPTIMIZATION: Create lookup Map for click waves instead of filtering for each card
+                // Changes complexity from O(cards * waves) to O(waves) + O(cards)
+                const clickWavesMap = new Map<string, any[]>()
+                if (clickWaves) {
+                  for (const wave of clickWaves) {
+                    if (wave.location === 'hand' && wave.handTarget?.playerId === player.id) {
+                      const key = `${player.id}-${wave.handTarget.cardIndex}`
+                      if (!clickWavesMap.has(key)) {
+                        clickWavesMap.set(key, [])
+                      }
+                      clickWavesMap.get(key)!.push(wave)
+                    }
+                  }
+                }
+
                 return cardsToRender.map((card, index) => {
                   // Check if this card is a valid target (from local validHandTargets or targetingMode)
                   const isLocalTarget = validHandTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
@@ -831,10 +834,8 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     cs => cs.playerId === player.id && cs.cardIndex === index && (now - cs.timestamp) < 1000
                   )
 
-                  // Find click waves for this specific hand card
-                  const cardClickWaves = clickWaves?.filter(
-                    w => w.location === 'hand' && w.handTarget?.playerId === player.id && w.handTarget?.cardIndex === index
-                  ) || []
+                  // OPTIMIZATION: Use Map lookup instead of filtering - O(1) instead of O(n)
+                  const cardClickWaves = clickWavesMap.get(`${player.id}-${index}`) || []
 
                   // Card container style with highlight if target
                   const cardContainerStyle = isTarget ? {
@@ -848,6 +849,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     <div
                       key={`card-${card.id}-${index}`}
                       className="relative"
+                      data-hand-card={`${player.id}-${index}`}
                     >
                       {/* Highlight overlay - doesn't interfere with card visibility */}
                       {isTarget && (
@@ -915,7 +917,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                                 ownerName: player.name,
                                 deck: DeckTypeEnum.Random,
                                 imageUrl: '',
-                                ability: '',
+                                abilityText: '',
                               }}
                               isFaceUp={false}
                               playerColorMap={playerColorMap}
@@ -954,14 +956,14 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                           )}
                         </div>
                       </div>
-                      {/* Click waves for hand cards */}
-                      {cardClickWaves.map(wave => (
+                      {/* React wave disabled - using instant direct DOM approach only */}
+                      {/* {cardClickWaves.map(wave => (
                         <ClickWaveComponent
                           key={wave.timestamp}
                           timestamp={wave.timestamp}
                           playerColor={wave.playerColor}
                         />
-                      ))}
+                      ))} */}
                     </div>
                   )
                 })
@@ -1137,6 +1139,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         className={PLAYER_COLORS[player.color]?.bg || 'bg-card-back'}
                         style={deckHighlightStyle}
                         delta={deckChangeDelta}
+                        dataDeck={player.id}
                       />
                     </div>
                   )
@@ -1234,11 +1237,25 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     power: 0,
                     deck: DeckTypeEnum.Random,
                     imageUrl: '',
-                    ability: '',
+                    abilityText: '',
                     isFaceDown: true,
                     // Marker to indicate this is a placeholder
                     _isPlaceholder: true
                   }))
+
+              // OPTIMIZATION: Create lookup Map for click waves instead of filtering for each card
+              const clickWavesMap = new Map<string, any[]>()
+              if (clickWaves) {
+                for (const wave of clickWaves) {
+                  if (wave.location === 'hand' && wave.handTarget?.playerId === player.id) {
+                    const key = `${player.id}-${wave.handTarget.cardIndex}`
+                    if (!clickWavesMap.has(key)) {
+                      clickWavesMap.set(key, [])
+                    }
+                    clickWavesMap.get(key)!.push(wave)
+                  }
+                }
+              }
 
               return cardsToRender.map((card, index) => {
                 // Check if this card is a valid target (from local validHandTargets or targetingMode)
@@ -1257,10 +1274,8 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   cs => cs.playerId === player.id && cs.cardIndex === index && (now - cs.timestamp) < 1000
                 )
 
-                // Find click waves for this specific hand card
-                const cardClickWaves = clickWaves?.filter(
-                  w => w.location === 'hand' && w.handTarget?.playerId === player.id && w.handTarget?.cardIndex === index
-                ) || []
+                // OPTIMIZATION: Use Map lookup instead of filtering - O(1) instead of O(n)
+                const cardClickWaves = clickWavesMap.get(`${player.id}-${index}`) || []
 
                 // Card container style with highlight if target
                 const cardHighlightStyle = isTarget ? {
@@ -1287,6 +1302,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   <div
                     key={`${player.id}-hand-${index}-${card.id}`}
                     className="aspect-square relative"
+                    data-hand-card={`${player.id}-${index}`}
                     draggable={canDrag && !isPlaceholder}
                     onDragStart={() => (canDrag && !isPlaceholder) && setDraggedItem({ card, source: 'hand', playerId: player.id, cardIndex: index, isManual: true })}
                     onDragEnd={() => { setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK) }}
@@ -1363,7 +1379,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                             ownerName: player.name,
                             deck: DeckTypeEnum.Random,
                             imageUrl: '',
-                            ability: '',
+                            abilityText: '',
                           }}
                           isFaceUp={false}
                           playerColorMap={playerColorMap}
@@ -1394,14 +1410,14 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         />
                       )}
                     </div>
-                    {/* Click waves for hand cards */}
-                    {cardClickWaves.map(wave => (
+                    {/* React wave disabled - using instant direct DOM approach only */}
+                    {/* {cardClickWaves.map(wave => (
                       <ClickWaveComponent
                         key={wave.timestamp}
                         timestamp={wave.timestamp}
                         playerColor={wave.playerColor}
                       />
-                    ))}
+                    ))} */}
                   </div>
                 )
               })
@@ -1469,6 +1485,8 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
     prevProps.imageRefreshVersion === nextProps.imageRefreshVersion &&
     prevProps.currentRound === nextProps.currentRound &&
     prevProps.validHandTargets === nextProps.validHandTargets &&
+    prevProps.allPlayers.length === nextProps.allPlayers.length &&
+    prevProps.allPlayers.map(p => p.id).join(',') === nextProps.allPlayers.map(p => p.id).join(',') &&
     cursorStackEqual &&
     draggedItemEqual
   )

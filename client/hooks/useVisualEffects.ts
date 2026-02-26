@@ -7,22 +7,27 @@
  * - Works in both P2P and WebSocket modes
  */
 
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useEffect } from 'react'
+import { flushSync } from 'react-dom'
 import type { HighlightData, FloatingTextData, TargetingModeData, AbilityAction, CommandContext, GameState } from '../types'
 import { SimpleVisualEffects } from '../p2p/SimpleVisualEffects'
 import type { SimpleHost } from '../p2p/SimpleHost'
+import type { SimpleGuest } from '../p2p/SimpleGuest'
+import { initClickWaveOverlay, triggerDirectClickWave, type ClickWaveData } from './useDirectClickWave'
 
 interface UseVisualEffectsProps {
   // SimpleHost (P2P mode)
   simpleHost: SimpleHost | null
+  // SimpleGuest (P2P mode - for guests)
+  simpleGuest: SimpleGuest | null
 
   // Local refs
   gameStateRef: React.MutableRefObject<GameState>
   localPlayerIdRef: React.MutableRefObject<number | null>
 
-  // State setters
-  setLatestHighlight: React.Dispatch<React.SetStateAction<HighlightData | null>>
-  setLatestFloatingTexts: React.Dispatch<React.SetStateAction<FloatingTextData[] | null>>
+  // State setters (accept union types for P2P compatibility)
+  setLatestHighlight: React.Dispatch<React.SetStateAction<HighlightData | { row: number; col: number; color: string; duration?: number; timestamp: number } | null>>
+  setLatestFloatingTexts: React.Dispatch<React.SetStateAction<FloatingTextData[] | { text: string; coords?: { row: number; col: number }; color: string; timestamp: number }[] | null>>
   setLatestNoTarget: React.Dispatch<React.SetStateAction<{ coords: { row: number; col: number }; timestamp: number } | null>>
   setLatestDeckSelections: React.Dispatch<React.SetStateAction<Array<{ playerId: number; selectedByPlayerId: number; timestamp: number }>>>
   setLatestHandCardSelections: React.Dispatch<React.SetStateAction<Array<{ playerId: number; cardIndex: number; selectedByPlayerId: number; timestamp: number }>>>
@@ -37,6 +42,7 @@ interface UseVisualEffectsProps {
 export function useVisualEffects(props: UseVisualEffectsProps) {
   const {
     simpleHost,
+    simpleGuest,
     gameStateRef,
     localPlayerIdRef,
     setLatestHighlight,
@@ -48,9 +54,10 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     setGameState,
   } = props
 
-  // Throttle click waves to once per 500ms per player
-  const lastClickTimeRef = useRef<Record<number, number>>({})
-  const CLICK_THROTTLE_MS = 500
+  // Initialize click wave overlay on mount
+  useEffect(() => {
+    initClickWaveOverlay()
+  }, [])
 
   /**
    * Trigger highlight effect on a cell
@@ -162,7 +169,7 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
   /**
    * Trigger click wave effect (colored ripple animation)
    * Shows when any player clicks on a card or cell
-   * Throttled to once per 500ms per player
+   * Uses DIRECT DOM for instant local display, React state for network sync
    */
   const triggerClickWave = useCallback((
     location: 'board' | 'hand' | 'deck',
@@ -173,16 +180,8 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
       return
     }
 
-    // Check throttle - don't allow more than one click wave per 500ms per player
-    const playerId = localPlayerIdRef.current
-    const now = Date.now()
-    const lastClickTime = lastClickTimeRef.current[playerId] || 0
-    if (now - lastClickTime < CLICK_THROTTLE_MS) {
-      return
-    }
-    lastClickTimeRef.current[playerId] = now
-
     // Get player color from game state
+    const playerId = localPlayerIdRef.current
     const player = gameStateRef.current.players.find(p => p.id === playerId)
     if (!player) {
       return
@@ -195,22 +194,39 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
       handTarget,
       clickedByPlayerId: playerId,
       playerColor: player.color,
+      // Only add _local flag for host (player 1) to prevent duplicate display
+      // Guest clicks should be seen by host via onClickWave callback
+      _local: playerId === 1,
     }
 
-    // Immediately update local state
-    setClickWaves(prev => [...prev, wave])
+    // INSTANT: Direct DOM manipulation - bypasses React entirely
+    // This shows the wave IMMEDIATELY without waiting for React re-render
+    triggerDirectClickWave(wave as ClickWaveData)
 
-    // Broadcast via SimpleHost if available (P2P mode)
+    // Still update React state for:
+    // 1. Guests in P2P mode (they receive state via SimpleHost)
+    // 2. Debugging/development tools
+    // 3. Fallback if direct DOM fails
+    flushSync(() => {
+      setClickWaves(prev => [...prev, wave])
+    })
+
+    // Broadcast via SimpleHost if available (P2P host mode)
     if (simpleHost) {
       const effects = new SimpleVisualEffects(simpleHost)
       effects.broadcastClickWave(wave)
     }
+    // Send action via SimpleGuest if available (P2P guest mode)
+    else if (simpleGuest) {
+      simpleGuest.sendAction('CLICK_WAVE', wave)
+    }
 
-    // Auto-remove after animation completes (600ms)
+    // Auto-remove from React state after animation completes
+    // (Direct DOM handles its own cleanup)
     setTimeout(() => {
       setClickWaves(prev => prev.filter(w => w.timestamp !== wave.timestamp))
-    }, 600)
-  }, [simpleHost, gameStateRef, localPlayerIdRef, setClickWaves])
+    }, 700)
+  }, [simpleHost, simpleGuest, gameStateRef, localPlayerIdRef, setClickWaves])
 
   /**
    * Set targeting mode for all clients
@@ -220,7 +236,7 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     playerId: number,
     sourceCoords?: { row: number; col: number },
     preCalculatedTargets?: { row: number, col: number }[],
-    commandContext?: CommandContext,
+    _commandContext?: CommandContext,
     preCalculatedHandTargets?: { playerId: number, cardIndex: number }[]
   ) => {
     const currentGameState = gameStateRef.current

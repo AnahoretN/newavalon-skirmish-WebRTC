@@ -44,24 +44,24 @@ export function buildFilterFromString(
   // hasStatus_StatusName
   if (filter.startsWith('hasStatus_')) {
     const statusType = filter.replace('hasStatus_', '')
-    return (target: Card) => hasStatus(target, statusType, ownerId)
+    return (_target: Card) => hasStatus(_target, statusType, ownerId)
   }
 
   // hasStatus_StatusName1_or_StatusName2
   if (filter.startsWith('hasStatus_') && filter.includes('_or_')) {
     const statuses = filter.replace('hasStatus_', '').split('_or_')
-    return (target: Card) => statuses.some(s => hasStatus(target, s, ownerId))
+    return (_target: Card) => statuses.some(s => hasStatus(_target, s, ownerId))
   }
 
   // isAdjacent
   if (filter === 'isAdjacent') {
-    return (target: Card, r?: number, c?: number) =>
+    return (_target: Card, r?: number, c?: number) =>
       r !== undefined && c !== undefined && checkAdj(r, c, _coords.row, _coords.col)
   }
 
   // isOpponent
   if (filter === 'isOpponent') {
-    return (target: Card) => target.ownerId !== ownerId
+    return (_target: Card) => _target.ownerId !== ownerId
   }
 
   return undefined
@@ -102,7 +102,7 @@ export function buildDetailsFromContent(
 export function buildActionFromContentAbility(
   ability: ContentAbility,
   card: Card,
-  gameState: GameState,
+  _gameState: GameState,
   ownerId: number,
   coords: { row: number; col: number }
 ): AbilityAction | null {

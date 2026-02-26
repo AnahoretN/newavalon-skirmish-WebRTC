@@ -78,7 +78,7 @@ export const CountersModal: React.FC<CountersModalProps> = ({
         imageUrl: '',
         fallbackImage: '',
         power: 0,
-        ability: displayDesc,
+        abilityText: displayDesc,
         types: [],
         statuses: [],
       }
