@@ -474,6 +474,7 @@ export const useAppAbilities = ({
       localPlayerId,
       abilityMode,
       setAbilityMode,
+      clearTargetingMode,
       cursorStack,
       commandContext,
       setCommandContext,

@@ -14,6 +14,7 @@ export interface EmptyCellClickProps {
   localPlayerId: number | null
   abilityMode: AbilityAction | null
   setAbilityMode: React.Dispatch<React.SetStateAction<AbilityAction | null>>
+  clearTargetingMode: () => void
   cursorStack: CursorStackState | null
   commandContext: CommandContext
   setCommandContext: React.Dispatch<React.SetStateAction<CommandContext>>
@@ -53,6 +54,7 @@ export function handleEmptyCellClick(
     localPlayerId,
     abilityMode,
     setAbilityMode,
+    clearTargetingMode,
     cursorStack,
     commandContext,
     setCommandContext,
@@ -307,6 +309,7 @@ export function handleEmptyCellClick(
 
     // Same cell = cancel
     if (boardCoords.row === sourceCoords.row && boardCoords.col === sourceCoords.col) {
+      clearTargetingMode() // Clear highlighting immediately
       markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
       setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
       return true
@@ -321,6 +324,7 @@ export function handleEmptyCellClick(
     // Check if cell is empty
     if (gameState.board[boardCoords.row][boardCoords.col].card !== null) {return false}
 
+    clearTargetingMode() // Clear highlighting immediately
     moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
     markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
     setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)

@@ -701,8 +701,9 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
   }
 
   // 1. Check Hand Targets first (for handOnly actions like IP Dept Agent)
+  // DESTROY with filter (e.g., hasStatus_Aim) targets board cards, not hand
   if (action.mode === 'SELECT_TARGET' && action.payload?.filter) {
-    if (action.payload.handOnly || action.payload.allowHandTargets || action.payload.actionType === 'DESTROY') {
+    if (action.payload.handOnly || action.payload.allowHandTargets) {
       // Iterate all players hands
       for (const p of currentGameState.players) {
         if (p.hand.some((card) => action.payload.filter!(card))) {

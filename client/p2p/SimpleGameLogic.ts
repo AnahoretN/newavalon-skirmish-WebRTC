@@ -53,6 +53,117 @@ function clearAllStatusesExceptRevealed(card: Card): void {
 }
 
 /**
+ * Restore LastPlayed status to previous card when a card with LastPlayed leaves battlefield
+ * @param removedCard - The card being removed from battlefield
+ * @param ownerId - The owner of the removed card
+ * @param state - Current game state
+ * @returns Updated game state with LastPlayed restored to previous card
+ */
+function restoreLastPlayedToPreviousCard(
+  state: GameState,
+  removedCard: Card,
+  ownerId: number
+): GameState {
+  // Check if the removed card had LastPlayed status
+  const hadLastPlayed = removedCard.statuses?.some(
+    s => s.type === 'LastPlayed' && s.addedByPlayerId === ownerId
+  )
+
+  console.log('[restoreLastPlayedToPreviousCard] Card removed:', removedCard.id, 'hadLastPlayed:', hadLastPlayed, 'ownerId:', ownerId)
+
+  if (!hadLastPlayed) {
+    return state // No restoration needed
+  }
+
+  const player = state.players.find(p => p.id === ownerId)
+  if (!player || !player.boardHistory) {
+    console.log('[restoreLastPlayedToPreviousCard] No player or boardHistory found')
+    return state
+  }
+
+  console.log('[restoreLastPlayedToPreviousCard] boardHistory:', player.boardHistory)
+
+  // Find previous card in boardHistory (excluding the removed card)
+  const historyWithoutRemoved = player.boardHistory.filter(id => id !== removedCard.id)
+
+  if (historyWithoutRemoved.length === 0) {
+    // No previous cards - just update boardHistory and lastPlayedCardId
+    console.log('[restoreLastPlayedToPreviousCard] No previous cards in history')
+    const newPlayers = state.players.map(p =>
+      p.id === ownerId
+        ? { ...p, boardHistory: historyWithoutRemoved, lastPlayedCardId: null }
+        : p
+    )
+    return { ...state, players: newPlayers }
+  }
+
+  // Find the most recent card in history that's still on board
+  // Search from most recent backwards
+  let foundCardId: string | null = null
+  for (let i = historyWithoutRemoved.length - 1; i >= 0; i--) {
+    const cardId = historyWithoutRemoved[i]
+    // Check if this card is still on the board
+    for (let r = 0; r < state.board.length; r++) {
+      for (let c = 0; c < state.board[r].length; c++) {
+        if (state.board[r][c]?.card?.id === cardId) {
+          foundCardId = cardId
+          break
+        }
+      }
+      if (foundCardId) break
+    }
+    if (foundCardId) break
+  }
+
+  if (!foundCardId) {
+    // No cards from history are still on board - clear LastPlayed
+    console.log('[restoreLastPlayedToPreviousCard] No cards from history still on board')
+    const newPlayers = state.players.map(p =>
+      p.id === ownerId
+        ? { ...p, boardHistory: historyWithoutRemoved, lastPlayedCardId: null }
+        : p
+    )
+    return { ...state, players: newPlayers }
+  }
+
+  // Remove all cards after the found one from history (they left the board)
+  const foundIndex = historyWithoutRemoved.indexOf(foundCardId)
+  const trimmedHistory = historyWithoutRemoved.slice(0, foundIndex + 1)
+
+  console.log('[restoreLastPlayedToPreviousCard] Restoring LastPlayed to card:', foundCardId, 'trimmedHistory:', trimmedHistory)
+
+  // Find this card on board and restore LastPlayed status
+  const newBoard = state.board.map(row =>
+    row.map(cell => {
+      if (cell.card?.id === foundCardId) {
+        const lastPlayedStatus = { type: 'LastPlayed' as const, addedByPlayerId: ownerId }
+        const existingStatuses = cell.card.statuses || []
+        // Remove any existing LastPlayed from this player
+        const filteredStatuses = existingStatuses.filter(
+          s => !(s.type === 'LastPlayed' && s.addedByPlayerId === ownerId)
+        )
+        return {
+          card: {
+            ...cell.card,
+            statuses: [...filteredStatuses, lastPlayedStatus]
+          }
+        }
+      }
+      return cell
+    })
+  )
+
+  // Update player's boardHistory and lastPlayedCardId
+  const newPlayers = state.players.map(p =>
+    p.id === ownerId
+      ? { ...p, boardHistory: trimmedHistory, lastPlayedCardId: foundCardId }
+      : p
+  )
+
+  return { ...state, board: newBoard, players: newPlayers }
+}
+
+/**
  * Apply action to game state
  * This is the only place where game state is modified!
  */
@@ -582,11 +693,13 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
   let cardToPlay: Card | null = null
   let newHand = player.hand
   let newHandSize = player.hand.length
+  let isFromHand = false  // Track if card comes from hand (not deck/discard)
 
   // If card is passed directly (from deck/discard), use it
   if (card) {
     cardToPlay = card
     // Hand remains unchanged when playing from deck/discard
+    isFromHand = false
   } else {
     // Otherwise, get card from hand
     const cardIndexNum = cardIndex ?? player.hand.length - 1
@@ -598,13 +711,15 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
     newHand = [...player.hand]
     newHand.splice(cardIndexNum, 1)
     newHandSize = newHand.length
+    isFromHand = true
   }
 
   if (!cardToPlay) {return state}
 
   // First remove LastPlayed status from ALL player's cards on board
   // (only one card can have LastPlayed status at a time)
-  const boardWithoutLastPlayed = state.board.map((row, _r) =>
+  // Only do this if card is from hand - otherwise preserve existing LastPlayed
+  const boardWithoutLastPlayed = isFromHand ? state.board.map((row, _r) =>
     row.map((cell, _c) => {
       if (cell.card?.ownerId === actualPlayerId && cell.card?.statuses) {
         const filteredStatuses = cell.card.statuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === actualPlayerId))
@@ -619,25 +734,28 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
       }
       return cell
     })
-  )
+  ) : state.board
 
-  // Now add card to board with LastPlayed status
+  // Now add card to board with LastPlayed status (only if from hand)
   const newBoard = boardWithoutLastPlayed.map((row, r) =>
     row.map((cell, c) => {
       if (r === boardCoords.row && c === boardCoords.col) {
-        // Add LastPlayed status to the card when played from hand
-        // This status is used to determine if player can enter scoring phase
-        const lastPlayedStatus = { type: 'LastPlayed', addedByPlayerId: actualPlayerId }
         const existingStatuses = cardToPlay.statuses || []
         // Remove any existing LastPlayed status from this card (to avoid duplicates)
         const filteredStatuses = existingStatuses.filter((s: any) => !(s.type === 'LastPlayed' && s.addedByPlayerId === actualPlayerId))
+
+        // Add LastPlayed status only when card is played from hand
+        // This status is used to determine if player can enter scoring phase
+        const finalStatuses = isFromHand
+          ? [...filteredStatuses, { type: 'LastPlayed', addedByPlayerId: actualPlayerId }]
+          : filteredStatuses
 
         const boardCard = {
           ...cardToPlay,
           ownerId: actualPlayerId,
           isFaceDown: faceDown,
           enteredThisTurn: true,
-          statuses: [...filteredStatuses, lastPlayedStatus]
+          statuses: finalStatuses
         }
 
         // Initialize ready statuses for this card (readyDeploy, readySetup, readyCommit)
@@ -654,10 +772,17 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
     })
   )
 
-  // Add to boardHistory
-  const newBoardHistory = [...player.boardHistory, cardToPlay.id]
+  // Add to boardHistory and update lastPlayedCardId only if from hand
+  const newBoardHistory = isFromHand ? [...player.boardHistory, cardToPlay.id] : player.boardHistory
+  const newLastPlayedCardId = isFromHand ? cardToPlay.id : player.lastPlayedCardId
 
-  // Update player - set lastPlayedCardId
+  if (isFromHand) {
+    console.log('[handlePlayCard] Card played from hand:', cardToPlay.id, 'newBoardHistory:', newBoardHistory, 'newLastPlayedCardId:', newLastPlayedCardId)
+  } else {
+    console.log('[handlePlayCard] Card NOT from hand (deck/discard):', cardToPlay.id, 'NOT adding to boardHistory')
+  }
+
+  // Update player
   const newPlayers = state.players.map(p =>
     p.id === actualPlayerId
       ? {
@@ -665,7 +790,7 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
           hand: newHand,
           handSize: newHandSize,
           boardHistory: newBoardHistory,
-          lastPlayedCardId: cardToPlay.id
+          lastPlayedCardId: newLastPlayedCardId
         }
       : p
   )
@@ -778,11 +903,11 @@ function handleReturnCardToHand(state: GameState, playerId: number, data: any): 
     return p
   })
 
-  return {
-    ...state,
-    board: newBoard,
-    players: newPlayers as Player[]
-  }
+  // Restore LastPlayed to previous card if this card had it
+  let updatedState = { ...state, board: newBoard, players: newPlayers as Player[] }
+  updatedState = restoreLastPlayedToPreviousCard(updatedState, finalCard, ownerId)
+
+  return updatedState
 }
 
 /**
@@ -798,6 +923,8 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
   let newDiscard: Card[] | null = null
   let newDeck: Card[] | null = null
   let newState = state
+  let cardFromBoard: Card | null = null // Track if card came from board for LastPlayed restoration
+  let ownerIdFromBoard: number | null = null
 
   if (source === 'board') {
     newBoard = state.board.map((row, _r) =>
@@ -806,6 +933,9 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
           const foundCard = cell.card
           if (foundCard) {
             cardToMove = foundCard
+            // Save a copy with original statuses BEFORE clearing
+            cardFromBoard = { ...foundCard, statuses: [...(foundCard.statuses || [])] }
+            ownerIdFromBoard = foundCard.ownerId || playerId
             targetPlayerId = foundCard.ownerId || playerId
             // Clear all statuses except Revealed when card leaves battlefield
             clearAllStatusesExceptRevealed(foundCard)
@@ -850,12 +980,17 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
   // If card is a token, destroy it instead of adding to hand
   if (isToken(cardToMove)) {
     // Token is removed from source and not added to destination
-    return { ...newState, board: newBoard, players: newState.players.map(p => {
+    // Still restore LastPlayed if token had it
+    let resultState = { ...newState, board: newBoard, players: newState.players.map(p => {
       if (p.id === playerId && newDiscard !== null) {
         return { ...p, discard: newDiscard, discardSize: newDiscard.length }
       }
       return p
     })}
+    if (cardFromBoard && ownerIdFromBoard !== null) {
+      resultState = restoreLastPlayedToPreviousCard(resultState, cardFromBoard, ownerIdFromBoard)
+    }
+    return resultState
   }
 
   const newPlayers = newState.players.map(p => {
@@ -869,7 +1004,12 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
     return p
   })
 
-  return { ...newState, board: newBoard, players: newPlayers as Player[] }
+  let resultState = { ...newState, board: newBoard, players: newPlayers as Player[] }
+  // Restore LastPlayed if card came from board
+  if (cardFromBoard && ownerIdFromBoard !== null) {
+    resultState = restoreLastPlayedToPreviousCard(resultState, cardFromBoard, ownerIdFromBoard)
+  }
+  return resultState
 }
 
 /**
@@ -884,6 +1024,8 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
   let newBoard = state.board
   let newHand: Card[] | null = null
   let newDiscard: Card[] | null = null
+  let cardFromBoard: Card | null = null
+  let ownerIdFromBoard: number | null = null
 
   if (source === 'board') {
     newBoard = state.board.map((row, _r) =>
@@ -892,6 +1034,9 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
           const foundCard = cell.card
           if (foundCard) {
             cardToMove = foundCard
+            // Save a copy with original statuses BEFORE clearing
+            cardFromBoard = { ...foundCard, statuses: [...(foundCard.statuses || [])] }
+            ownerIdFromBoard = foundCard.ownerId || playerId
             targetPlayerId = foundCard.ownerId || playerId
             // Clear all statuses except Revealed when card leaves battlefield
             clearAllStatusesExceptRevealed(foundCard)
@@ -926,7 +1071,7 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
   // If card is a token, destroy it instead of adding to deck
   if (isToken(cardToMove)) {
     // Token is removed from source and not added to destination
-    return { ...state, board: newBoard, players: state.players.map(p => {
+    let resultState = { ...state, board: newBoard, players: state.players.map(p => {
       if (p.id === playerId) {
         const updates: any = {}
         if (newHand !== null) {
@@ -941,6 +1086,10 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
       }
       return p
     })}
+    if (cardFromBoard && ownerIdFromBoard !== null) {
+      resultState = restoreLastPlayedToPreviousCard(resultState, cardFromBoard, ownerIdFromBoard)
+    }
+    return resultState
   }
 
   const newPlayers = state.players.map(p => {
@@ -963,7 +1112,11 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
     return p
   })
 
-  return { ...state, board: newBoard, players: newPlayers as Player[] }
+  let resultState = { ...state, board: newBoard, players: newPlayers as Player[] }
+  if (cardFromBoard && ownerIdFromBoard !== null) {
+    resultState = restoreLastPlayedToPreviousCard(resultState, cardFromBoard, ownerIdFromBoard)
+  }
+  return resultState
 }
 
 /**
@@ -978,6 +1131,8 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
   let newBoard = state.board
   let newHand: Card[] | null = null
   let newDeck: Card[] | null = null
+  let cardFromBoard: Card | null = null
+  let ownerIdFromBoard: number | null = null
 
   if (source === 'board') {
     newBoard = state.board.map((row, _r) =>
@@ -986,6 +1141,9 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
           const foundCard = cell.card
           if (foundCard) {
             cardToMove = foundCard
+            // Save a copy with original statuses BEFORE clearing
+            cardFromBoard = { ...foundCard, statuses: [...(foundCard.statuses || [])] }
+            ownerIdFromBoard = foundCard.ownerId || playerId
             targetPlayerId = foundCard.ownerId || playerId
             // Clear all statuses except Revealed when card leaves battlefield
             clearAllStatusesExceptRevealed(foundCard)
@@ -1020,7 +1178,7 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
   // If card is a token, destroy it instead of adding to discard
   if (isToken(cardToMove)) {
     // Token is removed from source and not added to destination
-    return { ...state, board: newBoard, players: state.players.map(p => {
+    let resultState = { ...state, board: newBoard, players: state.players.map(p => {
       if (p.id === playerId) {
         const updates: any = {}
         if (newHand !== null) {
@@ -1035,6 +1193,10 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
       }
       return p
     })}
+    if (cardFromBoard && ownerIdFromBoard !== null) {
+      resultState = restoreLastPlayedToPreviousCard(resultState, cardFromBoard, ownerIdFromBoard)
+    }
+    return resultState
   }
 
   const newPlayers = state.players.map(p => {
@@ -1057,7 +1219,11 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
     return p
   })
 
-  return { ...state, board: newBoard, players: newPlayers as Player[] }
+  let resultState = { ...state, board: newBoard, players: newPlayers as Player[] }
+  if (cardFromBoard && ownerIdFromBoard !== null) {
+    resultState = restoreLastPlayedToPreviousCard(resultState, cardFromBoard, ownerIdFromBoard)
+  }
+  return resultState
 }
 
 /**
@@ -1242,33 +1408,14 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
   // Remove the card being announced from hand
   newHand.splice(cardIndex, 1)
 
-  // First remove LastPlayed status from ALL player's cards on board
-  // (only one card can have LastPlayed status at a time)
-  const boardWithoutLastPlayed = state.board.map((row, _r) =>
-    row.map((cell, _c) => {
-      if (cell.card?.ownerId === actualPlayerId && cell.card?.statuses) {
-        const filteredStatuses = cell.card.statuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === actualPlayerId))
-        if (filteredStatuses.length !== cell.card.statuses.length) {
-          return {
-            card: {
-              ...cell.card,
-              statuses: filteredStatuses
-            }
-          }
-        }
-      }
-      return cell
-    })
-  )
-
-  // Add LastPlayed status to the announced card (it was played from hand)
-  const lastPlayedStatus = { type: 'LastPlayed', addedByPlayerId: actualPlayerId }
+  // Announced card does NOT get LastPlayed status
+  // (LastPlayed is only for cards that enter the battlefield, not showcase)
+  // Remove any existing LastPlayed status from this card
   const existingStatuses = cardToAnnounce.statuses || []
-  // Remove any existing LastPlayed status from this card (to avoid duplicates)
   const filteredStatuses = existingStatuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === actualPlayerId))
-  const announcedCardWithStatus = {
+  const announcedCard = {
     ...cardToAnnounce,
-    statuses: [...filteredStatuses, lastPlayedStatus]
+    statuses: filteredStatuses
   }
 
   const newPlayers = state.players.map(p => {
@@ -1277,16 +1424,14 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
         ...p,
         hand: newHand,
         handSize: newHand.length,
-        announcedCard: announcedCardWithStatus,
-        // Update boardHistory and lastPlayedCardId for scoring phase
-        boardHistory: [...p.boardHistory, cardToAnnounce.id],
-        lastPlayedCardId: cardToAnnounce.id
+        announcedCard: announcedCard
+        // Do NOT update boardHistory or lastPlayedCardId - card hasn't entered battlefield yet
       }
     }
     return p
   })
 
-  return { ...state, board: boardWithoutLastPlayed, players: newPlayers }
+  return { ...state, players: newPlayers }
 }
 
 /**
@@ -1298,6 +1443,7 @@ function handleDestroyCard(state: GameState, _playerId: number, data: any): Game
 
   let destroyedCard: Card | null = null
   let ownerId: number | null = null
+  let originalStatuses: CardStatus[] = [] // Save original statuses before clearing
 
   const newBoard = state.board.map((row, _r) =>
     row.map((cell, _c) => {
@@ -1306,6 +1452,8 @@ function handleDestroyCard(state: GameState, _playerId: number, data: any): Game
         if (foundCard) {
           destroyedCard = foundCard
           ownerId = foundCard.ownerId ?? null
+          // Save original statuses BEFORE clearing
+          originalStatuses = [...(foundCard.statuses || [])]
         }
         return { card: null }
       }
@@ -1319,68 +1467,28 @@ function handleDestroyCard(state: GameState, _playerId: number, data: any): Game
   // This allows deploy ability to be used again when card returns to battlefield
   clearAllStatusesExceptRevealed(destroyedCard)
 
-  // Check if this was the owner's last played card
-  const owner = state.players.find(p => p.id === ownerId)
-  let updatedBoard = newBoard
-  let newLastPlayedCardId: string | null = null
-
-  if (owner && owner.lastPlayedCardId === cardId) {
-    // This card was the last played - need to restore previous card's status
-    // Find previous card in boardHistory (except destroyed)
-    const historyWithoutDestroyed = owner.boardHistory.filter(id => id !== cardId)
-
-    if (historyWithoutDestroyed.length > 0) {
-      const prevCardId = historyWithoutDestroyed[historyWithoutDestroyed.length - 1]
-      newLastPlayedCardId = prevCardId
-
-      // Find this card on board and restore LastPlayed status
-      updatedBoard = newBoard.map(row =>
-        row.map(cell => {
-          if (cell.card?.id === prevCardId) {
-            // Add LastPlayed status to the previous card
-            // ownerId is non-null here because we checked above
-            const lastPlayedStatus = { type: 'LastPlayed' as const, addedByPlayerId: ownerId! }
-            const existingStatuses = cell.card.statuses || []
-            // Remove any existing LastPlayed status from this player
-            const filteredStatuses = existingStatuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === ownerId))
-
-            return {
-              card: {
-                ...cell.card,
-                enteredThisTurn: true,
-                statuses: [...filteredStatuses, lastPlayedStatus]
-              }
-            }
-          }
-          return cell
-        })
-      )
-
-      console.log('[handleDestroyCard] Restored LastPlayed status for previous card:', prevCardId)
-    }
-  }
-
   // Add to owner's discard
-  const newPlayers = state.players.map(p => {
-    if (p.id === ownerId) {
-      // Update boardHistory (remove destroyed card)
-      const newBoardHistory = p.boardHistory.filter(id => id !== cardId)
-      return {
-        ...p,
-        discard: [...p.discard, destroyedCard],
-        discardSize: p.discard.length + 1,
-        boardHistory: newBoardHistory,
-        lastPlayedCardId: p.id === ownerId ? newLastPlayedCardId : p.lastPlayedCardId
-      }
-    }
-    return p
-  })
-
-  return {
+  let updatedState = {
     ...state,
-    board: updatedBoard,
-    players: newPlayers as Player[]
+    board: newBoard,
+    players: state.players.map(p => {
+      if (p.id === ownerId) {
+        return {
+          ...p,
+          discard: [...p.discard, destroyedCard],
+          discardSize: p.discard.length + 1
+        }
+      }
+      return p
+    })
   }
+
+  // Restore LastPlayed to previous card if destroyed card had it
+  // Use the card with original statuses (before clearing)
+  const cardWithOriginalStatuses = { ...destroyedCard, statuses: originalStatuses }
+  updatedState = restoreLastPlayedToPreviousCard(updatedState, cardWithOriginalStatuses, ownerId)
+
+  return updatedState
 }
 
 // ============================================================================

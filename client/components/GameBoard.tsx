@@ -419,7 +419,7 @@ const GridCell = memo<{
                   boxShadow: `0 0 12px 2px ${rgba(glowRgb, 0.5)}`,
                   border: '3px solid',
                   borderColor: `rgb(255, 255, 255)`,
-                  background: `radial-gradient(circle at center, transparent 20%, ${rgba(rgb, 0.5)} 100%)`,
+                  background: `radial-gradient(circle at center, transparent 25%, ${rgba(rgb, 0.75)} 100%)`,
                 }}
               />
             )
@@ -443,7 +443,7 @@ const GridCell = memo<{
                   boxShadow: `0 0 12px 2px ${rgba(glowRgb, 0.5)}`,
                   border: '3px dashed',
                   borderColor: `rgb(255, 255, 255)`,
-                  background: `radial-gradient(circle at center, transparent 20%, ${rgba(rgb, 0.5)} 100%)`,
+                  background: `radial-gradient(circle at center, transparent 25%, ${rgba(rgb, 0.75)} 100%)`,
                 }}
               />
             )

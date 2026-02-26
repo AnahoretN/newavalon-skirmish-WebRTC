@@ -42,10 +42,11 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
           bottom: 0,
           borderRadius: '8px',
           border: `4px solid ${borderColorAlpha}, 1)`,
-          background: `radial-gradient(circle, transparent 0%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.5) 100%)`,
+          background: `radial-gradient(circle, transparent 0%, transparent 50%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.75) 100%)`,
           transform: 'scale(0.98)',
           transformOrigin: 'center',
           opacity: '1',
+          pointerEvents: 'none',
           animation: 'click-wave-expand 330ms ease-out forwards',
         }}
       />
@@ -60,6 +61,7 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
           border: `4px solid ${borderColorAlpha}, 1)`,
           transformOrigin: 'center',
           opacity: '1',
+          pointerEvents: 'none',
           animation: 'click-wave-expand-border 330ms ease-out forwards',
         }}
       />
@@ -74,10 +76,11 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
           bottom: 0,
           borderRadius: '8px',
           border: `4px solid ${borderColorAlpha}, 1)`,
-          background: `radial-gradient(circle, transparent 0%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.5) 100%)`,
+          background: `radial-gradient(circle, transparent 0%, transparent 50%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.75) 100%)`,
           transform: 'scale(0.98)',
           transformOrigin: 'center',
           opacity: '0',
+          pointerEvents: 'none',
           animation: 'click-wave-expand 330ms ease-out 100ms forwards',
         }}
       />
@@ -92,6 +95,7 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
           border: `4px solid ${borderColorAlpha}, 1)`,
           transformOrigin: 'center',
           opacity: '0',
+          pointerEvents: 'none',
           animation: 'click-wave-expand-border 330ms ease-out 100ms forwards',
         }}
       />
@@ -106,10 +110,11 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
           bottom: 0,
           borderRadius: '8px',
           border: `4px solid ${borderColorAlpha}, 1)`,
-          background: `radial-gradient(circle, transparent 0%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.5) 100%)`,
+          background: `radial-gradient(circle, transparent 0%, transparent 50%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.75) 100%)`,
           transform: 'scale(0.98)',
           transformOrigin: 'center',
           opacity: '0',
+          pointerEvents: 'none',
           animation: 'click-wave-expand 330ms ease-out 200ms forwards',
         }}
       />
@@ -124,6 +129,7 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
           border: `4px solid ${borderColorAlpha}, 1)`,
           transformOrigin: 'center',
           opacity: '0',
+          pointerEvents: 'none',
           animation: 'click-wave-expand-border 330ms ease-out 200ms forwards',
         }}
       />

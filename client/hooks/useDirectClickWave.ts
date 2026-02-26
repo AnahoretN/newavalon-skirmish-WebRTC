@@ -19,6 +19,9 @@ export interface ClickWaveData {
 // Global overlay container
 let overlayContainer: HTMLDivElement | null = null
 const activeWaves = new Map<number, HTMLDivElement[]>()
+// Cooldown tracking: 500ms between waves per target
+const WAVE_COOLDOWN = 500
+const lastWaveTime = new Map<string, number>()
 
 // Initialize the overlay container IMMEDIATELY when module loads
 // This ensures the overlay is ready before any user interaction
@@ -80,7 +83,7 @@ if (typeof document !== 'undefined') {
       right: 0;
       bottom: 0;
       border-radius: 8px;
-      pointer-events: none;
+      pointer-events: none !important;
     }
     .click-wave-fill {
       background: radial-gradient(circle, transparent 0%, var(--wave-color) 100%);
@@ -117,8 +120,9 @@ function findTargetElement(wave: ClickWaveData): HTMLElement | null {
     // Find cell by data attributes
     return document.querySelector(`[data-row="${wave.boardCoords.row}"][data-col="${wave.boardCoords.col}"]`)
   } else if (wave.location === 'hand' && wave.handTarget) {
-    // Find hand card
-    return document.querySelector(`[data-hand-card="${wave.handTarget.playerId}-${wave.handTarget.cardIndex}"]`)
+    // Find hand card - try both dash and comma formats
+    return document.querySelector(`[data-hand-card="${wave.handTarget.playerId}-${wave.handTarget.cardIndex}"]`) ||
+           document.querySelector(`[data-hand-card="${wave.handTarget.playerId},${wave.handTarget.cardIndex}"]`)
   } else if (wave.location === 'deck') {
     // Find deck element
     return document.querySelector('[data-deck]')
@@ -156,6 +160,7 @@ function createWaveElement(wave: ClickWaveData, targetElement: HTMLElement): HTM
     const fillEl = document.createElement('div')
     fillEl.className = 'click-wave-ring click-wave-fill'
     fillEl.style.cssText = `
+      pointer-events: none;
       --wave-color: ${waveColor};
       animation: click-wave-expand 175ms ease-out ${delay}ms forwards;
     `
@@ -165,6 +170,7 @@ function createWaveElement(wave: ClickWaveData, targetElement: HTMLElement): HTM
     const borderEl = document.createElement('div')
     borderEl.className = 'click-wave-ring click-wave-border'
     borderEl.style.cssText = `
+      pointer-events: none;
       --wave-border-color: ${waveBorderColor};
       animation: click-wave-expand-border 175ms ease-out ${delay}ms forwards;
     `
@@ -174,11 +180,32 @@ function createWaveElement(wave: ClickWaveData, targetElement: HTMLElement): HTM
   return container
 }
 
+// Get a unique key for cooldown tracking
+function getTargetKey(wave: ClickWaveData): string {
+  if (wave.location === 'board' && wave.boardCoords) {
+    return `board-${wave.boardCoords.row}-${wave.boardCoords.col}`
+  } else if (wave.location === 'hand' && wave.handTarget) {
+    return `hand-${wave.handTarget.playerId}-${wave.handTarget.cardIndex}`
+  } else if (wave.location === 'deck') {
+    return `deck-${wave.clickedByPlayerId}`
+  }
+  return `${wave.location}-${wave.clickedByPlayerId}`
+}
+
 // Trigger click wave (direct DOM, no React state update)
 export function triggerDirectClickWave(wave: ClickWaveData) {
   if (!overlayContainer) {
     initClickWaveOverlay()
   }
+
+  // Check cooldown
+  const targetKey = getTargetKey(wave)
+  const now = Date.now()
+  const lastTime = lastWaveTime.get(targetKey)
+  if (lastTime && now - lastTime < WAVE_COOLDOWN) {
+    return // Skip - too soon since last wave
+  }
+  lastWaveTime.set(targetKey, now)
 
   const targetElement = findTargetElement(wave)
   if (!targetElement) {
@@ -221,4 +248,5 @@ export function cleanupClickWaveOverlay() {
     overlayContainer = null
   }
   activeWaves.clear()
+  lastWaveTime.clear()
 }

@@ -1340,7 +1340,6 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         }
                       }
                     }}
-                    data-hand-card={`${player.id},${index}`}
                     data-interactive="true"
                   >
                     {/* Highlight overlay - doesn't interfere with card visibility */}

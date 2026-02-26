@@ -6,7 +6,7 @@
  */
 
 import type { AbilityAction, GameState, CommandContext, DragItem } from '@/types'
-import { checkActionHasTargets } from '@shared/utils/targeting'
+import { checkActionHasTargets, calculateValidTargets } from '@shared/utils/targeting'
 import { logger } from '@/utils/logger'
 import { TIMING } from '@/utils/common'
 import { createTokenCursorStack } from '@/utils/tokenTargeting'
@@ -479,8 +479,9 @@ function handleEnterMode(
   // SHIELD_SELF_THEN_RIOT_PUSH (Reclaimed Gawain)
   // Don't add Shield immediately - let user click self to add Shield and transition to RIOT_PUSH
   if (mode === 'SHIELD_SELF_THEN_RIOT_PUSH') {
+    const targets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
     setAbilityMode(action)
-    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, undefined, commandContext)
+    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, targets, commandContext)
     return
   }
 
@@ -489,11 +490,14 @@ function handleEnterMode(
     const actorId = getSafePlayerId(action, localPlayerId)
     addBoardCardStatus(sourceCoords, 'Shield', actorId)
 
-    setAbilityMode({
+    const spawnAction: AbilityAction = {
       ...action,
       payload: { ...action.payload, shieldApplied: true }
-    })
-    setTargetingMode(action, actorId, sourceCoords)
+    }
+    const targets = calculateValidTargets(spawnAction, gameState, actorId, commandContext)
+
+    setAbilityMode(spawnAction)
+    setTargetingMode(spawnAction, actorId, sourceCoords, targets, commandContext)
     return
   }
 
@@ -565,8 +569,9 @@ function handleEnterMode(
       // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
       return
     }
+    const pushTargets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
     setAbilityMode(action)
-    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords)
+    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, pushTargets)
     return
   }
 
@@ -579,8 +584,9 @@ function handleEnterMode(
       // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
       return
     }
+    const swapTargets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
     setAbilityMode(action)
-    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords)
+    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, swapTargets)
     return
   }
 
@@ -593,16 +599,19 @@ function handleEnterMode(
       // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
       return
     }
+    // Calculate valid targets for highlighting
+    const patrolTargets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
     setAbilityMode(action)
-    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords)
+    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, patrolTargets)
     return
   }
   // SELECT_TARGET
   if (mode === 'SELECT_TARGET') {
     // For Deploy abilities, don't check targets immediately - let player activate anytime
     if (action.isDeployAbility) {
+      const targets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
       setAbilityMode(action)
-      setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, undefined, commandContext)
+      setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, targets, commandContext)
       return
     }
     // For Setup/Commit abilities, check targets
@@ -612,8 +621,9 @@ function handleEnterMode(
       // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
       return
     }
+    const targets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
     setAbilityMode(action)
-    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, undefined, commandContext)
+    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, targets, commandContext)
     return
   }
 
@@ -668,8 +678,10 @@ function handleEnterMode(
   }
 
   // Default mode activation
+  // Calculate valid targets if mode supports targeting
+  const defaultTargets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
   setAbilityMode(action)
-  setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords)
+  setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, defaultTargets, commandContext)
 }
 
 /**
