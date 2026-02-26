@@ -8,7 +8,6 @@
 
 import type { GameState, Card, Player, DeckType, ScoringLineData } from '../types'
 import type { ActionType } from './SimpleP2PTypes'
-import { getCardDefinition } from '../content'
 import { shuffleDeck } from '../../shared/utils/array'
 import { recalculateBoardStatuses } from '../../shared/utils/boardUtils'
 import { initializeReadyStatuses, recalculateAllReadyStatuses } from '../utils/autoAbilities'
@@ -239,7 +238,7 @@ function canPlayerAct(
   state: GameState,
   playerId: number,
   action: ActionType,
-  data?: any
+  _data?: any
 ): boolean {
   // Настройки игры может делать любой игрок в лобби
   if (!state.isGameStarted) {
@@ -358,7 +357,7 @@ function enterScoringPhase(state: GameState, playerId: number): GameState {
 /**
  * PREVIOUS_PHASE - возврат к предыдущей фазе
  */
-function handlePreviousPhase(state: GameState, playerId: number): GameState {
+function handlePreviousPhase(state: GameState, _playerId: number): GameState {
   const phase = state.currentPhase
 
   if (phase > 1) {
@@ -409,9 +408,9 @@ function handlePassTurn(state: GameState, playerId: number, reason: string): Gam
   const newPlayers = state.players.map(p => ({
     ...p,
     lastPlayedCardId: null
-  }))
+  })) as Player[]
 
-  let newState = {
+  let newState: GameState = {
     ...state,
     board: newBoard,
     players: newPlayers,
@@ -557,8 +556,8 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
 
   // Сначала убираем LastPlayed статус со ВСЕХ карт игрока на доске
   // (только одна карта может иметь LastPlayed статус одновременно)
-  const boardWithoutLastPlayed = state.board.map((row, r) =>
-    row.map((cell, c) => {
+  const boardWithoutLastPlayed = state.board.map((row, _r) =>
+    row.map((cell, _c) => {
       if (cell.card?.ownerId === playerId && cell.card?.statuses) {
         const filteredStatuses = cell.card.statuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === playerId))
         if (filteredStatuses.length !== cell.card.statuses.length) {
@@ -631,8 +630,8 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
 /**
  * MOVE_CARD_ON_BOARD - переместить карту с одной клетки на другую
  */
-function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): GameState {
-  const { cardId, fromCoords, toCoords, faceDown } = data || {}
+function handleMoveCardOnBoard(state: GameState, _playerId: number, data: any): GameState {
+  const { fromCoords, toCoords, faceDown } = data || {}
 
   if (!fromCoords || !toCoords) {return state}
 
@@ -681,7 +680,7 @@ function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): G
 /**
  * MOVE_CARD - переместить карту
  */
-function handleMoveCard(state: GameState, playerId: number, data: any): GameState {
+function handleMoveCard(state: GameState, _playerId: number, _data: any): GameState {
   // TODO: реализовать перемещение карт
   return state
 }
@@ -700,8 +699,11 @@ function handleReturnCardToHand(state: GameState, playerId: number, data: any): 
   const newBoard = state.board.map((row, r) =>
     row.map((cell, c) => {
       if (cell.card?.id === cardId) {
-        cardToReturn = cell.card
-        sourceCoords = { row: r, col: c }
+        const foundCard = cell.card
+        if (foundCard) {
+          cardToReturn = foundCard
+          sourceCoords = { row: r, col: c }
+        }
         return { card: null }
       }
       return cell
@@ -711,12 +713,14 @@ function handleReturnCardToHand(state: GameState, playerId: number, data: any): 
   if (!cardToReturn || !sourceCoords) {return state}
 
   // Добавляем в руку владельцу
-  const ownerId = cardToReturn.ownerId || playerId
+  // cardToReturn is non-null here due to the check above
+  const finalCard: Card = cardToReturn
+  const ownerId = finalCard.ownerId ?? playerId
   const newPlayers = state.players.map(p => {
     if (p.id === ownerId) {
       return {
         ...p,
-        hand: [...p.hand, cardToReturn],
+        hand: [...p.hand, finalCard],
         handSize: p.hand.length + 1
       }
     }
@@ -726,7 +730,7 @@ function handleReturnCardToHand(state: GameState, playerId: number, data: any): 
   return {
     ...state,
     board: newBoard,
-    players: newPlayers
+    players: newPlayers as Player[]
   }
 }
 
@@ -743,13 +747,16 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
   let newDiscard: Card[] | null = null
 
   if (source === 'board') {
-    newBoard = state.board.map((row, r) =>
-      row.map((cell, c) => {
+    newBoard = state.board.map((row, _r) =>
+      row.map((cell, _c) => {
         if (cell.card?.id === cardId) {
-          cardToMove = cell.card
-          targetPlayerId = cardToMove.ownerId || playerId
-          // Clear all statuses except Revealed when card leaves battlefield
-          clearAllStatusesExceptRevealed(cardToMove!)
+          const foundCard = cell.card
+          if (foundCard) {
+            cardToMove = foundCard
+            targetPlayerId = foundCard.ownerId || playerId
+            // Clear all statuses except Revealed when card leaves battlefield
+            clearAllStatusesExceptRevealed(foundCard)
+          }
           return { card: null }
         }
         return cell
@@ -790,7 +797,7 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
     return p
   })
 
-  return { ...state, board: newBoard, players: newPlayers }
+  return { ...state, board: newBoard, players: newPlayers as Player[] }
 }
 
 /**
@@ -807,13 +814,16 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
   let newDiscard: Card[] | null = null
 
   if (source === 'board') {
-    newBoard = state.board.map((row, r) =>
-      row.map((cell, c) => {
+    newBoard = state.board.map((row, _r) =>
+      row.map((cell, _c) => {
         if (cell.card?.id === cardId) {
-          cardToMove = cell.card
-          targetPlayerId = cardToMove.ownerId || playerId
-          // Clear all statuses except Revealed when card leaves battlefield
-          clearAllStatusesExceptRevealed(cardToMove!)
+          const foundCard = cell.card
+          if (foundCard) {
+            cardToMove = foundCard
+            targetPlayerId = foundCard.ownerId || playerId
+            // Clear all statuses except Revealed when card leaves battlefield
+            clearAllStatusesExceptRevealed(foundCard)
+          }
           return { card: null }
         }
         return cell
@@ -881,7 +891,7 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
     return p
   })
 
-  return { ...state, board: newBoard, players: newPlayers }
+  return { ...state, board: newBoard, players: newPlayers as Player[] }
 }
 
 /**
@@ -898,13 +908,16 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
   let newDeck: Card[] | null = null
 
   if (source === 'board') {
-    newBoard = state.board.map((row, r) =>
-      row.map((cell, c) => {
+    newBoard = state.board.map((row, _r) =>
+      row.map((cell, _c) => {
         if (cell.card?.id === cardId) {
-          cardToMove = cell.card
-          targetPlayerId = cardToMove.ownerId || playerId
-          // Clear all statuses except Revealed when card leaves battlefield
-          clearAllStatusesExceptRevealed(cardToMove!)
+          const foundCard = cell.card
+          if (foundCard) {
+            cardToMove = foundCard
+            targetPlayerId = foundCard.ownerId || playerId
+            // Clear all statuses except Revealed when card leaves battlefield
+            clearAllStatusesExceptRevealed(foundCard)
+          }
           return { card: null }
         }
         return cell
@@ -972,7 +985,7 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
     return p
   })
 
-  return { ...state, board: newBoard, players: newPlayers }
+  return { ...state, board: newBoard, players: newPlayers as Player[] }
 }
 
 /**
@@ -1028,7 +1041,7 @@ function handleMoveHandCardToDiscard(state: GameState, playerId: number, data: a
 /**
  * MOVE_ANNOUNCED_TO_HAND - переместить карту из витрины в руку
  */
-function handleMoveAnnouncedToHand(state: GameState, playerId: number, data: any): GameState {
+function handleMoveAnnouncedToHand(state: GameState, playerId: number, _data: any): GameState {
   const player = state.players.find(p => p.id === playerId)
   if (!player || !player.announcedCard) {return state}
 
@@ -1047,7 +1060,7 @@ function handleMoveAnnouncedToHand(state: GameState, playerId: number, data: any
 /**
  * MOVE_ANNOUNCED_TO_DECK - переместить карту из витрины в колоду
  */
-function handleMoveAnnouncedToDeck(state: GameState, playerId: number, data: any): GameState {
+function handleMoveAnnouncedToDeck(state: GameState, playerId: number, _data: any): GameState {
   const player = state.players.find(p => p.id === playerId)
   if (!player || !player.announcedCard) {return state}
 
@@ -1066,7 +1079,7 @@ function handleMoveAnnouncedToDeck(state: GameState, playerId: number, data: any
 /**
  * MOVE_ANNOUNCED_TO_DISCARD - переместить карту из витрины в сброс
  */
-function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, data: any): GameState {
+function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, _data: any): GameState {
   const player = state.players.find(p => p.id === playerId)
   if (!player || !player.announcedCard) {return state}
 
@@ -1115,7 +1128,7 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
       : p
   )
 
-  return { ...state, board: newBoard, players: newPlayers }
+  return { ...state, board: newBoard, players: newPlayers as Player[] }
 }
 
 /**
@@ -1132,8 +1145,8 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
 
   // Сначала убираем LastPlayed статус со ВСЕХ карт игрока на доске
   // (только одна карта может иметь LastPlayed статус одновременно)
-  const boardWithoutLastPlayed = state.board.map((row, r) =>
-    row.map((cell, c) => {
+  const boardWithoutLastPlayed = state.board.map((row, _r) =>
+    row.map((cell, _c) => {
       if (cell.card?.ownerId === playerId && cell.card?.statuses) {
         const filteredStatuses = cell.card.statuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === playerId))
         if (filteredStatuses.length !== cell.card.statuses.length) {
@@ -1182,20 +1195,21 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
 /**
  * DESTROY_CARD - уничтожить карту
  */
-function handleDestroyCard(state: GameState, playerId: number, data: any): GameState {
+function handleDestroyCard(state: GameState, _playerId: number, data: any): GameState {
   const { cardId } = data || {}
   if (!cardId) {return state}
 
   let destroyedCard: Card | null = null
   let ownerId: number | null = null
-  let destroyedCoords: { row: number; col: number } | null = null
 
-  const newBoard = state.board.map((row, r) =>
-    row.map((cell, c) => {
+  const newBoard = state.board.map((row, _r) =>
+    row.map((cell, _c) => {
       if (cell.card?.id === cardId) {
-        destroyedCard = cell.card
-        ownerId = cell.card.ownerId || null
-        destroyedCoords = { row: r, col: c }
+        const foundCard = cell.card
+        if (foundCard) {
+          destroyedCard = foundCard
+          ownerId = foundCard.ownerId ?? null
+        }
         return { card: null }
       }
       return cell
@@ -1227,7 +1241,8 @@ function handleDestroyCard(state: GameState, playerId: number, data: any): GameS
         row.map(cell => {
           if (cell.card?.id === prevCardId) {
             // Add LastPlayed status to the previous card
-            const lastPlayedStatus = { type: 'LastPlayed', addedByPlayerId: ownerId }
+            // ownerId is non-null here because we checked above
+            const lastPlayedStatus = { type: 'LastPlayed' as const, addedByPlayerId: ownerId! }
             const existingStatuses = cell.card.statuses || []
             // Remove any existing LastPlayed status from this player
             const filteredStatuses = existingStatuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === ownerId))
@@ -1267,7 +1282,7 @@ function handleDestroyCard(state: GameState, playerId: number, data: any): GameS
   return {
     ...state,
     board: updatedBoard,
-    players: newPlayers
+    players: newPlayers as Player[]
   }
 }
 
@@ -1793,7 +1808,6 @@ function shouldRoundEnd(state: GameState): boolean {
  * Завершить раунд
  */
 function endRound(state: GameState): GameState {
-  const threshold = 10 + (state.currentRound * 10)
   const maxScore = Math.max(...state.players.map(p => p.score))
   const winners = state.players.filter(p => p.score === maxScore).map(p => p.id)
 
@@ -1824,11 +1838,6 @@ function endRound(state: GameState): GameState {
  */
 function checkMatchWinner(existingWins: Record<number, number[]>, newWinners: number[]): number | null {
   const allWins = { ...existingWins }
-
-  // Добавляем текущие победители
-  Object.values(allWins).flat().forEach(id => {
-    // уже учтены
-  })
 
   // Считаем победы для каждого раунда
   const winCounts: Record<number, number> = {}
@@ -1993,7 +2002,7 @@ function handlePlayCardFromDiscard(state: GameState, playerId: number, data: any
 /**
  * ADD_STATUS_TO_BOARD_CARD - добавить статус (жетон) на карту на поле боя
  */
-function handleAddStatusToBoardCard(state: GameState, playerId: number, data: any): GameState {
+function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: any): GameState {
   const { boardCoords, statusType, ownerId, replaceStatusType } = data || {}
   if (!boardCoords || !statusType || ownerId === undefined) {
     return state
