@@ -79,7 +79,10 @@ export function handleModeCardClick(
     handleLineSelection: _handleLineSelection,
   } = props
 
+  console.log('[handleModeCardClick] Called with card:', card.name, 'abilityMode:', abilityMode?.mode)
+
   if (!abilityMode || abilityMode.type !== 'ENTER_MODE') {
+    console.log('[handleModeCardClick] No abilityMode or wrong type:', abilityMode?.type)
     return false
   }
 
@@ -1052,35 +1055,43 @@ function handleSwapAdjacent(
 ): boolean {
   const { abilityMode, gameState, swapCards, markAbilityUsed, setAbilityMode, validTargets } = props
 
+  console.log('[handleSwapAdjacent] Called with card:', card.name, 'boardCoords:', boardCoords)
+
   if (!abilityMode || abilityMode.mode !== 'SWAP_ADJACENT') {
+    console.log('[handleSwapAdjacent] Wrong mode:', abilityMode?.mode)
     return false
   }
 
   const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
 
   if (!sourceCoords || sourceCoords.row < 0) {
+    console.log('[handleSwapAdjacent] Invalid sourceCoords:', sourceCoords)
     return false
   }
 
   const actualSourceCard = gameState.board[sourceCoords.row][sourceCoords.col].card
   if (!actualSourceCard || actualSourceCard.id !== sourceCard?.id) {
+    console.log('[handleSwapAdjacent] Source card mismatch')
     setAbilityMode(null)
     return false
   }
 
   // Don't swap with self
   if (sourceCard && sourceCard.id === card.id) {
+    console.log('[handleSwapAdjacent] Cannot swap with self')
     return false
   }
 
   // Check if target is adjacent
   const isAdj = Math.abs(boardCoords.row - sourceCoords.row) + Math.abs(boardCoords.col - sourceCoords.col) === 1
   if (!isAdj) {
+    console.log('[handleSwapAdjacent] Not adjacent')
     return false
   }
 
   // Check if target is valid (has a card)
   if (!card || !gameState.board[boardCoords.row][boardCoords.col].card) {
+    console.log('[handleSwapAdjacent] No card at target')
     return false
   }
 
@@ -1088,9 +1099,12 @@ function handleSwapAdjacent(
   if (validTargets) {
     const isValidTarget = validTargets.some(t => t.row === boardCoords.row && t.col === boardCoords.col)
     if (!isValidTarget) {
+      console.log('[handleSwapAdjacent] Not in validTargets')
       return false
     }
   }
+
+  console.log('[handleSwapAdjacent] Calling swapCards with', sourceCoords, boardCoords)
 
   // Swap positions
   swapCards(sourceCoords, boardCoords)
