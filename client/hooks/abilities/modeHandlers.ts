@@ -1053,7 +1053,7 @@ function handleSwapAdjacent(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, gameState, swapCards, markAbilityUsed, setAbilityMode, validTargets } = props
+  const { abilityMode, gameState, swapCards, markAbilityUsed, setAbilityMode } = props
 
   console.log('[handleSwapAdjacent] Called with card:', card.name, 'boardCoords:', boardCoords)
 
@@ -1095,11 +1095,12 @@ function handleSwapAdjacent(
     return false
   }
 
-  // Use validTargets if available
-  if (validTargets) {
-    const isValidTarget = validTargets.some(t => t.row === boardCoords.row && t.col === boardCoords.col)
+  // Use gameState.targetingMode.boardTargets for validation (not validTargets prop)
+  const targetingModeTargets = gameState.targetingMode?.boardTargets
+  if (targetingModeTargets && targetingModeTargets.length > 0) {
+    const isValidTarget = targetingModeTargets.some(t => t.row === boardCoords.row && t.col === boardCoords.col)
     if (!isValidTarget) {
-      console.log('[handleSwapAdjacent] Not in validTargets')
+      console.log('[handleSwapAdjacent] Not in targetingMode.boardTargets', { targetingModeTargets, boardCoords })
       return false
     }
   }
