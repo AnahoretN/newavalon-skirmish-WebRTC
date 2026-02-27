@@ -350,7 +350,7 @@
           "action": "CREATE_TOKEN",
           "mode": "ADJACENT_EMPTY",
           "details": {
-            "tokenId": "reconDrone"
+           "tokenId": "reconDrone"
           }
         },
         {

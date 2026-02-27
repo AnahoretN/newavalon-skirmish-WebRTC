@@ -1585,18 +1585,18 @@ function handleSpawnToken(state: GameState, playerId: number, data?: any): GameS
   // Check if cell is empty
   if (state.board[row][col].card) { return state }
 
-  // Get token definition from contentDatabase
-  // For now, create a basic token card
+  // Use tokenData if provided, otherwise create basic token
+  const tokenData = data?.tokenData
   const tokenCard = {
     id: `token_${Date.now()}_${Math.random()}`,
     baseId: tokenName,
-    name: tokenName,
+    name: tokenData?.name || tokenName,
     deck: 'Tokens',
-    types: ['Token'],
-    power: 1,
-    abilityText: '',
-    imageUrl: '',
-    fallbackImage: '',
+    types: tokenData?.types || ['Token'],
+    power: tokenData?.power ?? 1,
+    abilityText: tokenData?.abilityText || '',
+    imageUrl: tokenData?.imageUrl || '',
+    fallbackImage: tokenData?.fallbackImage || '',
     ownerId,
     statuses: [],
     enteredThisTurn: false

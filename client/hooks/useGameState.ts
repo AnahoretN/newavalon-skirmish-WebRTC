@@ -16,6 +16,7 @@ import type { PersonalizedState } from '../p2p/SimpleP2PTypes'
 import { SimpleHost, SimpleGuest } from '../p2p'
 import { useVisualEffects } from './useVisualEffects'
 import { triggerDirectClickWave } from './useDirectClickWave'
+import { tokenDatabase } from '../content'
 
 // Export type for use in other files
 export type ConnectionStatus = 'Connecting' | 'Connected' | 'Disconnected'
@@ -948,7 +949,19 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   }, [sendAction])
   const resurrectDiscardedCard = useCallback(() => {}, [])
   const spawnToken = useCallback((coords: {row: number, col: number}, name: string, ownerId: number) => {
-    sendAction('SPAWN_TOKEN', { coords, tokenName: name, ownerId })
+    // Get token data from tokenDatabase
+    const tokenDef = tokenDatabase.get(name)
+    const tokenData = tokenDef ? {
+      baseId: name,
+      name: tokenDef.name,
+      imageUrl: tokenDef.imageUrl,
+      fallbackImage: tokenDef.fallbackImage,
+      power: tokenDef.power,
+      abilityText: tokenDef.abilityText,
+      types: tokenDef.types || []
+    } : null
+
+    sendAction('SPAWN_TOKEN', { coords, tokenName: name, ownerId, tokenData })
   }, [sendAction])
 
   // ============================================================================
