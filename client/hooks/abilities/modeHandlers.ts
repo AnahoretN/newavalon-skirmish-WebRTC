@@ -208,11 +208,6 @@ export function handleModeCardClick(
     return handleSpawnToken(card, boardCoords, props)
   }
 
-  // PLACE_TOKEN (Modal token placement - CREATE_TOKEN action)
-  if (mode === 'PLACE_TOKEN') {
-    return handlePlaceToken(card, boardCoords, props)
-  }
-
   // REVEAL_ENEMY
   if (mode === 'REVEAL_ENEMY') {
     return handleRevealEnemy(card, boardCoords, props)

@@ -157,7 +157,7 @@ export const calculateValidTargets = (
   actorId: number | null, // Renamed from playerId to clarify intent (source card owner)
   commandContext?: CommandContext,
 ): {row: number, col: number}[] => {
-  if (!action || (action.type !== 'ENTER_MODE' && action.type !== 'CREATE_STACK')) {
+  if (!action || (action.type !== 'ENTER_MODE' && action.type !== 'CREATE_STACK' && action.type !== 'OPEN_MODAL')) {
     return []
   }
 
@@ -207,6 +207,42 @@ export const calculateValidTargets = (
       }
     }
 
+    return targets
+  }
+
+  // OPEN_MODAL with PLACE_TOKEN mode - token placement on empty cells
+  if (action.type === 'OPEN_MODAL' && action.mode === 'PLACE_TOKEN' && action.sourceCoords) {
+    const { sourceCoords, payload } = action
+    const range = payload?.range || 'global'
+
+    if (range === 'adjacent') {
+      // ADJACENT_EMPTY mode - only adjacent empty cells
+      const neighbors = [
+        { r: sourceCoords.row - 1, c: sourceCoords.col },
+        { r: sourceCoords.row + 1, c: sourceCoords.col },
+        { r: sourceCoords.row, c: sourceCoords.col - 1 },
+        { r: sourceCoords.row, c: sourceCoords.col + 1 },
+      ]
+
+      neighbors.forEach(nb => {
+        if (nb.r >= minBound && nb.r <= maxBound && nb.c >= minBound && nb.c <= maxBound) {
+          const cell = board[nb.r][nb.c]
+          if (!cell.card) {
+            targets.push({ row: nb.r, col: nb.c })
+          }
+        }
+      })
+    } else {
+      // Global range - all empty cells in active grid
+      for (let r = minBound; r <= maxBound; r++) {
+        for (let c = minBound; c <= maxBound; c++) {
+          const cell = board[r][c]
+          if (!cell.card) {
+            targets.push({ row: r, col: c })
+          }
+        }
+      }
+    }
     return targets
   }
 
@@ -614,39 +650,6 @@ export const calculateValidTargets = (
         }
       }
     })
-  }
-  // 14. PLACE_TOKEN - Empty cells for token placement
-  else if (mode === 'PLACE_TOKEN' && sourceCoords) {
-    const range = payload.range || 'global'
-
-    if (range === 'adjacent') {
-      // ADJACENT_EMPTY mode - only adjacent empty cells
-      const neighbors = [
-        { r: sourceCoords.row - 1, c: sourceCoords.col },
-        { r: sourceCoords.row + 1, c: sourceCoords.col },
-        { r: sourceCoords.row, c: sourceCoords.col - 1 },
-        { r: sourceCoords.row, c: sourceCoords.col + 1 },
-      ]
-
-      neighbors.forEach(nb => {
-        if (nb.r >= minBound && nb.r <= maxBound && nb.c >= minBound && nb.c <= maxBound) {
-          const cell = board[nb.r][nb.c]
-          if (!cell.card) {
-            targets.push({ row: nb.r, col: nb.c })
-          }
-        }
-      })
-    } else {
-      // Global range - all empty cells in active grid
-      for (let r = minBound; r <= maxBound; r++) {
-        for (let c = minBound; c <= maxBound; c++) {
-          const cell = board[r][c]
-          if (!cell.card) {
-            targets.push({ row: r, col: c })
-          }
-        }
-      }
-    }
   }
 
   return targets

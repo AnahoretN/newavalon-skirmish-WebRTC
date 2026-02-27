@@ -937,7 +937,9 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   }, [sendAction])
 
   const applyGlobalEffect = useCallback(() => {}, [])
-  const swapCards = useCallback(() => {}, [])
+  const swapCards = useCallback((coords1: {row: number, col: number}, coords2: {row: number, col: number}) => {
+    sendAction('SWAP_CARDS', { coords1, coords2 })
+  }, [sendAction])
   const transferStatus = useCallback(() => {}, [])
   const transferAllCounters = useCallback(() => {}, [])
   const transferAllStatusesWithoutException = useCallback(() => {}, [])
@@ -945,7 +947,9 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     sendAction('RECOVER_DISCARDED', { playerId, cardIndex })
   }, [sendAction])
   const resurrectDiscardedCard = useCallback(() => {}, [])
-  const spawnToken = useCallback(() => {}, [])
+  const spawnToken = useCallback((coords: {row: number, col: number}, name: string, ownerId: number) => {
+    sendAction('SPAWN_TOKEN', { coords, tokenName: name, ownerId })
+  }, [sendAction])
 
   // ============================================================================
   // Game reset

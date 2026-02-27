@@ -272,6 +272,14 @@ export function applyAction(
       newState = handleDestroyCard(newState, playerId, data)
       break
 
+    case 'SWAP_CARDS':
+      newState = handleSwapCards(newState, playerId, data)
+      break
+
+    case 'SPAWN_TOKEN':
+      newState = handleSpawnToken(newState, playerId, data)
+      break
+
     case 'DRAW_CARD':
       newState = handleDrawCard(newState, playerId, data)
       break
@@ -1513,6 +1521,102 @@ function handleDestroyCard(state: GameState, _playerId: number, data: any): Game
   updatedState = restoreLastPlayedToPreviousCard(updatedState, cardWithOriginalStatuses, ownerId)
 
   return updatedState
+}
+
+/**
+ * SWAP_CARDS - swap positions of two cards on board
+ */
+function handleSwapCards(state: GameState, playerId: number, data?: any): GameState {
+  const { coords1, coords2 } = data || {}
+
+  if (!coords1 || !coords2) { return state }
+
+  const { row: r1, col: c1 } = coords1
+  const { row: r2, col: c2 } = coords2
+
+  // Check bounds
+  if (r1 < 0 || r1 >= state.board.length || c1 < 0 || c1 >= state.board[0].length ||
+      r2 < 0 || r2 >= state.board.length || c2 < 0 || c2 >= state.board[0].length) {
+    return state
+  }
+
+  const card1 = state.board[r1][c1].card
+  const card2 = state.board[r2][c2].card
+
+  // Both cells must have cards
+  if (!card1 || !card2) { return state }
+
+  // Create new board with swapped cards
+  const newBoard = state.board.map((row, r) =>
+    row.map((cell, c) => {
+      if (r === r1 && c === c1) {
+        return { card: card2 }
+      }
+      if (r === r2 && c === c2) {
+        return { card: card1 }
+      }
+      return cell
+    })
+  )
+
+  console.log('[handleSwapCards] Swapped cards at', coords1, 'and', coords2)
+
+  return {
+    ...state,
+    board: newBoard
+  }
+}
+
+/**
+ * SPAWN_TOKEN - spawn a token card on the board
+ */
+function handleSpawnToken(state: GameState, playerId: number, data?: any): GameState {
+  const { coords, tokenName, ownerId } = data || {}
+
+  if (!coords || !tokenName || ownerId === undefined) { return state }
+
+  const { row, col } = coords
+
+  // Check bounds
+  if (row < 0 || row >= state.board.length || col < 0 || col >= state.board[0].length) {
+    return state
+  }
+
+  // Check if cell is empty
+  if (state.board[row][col].card) { return state }
+
+  // Get token definition from contentDatabase
+  // For now, create a basic token card
+  const tokenCard = {
+    id: `token_${Date.now()}_${Math.random()}`,
+    baseId: tokenName,
+    name: tokenName,
+    deck: 'Tokens',
+    types: ['Token'],
+    power: 1,
+    abilityText: '',
+    imageUrl: '',
+    fallbackImage: '',
+    ownerId,
+    statuses: [],
+    enteredThisTurn: false
+  }
+
+  const newBoard = state.board.map((r, rIdx) =>
+    r.map((cell, cIdx) => {
+      if (rIdx === row && cIdx === col) {
+        return { card: tokenCard }
+      }
+      return cell
+    })
+  )
+
+  console.log('[handleSpawnToken] Spawned', tokenName, 'at', coords, 'for owner', ownerId)
+
+  return {
+    ...state,
+    board: newBoard
+  }
 }
 
 // ============================================================================
