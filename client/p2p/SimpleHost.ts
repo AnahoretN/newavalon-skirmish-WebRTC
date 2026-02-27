@@ -221,6 +221,14 @@ export class SimpleHost {
     const oldState = this.state
     const newState = applyAction(oldState, playerId, action, data)
 
+    // Special handling for SELECT_SCORING_LINE - generate floating text for score
+    if (action === 'SELECT_SCORING_LINE' && newState !== oldState) {
+      const { lineType, lineIndex } = data || {}
+      if (lineType) {
+        this.broadcastFloatingTextForScoring(newState, playerId, lineType, lineIndex, oldState)
+      }
+    }
+
     // If state changed - broadcast
     if (newState !== oldState) {
       this.state = newState
@@ -474,6 +482,69 @@ export class SimpleHost {
     // (host's own clicks are handled locally via triggerClickWave)
     if (!data._local) {
       this.config.onClickWave?.(wave)
+    }
+  }
+
+  /**
+   * Broadcast floating text for scoring to all players
+   * @param newState - Updated game state after scoring
+   * @param playerId - Player who scored
+   * @param lineType - Type of line scored ('row' | 'col')
+   * @param lineIndex - Index of line scored
+   * @param oldState - State before scoring (to find which cards contributed)
+   */
+  private broadcastFloatingTextForScoring(newState: GameState, playerId: number, lineType: string, lineIndex?: number, oldState?: any): void {
+    const gridSize = newState.activeGridSize
+    const scoreEvents: { row: number; col: number; text: string; playerId: number }[] = []
+
+    // Find cells in the scored line
+    const cellsToCheck: { row: number; col: number }[] = []
+    if (lineType === 'row' && lineIndex !== undefined) {
+      for (let c = 0; c < gridSize; c++) {
+        cellsToCheck.push({ row: lineIndex, col: c })
+      }
+    } else if (lineType === 'col' && lineIndex !== undefined) {
+      for (let r = 0; r < gridSize; r++) {
+        cellsToCheck.push({ row: r, col: lineIndex })
+      }
+    }
+
+    // Calculate which cards contributed to score (by checking score difference)
+    const oldPlayer = oldState?.players.find((p: any) => p.id === playerId)
+    const newPlayer = newState.players.find((p: any) => p.id === playerId)
+    const scoreDelta = newPlayer && oldPlayer ? newPlayer.score - oldPlayer.score : 0
+
+    if (scoreDelta <= 0) return  // No score change, no floating text
+
+    // Generate floating text for each card that contributed
+    for (const { row, col } of cellsToCheck) {
+      const cell = newState.board[row]?.[col]
+      const card = cell?.card
+      if (card && card.ownerId === playerId && !card.statuses?.some((s: any) => s.type === 'Stun')) {
+        const points = Math.max(0, card.power + (card.powerModifier || 0) + (card.bonusPower || 0))
+        if (points > 0) {
+          scoreEvents.push({ row, col, text: `+${points}`, playerId })
+        }
+      }
+    }
+
+    if (scoreEvents.length > 0) {
+      const message = {
+        type: 'FLOATING_TEXT',
+        data: { batch: scoreEvents.map((item, i) => ({ ...item, timestamp: Date.now() + i })) }
+      }
+
+      // Broadcast to all guests
+      this.connections.forEach((conn) => {
+        try {
+          conn.send(message)
+        } catch (e) {
+          logger.error('[SimpleHost] Failed to send floating text:', e)
+        }
+      })
+
+      // Notify host locally
+      this.config.onFloatingTextBatch?.(scoreEvents)
     }
   }
 

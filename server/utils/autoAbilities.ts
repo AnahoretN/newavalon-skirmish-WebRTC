@@ -1072,19 +1072,17 @@ export const canActivateAbility = (
   gameState?: GameState
 ): boolean => {
   // Ownership check: active player must own the card
-  // Exception: if card belongs to dummy player and that dummy is active, allow activation
-  if (activePlayerId !== card.ownerId) {
+  // Exception: dummy player cards can be activated by anyone
+  if (gameState && card.ownerId !== undefined) {
+    const cardOwner = gameState.players.find(p => p.id === card.ownerId)
+    // If card belongs to dummy player, skip the ownership check (anyone can activate)
+    if (!cardOwner?.isDummy && activePlayerId !== card.ownerId) {
+      return false
+    }
+  } else if (activePlayerId !== card.ownerId) {
     return false
   }
 
-  // If the card belongs to a dummy player, verify the dummy is the active player
-  if (gameState && card.ownerId !== undefined) {
-    const cardOwner = gameState.players.find(p => p.id === card.ownerId)
-    if (cardOwner?.isDummy && gameState.activePlayerId !== card.ownerId) {
-      // Dummy player's card can only be activated when it's the dummy's turn
-      return false
-    }
-  }
   if (card.statuses?.some(s => s.type === 'Stun')) {
     return false
   }

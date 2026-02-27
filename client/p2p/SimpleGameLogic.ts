@@ -456,6 +456,24 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
   if (phase === 3) {
     // Check if player has cards with "LastPlayed" status on board
     // LastPlayed status is added when card is played from hand
+    console.log('[NEXT_PHASE to Scoring] Player', playerId, 'checking for LastPlayed cards...')
+
+    // Debug: log all player's cards on board
+    const playerCardsOnBoard: any[] = []
+    state.board.forEach((row, r) => {
+      row.forEach((cell, c) => {
+        if (cell.card?.ownerId === playerId) {
+          playerCardsOnBoard.push({
+            id: cell.card.id,
+            name: cell.card.name,
+            statuses: cell.card.statuses,
+            hasLastPlayed: cell.card?.statuses?.some(s => s.type === 'LastPlayed' && s.addedByPlayerId === playerId)
+          })
+        }
+      })
+    })
+    console.log('[NEXT_PHASE to Scoring] Player cards on board:', playerCardsOnBoard)
+
     const hasLastPlayedCards = state.board.some(row =>
       row.some(cell =>
         cell.card?.ownerId === playerId &&
@@ -463,11 +481,15 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
       )
     )
 
+    console.log('[NEXT_PHASE to Scoring] hasLastPlayedCards:', hasLastPlayedCards)
+
     if (hasLastPlayedCards) {
       // Has cards with LastPlayed status - enter Scoring and calculate lines
+      console.log('[NEXT_PHASE to Scoring] Entering scoring phase for player', playerId)
       return enterScoringPhase(state, playerId)
     } else {
       // No cards with LastPlayed status - pass turn to next player
+      console.log('[NEXT_PHASE to Scoring] No LastPlayed cards, passing turn')
       return handlePassTurn(state, playerId, 'no_new_cards')
     }
   }
@@ -555,10 +577,12 @@ function handlePassTurn(state: GameState, playerId: number, reason: string): Gam
     })
   )
 
-  // Clear lastPlayedCardId for all players when passing turn
+  // IMPORTANT: Do NOT reset lastPlayedCardId when passing turn!
+  // The lastPlayedCardId should persist as long as the card is on battlefield.
+  // It's only cleared when the card leaves battlefield (handled by restoreLastPlayedToPreviousCard)
   const newPlayers = state.players.map(p => ({
-    ...p,
-    lastPlayedCardId: null
+    ...p
+    // lastPlayedCardId is preserved
   })) as Player[]
 
   let newState: GameState = {
@@ -716,9 +740,9 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
 
   if (!cardToPlay) {return state}
 
-  // First remove LastPlayed status from ALL player's cards on board
-  // (only one card can have LastPlayed status at a time)
-  // Only do this if card is from hand - otherwise preserve existing LastPlayed
+  // LastPlayed status transfers to newly played cards (only one card has LastPlayed at a time)
+  // This ensures the most recently played card is the one used for scoring
+  // The status persists while the card is on the battlefield
   const boardWithoutLastPlayed = isFromHand ? state.board.map((row, _r) =>
     row.map((cell, _c) => {
       if (cell.card?.ownerId === actualPlayerId && cell.card?.statuses) {
@@ -736,7 +760,7 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
     })
   ) : state.board
 
-  // Now add card to board with LastPlayed status (only if from hand)
+  // Add card to board with LastPlayed status (only if from hand)
   const newBoard = boardWithoutLastPlayed.map((row, r) =>
     row.map((cell, c) => {
       if (r === boardCoords.row && c === boardCoords.col) {

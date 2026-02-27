@@ -288,6 +288,19 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           setTimeout(() => {
             setClickWaves(prev => prev.filter(w => w.timestamp !== wave.timestamp))
           }, 700)
+        },
+        onFloatingTextBatch: (events) => {
+          const timestamp = Date.now()
+          const batch = events.map((item, i) => ({
+            row: item.row,
+            col: item.col,
+            text: item.text,
+            playerId: item.playerId,
+            timestamp: timestamp + i
+          }))
+          flushSync(() => {
+            setLatestFloatingTexts(batch)
+          })
         }
       })
 

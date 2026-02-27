@@ -41,7 +41,7 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
           right: 0,
           bottom: 0,
           borderRadius: '8px',
-          border: `4px solid ${borderColorAlpha}, 1)`,
+          border: `3px solid ${borderColorAlpha}, 1)`,
           background: `radial-gradient(circle, transparent 0%, transparent 50%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.75) 100%)`,
           transform: 'scale(0.98)',
           transformOrigin: 'center',
@@ -58,7 +58,7 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
           right: 0,
           bottom: 0,
           borderRadius: '8px',
-          border: `4px solid ${borderColorAlpha}, 1)`,
+          border: `3px solid ${borderColorAlpha}, 1)`,
           transformOrigin: 'center',
           opacity: '1',
           pointerEvents: 'none',
@@ -75,7 +75,7 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
           right: 0,
           bottom: 0,
           borderRadius: '8px',
-          border: `4px solid ${borderColorAlpha}, 1)`,
+          border: `3px solid ${borderColorAlpha}, 1)`,
           background: `radial-gradient(circle, transparent 0%, transparent 50%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.75) 100%)`,
           transform: 'scale(0.98)',
           transformOrigin: 'center',
@@ -92,7 +92,7 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
           right: 0,
           bottom: 0,
           borderRadius: '8px',
-          border: `4px solid ${borderColorAlpha}, 1)`,
+          border: `3px solid ${borderColorAlpha}, 1)`,
           transformOrigin: 'center',
           opacity: '0',
           pointerEvents: 'none',
@@ -109,7 +109,7 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
           right: 0,
           bottom: 0,
           borderRadius: '8px',
-          border: `4px solid ${borderColorAlpha}, 1)`,
+          border: `3px solid ${borderColorAlpha}, 1)`,
           background: `radial-gradient(circle, transparent 0%, transparent 50%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.75) 100%)`,
           transform: 'scale(0.98)',
           transformOrigin: 'center',
@@ -126,7 +126,7 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
           right: 0,
           bottom: 0,
           borderRadius: '8px',
-          border: `4px solid ${borderColorAlpha}, 1)`,
+          border: `3px solid ${borderColorAlpha}, 1)`,
           transformOrigin: 'center',
           opacity: '0',
           pointerEvents: 'none',
@@ -154,12 +154,12 @@ export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, on
           0% {
             transform: scale(1.0);
             opacity: 1;
-            border-width: 4px;
+            border-width: 3px;
           }
           40% {
             transform: scale(1.1);
             opacity: 1;
-            border-width: 4px;
+            border-width: 3px;
           }
           100% {
             transform: scale(1.25);

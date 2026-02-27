@@ -144,6 +144,9 @@ const GridCell = memo<{
           return
         }
 
+        // Check if we're in line selection mode (for abilities)
+        const isInLineSelectionMode = abilityMode && isLineSelectionMode(abilityMode.mode)
+
         // Trigger click wave for empty cells
         if (!cell.card && triggerClickWave && localPlayerId !== null) {
           triggerClickWave('board', { row, col })
@@ -156,12 +159,15 @@ const GridCell = memo<{
           itemToDrop.card.isFaceDown = !!playMode.faceDown
           handleDrop(itemToDrop, { target: 'board', boardCoords: { row, col } })
           setPlayMode(null)
+        } else if (isInLineSelectionMode && onEmptyCellClick) {
+          // In line selection mode, treat any cell click as line selection (even if occupied)
+          onEmptyCellClick({ row, col })
         } else if (cell.card && onCardClick) {
           onCardClick(cell.card, { row, col })
         } else if (!cell.card && onEmptyCellClick) {
           onEmptyCellClick({ row, col })
         }
-      }, [showScoringHighlight, scoringLineInfo, onEmptyCellClick, playMode, cell.card, onCardClick, handleDrop, setPlayMode, row, col, triggerClickWave, localPlayerId])
+      }, [showScoringHighlight, scoringLineInfo, onEmptyCellClick, playMode, cell.card, onCardClick, handleDrop, setPlayMode, row, col, triggerClickWave, localPlayerId, abilityMode])
 
       const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault()
@@ -338,7 +344,7 @@ const GridCell = memo<{
                 style={{
                   zIndex: 40,
                   boxShadow: `0 0 12px 2px ${rgba(rgb, 0.6)}`,
-                  border: '3px solid',
+                  border: '4px solid',
                   borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
                   background: `radial-gradient(circle at center, transparent 20%, ${rgba(rgb, 0.4)} 100%)`,
                 }}
@@ -374,15 +380,16 @@ const GridCell = memo<{
             const rgb = playerColor && PLAYER_COLOR_RGB[playerColor]
               ? PLAYER_COLOR_RGB[playerColor]
               : { r: 255, g: 215, b: 0 }  // Gold color for scoring
+            const glowRgb = calculateGlowColor(rgb)
             return (
               <div
-                className="absolute inset-0 rounded-md pointer-events-none animate-pulse"
+                className="absolute inset-0 rounded-md pointer-events-none animate-glow-pulse"
                 style={{
                   zIndex: 45,
-                  boxShadow: `0 0 15px 3px ${rgba(rgb, 0.7)}`,
-                  border: '3px solid',
-                  borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
-                  background: `radial-gradient(circle at center, transparent 30%, ${rgba(rgb, 0.3)} 100%)`,
+                  boxShadow: `0 0 12px 2px ${rgba(glowRgb, 0.5)}`,
+                  border: '4px dashed',
+                  borderColor: `rgb(255, 255, 255)`,
+                  background: `radial-gradient(circle at center, transparent 25%, ${rgba(rgb, 0.75)} 100%)`,
                 }}
               >
                 {/* Score badge removed - only showing highlight now */}
@@ -417,7 +424,7 @@ const GridCell = memo<{
                 style={{
                   zIndex: 50,
                   boxShadow: `0 0 12px 2px ${rgba(glowRgb, 0.5)}`,
-                  border: '3px solid',
+                  border: '4px solid',
                   borderColor: `rgb(255, 255, 255)`,
                   background: `radial-gradient(circle at center, transparent 25%, ${rgba(rgb, 0.75)} 100%)`,
                 }}
@@ -441,7 +448,7 @@ const GridCell = memo<{
                 style={{
                   zIndex: 45,
                   boxShadow: `0 0 12px 2px ${rgba(glowRgb, 0.5)}`,
-                  border: '3px dashed',
+                  border: '4px dashed',
                   borderColor: `rgb(255, 255, 255)`,
                   background: `radial-gradient(circle at center, transparent 25%, ${rgba(rgb, 0.75)} 100%)`,
                 }}
@@ -483,6 +490,7 @@ const GridCell = memo<{
                 targetingMode={!!targetingModePlayerId}
                 triggerClickWave={triggerClickWave}
                 disableTooltip={shouldDisableTooltip}
+                players={players}
               />
             </div>
           )}
@@ -507,7 +515,7 @@ const FloatingTextOverlay = memo<{ textData: FloatingTextData; playerColorMap: M
 
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[60] animate-float-up">
-      <span className={`text-4xl font-black ${colorClass}`} style={{ textShadow: '2px 2px 0 #000' }}>
+      <span className={`text-4xl font-black ${colorClass}`} style={{ WebkitTextStroke: '1px white' }}>
         {textData.text}
       </span>
     </div>
@@ -533,7 +541,7 @@ const VisualEffectOverlay = memo<{ effect: VisualEffect; playerColorMap: Map<num
             className="text-4xl font-black"
             style={{
               color: ft.color || `rgb(${colorRgb})`,
-              textShadow: '2px 2px 0 #000'
+              WebkitTextStroke: '1px white'
             }}
           >
             {ft.text}

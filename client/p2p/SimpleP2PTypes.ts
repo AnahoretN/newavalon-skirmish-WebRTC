@@ -336,6 +336,7 @@ export interface SimpleHostConfig {
     clickedByPlayerId: number
     playerColor: string
   }) => void
+  onFloatingTextBatch?: (events: Array<{ row: number; col: number; text: string; playerId: number }>) => void
 }
 
 /**

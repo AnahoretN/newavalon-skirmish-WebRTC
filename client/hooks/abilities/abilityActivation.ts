@@ -49,7 +49,9 @@ export function activateAbility(
   // Any player can control dummy players' cards
   const canControl = localPlayerId === card.ownerId || owner?.isDummy
 
-  if (gameState.activePlayerId !== card.ownerId) {
+  // For dummy players, any player can activate abilities regardless of turn
+  // For real players, only activate when it's their turn
+  if (!owner?.isDummy && gameState.activePlayerId !== card.ownerId) {
     return null
   }
   if (!canControl) {
@@ -62,7 +64,7 @@ export function activateAbility(
     return null
   }
 
-  if (!canActivateAbility(card as any, gameState.currentPhase, gameState.activePlayerId, gameState as any)) {
+  if (!canActivateAbility(card as any, gameState.currentPhase, gameState.activePlayerId ?? undefined, gameState as any)) {
     return null
   }
 

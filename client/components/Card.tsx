@@ -38,6 +38,7 @@ interface CardInteractionProps {
   triggerClickWave?: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void; // Trigger click wave effect
   playerId?: number; // Player who owns this card (for wave triggering)
   cardIndex?: number; // Card index in hand (for wave triggering)
+  players?: any[]; // Players array for checking dummy status
 }
 
 // Extracted outside CardCore to preserve React.memo optimization
@@ -163,6 +164,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   onCardClick,
   targetingMode = false,
   triggerClickWave,
+  players,
 }) => {
   const { getCardTranslation } = useLanguage()
   const [tooltipVisible, setTooltipVisible] = useState(false)
@@ -491,16 +493,23 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     if (triggerClickWave && boardCoords && localPlayerId !== null) {
       triggerClickWave('board', boardCoords)
     }
+    // Check if card belongs to a dummy player (for ability activation)
+    const cardOwner = players?.find(p => p.id === card.ownerId)
+    const isDummyCard = cardOwner?.isDummy
+
+    // Only card owner can activate abilities, OR anyone can activate dummy player cards
+    const canActivateAbility = localPlayerId === card.ownerId || isDummyCard
+
     // If card has a ready ability and user clicks it, dismiss highlight and trigger ability
-    if (shouldHighlight && localPlayerId === card.ownerId) {
+    if (shouldHighlight && canActivateAbility) {
       setHighlightDismissed(true)
     }
     // Call the parent's onCardClick handler if provided
     // Note: Hand cards are handled by the parent component's onClick, not here
-    if (onCardClick && boardCoords) {
+    if (onCardClick && boardCoords && canActivateAbility) {
       onCardClick(card, boardCoords)
     }
-  }, [shouldHighlight, localPlayerId, card, onCardClick, boardCoords, triggerClickWave])
+  }, [shouldHighlight, localPlayerId, card, onCardClick, boardCoords, triggerClickWave, players])
 
   // Aggregate statuses by TYPE and PLAYER ID to allow separate icons for different players.
   // DEBUG: All statuses are now visible for debugging ability readiness.

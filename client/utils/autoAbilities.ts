@@ -193,8 +193,9 @@ export const hasReadyStatusForPhase = (
 /**
  * Checks if a card should show visual ready highlighting AND can be activated.
  *
- * Only returns true for the active player's cards - this prevents showing glow
- * on other players' cards during their turn.
+ * Ready highlights appear for the active player's cards only.
+ * All players in the session can see these highlights (not just the local player).
+ * Dummy player cards: show when it's dummy's turn, any player can activate.
  */
 export const hasReadyAbilityInCurrentPhase = (
   card: Card,
@@ -212,7 +213,7 @@ export const hasReadyAbilityInCurrentPhase = (
     phaseIndex = phaseOrGameState
   }
 
-  // Only show ready effect for active player's cards
+  // Only show ready highlights for the active player's cards (whose turn it is)
   if (activePlayerId !== undefined && card.ownerId !== activePlayerId) {
     return false
   }
