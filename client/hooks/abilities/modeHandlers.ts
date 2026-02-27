@@ -173,6 +173,11 @@ export function handleModeCardClick(
     return handleSwapPositions(card, boardCoords, props)
   }
 
+  // SWAP_ADJACENT (Swap with adjacent card)
+  if (mode === 'SWAP_ADJACENT') {
+    return handleSwapAdjacent(card, boardCoords, props)
+  }
+
   // TRANSFER_STATUS_SELECT and TRANSFER_ALL_STATUSES (Reckless Provocateur Commit)
   if (mode === 'TRANSFER_STATUS_SELECT' || mode === 'TRANSFER_ALL_STATUSES') {
     return handleTransferStatus(card, boardCoords, props)
@@ -201,6 +206,11 @@ export function handleModeCardClick(
   // SPAWN_TOKEN
   if (mode === 'SPAWN_TOKEN') {
     return handleSpawnToken(card, boardCoords, props)
+  }
+
+  // PLACE_TOKEN (Modal token placement - CREATE_TOKEN action)
+  if (mode === 'PLACE_TOKEN') {
+    return handlePlaceToken(card, boardCoords, props)
   }
 
   // REVEAL_ENEMY
@@ -1032,6 +1042,101 @@ function handleSpawnToken(
 
   const tokenOwnerId = sourceCard?.ownerId ?? abilityMode.sourceCard?.ownerId
   spawnToken(boardCoords, payload.tokenName, tokenOwnerId!)
+  markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+  setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+  return true
+}
+
+/**
+ * Handle SWAP_ADJACENT (Swap positions with adjacent card)
+ */
+function handleSwapAdjacent(
+  card: Card,
+  boardCoords: { row: number; col: number },
+  props: ModeHandlersProps
+): boolean {
+  const { abilityMode, gameState, swapCards, markAbilityUsed, setAbilityMode, validTargets } = props
+
+  if (!abilityMode || abilityMode.mode !== 'SWAP_ADJACENT') {
+    return false
+  }
+
+  const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
+
+  if (!sourceCoords || sourceCoords.row < 0) {
+    return false
+  }
+
+  const actualSourceCard = gameState.board[sourceCoords.row][sourceCoords.col].card
+  if (!actualSourceCard || actualSourceCard.id !== sourceCard?.id) {
+    setAbilityMode(null)
+    return false
+  }
+
+  // Don't swap with self
+  if (sourceCard && sourceCard.id === card.id) {
+    return false
+  }
+
+  // Check if target is adjacent
+  const isAdj = Math.abs(boardCoords.row - sourceCoords.row) + Math.abs(boardCoords.col - sourceCoords.col) === 1
+  if (!isAdj) {
+    return false
+  }
+
+  // Check if target is valid (has a card)
+  if (!card || !gameState.board[boardCoords.row][boardCoords.col].card) {
+    return false
+  }
+
+  // Use validTargets if available
+  if (validTargets) {
+    const isValidTarget = validTargets.some(t => t.row === boardCoords.row && t.col === boardCoords.col)
+    if (!isValidTarget) {
+      return false
+    }
+  }
+
+  // Swap positions
+  swapCards(sourceCoords, boardCoords)
+
+  markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+  setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+  return true
+}
+
+/**
+ * Handle PLACE_TOKEN (Modal token placement from CREATE_TOKEN action)
+ */
+function handlePlaceToken(
+  _card: Card,
+  boardCoords: { row: number; col: number },
+  props: ModeHandlersProps
+): boolean {
+  const { abilityMode, spawnToken, markAbilityUsed, setAbilityMode } = props
+
+  if (!abilityMode || abilityMode.mode !== 'PLACE_TOKEN') {
+    return false
+  }
+
+  const { sourceCoords, payload, isDeployAbility, readyStatusToRemove, sourceCard } = abilityMode
+
+  if (!sourceCoords || !payload?.tokenId) {
+    return false
+  }
+
+  const range = payload.range || 'global'
+
+  // Check if placement is valid based on range
+  if (range === 'adjacent') {
+    const isAdj = Math.abs(boardCoords.row - sourceCoords.row) + Math.abs(boardCoords.col - sourceCoords.col) === 1
+    if (!isAdj) {
+      return false
+    }
+  }
+
+  const tokenOwnerId = sourceCard?.ownerId ?? abilityMode.sourceCard?.ownerId
+  spawnToken(boardCoords, payload.tokenId, tokenOwnerId!)
   markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
   setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
   return true

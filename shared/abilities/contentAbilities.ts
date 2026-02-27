@@ -205,12 +205,16 @@ export function buildActionFromContentAbility(
 
     case 'CREATE_TOKEN':
       // CREATE_TOKEN places a token unit on the board
-      // For now, handle as OPEN_MODAL with token placement mode
+      // Preserve the mode information (e.g., ADJACENT_EMPTY) in payload
       return {
         type: 'OPEN_MODAL',
         mode: 'PLACE_TOKEN',
         sourceCard: card,
-        payload: { tokenId: details.tokenId }
+        sourceCoords: coords,
+        payload: {
+          tokenId: details.tokenId,
+          range: ability.mode === 'ADJACENT_EMPTY' ? 'adjacent' : 'global'
+        }
       } as AbilityAction
 
     case 'ENTER_MODE': {

@@ -176,6 +176,31 @@ export function handleEmptyCellClick(
     return true
   }
 
+  // === ABILITY MODE - PLACE_TOKEN ===
+  if (abilityMode && abilityMode.mode === 'PLACE_TOKEN') {
+    const { sourceCoords, payload, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
+
+    if (!sourceCoords || !payload?.tokenId) {
+      return false
+    }
+
+    const range = payload.range || 'global'
+
+    // Check if placement is valid based on range
+    if (range === 'adjacent') {
+      const isAdj = Math.abs(boardCoords.row - sourceCoords.row) + Math.abs(boardCoords.col - sourceCoords.col) === 1
+      if (!isAdj) {
+        return false
+      }
+    }
+
+    const tokenOwnerId = sourceCard?.ownerId ?? abilityMode.sourceCard?.ownerId
+    spawnToken(boardCoords, payload.tokenId, tokenOwnerId!)
+    markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+    return true
+  }
+
   // === ABILITY MODE - SELECT_CELL ===
   if (abilityMode && abilityMode.mode === 'SELECT_CELL') {
     const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove, payload } = abilityMode

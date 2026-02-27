@@ -420,13 +420,21 @@ function handleOpenModal(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
-  const { gameState, localPlayerId, commandContext, setViewingDiscard, markAbilityUsed, triggerNoTarget } = props
+  const { gameState, localPlayerId, commandContext, setViewingDiscard, markAbilityUsed, triggerNoTarget, setAbilityMode, setTargetingMode } = props
 
   const hasTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
 
   if (!hasTargets) {
     triggerNoTarget(action.sourceCoords || sourceCoords)
     // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
+    return
+  }
+
+  // PLACE_TOKEN - Token placement on board (from CREATE_TOKEN action)
+  if (action.mode === 'PLACE_TOKEN') {
+    const targets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    setAbilityMode(action)
+    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, targets, commandContext)
     return
   }
 
@@ -577,6 +585,21 @@ function handleEnterMode(
 
   // SWAP_POSITIONS (Reckless Provocateur Deploy)
   if (mode === 'SWAP_POSITIONS') {
+    // Check targets BEFORE activating targeting mode
+    const hasSwapTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    if (!hasSwapTargets) {
+      triggerNoTarget(action.sourceCoords || sourceCoords)
+      // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
+      return
+    }
+    const swapTargets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    setAbilityMode(action)
+    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, swapTargets)
+    return
+  }
+
+  // SWAP_ADJACENT (Swap with adjacent card)
+  if (mode === 'SWAP_ADJACENT') {
     // Check targets BEFORE activating targeting mode
     const hasSwapTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
     if (!hasSwapTargets) {

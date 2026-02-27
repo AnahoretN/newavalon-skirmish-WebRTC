@@ -131,11 +131,18 @@ Before commit **MANDATORY**:
 │   │   └── TargetSelectionEffect.tsx
 │   ├── contexts/                 # React Context providers
 │   │   └── LanguageContext.tsx       # export const LanguageProvider: React.FC<{ children: ReactNode }>, export const useLanguage: () => {language: LanguageCode; setLanguage: (lang: LanguageCode) => void; t: (key: string) => string; getCardTranslation: (cardId: string) => CardTranslation | undefined; getCounterTranslation: (type: string) => { name: string; description: string } | undefined; resources: TranslationResource; isRTL: boolean}
-│   ├── hooks/                    # Custom React hooks (4 files)
+│   ├── hooks/                    # Custom React hooks (4 files) + ability handlers (6 files)
 │   │   ├── useGameState.ts       # export const useGameState: () => {gameState: GameState, localPlayerId: number | null, setLocalPlayerId: (id: number | null) => void, draggedItem: DragItem | null, setDraggedItem: (item: DragItem | null) => void, connectionStatus: ConnectionStatus ('Connecting' | 'Connected' | 'Disconnected'), gamesList: any[], latestHighlight: HighlightData | null, latestFloatingTexts: FloatingTextData[], latestNoTarget: {row: number, col: number} | null, setTargetingMode, clearTargetingMode, createGame, joinGame, requestGamesList, exitGame, startReadyCheck, cancelReadyCheck, playerReady, assignTeams, setGameMode, setGamePrivacy, setActiveGridSize, setDummyPlayerCount, updatePlayerName, changePlayerColor, updatePlayerScore, changePlayerDeck, loadCustomDeck, drawCard, shufflePlayerDeck, playCard, moveCard, returnCardToHand, announceCard, endTurn, playCounter, playToken, destroyCard, addCommand, cancelPendingCommand, executePendingCommand, handleQuickDrop, forceReconnect}
 │   │   ├── useAppCommand.ts      # export const useAppCommand: ({gameState, localPlayerId, draggedItem, setDraggedItem, openContextMenu, playMode, setPlayMode, setCursorStack, playerColorMap}) => {playCard, moveCard, returnCardToHand, announceCard, endTurn, playCounter, playToken, destroyCard, addCommand, cancelPendingCommand, executePendingCommand, handleQuickDrop}
 │   │   ├── useAppAbilities.ts    # export const useAppAbilities: ({gameState, localPlayerId, setCursorStack, playerColorMap}) => {handleDeployAbility}
-│   │   └── useAppCounters.ts     # export const useAppCounters: ({gameState, localPlayerId}) => {handleStackInteraction}
+│   │   ├── useAppCounters.ts     # export const useAppCounters: ({gameState, localPlayerId}) => {handleStackInteraction}
+│   │   └── abilities/            # Ability activation and mode handlers
+│   │       ├── abilityActivation.ts    # Main ability activation logic
+│   │       ├── actionExecutionHandler.ts  # Centralized execution of ability actions (ENTER_MODE, OPEN_MODAL, CREATE_STACK)
+│   │       ├── modeHandlers.ts           # Handles different ability modes (SWAP_ADJACENT, PLACE_TOKEN, PATROL_MOVE, RIOT_PUSH, etc.)
+│   │       ├── emptyCellHandlers.ts      # Handles clicks on empty cells during ability modes
+│   │       ├── lineSelectionHandlers.ts  # Handles line selection for scoring abilities
+│   │       └── targetingHandler.ts       # Target selection and validation
 │   ├── host/                     # WebRTC P2P host system (11 files)
 │   │   ├── types.ts              # Type definitions for WebRTC host
 │   │   ├── HostManager.ts        # Main host class
@@ -365,6 +372,26 @@ interface TargetingModeData {
   isDeckSelectable?: boolean;    // Whether deck is a valid target
 }
 ```
+
+#### Supported Ability Modes
+- **SELECT_TARGET**: Generic targeting with filter function
+- **SWAP_POSITIONS**: Swap positions with filtered cards
+- **SWAP_ADJACENT**: Swap positions with any adjacent card
+- **PATROL_MOVE**: Move to empty cell in same row/column
+- **RIOT_PUSH**: Push adjacent opponent into empty space
+- **SHIELD_SELF_THEN_RIOT_PUSH**: Add Shield then push (Reclaimed Gawain)
+- **SHIELD_SELF_THEN_SPAWN**: Add Shield then spawn token (Edith Byron)
+- **PLACE_TOKEN**: Place token on empty cell (supports `range: 'adjacent'` or `range: 'global'`)
+- **SPAWN_TOKEN**: Spawn adjacent token (Inventive Maker)
+- **REVEAL_ENEMY**: Reveal adjacent enemy card (Recon Drone)
+- **SELECT_CELL**: Select empty cell for movement/spawning
+- **CREATE_STACK**: Add status tokens to cards (Aim, Shield, Exploit, Stun)
+- **TRANSFER_STATUS_SELECT**: Transfer status to another card
+- **REVEREND_DOUBLE_EXPLOIT**: Double Exploit counters from any card
+- **ZIUS_LINE_SELECT**: Select row/column for effect (Zius)
+- **IP_AGENT_THREAT_SCORING**: Score row/column with Threat tokens
+- **SELECT_DIAGONAL**: Select diagonal line
+- **SELECT_LINE_START/END**: Select line endpoints
 
 ### Game State Updates
 #### Ready Check System

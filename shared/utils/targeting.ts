@@ -597,6 +597,57 @@ export const calculateValidTargets = (
       }
     }
   }
+  // 13. SWAP_ADJACENT - Adjacent cards for swapping
+  else if (mode === 'SWAP_ADJACENT' && sourceCoords) {
+    const neighbors = [
+      { r: sourceCoords.row - 1, c: sourceCoords.col },
+      { r: sourceCoords.row + 1, c: sourceCoords.col },
+      { r: sourceCoords.row, c: sourceCoords.col - 1 },
+      { r: sourceCoords.row, c: sourceCoords.col + 1 },
+    ]
+
+    neighbors.forEach(nb => {
+      if (nb.r >= minBound && nb.r <= maxBound && nb.c >= minBound && nb.c <= maxBound) {
+        const cell = board[nb.r][nb.c]
+        if (cell.card) {
+          targets.push({ row: nb.r, col: nb.c })
+        }
+      }
+    })
+  }
+  // 14. PLACE_TOKEN - Empty cells for token placement
+  else if (mode === 'PLACE_TOKEN' && sourceCoords) {
+    const range = payload.range || 'global'
+
+    if (range === 'adjacent') {
+      // ADJACENT_EMPTY mode - only adjacent empty cells
+      const neighbors = [
+        { r: sourceCoords.row - 1, c: sourceCoords.col },
+        { r: sourceCoords.row + 1, c: sourceCoords.col },
+        { r: sourceCoords.row, c: sourceCoords.col - 1 },
+        { r: sourceCoords.row, c: sourceCoords.col + 1 },
+      ]
+
+      neighbors.forEach(nb => {
+        if (nb.r >= minBound && nb.r <= maxBound && nb.c >= minBound && nb.c <= maxBound) {
+          const cell = board[nb.r][nb.c]
+          if (!cell.card) {
+            targets.push({ row: nb.r, col: nb.c })
+          }
+        }
+      })
+    } else {
+      // Global range - all empty cells in active grid
+      for (let r = minBound; r <= maxBound; r++) {
+        for (let c = minBound; c <= maxBound; c++) {
+          const cell = board[r][c]
+          if (!cell.card) {
+            targets.push({ row: r, col: c })
+          }
+        }
+      }
+    }
+  }
 
   return targets
 }
@@ -605,14 +656,53 @@ export const calculateValidTargets = (
  * Checks if an action has ANY valid targets (Board or Hand).
  */
 export const checkActionHasTargets = (action: AbilityAction, currentGameState: GameState, playerId: number | null, commandContext?: CommandContext): boolean => {
-  // If modal open, valid.
+  // If modal open, check mode for specific conditions
   if (action.type === 'OPEN_MODAL') {
-    return true
+    // PLACE_TOKEN with adjacent range needs adjacent empty cell
+    if (action.mode === 'PLACE_TOKEN' && action.payload?.range === 'adjacent' && action.sourceCoords) {
+      const { row, col } = action.sourceCoords
+      const neighbors = [
+        { r: row - 1, c: col },
+        { r: row + 1, c: col },
+        { r: row, c: col - 1 },
+        { r: row, c: col + 1 },
+      ]
+      for (const nb of neighbors) {
+        if (nb.r >= 0 && nb.r < currentGameState.board.length &&
+            nb.c >= 0 && nb.c < currentGameState.board[0].length) {
+          if (!currentGameState.board[nb.r][nb.c].card) {
+            return true // Found adjacent empty cell
+          }
+        }
+      }
+      return false // No adjacent empty cells
+    }
+    return true // Other modals are always valid
   }
 
   // Special Case: Select Deck has global targets (all decks)
   if (action.mode === 'SELECT_DECK') {
     return true
+  }
+
+  // Special Case: SWAP_ADJACENT needs adjacent cards
+  if (action.mode === 'SWAP_ADJACENT' && action.sourceCoords) {
+    const { row, col } = action.sourceCoords
+    const neighbors = [
+      { r: row - 1, c: col },
+      { r: row + 1, c: col },
+      { r: row, c: col - 1 },
+      { r: row, c: col + 1 },
+    ]
+    for (const nb of neighbors) {
+      if (nb.r >= 0 && nb.r < currentGameState.board.length &&
+          nb.c >= 0 && nb.c < currentGameState.board[0].length) {
+        if (currentGameState.board[nb.r][nb.c].card) {
+          return true // Found adjacent card
+        }
+      }
+    }
+    return false // No adjacent cards
   }
 
   // Special Case: REVEREND_DOUBLE_EXPLOIT can target any card on battlefield
