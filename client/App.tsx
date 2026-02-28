@@ -143,6 +143,7 @@ const AppInner = function AppInner() {
     removeStatusByType,
     reorderTopDeck,
     reorderCards,
+    requestDeckView,
     triggerFloatingText,
     latestDeckSelections,
     latestHandCardSelections,
@@ -151,7 +152,6 @@ const AppInner = function AppInner() {
     webrtcIsHost,
     initializeWebrtcHost,
     connectAsGuest,
-    requestDeckView,
     sendFullDeckToHost,
     shareHostDeckWithGuests,
     // Reconnection props
@@ -453,8 +453,19 @@ const AppInner = function AppInner() {
 
   // Handle scoring line selection when in scoring phase
   const handleScoringLineClick = useCallback((boardCoords: { row: number; col: number }) => {
-    // Only allow scoring if we're in scoring step and the player is the active player
-    if (!gameState.isScoringStep || gameState.activePlayerId !== localPlayerId) {
+    // Only allow scoring if we're in scoring step
+    if (!gameState.isScoringStep) {
+      return
+    }
+
+    // Check if player can control scoring:
+    // - Either it's their turn (activePlayerId === localPlayerId)
+    // - Or the active player is a dummy (any player can control dummies)
+    const activePlayer = gameState.players.find(p => p.id === gameState.activePlayerId)
+    const isDummyPlayer = activePlayer?.isDummy ?? false
+    const canControlScoring = gameState.activePlayerId === localPlayerId || isDummyPlayer
+
+    if (!canControlScoring) {
       return
     }
 
@@ -483,18 +494,25 @@ const AppInner = function AppInner() {
     if (clickedLine) {
       selectScoringLine(clickedLine.lineType, clickedLine.lineIndex)
     }
-  }, [gameState.isScoringStep, gameState.activePlayerId, gameState.scoringLines, gameState.activeGridSize, localPlayerId, selectScoringLine])
+  }, [gameState.isScoringStep, gameState.activePlayerId, gameState.scoringLines, gameState.activeGridSize, gameState.players, localPlayerId, selectScoringLine])
 
   // Create a wrapper for handleEmptyCellClick that includes scoring line handling
   const handleEmptyCellClickWithScoring = useCallback((boardCoords: { row: number; col: number }) => {
     // Check if this is a scoring line click
-    if (gameState.isScoringStep && gameState.activePlayerId === localPlayerId) {
-      handleScoringLineClick(boardCoords)
-      return
+    if (gameState.isScoringStep) {
+      // Check if player can control scoring
+      const activePlayer = gameState.players.find(p => p.id === gameState.activePlayerId)
+      const isDummyPlayer = activePlayer?.isDummy ?? false
+      const canControlScoring = gameState.activePlayerId === localPlayerId || isDummyPlayer
+
+      if (canControlScoring) {
+        handleScoringLineClick(boardCoords)
+        return
+      }
     }
     // Otherwise, use the original handler
     handleEmptyCellClick(boardCoords)
-  }, [gameState.isScoringStep, gameState.activePlayerId, localPlayerId, handleScoringLineClick, handleEmptyCellClick])
+  }, [gameState.isScoringStep, gameState.activePlayerId, gameState.players, localPlayerId, handleScoringLineClick, handleEmptyCellClick])
 
   const {
     cursorFollowerRef,
@@ -631,6 +649,11 @@ const AppInner = function AppInner() {
       const isDeployAbility = abilityMode?.isDeployAbility
       const sourceCoords = modeData.sourceCoords
 
+      // Request full deck data for viewing opponent's deck in P2P mode
+      if (targetPlayerId !== localPlayerId) {
+        requestDeckView(targetPlayerId)
+      }
+
       // Trigger deck selection effect visible to all players via WebSocket
       triggerDeckSelection(targetPlayerId, gameState.activePlayerId ?? localPlayerId ?? 1)
       setTopDeckViewState({
@@ -647,7 +670,7 @@ const AppInner = function AppInner() {
       // Also clear targetingMode explicitly for P2P mode (works for both WebSocket and WebRTC)
       clearTargetingMode()
     }
-  }, [abilityMode, gameState.targetingMode, gameState.activePlayerId, localPlayerId, triggerDeckSelection, clearTargetingMode])
+  }, [abilityMode, gameState.targetingMode, gameState.activePlayerId, localPlayerId, triggerDeckSelection, clearTargetingMode, requestDeckView])
 
   // Sync validHandTargets when targetingMode.handTargets changes (for P2P mode)
   // When another player activates targeting mode with hand targets, we need to update our local state
@@ -1008,7 +1031,12 @@ const AppInner = function AppInner() {
 
     // Effective actor logic for highlighting valid targets
     let actorId: number | null = localPlayerId || gameState.activePlayerId || null
-    if (effectiveAction?.sourceCard?.ownerId) {
+
+    // CRITICAL: For cursorStack (tokens), use originalOwnerId as actorId
+    // This ensures proper validation (e.g., Revealed token excludes owner's own cards)
+    if (cursorStack?.originalOwnerId !== undefined) {
+      actorId = cursorStack.originalOwnerId
+    } else if (effectiveAction?.sourceCard?.ownerId) {
       actorId = effectiveAction.sourceCard.ownerId
     } else if (effectiveAction?.sourceCoords &&
                  effectiveAction.sourceCoords.row >= 0 &&
@@ -1729,9 +1757,9 @@ const AppInner = function AppInner() {
     const inviteHostId = sessionStorage.getItem('invite_host_id')
     const autoJoinFlag = sessionStorage.getItem('invite_auto_join')
 
-    logger.info('[App] WebRTC Invite Check - inviteHostId:', inviteHostId, 'autoJoinFlag:', autoJoinFlag, 'connectAsGuest exists:', typeof connectAsGuest)
-
+    // Only log if there's actually an invite to process
     if (inviteHostId && autoJoinFlag && typeof connectAsGuest === 'function') {
+      logger.info('[App] WebRTC Invite - auto-connecting to host:', inviteHostId)
       logger.info('[App] Auto-connecting to WebRTC host:', inviteHostId)
       // Clear the stored invite data
       sessionStorage.removeItem('invite_host_id')
@@ -1963,7 +1991,7 @@ const AppInner = function AppInner() {
 
     if (isWebRTCMode && isOtherPlayerDeck && player.deck.length === 0) {
       // Request full deck data from host
-      logger.info(`[handleViewDeck] Requesting deck data for player ${player.id}`)
+      logger.info(`[handleViewDeck] Requesting deck data for player ${player.id}, localPlayerId: ${localPlayerId}`)
       requestDeckView(player.id)
     }
 
@@ -2041,6 +2069,13 @@ const AppInner = function AppInner() {
     } else if (action === 'resurrect') {
       // For Immunis: Select card, then close modal to allow cell selection
       if (abilityMode?.mode === 'IMMUNIS_RETRIEVE') {
+        setAbilityMode(prev => ({
+          ...prev!,
+          payload: { ...prev!.payload, selectedCardIndex: cardIndex },
+        }))
+        setViewingDiscard(null)
+      } else if (abilityMode?.mode === 'RESURRECT_FROM_DISCARD') {
+        // For Finn MW Deploy: Select card, then click empty adjacent cell to place
         setAbilityMode(prev => ({
           ...prev!,
           payload: { ...prev!.payload, selectedCardIndex: cardIndex },
@@ -2302,7 +2337,13 @@ const AppInner = function AppInner() {
             drawCard(player.id)
           }
         } })
-        items.push({ label: t('viewTopCards'), onClick: () => setTopDeckViewState({ targetPlayerId: player.id, isLocked: false, initialCount: 1 }) })
+        items.push({ label: t('viewTopCards'), onClick: () => {
+          // Request full deck data for viewing opponent's deck in P2P mode
+          if (player.id !== localPlayerId) {
+            requestDeckView(player.id)
+          }
+          setTopDeckViewState({ targetPlayerId: player.id, isLocked: false, initialCount: 1 })
+        } })
         items.push({ label: t('shuffle'), onClick: () => shufflePlayerDeck(player.id) })
       }
       items.push({ label: t('view'), onClick: () => handleViewDeck(player) })
@@ -2817,11 +2858,24 @@ function checkHasLastPlayedCard(gameState: GameState): boolean {
     return false
   }
 
+  const activePlayer = gameState.players.find(p => p.id === activePlayerId)
+  const isDummyPlayer = activePlayer?.isDummy ?? false
+
   for (let r = 0; r < gameState.board.length; r++) {
     for (let c = 0; c < gameState.board[r].length; c++) {
       const card = gameState.board[r]?.[c]?.card
-      if (card?.statuses?.some((s: CardStatus) => s.type === 'LastPlayed' && s.addedByPlayerId === activePlayerId)) {
-        return true
+      if (card?.ownerId === activePlayerId) {
+        // For dummy players, check if card has LastPlayed status (any player could have added it)
+        // For real players, only count if they added it themselves
+        if (isDummyPlayer) {
+          if (card?.statuses?.some((s: CardStatus) => s.type === 'LastPlayed')) {
+            return true
+          }
+        } else {
+          if (card?.statuses?.some((s: CardStatus) => s.type === 'LastPlayed' && s.addedByPlayerId === activePlayerId)) {
+            return true
+          }
+        }
       }
     }
   }

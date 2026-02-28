@@ -530,12 +530,6 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
       return acc
     }, {} as Record<string, { type: string, playerId: number, count: number }>)
 
-    // Debug logging for Revealed status
-    const revealedGroups = Object.values(groups).filter(g => g.type === 'Revealed')
-    if (revealedGroups.length > 0) {
-      console.log(`[Card.tsx] Card ${card.id} has ${revealedGroups.length} Revealed status(es)`, revealedGroups)
-    }
-
     return groups
   }, [card.statuses, card.id])
 
@@ -544,13 +538,10 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     // If playerColor is provided directly (from PlayerPanel), use it
     // Otherwise look up from playerColorMap using card.ownerId
     if (playerColor) {
-      return PLAYER_COLORS[playerColor] || null
+      const colorData = PLAYER_COLORS[playerColor]
+      return colorData || null
     }
     const ownerColorName = card.ownerId ? playerColorMap.get(card.ownerId) : null
-    if (card.ownerId && !ownerColorName) {
-      // Log when ownerId exists but color not found (shouldn't happen in normal operation)
-      console.warn(`[Card] Owner color not found for card ${card.id}, ownerId: ${card.ownerId}, playerColorMap size: ${playerColorMap.size}`)
-    }
     return (ownerColorName && PLAYER_COLORS[ownerColorName]) ? PLAYER_COLORS[ownerColorName] : null
   }, [card.ownerId, playerColorMap, playerColor])
 
@@ -599,15 +590,10 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
       {!isFaceUp ? (
         // --- CARD BACK ---
         (() => {
-          const backColorClass = ownerColorData ? ownerColorData.bg : 'bg-card-back'
+          const backColorClass = ownerColorData ? ownerColorData.bg : 'bg-gray-600'
           const borderColorClass = ownerColorData ? ownerColorData.border : 'border-blue-300'
           const lastPlayedGroup = uniqueStatusGroups.find(g => g.type === 'LastPlayed')
           const revealedGroups = uniqueStatusGroups.filter(g => g.type === 'Revealed')
-
-          // Debug logging for Revealed status on face-down cards
-          if (revealedGroups.length > 0) {
-            console.log(`[Card.tsx] Face-down card ${card.id}: Revealed status`, revealedGroups)
-          }
 
           return (
             <div
@@ -647,12 +633,6 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
           const positiveGroups = uniqueStatusGroups.filter(g => positiveStatusTypesList.includes(g.type))
           const negativeGroups = uniqueStatusGroups.filter(g => !positiveStatusTypesList.includes(g.type) && g.type !== 'LastPlayed')
           const lastPlayedGroup = uniqueStatusGroups.find(g => g.type === 'LastPlayed')
-
-          // Debug: Check if Revealed is in negativeGroups
-          const revealedInNegative = negativeGroups.filter(g => g.type === 'Revealed')
-          if (revealedInNegative.length > 0) {
-            console.log(`[Card.tsx] Face-up card ${card.id}: Revealed in negativeGroups`, revealedInNegative)
-          }
 
           const combinedPositiveGroups = lastPlayedGroup
             ? [lastPlayedGroup, ...positiveGroups]

@@ -302,7 +302,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365268/HOO_VIGILANT_SPOTTER_xo8ig7.webp",
       "fallbackImage": "/images/cards/HOO_VIGILANT_SPOTTER.png",
       "power": 1,
-      "abilityText": "Pass (requires Support): When a revealed card of the opponent enters the battlefield, gain 2 points.\nCommit: Reveal 1 card from an opponent's hand.",
+      "abilityText": "Pass (requires Support): When a revealed card of the opponent enters the battlefield, gain 2 points.\nCommit: Place a Revealed token on an adjacent opponent card.",
       "flavorText": "- \"Patience is a weapon. Vengeance is an art.\"",
       "types": ["Unit", "Hoods"],
       "faction": "Hoods",
@@ -324,11 +324,12 @@
         {
           "type": "commit",
           "supportRequired": false,
-          "action": "REVEAL_HAND",
+          "action": "CREATE_STACK",
           "mode": null,
           "details": {
+            "tokenType": "Revealed",
             "count": 1,
-            "selectFrom": "opponent"
+            "mustBeAdjacentToSource": true
           }
         }
       ]
@@ -1231,7 +1232,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365220/TKN_RECON_DRONE_w3elir.webp",
       "fallbackImage": "/images/cards/TKN_RECON_DRONE.png",
       "power": 1,
-      "abilityText": "Setup: Move to any cell on the battlefield.\nCommit: Choose an opponent card in an adjacent cell. Reveal 1 card from that opponent's hand.",
+      "abilityText": "Setup: Move to any empty cell on the battlefield.\nCommit: Select an adjacent opponent card, then reveal 1 card from that opponent's hand.",
       "flavorText": "SynchroTech has created lightweight drones to patrol the streets, but the Hoods have other plans for them.",
       "color": "bg-gray-400",
       "types": ["Unit", "Device"],
@@ -1240,20 +1241,32 @@
         {
           "type": "setup",
           "supportRequired": false,
-          "action": "MOVE_SELF",
-          "mode": "ANY_EMPTY",
+          "action": "ENTER_MODE",
+          "mode": "MOVE_SELF_ANY_EMPTY",
           "details": {}
         },
         {
           "type": "commit",
           "supportRequired": false,
-          "action": "REVEAL_HAND",
-          "mode": "SELECT_TARGET",
-          "details": {
-            "count": 1,
-            "selectFrom": "opponent",
-            "filter": "isAdjacent"
-          }
+          "steps": [
+            {
+              "action": "ENTER_MODE",
+              "mode": "SELECT_TARGET",
+              "details": {
+                "selectFrom": "opponent",
+                "filter": "isAdjacent"
+              }
+            },
+            {
+              "action": "CREATE_STACK",
+              "mode": "SELECT_HAND_TARGET",
+              "details": {
+                "tokenType": "Revealed",
+                "count": 1,
+                "targetOwnerIdFromSource": true
+              }
+            }
+          ]
         }
       ]
     },

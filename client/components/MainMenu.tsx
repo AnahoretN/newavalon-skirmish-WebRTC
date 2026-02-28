@@ -98,11 +98,9 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
     if (!initializeWebrtcHost) {return}
     setIsInitializingHost(true)
     try {
-      const peerId = await initializeWebrtcHost()
-      if (peerId) {
-        // Create game after host is ready
-        handleCreateGame()
-      }
+      await initializeWebrtcHost()
+      // Note: initializeWebrtcHost already creates the game and sets localPlayerId
+      // No need to call handleCreateGame again
     } catch (err) {
       console.error('Failed to initialize host:', err)
     } finally {

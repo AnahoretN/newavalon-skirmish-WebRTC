@@ -414,10 +414,10 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   }, [openContextMenu, onCancelAllModes])
 
   // Helper: Get effective deck size
-  // Use deckSize metadata for WebRTC optimized states where deck array may be empty
+  // Use deckSize metadata for WebRTC optimized states where deck array may not be populated
   const getDeckSize = (): number => {
-    // If deck array has cards, use its length (source of truth for local player)
-    if (player.deck.length > 0) {
+    // If deck array exists and is populated (has cards), use its length (source of truth for local player)
+    if (player.deck && player.deck.length > 0) {
       return player.deck.length
     }
     // Otherwise use deckSize metadata (for remote players in WebRTC)
@@ -428,10 +428,10 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   }
 
   // Helper: Get effective discard size
-  // Use discardSize metadata for WebRTC optimized states where discard array may be empty
+  // Use discardSize metadata for WebRTC optimized states where discard array may not be populated
   const getDiscardSize = (): number => {
-    // If discard array has cards, use its length (source of truth for local player)
-    if (player.discard.length > 0) {
+    // If discard array exists and is populated (has cards), use its length (source of truth for local player)
+    if (player.discard && player.discard.length > 0) {
       return player.discard.length
     }
     // Otherwise use discardSize metadata (for remote players in WebRTC)
@@ -452,7 +452,8 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   const canDrag: boolean = canPerformActions && !cursorStack
 
   const isPlayerActive = activePlayerId === player.id
-  const isTeammate = localPlayerTeamId !== undefined && player.teamId === localPlayerTeamId && !isLocalPlayer
+  // FIX: Check localPlayerTeamId is not null (not just !== undefined) to avoid treating null teams as teammates
+  const isTeammate = localPlayerTeamId != null && player.teamId === localPlayerTeamId && !isLocalPlayer
   const isDisconnected = !!player.isDisconnected
 
   const selectableDecks = useMemo(() => deckFiles.filter(df => df.isSelectable), [deckFiles])
@@ -844,12 +845,29 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   } : {}
 
                   const isPlaceholder = (card as any)._isPlaceholder
+                  const isRealCard = !isPlaceholder
+                  const realCard = card as CardType
+
+                  // Card visibility logic for Revealed status
+                  const isRevealedToAll = realCard.revealedTo === 'all'
+                  const isRevealedToMe = localPlayerId !== null &&
+                    Array.isArray(realCard.revealedTo) &&
+                    realCard.revealedTo.includes(localPlayerId)
+                  const isRevealedByStatus = isRealCard && localPlayerId !== null &&
+                    realCard.statuses?.some((s: any) => s.type === 'Revealed' && s.addedByPlayerId === localPlayerId)
+
+                  const owner = allPlayers.find(p => p.id === card.ownerId)
+                  const isOwnerDummy = owner?.isDummy
+                  const isOwner = isLocalPlayer || localPlayerId === card.ownerId
+
+                  const isDummyVisible = !hideDummyCards || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
+                  const isVisible: boolean = isOwner || (!!isOwnerDummy && isDummyVisible) || isTeammate || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
 
                   return (
                     <div
                       key={`card-${card.id}-${index}`}
                       className="relative"
-                      data-hand-card={`${player.id}-${index}`}
+                      data-hand-card={`${player.id},${index}`}
                     >
                       {/* Highlight overlay - doesn't interfere with card visibility */}
                       {isTarget && (
@@ -906,20 +924,20 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         <div className="aspect-square flex-shrink-0 mr-3 w-[28.75%] max-w-[230px] min-w-[40px] overflow-hidden rounded">
                           {isPlaceholder ? (
                             // Show card back for placeholder cards (remote players in WebRTC)
-                            // Use the same CardComponent with isFaceUp={false} for consistent card backs
+                            // Use isVisible to determine if card should be face-up (e.g. with Revealed status)
                             <CardComponent
                               card={{
                                 ...card,
                                 id: card.id,
                                 baseId: card.baseId,
-                                name: 'Hidden Card',
+                                name: card.name || '',  // Use placeholder name (empty string), not 'Hidden Card'
                                 ownerId: player.id,
                                 ownerName: player.name,
-                                deck: DeckTypeEnum.Random,
-                                imageUrl: '',
-                                abilityText: '',
+                                deck: card.deck || (DeckTypeEnum.Random as const),
+                                imageUrl: card.imageUrl || '',
+                                abilityText: card.abilityText || '',
                               }}
-                              isFaceUp={false}
+                              isFaceUp={isVisible}
                               playerColorMap={playerColorMap}
                               localPlayerId={localPlayerId}
                               imageRefreshVersion={imageRefreshVersion}
@@ -933,7 +951,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                           ) : (
                             <CardComponent
                               card={card}
-                              isFaceUp={true}
+                              isFaceUp={isVisible}
                               playerColorMap={playerColorMap}
                               localPlayerId={localPlayerId}
                               imageRefreshVersion={imageRefreshVersion}
@@ -1231,7 +1249,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                 : Array.from({ length: player.handSize || 0 }, (_, i) => ({
                     id: `hidden-${player.id}-${i}`,
                     baseId: 'hidden',
-                    name: 'Hidden Card',
+                    name: '',  // Empty name, not 'Hidden Card'
                     ownerId: player.id,
                     ownerName: player.name,
                     power: 0,
@@ -1286,23 +1304,35 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                 const isPlaceholder = (card as any)._isPlaceholder
                 const isRealCard = !isPlaceholder
                 const realCard = card as CardType
-                const isRevealedToAll = isRealCard && realCard.revealedTo === 'all'
-                const isRevealedToMe = isRealCard && localPlayerId !== null && Array.isArray(realCard.revealedTo) && realCard.revealedTo.includes(localPlayerId)
-                const isRevealedByStatus = isRealCard && localPlayerId !== null && realCard.statuses?.some((s: any) => s.type === 'Revealed' && s.addedByPlayerId === localPlayerId)
 
-                const owner = allPlayers.find(p => p.id === card.ownerId)
+                // Check if card is revealed to all players
+                const isRevealedToAll = realCard.revealedTo === 'all'
+
+                // Check if card is revealed to local player via revealedTo property
+                // Works for both real cards and placeholder cards (opponent hands in WebRTC)
+                const isRevealedToMe = localPlayerId !== null &&
+                  Array.isArray(realCard.revealedTo) &&
+                  realCard.revealedTo.includes(localPlayerId)
+
+                // Check if card has Revealed status added by local player
+                const isRevealedByStatus = isRealCard && localPlayerId !== null &&
+                  realCard.statuses?.some((s: any) => s.type === 'Revealed' && s.addedByPlayerId === localPlayerId)
+
+                const owner = allPlayers.find(p => p.id === realCard.ownerId)
                 const isOwnerDummy = owner?.isDummy
-                const isOwner = localPlayerId === card.ownerId
+                // Card belongs to local player if it's in their hand (player.id === localPlayerId)
+                // OR if it's their own card (card.ownerId === localPlayerId)
+                const isOwner = isLocalPlayer || localPlayerId === realCard.ownerId || localPlayerId === player.id
 
-                // If hideDummyCards is enabled, dummy cards are only visible if they have a reveal status
-                const isDummyVisible = !hideDummyCards || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
-                const isVisible: boolean = isRealCard && (isOwner || (!!isOwnerDummy && isDummyVisible) || isTeammate || isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus)
+                // CARDS IN OTHER PLAYERS' HANDS should be FACE-DOWN by default
+                // Only exceptions: owner, dummy (if not hidden), teammate (rare), or Revealed
+                const isVisible: boolean = isOwner || (!!isOwnerDummy && !hideDummyCards) || isTeammate || isRevealedToAll || isRevealedToMe || isRevealedByStatus
 
                 return (
                   <div
                     key={`${player.id}-hand-${index}-${card.id}`}
                     className="aspect-square relative"
-                    data-hand-card={`${player.id}-${index}`}
+                    data-hand-card={`${player.id},${index}`}
                     draggable={canDrag && !isPlaceholder}
                     onDragStart={() => (canDrag && !isPlaceholder) && setDraggedItem({ card, source: 'hand', playerId: player.id, cardIndex: index, isManual: true })}
                     onDragEnd={() => { setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK) }}
@@ -1367,21 +1397,22 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     <div className="w-full h-full rounded" style={cardHighlightStyle}>
                       {isPlaceholder ? (
                         // Show card back for placeholder cards (remote players in WebRTC)
-                        // Use the same CardComponent with isFaceUp={false} for consistent card backs
+                        // Use isVisible to determine if card should be face-up (e.g. with Revealed status)
                         <CardComponent
                           card={{
                             ...card,
                             id: card.id,
                             baseId: card.baseId,
-                            name: 'Hidden Card',
+                            name: card.name || '',
                             ownerId: player.id,
                             ownerName: player.name,
-                            deck: DeckTypeEnum.Random,
-                            imageUrl: '',
-                            abilityText: '',
+                            deck: card.deck || (DeckTypeEnum.Random as const),
+                            imageUrl: card.imageUrl || '',
+                            abilityText: card.abilityText || '',
                           }}
-                          isFaceUp={false}
+                          isFaceUp={isVisible}
                           playerColorMap={playerColorMap}
+                          playerColor={player.color}
                           localPlayerId={localPlayerId}
                           imageRefreshVersion={imageRefreshVersion}
                           loadPriority="low"
@@ -1390,7 +1421,6 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                           smallStatusIcons={false}
                           preserveDeployAbilities={false}
                           disableImageTransition={true}
-                          playerColor={player.color}
                         />
                       ) : (
                         <CardComponent
@@ -1487,7 +1517,11 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
     prevProps.allPlayers.length === nextProps.allPlayers.length &&
     prevProps.allPlayers.map(p => p.id).join(',') === nextProps.allPlayers.map(p => p.id).join(',') &&
     cursorStackEqual &&
-    draggedItemEqual
+    draggedItemEqual &&
+    // CRITICAL: Check if hand card statuses changed (for Revealed tokens on dummy cards)
+    // Compare JSON string of hand cards - if any status changed, re-render
+    JSON.stringify(prevProps.player.hand.map(c => ({ id: c.id, statuses: c.statuses }))) ===
+    JSON.stringify(nextProps.player.hand.map(c => ({ id: c.id, statuses: c.statuses })))
   )
 })
 

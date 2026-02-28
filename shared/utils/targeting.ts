@@ -189,11 +189,26 @@ export const calculateValidTargets = (
       tokenType: action.tokenType,
     }
 
+    // Collect dummy player IDs for Revealed token exclusion
+    const dummyPlayerIds = new Set<number>()
+    if (action.tokenType === 'Revealed') {
+      currentGameState.players.forEach(p => {
+        if (p.isDummy) {
+          dummyPlayerIds.add(p.id)
+        }
+      })
+    }
+
     // Iterate ONLY over active grid bounds (not entire 7x7 board)
     for (let r = minBound; r <= maxBound; r++) {
       for (let c = minBound; c <= maxBound; c++) {
         const cell = board[r][c]
         if (cell.card && cell.card.ownerId !== undefined) { // Tokens generally apply to existing cards
+          // Exclude dummy player cards for Revealed tokens
+          if (dummyPlayerIds.has(cell.card.ownerId)) {
+            continue
+          }
+
           const isValid = validateTarget(
             { card: cell.card, ownerId: cell.card.ownerId, location: 'board', boardCoords: { row: r, col: c } },
             constraints,
@@ -247,6 +262,50 @@ export const calculateValidTargets = (
   }
 
   const { mode, payload, sourceCoords, contextCheck } = action
+
+  // Special case: MOVE_SELF_ANY_EMPTY (Recon Drone Setup)
+  // Handle early to avoid falling through to SELECT_TARGET
+  if (mode === 'MOVE_SELF_ANY_EMPTY' && sourceCoords) {
+    // Any empty cell in active grid is valid
+    for (let r = minBound; r <= maxBound; r++) {
+      for (let c = minBound; c <= maxBound; c++) {
+        if (!board[r][c].card) {
+          targets.push({ row: r, col: c })
+        }
+      }
+    }
+    return targets
+  }
+
+  // Special case: RECON_DRONE_COMMIT (2-step ability - step 1: select adjacent opponent)
+  // Handle early to use proper filter
+  if (mode === 'RECON_DRONE_COMMIT' && sourceCoords) {
+    const ownerId = action.sourceCard?.ownerId || actorId
+    const neighbors = [
+      { r: sourceCoords.row - 1, c: sourceCoords.col },
+      { r: sourceCoords.row + 1, c: sourceCoords.col },
+      { r: sourceCoords.row, c: sourceCoords.col - 1 },
+      { r: sourceCoords.row, c: sourceCoords.col + 1 },
+    ]
+
+    for (const nb of neighbors) {
+      if (nb.r >= minBound && nb.r <= maxBound && nb.c >= minBound && nb.c <= maxBound) {
+        const cell = board[nb.r][nb.c]
+        if (cell.card && cell.card.ownerId !== ownerId) {
+          // Check if target is opponent (not teammate)
+          const actorPlayer = currentGameState.players.find(p => p.id === ownerId)
+          const targetPlayer = currentGameState.players.find(p => p.id === cell.card.ownerId)
+          const isTeammate = actorPlayer?.teamId !== undefined && targetPlayer?.teamId !== undefined &&
+                            actorPlayer.teamId === targetPlayer.teamId
+
+          if (!isTeammate) {
+            targets.push({ row: nb.r, col: nb.c })
+          }
+        }
+      }
+    }
+    return targets
+  }
 
   // Special case: REVEREND_DOUBLE_EXPLOIT - can target ANY card on battlefield
   if (mode === 'REVEREND_DOUBLE_EXPLOIT') {
@@ -446,13 +505,20 @@ export const calculateValidTargets = (
       }
     }
   }
-  // 7. Spawn Token / Select Cell
-  else if ((mode === 'SPAWN_TOKEN' || mode === 'SELECT_CELL' || mode === 'IMMUNIS_RETRIEVE')) {
+  // 7. Spawn Token / Select Cell / Move Self Any Empty
+  else if ((mode === 'SPAWN_TOKEN' || mode === 'SELECT_CELL' || mode === 'IMMUNIS_RETRIEVE' || mode === 'MOVE_SELF_ANY_EMPTY')) {
     // Note: IMMUNIS_RETRIEVE behaves like select cell when picking the destination
+    // MOVE_SELF_ANY_EMPTY allows moving to any empty cell (Recon Drone Setup)
     // Iterate ONLY over active grid bounds
     for (let r = minBound; r <= maxBound; r++) {
       for (let c = minBound; c <= maxBound; c++) {
         const isEmpty = !board[r][c].card
+
+        // MOVE_SELF_ANY_EMPTY - any empty cell is valid
+        if (mode === 'MOVE_SELF_ANY_EMPTY' && isEmpty) {
+          targets.push({ row: r, col: c })
+          continue
+        }
 
         // If Immunis logic, we check filter (adjacency)
         if (mode === 'IMMUNIS_RETRIEVE' && payload.filter) {
@@ -729,6 +795,57 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
          action.mode === 'ABR_DEPLOY_SHIELD_AIM' ||
          action.mode === 'GAWAIN_DEPLOY_SHIELD_AIM') {
     return true
+  }
+
+  // Special Case: RECON_DRONE_COMMIT (2-step: select adjacent opponent card, then reveal their hand card)
+  // Check if there's at least one adjacent opponent card
+  if (action.mode === 'RECON_DRONE_COMMIT' && action.sourceCoords) {
+    const { row, col } = action.sourceCoords
+    const neighbors = [
+      { r: row - 1, c: col },
+      { r: row + 1, c: col },
+      { r: row, c: col - 1 },
+      { r: row, c: col + 1 },
+    ]
+    const ownerId = action.sourceCard?.ownerId || playerId
+
+    for (const nb of neighbors) {
+      if (nb.r >= 0 && nb.r < currentGameState.board.length &&
+          nb.c >= 0 && nb.c < currentGameState.board[0].length) {
+        const cell = currentGameState.board[nb.r][nb.c]
+        if (cell.card && cell.card.ownerId !== ownerId) {
+          // Check if target is opponent (not teammate)
+          const actorPlayer = currentGameState.players.find(p => p.id === ownerId)
+          const targetPlayer = currentGameState.players.find(p => p.id === cell.card.ownerId)
+          const isTeammate = actorPlayer?.teamId !== undefined && targetPlayer?.teamId !== undefined &&
+                            actorPlayer.teamId === targetPlayer.teamId
+
+          if (!isTeammate) {
+            return true // Found adjacent opponent card
+          }
+        }
+      }
+    }
+    return false // No adjacent opponent cards
+  }
+
+  // Special Case: MOVE_SELF_ANY_EMPTY (Recon Drone Setup)
+  // Check if there's at least one empty cell on the board
+  if (action.mode === 'MOVE_SELF_ANY_EMPTY') {
+    const activeSize = currentGameState.activeGridSize
+    const gridSize = currentGameState.board.length
+    const offset = Math.floor((gridSize - activeSize) / 2)
+    const minBound = offset
+    const maxBound = offset + activeSize - 1
+
+    for (let r = minBound; r <= maxBound; r++) {
+      for (let c = minBound; c <= maxBound; c++) {
+        if (!currentGameState.board[r][c].card) {
+          return true // Found empty cell
+        }
+      }
+    }
+    return false // No empty cells
   }
 
   // Special Case: Hand-only actions that require discarding (Faber, Lucius)

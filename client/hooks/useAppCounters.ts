@@ -153,11 +153,20 @@ export const useAppCounters = ({
           const targetCard = targetPlayer?.hand[cardIndex]
 
           if (targetPlayer && targetCard) {
-            // Special handling for Revealed tokens on ANY hand cards (not just opponents)
-            // Revealed can be placed on any player's hand cards as long as they don't already have your Revealed
-            const isRevealedToken = cursorStack.type === 'Revealed' && !targetPlayer.isDummy
+            // Special handling for Revealed tokens on hand cards
+            // Rules: Can place on opponent or dummy hand cards, NOT on own hand cards
+            const isRevealedToken = cursorStack.type === 'Revealed'
 
             if (isRevealedToken) {
+              // CRITICAL: Cannot place Revealed on own hand cards (left panel)
+              // excludeOwnerId is set to token owner's ID in tokenTargeting.ts
+              const tokenOwnerId = cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId ?? effectiveActorId
+              if (playerId === tokenOwnerId) {
+                // Attempting to place on own hand card - do nothing, keep cursor stack active
+                console.log('[useAppCounters] Revealed token cannot be placed on own hand card')
+                return
+              }
+
               // Check if card already has Revealed from this player (unique constraint)
               const alreadyHasRevealed = targetCard.statuses?.some(s => s.type === 'Revealed' && s.addedByPlayerId === effectiveActorId)
               if (alreadyHasRevealed) {
@@ -175,7 +184,7 @@ export const useAppCounters = ({
                 clearTargetingMode()
               }
 
-              // Allow placing Revealed token on any player's hand card
+              // Allow placing Revealed token on opponent or dummy hand cards
               handleDrop({
                 card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, abilityText: '', types: [] },
                 source: 'counter_panel',

@@ -395,6 +395,32 @@ export function handleEmptyCellClick(
     return false
   }
 
+  // === ABILITY MODE - RESURRECT_FROM_DISCARD ===
+  if (abilityMode && abilityMode.mode === 'RESURRECT_FROM_DISCARD') {
+    const { sourceCoords, payload, isDeployAbility, readyStatusToRemove, sourceCard } = abilityMode
+
+    if (!sourceCoords) {return false}
+
+    const isAdj = Math.abs(boardCoords.row - sourceCoords.row) + Math.abs(boardCoords.col - sourceCoords.col) === 1
+    if (!isAdj) {return false}
+
+    if (payload?.selectedCardIndex !== undefined) {
+      const ownerId = sourceCard?.ownerId || 0
+      // Resurrect the card to the selected cell
+      resurrectDiscardedCard(ownerId, payload.selectedCardIndex, boardCoords)
+
+      // Add the specified token (e.g., Resurrection)
+      const tokenType = payload?.withToken || 'Resurrection'
+      spawnToken(boardCoords, tokenType, ownerId)
+
+      markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+      setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+      return true
+    }
+
+    return false
+  }
+
   // === ABILITY MODE - INTEGRATOR_LINE_SELECT ===
   if (abilityMode && abilityMode.mode === 'INTEGRATOR_LINE_SELECT') {
     const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
@@ -437,6 +463,23 @@ export function handleEmptyCellClick(
     }
 
     markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+    return true
+  }
+
+  // === ABILITY MODE - MOVE_SELF_ANY_EMPTY ===
+  if (abilityMode && abilityMode.mode === 'MOVE_SELF_ANY_EMPTY') {
+    const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
+
+    if (!sourceCoords || !sourceCard) {return false}
+
+    // Check if cell is empty
+    if (gameState.board[boardCoords.row][boardCoords.col].card !== null) {return false}
+
+    // Move the card to the selected empty cell
+    moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
+    markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
+    clearTargetingMode()
     setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
     return true
   }

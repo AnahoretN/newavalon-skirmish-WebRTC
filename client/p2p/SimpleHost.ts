@@ -26,7 +26,7 @@ import type { DeckType } from '../types'
 export class SimpleHost {
   private peer: any = null  // Peer instance
   private connections: Map<string, any> = new Map()  // _peerId -> DataConnection
-  private playerIdCounter: number = 2  // Start with 2, since host is already player 1
+  private playerIdCounter: number  // Initialized in constructor based on existing players
   private peerIdToPlayerId: Map<string, number> = new Map()
 
   // Game state
@@ -39,6 +39,11 @@ export class SimpleHost {
   constructor(initialState: GameState, config: SimpleHostConfig = {}) {
     this.state = initialState
     this.config = config
+    // Initialize playerIdCounter based on existing players to avoid ID conflicts
+    const maxPlayerId = initialState.players.length > 0
+      ? Math.max(...initialState.players.map(p => p.id))
+      : 1
+    this.playerIdCounter = maxPlayerId + 1
   }
 
   /**
@@ -222,16 +227,27 @@ export class SimpleHost {
     const newState = applyAction(oldState, playerId, action, data)
 
     // Special handling for SELECT_SCORING_LINE - generate floating text for score
+    // IMPORTANT: Use activePlayerId (scoring player) not playerId (clicking player)
+    // This ensures dummy players show floating text when controlled by other players
     if (action === 'SELECT_SCORING_LINE' && newState !== oldState) {
       const { lineType, lineIndex } = data || {}
       if (lineType) {
-        this.broadcastFloatingTextForScoring(newState, playerId, lineType, lineIndex, oldState)
+        const scoringPlayerId = newState.activePlayerId
+        this.broadcastFloatingTextForScoring(newState, scoringPlayerId, lineType, lineIndex, oldState)
       }
     }
 
     // If state changed - broadcast
     if (newState !== oldState) {
       this.state = newState
+      // Update playerIdCounter to reflect new max player ID
+      // This prevents ID conflicts when players are added via actions (like SET_DUMMY_PLAYER_COUNT)
+      const maxPlayerId = newState.players.length > 0
+        ? Math.max(...newState.players.map(p => p.id))
+        : 0
+      if (maxPlayerId >= this.playerIdCounter) {
+        this.playerIdCounter = maxPlayerId + 1
+      }
       this.version++
       this.broadcastAll()  // broadcastAll now calls notifyStateUpdate internally
     }
@@ -284,6 +300,9 @@ export class SimpleHost {
     const newPlayerDeck = this.createPlayerDeck(newPlayerId, playerName || `Player ${newPlayerId}`, randomDeckType)
 
     // Add player to state
+    const newPlayerColor = this.getPlayerColor(newPlayerId)
+    logger.info(`[SimpleHost] Creating player ${newPlayerId} with color: ${newPlayerColor} type=${typeof newPlayerColor}`)
+
     this.state = {
       ...this.state,
       players: [
@@ -296,7 +315,7 @@ export class SimpleHost {
           deck: newPlayerDeck,
           discard: [],
           selectedDeck: randomDeckType,
-          color: this.getPlayerColor(newPlayerId),
+          color: newPlayerColor,
           isDummy: false,
           isDisconnected: false,
           isReady: false,
@@ -555,6 +574,16 @@ export class SimpleHost {
   private personalizeForPlayer(localPlayerId: number): PersonalizedState {
     const baseState = this.state
 
+    // Check if there's a deck view request
+    // @ts-ignore - temporary flag for deck view request
+    const deckViewRequest = baseState._deckViewRequest as { requestingPlayerId: number; targetPlayerId: number } | undefined
+    const isDeckViewRequest = deckViewRequest &&
+      deckViewRequest.requestingPlayerId === localPlayerId
+
+    if (deckViewRequest) {
+      logger.info(`[SimpleHost] Deck view request: requesting=${deckViewRequest.requestingPlayerId} target=${deckViewRequest.targetPlayerId} localPlayer=${localPlayerId} isMatch=${isDeckViewRequest}`)
+    }
+
     // Convert visualEffects Map to object for PeerJS
     const visualEffectsObj: Record<string, any> = {}
     if (baseState.visualEffects instanceof Map) {
@@ -570,9 +599,9 @@ export class SimpleHost {
       players: baseState.players.map(player => {
         const isLocalPlayer = player.id === localPlayerId
         const isDummy = player.isDummy
+        const isDeckViewTarget = isDeckViewRequest && player.id === deckViewRequest!.targetPlayerId
 
-        // For local player and dummy - full data
-        // For others - only sizes + announcedCard (showcase visible to all)
+        // For local player and dummy - full data (hand, deck, discard)
         if (isLocalPlayer || isDummy) {
           return {
             id: player.id,
@@ -595,8 +624,48 @@ export class SimpleHost {
             boardHistory: player.boardHistory,
             lastPlayedCardId: player.lastPlayedCardId || null
           }
-        } else {
-          const pData = {
+        }
+
+        // For deck view target - include full deck data but keep hand as placeholder
+        if (isDeckViewTarget) {
+          const placeholderHand = (player.hand || []).map((card: any) => {
+            // Check if this card is Revealed for the local player
+            const isRevealedToMe = card.revealedTo?.includes(localPlayerId) ||
+              (card.statuses || []).some((s: any) =>
+                s.type === 'Revealed' && s.ownerId === localPlayerId
+              )
+
+            // If Revealed to this player, send full card data so they can see it face-up
+            if (isRevealedToMe) {
+              return {
+                ...card,  // Full card data
+                _isPlaceholder: false  // Not a placeholder anymore
+              }
+            }
+
+            // Otherwise, minimal placeholder (face-down)
+            return {
+              _isPlaceholder: true,
+              id: card.id,
+              baseId: card.baseId,  // IMPORTANT: Include baseId so Revealed cards can be looked up
+              ownerId: card.ownerId || player.id,
+              statuses: card.statuses || [],
+              revealedTo: card.revealedTo,
+              deck: '' as const,
+              name: '',
+              power: 0,
+              abilityText: '',
+              types: [],
+              imageUrl: '',
+              fallbackImage: '',
+              color: ''
+            }
+          })
+
+          // Log deck data for debugging
+          logger.info(`[SimpleHost] Deck view for ${localPlayerId}: viewing player ${player.id} deck, hasDeck: !!player.deck, deckLength: ${player.deck?.length || 0}`)
+
+          return {
             id: player.id,
             name: player.name,
             score: player.score,
@@ -609,20 +678,92 @@ export class SimpleHost {
             isSpectator: player.isSpectator,
             position: player.position,
             selectedDeck: player.selectedDeck,
+            // Hand remains as placeholder (private)
+            hand: placeholderHand,
             handSize: player.hand?.length || 0,
+            // Deck is full data (for viewing)
+            deck: player.deck || [],
             deckSize: player.deck?.length || 0,
+            discard: [],
             discardSize: player.discard?.length || 0,
-            // Make deep copy of announcedCard to avoid reference issues
             announcedCard: player.announcedCard ? { ...player.announcedCard } : null,
             lastPlayedCardId: player.lastPlayedCardId || null
           }
-          // Log announcedCard for debugging
-          if (player.announcedCard) {
-            logger.info(`[SimpleHost] Player ${player.id} announcedCard for ${localPlayerId}:`, player.announcedCard.name)
-          }
-          return pData
         }
+
+        // For opponents - create placeholder cards in hand with minimal data
+        // This allows status tokens (like Revealed) to be placed on them
+        // These cards will be shown face-down (as card backs) in UI
+        // EXCEPTION: If card has Revealed status for local player, include full data
+        const placeholderHand = (player.hand || []).map((card: any) => {
+          // Check if this card is Revealed for the local player
+          const isRevealedToMe = card.revealedTo?.includes(localPlayerId) ||
+            (card.statuses || []).some((s: any) =>
+              s.type === 'Revealed' && s.ownerId === localPlayerId
+            )
+
+          // If Revealed to this player, send full card data so they can see it face-up
+          if (isRevealedToMe) {
+            return {
+              ...card,  // Full card data
+              _isPlaceholder: false  // Not a placeholder anymore
+            }
+          }
+
+          // Otherwise, minimal placeholder (face-down)
+          return {
+            _isPlaceholder: true,  // Mark as placeholder so UI knows to hide details
+            id: card.id,
+            baseId: card.baseId,  // IMPORTANT: Include baseId so Revealed cards can be looked up
+            ownerId: card.ownerId || player.id,
+            // CRITICAL: Include statuses so Revealed tokens are visible
+            statuses: card.statuses || [],
+            // CRITICAL: Include revealedTo so Revealed token owners can see the card face-up
+            revealedTo: card.revealedTo,
+            // Minimal properties for validation and Card component
+            deck: '' as const,
+            name: '',
+            power: 0,
+            abilityText: '',
+            types: [],
+            imageUrl: '',
+            fallbackImage: '',
+            color: ''
+          }
+        })
+
+        const pData = {
+          id: player.id,
+          name: player.name,
+          score: player.score,
+          color: player.color,
+          isDummy: player.isDummy,
+          isDisconnected: player.isDisconnected,
+          isReady: player.isReady,
+          teamId: player.teamId,
+          autoDrawEnabled: player.autoDrawEnabled,
+          isSpectator: player.isSpectator,
+          position: player.position,
+          selectedDeck: player.selectedDeck,
+          hand: placeholderHand,  // Placeholder cards with statuses
+          handSize: player.hand?.length || 0,
+          deckSize: player.deck?.length || 0,
+          discardSize: player.discard?.length || 0,
+          // Make deep copy of announcedCard to avoid reference issues
+          announcedCard: player.announcedCard ? { ...player.announcedCard } : null,
+          lastPlayedCardId: player.lastPlayedCardId || null
+        }
+        // DEBUG: Log player color being sent
+        if (!isLocalPlayer && !isDummy) {
+          logger.info(`[SimpleHost] Opponent player color for ${localPlayerId}: player ${player.id} color=${player.color} type=${typeof player.color}`)
+        }
+        return pData
       }) as PersonalizedPlayer[]
+    }
+
+    // Clear the deck view request flag after processing
+    if (deckViewRequest) {
+      delete result._deckViewRequest
     }
 
     return result as PersonalizedState
@@ -651,7 +792,9 @@ export class SimpleHost {
    */
   private getPlayerColor(playerId: number): any {
     const colors = ['blue', 'purple', 'red', 'green', 'yellow', 'orange']
-    return colors[(playerId - 1) % colors.length]
+    const color = colors[(playerId - 1) % colors.length]
+    logger.info(`[SimpleHost] getPlayerColor for player ${playerId}: ${color} type=${typeof color}`)
+    return color
   }
 
   /**

@@ -266,6 +266,11 @@ export function handleModeCardClick(
     return handleSelectDeck(card, boardCoords, props)
   }
 
+  // RECON_DRONE_COMMIT (2-step: select adjacent opponent card, then reveal their hand card)
+  if (mode === 'RECON_DRONE_COMMIT') {
+    return handleReconDroneCommit(card, boardCoords, props)
+  }
+
   return false
 }
 
@@ -634,85 +639,91 @@ function handleRiotMove(
 
 /**
  * Handle SHIELD_SELF_THEN_RIOT_PUSH (Reclaimed Gawain Deploy)
- * 1. Add Shield status to self
- * 2. Transition to RIOT_PUSH mode
+ * 1. Add Shield status to self (if not already added)
+ * 2. Transition to RIOT_PUSH mode or perform push directly
  *
- * IMPORTANT: This ability ALWAYS transitions to RIOT_PUSH mode after adding Shield.
- * Self-click activates the ability, then allows pushing an adjacent opponent card.
+ * IMPORTANT: If shieldApplied is true in payload, Shield was already added.
+ * In that case:
+ * - Self-click → cancel mode and mark ability as used (skip push)
+ * - Adjacent opponent click → do push directly
  */
 function handleShieldSelfThenRiotPush(
   card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, gameState, setAbilityMode, addBoardCardStatus, /* markAbilityUsed, */ interactionLock, setTargetingMode, commandContext, moveItem } = props
+  const { abilityMode, gameState, setAbilityMode, addBoardCardStatus, markAbilityUsed, interactionLock, setTargetingMode, commandContext, moveItem } = props
 
   if (interactionLock.current) {
     return false
   }
 
-  const { sourceCoords, isDeployAbility, readyStatusToRemove, sourceCard } = abilityMode!
+  const { sourceCoords, isDeployAbility, readyStatusToRemove, sourceCard, payload } = abilityMode!
 
   if (!sourceCoords || sourceCoords.row < 0 || !sourceCard) {
     return false
   }
 
   const ownerId = sourceCard.ownerId!
+  const shieldAlreadyApplied = payload?.shieldApplied === true
 
-  // Allow self-click to skip/finish (only if shield was already added)
-  // But in this mode, self-click is what ADDS shield and transitions to RIOT_PUSH
-
-  // Check if clicking on self first time
+  // Check if clicking on self
   if (boardCoords.row === sourceCoords.row && boardCoords.col === sourceCoords.col) {
-    // Add Shield to self
-    addBoardCardStatus(sourceCoords, 'Shield', ownerId)
+    if (shieldAlreadyApplied) {
+      // Shield already applied - self-click cancels the mode (skip push)
+      markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+      setAbilityMode(null)
+      return true
+    } else {
+      // Old behavior: add Shield and transition to RIOT_PUSH
+      addBoardCardStatus(sourceCoords, 'Shield', ownerId)
 
-    // Transition to RIOT_PUSH mode with same parameters
-    const riotPushAction: AbilityAction = {
-      type: 'ENTER_MODE',
-      mode: 'RIOT_PUSH',
-      sourceCard,
-      sourceCoords,
-      isDeployAbility,
-      readyStatusToRemove,
-      payload: {}
-    }
+      const riotPushAction: AbilityAction = {
+        type: 'ENTER_MODE',
+        mode: 'RIOT_PUSH',
+        sourceCard,
+        sourceCoords,
+        isDeployAbility,
+        readyStatusToRemove,
+        payload: {}
+      }
 
-    setAbilityMode(riotPushAction)
+      setAbilityMode(riotPushAction)
 
-    // Recalculate valid targets for RIOT_PUSH
-    const dRow = sourceCoords.row
-    const dCol = sourceCoords.col
-    const preCalculatedTargets: {row: number, col: number}[] = []
+      // Recalculate valid targets for RIOT_PUSH
+      const dRow = sourceCoords.row
+      const dCol = sourceCoords.col
+      const preCalculatedTargets: {row: number, col: number}[] = []
 
-    // Check all adjacent cells
-    const adjacentOffsets = [[-1, 0], [1, 0], [0, -1], [0, 1]]
-    const gridSize = gameState.board.length
-    const offset = Math.floor((gridSize - gameState.activeGridSize) / 2)
-    const minBound = offset
-    const maxBound = offset + gameState.activeGridSize - 1
+      // Check all adjacent cells
+      const adjacentOffsets = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+      const gridSize = gameState.board.length
+      const offset = Math.floor((gridSize - gameState.activeGridSize) / 2)
+      const minBound = offset
+      const maxBound = offset + gameState.activeGridSize - 1
 
-    for (const [dr, dc] of adjacentOffsets) {
-      const r = dRow + dr
-      const c = dCol + dc
-      if (r >= minBound && r <= maxBound && c >= minBound && c <= maxBound) {
-        const targetCell = gameState.board[r][c]
-        const targetCard = targetCell?.card
-        if (targetCard) {
-          const targetPlayer = gameState.players.find(p => p.id === targetCard.ownerId)
-          const actorPlayer = gameState.players.find(p => p.id === ownerId)
-          const isTeammate = targetPlayer?.teamId !== undefined && actorPlayer?.teamId !== undefined &&
-                            targetPlayer.teamId === actorPlayer.teamId
+      for (const [dr, dc] of adjacentOffsets) {
+        const r = dRow + dr
+        const c = dCol + dc
+        if (r >= minBound && r <= maxBound && c >= minBound && c <= maxBound) {
+          const targetCell = gameState.board[r][c]
+          const targetCard = targetCell?.card
+          if (targetCard) {
+            const targetPlayer = gameState.players.find(p => p.id === targetCard.ownerId)
+            const actorPlayer = gameState.players.find(p => p.id === ownerId)
+            const isTeammate = targetPlayer?.teamId !== undefined && actorPlayer?.teamId !== undefined &&
+                              targetPlayer.teamId === actorPlayer.teamId
 
-          if (targetCard.ownerId !== ownerId && !isTeammate) {
-            preCalculatedTargets.push({row: r, col: c})
+            if (targetCard.ownerId !== ownerId && !isTeammate) {
+              preCalculatedTargets.push({row: r, col: c})
+            }
           }
         }
       }
-    }
 
-    setTargetingMode(riotPushAction, ownerId, sourceCoords, preCalculatedTargets, commandContext)
-    return true
+      setTargetingMode(riotPushAction, ownerId, sourceCoords, preCalculatedTargets, commandContext)
+      return true
+    }
   }
 
   // Handle push logic for adjacent opponent cards
@@ -751,6 +762,7 @@ function handleShieldSelfThenRiotPush(
       sourceCard,
       sourceCoords,
       isDeployAbility,
+      readyStatusToRemove,
       payload: { vacatedCoords: boardCoords }
     })
     return true
@@ -1319,6 +1331,73 @@ function handleImmunisRetrieve(
     return true
   }
 
+  return false
+}
+
+/**
+ * Handle RECON_DRONE_COMMIT (2-step: select adjacent opponent card, then reveal their hand card)
+ */
+function handleReconDroneCommit(
+  card: Card,
+  boardCoords: { row: number; col: number },
+  props: ModeHandlersProps
+): boolean {
+  const { abilityMode, gameState, setAbilityMode, setCursorStack, triggerClickWave } = props
+
+  if (!abilityMode || abilityMode.mode !== 'RECON_DRONE_COMMIT') {
+    return false
+  }
+
+  const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove, payload } = abilityMode
+
+  if (!sourceCoords) {
+    return false
+  }
+
+  // Step 1: Select adjacent opponent card
+  if (!payload._step2TargetOwnerId) {
+    // Check if target is adjacent
+    const isAdj = Math.abs(boardCoords.row - sourceCoords.row) + Math.abs(boardCoords.col - sourceCoords.col) === 1
+    if (!isAdj) {
+      return false
+    }
+
+    // Check if target is opponent
+    const ownerId = sourceCard?.ownerId || 0
+    if (card.ownerId === ownerId) {
+      return false // Can't select own cards
+    }
+
+    // Step 1 complete - transition to step 2
+    triggerClickWave('board', boardCoords)
+
+    // Update ability mode to step 2
+    setAbilityMode({
+      ...abilityMode,
+      payload: {
+        ...payload,
+        _step2TargetOwnerId: card.ownerId, // Save for step 2
+        _step1TargetCardId: card.id
+      }
+    })
+
+    // Create cursor stack for Revealed tokens
+    // Set targetOwnerId to the selected opponent's ID so only their hand cards can be targeted
+    setCursorStack({
+      type: 'Revealed',
+      count: payload.count || 1,
+      targetOwnerId: card.ownerId,
+      sourceCoords,
+      sourceCard,
+      isDeployAbility,
+      readyStatusToRemove
+    })
+
+    return true
+  }
+
+  // Step 2: Target should be hand card (handled elsewhere via handCardHandlers)
+  // This handler is only for board card selection (step 1)
   return false
 }
 

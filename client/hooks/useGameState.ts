@@ -39,7 +39,6 @@ interface UseGameStateResult {
   // Additional WebRTC compatibility props (stubs)
   initializeWebrtcHost: () => Promise<string>
   connectAsGuest: (hostId: string) => Promise<boolean>
-  requestDeckView: (playerId: number) => void
   sendFullDeckToHost: (playerId: number, deck: any[], deckLength: number) => void
   shareHostDeckWithGuests: (deck: any[], deckLength: number) => void
   isReconnecting: boolean
@@ -143,6 +142,7 @@ interface UseGameStateResult {
   removeStatusByType: (coords: { row: number; col: number }, type: string) => void
   reorderTopDeck: (playerId: number, newTopCards: any[]) => void
   reorderCards: (playerId: number, newOrder: any[], source?: string) => void
+  requestDeckView: (targetPlayerId: number) => void
 
   // WebRTC
   webrtcHostId: string | null
@@ -166,24 +166,42 @@ function personalToGameState(personal: PersonalizedState, localPlayerId: number)
     ...personal,
     visualEffects: visualEffectsMap,
     players: personal.players.map(p => {
-      // Если есть hand - это полные данные (локальный игрок или dummy)
-      if (p.hand) {
+      // Если есть deck с картами - это полные данные (локальный игрок или dummy)
+      // Remote игроки имеют placeholder hand но не имеют deck массива
+      if (p.deck && p.deck.length > 0) {
         return {
           ...p,
-          hand: p.hand,
-          deck: p.deck || [],
+          hand: p.hand || [],
+          deck: p.deck,
           discard: p.discard || [],
           boardHistory: p.boardHistory || [],
           announcedCard: p.announcedCard || null,
-          handSize: p.hand.length,
-          deckSize: p.deck?.length || 0,
+          handSize: (p.hand || []).length,
+          deckSize: p.deck.length,
           discardSize: p.discard?.length || 0
+        }
+      } else if (p.deckSize && p.deckSize > 0) {
+        // Deck view target - есть deckSize но нет deck массива
+        // Сохраняем deckSize для корректного отображения
+        console.log('[personalToGameState] Deck view target', p.id, 'deckSize:', p.deckSize)
+        return {
+          ...p,
+          hand: p.hand || [],
+          deck: [],
+          discard: [],
+          boardHistory: [],
+          announcedCard: p.announcedCard || null,
+          handSize: p.handSize || 0,
+          deckSize: p.deckSize,
+          discardSize: p.discardSize || 0
         }
       } else {
         // Для других игроков - только размеры + announcedCard (витрина видна всем)
+        // Используем deckSize из персонализированного состояния
+        console.log('[personalToGameState] Remote player', p.id, 'deckSize:', p.deckSize, 'handSize:', p.handSize, 'color:', p.color, 'colorType:', typeof p.color)
         return {
           ...p,
-          hand: [],
+          hand: p.hand || [],
           deck: [],
           discard: [],
           boardHistory: [],
@@ -601,6 +619,15 @@ export function useGameState(_props: any = {}): UseGameStateResult {
         sendAction('MOVE_ANNOUNCED_TO_HAND', {
           playerId: item.playerId
         })
+      } else if (item.source === 'counter_panel') {
+        // Размещение жетона/статуса на карту в руке (например, Revealed)
+        sendAction('ADD_STATUS_TO_HAND_CARD', {
+          playerId: target.playerId,
+          cardIndex: target.cardIndex,
+          statusType: item.statusType,
+          ownerId: item.ownerId,
+          count: item.count || 1
+        })
       } else {
         const cardId = item.card?.id
         if (cardId) {
@@ -980,6 +1007,9 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   const reorderCards = useCallback((playerId: number, newOrder: any[]) => {
     sendAction('REORDER_CARDS', { playerId, newOrder })
   }, [sendAction])
+  const requestDeckView = useCallback((targetPlayerId: number) => {
+    sendAction('REQUEST_DECK_VIEW', { targetPlayerId })
+  }, [sendAction])
 
   const markAbilityUsed = useCallback((coords: any, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => {
     sendAction('MARK_ABILITY_USED', { coords, isDeploy, setDeployAttempted, readyStatusToRemove })
@@ -1114,6 +1144,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     removeStatusByType,
     reorderTopDeck,
     reorderCards,
+    requestDeckView,
     triggerFloatingText,
     latestFloatingTexts: latestFloatingTextsRef.current,
     latestDeckSelections: latestDeckSelectionsRef.current,
@@ -1128,17 +1159,16 @@ export function useGameState(_props: any = {}): UseGameStateResult {
 
     // Compatibility aliases
     initializeWebrtcHost: createGame,
-    connectAsGuest: async (hostId: string) => {
+    connectAsGuest: useCallback(async (hostId: string) => {
       try {
         await joinGameViaModal(hostId)
         return true
       } catch {
         return false
       }
-    },
+    }, [joinGameViaModal]),
 
     // Additional WebRTC compatibility props (stubs for now)
-    requestDeckView: (_playerId: number) => {},
     sendFullDeckToHost: (_playerId: number, _deck: any[], _deckLength: number) => {},
     shareHostDeckWithGuests: (_deck: any[], _deckLength: number) => {},
     isReconnecting: false,

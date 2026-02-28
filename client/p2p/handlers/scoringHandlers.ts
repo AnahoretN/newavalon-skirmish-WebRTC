@@ -24,18 +24,32 @@ export function handleStartScoring(state: GameState, playerId: number, enterScor
  * SELECT_SCORING_LINE - select line for scoring
  */
 export function handleSelectScoringLine(state: GameState, playerId: number, data: any, handlePassTurn: (state: GameState, playerId: number, reason: string) => GameState): GameState {
-  if (!state.isScoringStep || state.activePlayerId !== playerId) {return state}
+  if (!state.isScoringStep) {return state}
+
+  // Check who can control scoring:
+  // - Active player can always control their own scoring
+  // - Any player can control scoring if active player is a dummy
+  const activePlayer = state.players.find(p => p.id === state.activePlayerId)
+  const isDummyPlayer = activePlayer?.isDummy ?? false
+
+  if (state.activePlayerId !== playerId && !isDummyPlayer) {
+    console.log('[handleSelectScoringLine] Player', playerId, 'cannot score for active player', state.activePlayerId)
+    return state
+  }
 
   const { lineType, lineIndex } = data || {}
   if (!lineType) {return state}
 
-  // Calculate points based on cards in line
-  const points = calculateLineScore(state, playerId, lineType, lineIndex)
+  // Score goes to the ACTIVE player (the dummy or the player whose turn it is)
+  const scoringPlayerId = state.activePlayerId
 
-  console.log('[handleSelectScoringLine] Player', playerId, 'selected', lineType, lineIndex, 'score:', points)
+  // Calculate points based on cards in line
+  const points = calculateLineScore(state, scoringPlayerId, lineType, lineIndex)
+
+  console.log('[handleSelectScoringLine] Player', playerId, 'clicked for', scoringPlayerId, 'selected', lineType, lineIndex, 'score:', points)
 
   const newPlayers = state.players.map(p =>
-    p.id === playerId
+    p.id === scoringPlayerId
       ? { ...p, score: p.score + points }
       : p
   )

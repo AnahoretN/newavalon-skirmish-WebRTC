@@ -120,9 +120,8 @@ function findTargetElement(wave: ClickWaveData): HTMLElement | null {
     // Find cell by data attributes
     return document.querySelector(`[data-row="${wave.boardCoords.row}"][data-col="${wave.boardCoords.col}"]`)
   } else if (wave.location === 'hand' && wave.handTarget) {
-    // Find hand card - try both dash and comma formats
-    return document.querySelector(`[data-hand-card="${wave.handTarget.playerId}-${wave.handTarget.cardIndex}"]`) ||
-           document.querySelector(`[data-hand-card="${wave.handTarget.playerId},${wave.handTarget.cardIndex}"]`)
+    // Find hand card - using comma separator format
+    return document.querySelector(`[data-hand-card="${wave.handTarget.playerId},${wave.handTarget.cardIndex}"]`)
   } else if (wave.location === 'deck') {
     // Find deck element
     return document.querySelector('[data-deck]')

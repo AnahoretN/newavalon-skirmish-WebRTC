@@ -344,6 +344,10 @@ export function applyAction(
       newState = handleAddStatusToBoardCard(newState, playerId, data)
       break
 
+    case 'ADD_STATUS_TO_HAND_CARD':
+      newState = handleAddStatusToHandCard(newState, playerId, data)
+      break
+
     case 'PLAY_TOKEN_CARD':
       newState = handlePlayTokenCard(newState, playerId, data)
       break
@@ -378,6 +382,10 @@ export function applyAction(
 
     case 'REORDER_TOP_DECK':
       newState = handleReorderTopDeck(newState, playerId, data)
+      break
+
+    case 'REQUEST_DECK_VIEW':
+      newState = handleRequestDeckView(newState, playerId, data)
       break
 
     default:
@@ -462,43 +470,57 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
 
   // Commit (3) → Scoring (4) or PassTurn
   if (phase === 3) {
-    // Check if player has cards with "LastPlayed" status on board
-    // LastPlayed status is added when card is played from hand
-    console.log('[NEXT_PHASE to Scoring] Player', playerId, 'checking for LastPlayed cards...')
+    // Check if ACTIVE player has cards with "LastPlayed" status on board
+    // We use state.activePlayerId, not playerId (who clicked the button)
+    // This is important when Player A plays cards for Dummy Player B
+    const activePlayerId = state.activePlayerId
+    console.log('[NEXT_PHASE to Scoring] Active player', activePlayerId, 'checking for LastPlayed cards...')
+
+    const player = state.players.find(p => p.id === activePlayerId)
+    const isDummyPlayer = player?.isDummy ?? false
 
     // Debug: log all player's cards on board
     const playerCardsOnBoard: any[] = []
     state.board.forEach((row, r) => {
       row.forEach((cell, c) => {
-        if (cell.card?.ownerId === playerId) {
+        if (cell.card?.ownerId === activePlayerId) {
           playerCardsOnBoard.push({
             id: cell.card.id,
             name: cell.card.name,
             statuses: cell.card.statuses,
-            hasLastPlayed: cell.card?.statuses?.some(s => s.type === 'LastPlayed' && s.addedByPlayerId === playerId)
+            hasLastPlayed: cell.card?.statuses?.some(s => s.type === 'LastPlayed')
           })
         }
       })
     })
     console.log('[NEXT_PHASE to Scoring] Player cards on board:', playerCardsOnBoard)
 
+    // For dummy players, check if card belongs to them and has LastPlayed (any player could have added it)
+    // For real players, check if card belongs to them AND was added by them this turn
     const hasLastPlayedCards = state.board.some(row =>
-      row.some(cell =>
-        cell.card?.ownerId === playerId &&
-        cell.card?.statuses?.some(s => s.type === 'LastPlayed' && s.addedByPlayerId === playerId)
-      )
+      row.some(cell => {
+        if (cell.card?.ownerId !== activePlayerId) return false
+
+        if (isDummyPlayer) {
+          // Dummy player: check for any LastPlayed status (regardless of who added it)
+          return cell.card?.statuses?.some(s => s.type === 'LastPlayed')
+        } else {
+          // Real player: only count cards they played themselves
+          return cell.card?.statuses?.some(s => s.type === 'LastPlayed' && s.addedByPlayerId === activePlayerId)
+        }
+      })
     )
 
-    console.log('[NEXT_PHASE to Scoring] hasLastPlayedCards:', hasLastPlayedCards)
+    console.log('[NEXT_PHASE to Scoring] hasLastPlayedCards:', hasLastPlayedCards, 'isDummy:', isDummyPlayer)
 
     if (hasLastPlayedCards) {
       // Has cards with LastPlayed status - enter Scoring and calculate lines
-      console.log('[NEXT_PHASE to Scoring] Entering scoring phase for player', playerId)
-      return enterScoringPhase(state, playerId)
+      console.log('[NEXT_PHASE to Scoring] Entering scoring phase for player', activePlayerId)
+      return enterScoringPhase(state, activePlayerId)
     } else {
       // No cards with LastPlayed status - pass turn to next player
       console.log('[NEXT_PHASE to Scoring] No LastPlayed cards, passing turn')
-      return handlePassTurn(state, playerId, 'no_new_cards')
+      return handlePassTurn(state, activePlayerId, 'no_new_cards')
     }
   }
 
@@ -1602,6 +1624,10 @@ function handleSpawnToken(state: GameState, playerId: number, data?: any): GameS
     enteredThisTurn: false
   }
 
+  // Initialize ready statuses for the token
+  // This allows tokens like Recon Drone and Walking Turret to use their abilities
+  initializeReadyStatuses(tokenCard, ownerId, state.currentPhase)
+
   const newBoard = state.board.map((r, rIdx) =>
     r.map((cell, cIdx) => {
       if (rIdx === row && cIdx === col) {
@@ -1734,7 +1760,7 @@ function handleChangePlayerDeck(state: GameState, playerId: number, deckType: De
 }
 /**
  * MARK_ABILITY_USED - mark ability as used
- * Removes ready status and adds usage marker
+ * Removes ready status, adds usage marker, and updates ready statuses for phase-specific abilities
  */
 function handleMarkAbilityUsed(state: GameState, data: any): GameState {
   const { coords, isDeploy, readyStatusToRemove } = data || {}
@@ -1763,6 +1789,21 @@ function handleMarkAbilityUsed(state: GameState, data: any): GameState {
           if (!newCard.statuses.some(s => s.type === deployUsedStatus)) {
             newCard.statuses.push({ type: deployUsedStatus, addedByPlayerId: newCard.ownerId || 0 })
             console.log('[handleMarkAbilityUsed] Added deployUsedThisTurn to card:', newCard.baseId)
+          }
+
+          // After Deploy is used, check if card has phase-specific ability for current phase
+          // E.g., Walking Turret uses Deploy in Setup phase, then gets Setup status
+          const abilityInfo = getCardAbilityInfo(newCard)
+          const { hasSetupAbility, hasCommitAbility } = abilityInfo
+
+          if (state.currentPhase === 1 && hasSetupAbility) {
+            // Add Setup status after Deploy is used
+            newCard.statuses.push({ type: READY_STATUS.SETUP, addedByPlayerId: newCard.ownerId || 0 })
+            console.log('[handleMarkAbilityUsed] Added readySetup after Deploy to card:', newCard.baseId)
+          } else if (state.currentPhase === 3 && hasCommitAbility) {
+            // Add Commit status after Deploy is used
+            newCard.statuses.push({ type: READY_STATUS.COMMIT, addedByPlayerId: newCard.ownerId || 0 })
+            console.log('[handleMarkAbilityUsed] Added readyCommit after Deploy to card:', newCard.baseId)
           }
         } else if (readyStatusToRemove === 'readySetup') {
           // Setup: mark as used this turn
@@ -1957,9 +1998,19 @@ function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: a
 
   logger.info(`[handleAddStatusToBoardCard] Adding ${count}x ${statusType} from player ${ownerId} to card at [${row},${col}]. Total statuses: ${newStatuses.length}`)
 
+  // If adding Revealed status, the card becomes visible to the token owner
+  let revealedTo = targetCard.revealedTo
+  if (statusType === 'Revealed') {
+    const currentRevealed = Array.isArray(revealedTo) ? revealedTo : []
+    if (!currentRevealed.includes(ownerId)) {
+      revealedTo = [...currentRevealed, ownerId]
+    }
+  }
+
   const newCard = {
     ...targetCard,
-    statuses: newStatuses
+    statuses: newStatuses,
+    revealedTo
   }
 
   const newBoard = state.board.map((r, rIdx) =>
@@ -1972,6 +2023,93 @@ function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: a
   )
 
   return { ...state, board: newBoard }
+}
+
+/**
+ * ADD_STATUS_TO_HAND_CARD - add status (token) to card in hand
+ * Used for Revealed token placement on opponent/dummy hand cards
+ * Supports singleton statuses (Threat, Support, Revealed) - only one per owner
+ */
+function handleAddStatusToHandCard(state: GameState, _playerId: number, data: any): GameState {
+  const { playerId, cardIndex, statusType, ownerId, count = 1 } = data || {}
+  if (playerId === undefined || cardIndex === undefined || !statusType || ownerId === undefined) {
+    return state
+  }
+
+  // Find the target player
+  const targetPlayer = state.players.find(p => p.id === playerId)
+  if (!targetPlayer) {
+    return state
+  }
+
+  // Check if card exists at index
+  if (cardIndex < 0 || cardIndex >= targetPlayer.hand.length) {
+    return state
+  }
+
+  const targetCard = targetPlayer.hand[cardIndex]
+  if (!targetCard) {
+    return state
+  }
+
+  const existingStatuses = targetCard.statuses || []
+
+  // Singleton statuses that cannot stack (only one instance allowed per owner)
+  const SINGLETON_STATUSES = ['Threat', 'Support', 'Revealed']
+
+  // Check if this is a singleton status
+  const isSingletonStatus = SINGLETON_STATUSES.includes(statusType)
+
+  if (isSingletonStatus) {
+    // For singleton statuses, check if this owner already has this status on the card
+    const alreadyHasStatus = existingStatuses.some(s => s.type === statusType && s.addedByPlayerId === ownerId)
+    if (alreadyHasStatus) {
+      // Card already has this singleton status from this owner - don't add another
+      logger.info(`[handleAddStatusToHandCard] Blocked duplicate ${statusType} from player ${ownerId} on card at index ${cardIndex}`)
+      return state
+    }
+  }
+
+  // Add the new status
+  let newStatuses = [...existingStatuses]
+
+  if (isSingletonStatus) {
+    // For singleton, only add one
+    const newStatus = { type: statusType, addedByPlayerId: ownerId }
+    newStatuses = [...newStatuses, newStatus]
+  } else {
+    // For stackable tokens, add count tokens
+    for (let i = 0; i < count; i++) {
+      const newStatus = { type: statusType, addedByPlayerId: ownerId }
+      newStatuses = [...newStatuses, newStatus]
+    }
+  }
+
+  logger.info(`[handleAddStatusToHandCard] Adding ${count}x ${statusType} from player ${ownerId} to player ${playerId} card at index ${cardIndex}`)
+
+  // If adding Revealed status, the card becomes visible to the token owner
+  let revealedTo = targetCard.revealedTo
+  if (statusType === 'Revealed') {
+    const currentRevealed = Array.isArray(revealedTo) ? revealedTo : []
+    if (!currentRevealed.includes(ownerId)) {
+      revealedTo = [...currentRevealed, ownerId]
+      logger.info(`[handleAddStatusToHandCard] Setting revealedTo for card ${targetCard.id}: ${JSON.stringify(revealedTo)}`)
+    }
+  }
+
+  const newCard = {
+    ...targetCard,
+    statuses: newStatuses,
+    revealedTo
+  }
+
+  // Update player's hand
+  const newHand = [...targetPlayer.hand]
+  newHand[cardIndex] = newCard
+
+  const newPlayers = state.players.map(p => p.id === playerId ? { ...p, hand: newHand } : p)
+
+  return { ...state, players: newPlayers }
 }
 
 /**
@@ -2161,5 +2299,40 @@ function handleReorderTopDeck(state: GameState, _playerId: number, data: any): G
   })
 
   return { ...state, players: newPlayers as Player[] }
+}
+
+/**
+ * REQUEST_DECK_VIEW - Request full deck data for viewing another player's deck
+ * This sets a temporary flag that personalizes the state to include full deck data
+ * for the requesting player. The flag is cleared by the host after broadcasting.
+ *
+ * data: { targetPlayerId: number } - the player whose deck we want to view
+ */
+function handleRequestDeckView(state: GameState, playerId: number, data: any): GameState {
+  const { targetPlayerId } = data || {}
+  if (targetPlayerId === undefined) {
+    logger.warn('[handleRequestDeckView] Missing targetPlayerId')
+    return state
+  }
+
+  const targetPlayer = state.players.find(p => p.id === targetPlayerId)
+  if (!targetPlayer) {
+    logger.warn(`[handleRequestDeckView] Target player ${targetPlayerId} not found`)
+    return state
+  }
+
+  logger.info(`[handleRequestDeckView] Player ${playerId} requesting deck view for player ${targetPlayerId}, deck size: ${targetPlayer.deck?.length || 0}`)
+
+  // Add a temporary flag to the state that tells personalizeForPlayer
+  // to include full deck data for this player's deck to the requesting player
+  // This flag will be cleared by SimpleHost after broadcasting
+  return {
+    ...state,
+    // @ts-ignore - temporary flag for deck view request
+    _deckViewRequest: {
+      requestingPlayerId: playerId,
+      targetPlayerId
+    }
+  }
 }
 

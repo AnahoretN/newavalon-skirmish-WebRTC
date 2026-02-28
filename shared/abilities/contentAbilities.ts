@@ -164,6 +164,46 @@ export function buildActionFromContentAbility(
       } as AbilityAction
     }
 
+    // Detect pattern: ENTER_MODE (SELECT_TARGET, isAdjacent, opponent) + CREATE_STACK (SELECT_HAND_TARGET)
+    // This is the RECON_DRONE_COMMIT pattern
+    // Check filter as either original string ('isAdjacent') or check the details structure
+    const isReconDroneCommitPattern =
+      step1.action === 'ENTER_MODE' &&
+      step1.mode === 'SELECT_TARGET' &&
+      step1.details?.selectFrom === 'opponent' &&
+      (step1.details?.filter === 'isAdjacent' || step1.details?.hasOwnProperty('filter')) &&
+      step2.action === 'CREATE_STACK' &&
+      step2.mode === 'SELECT_HAND_TARGET' &&
+      step2.details?.tokenType === 'Revealed'
+
+    if (isReconDroneCommitPattern) {
+      // Build the filter function for selecting adjacent opponents
+      const filterFn = buildFilterFromString('isAdjacent', ownerId, coords)
+
+      return {
+        type: 'ENTER_MODE',
+        mode: 'RECON_DRONE_COMMIT',
+        sourceCard: card,
+        sourceCoords: coords,
+        payload: {
+          filter: filterFn,
+          tokenType: 'Revealed',
+          count: step2.details?.count || 1,
+          chainedAction: {
+            type: 'CREATE_STACK',
+            mode: 'SELECT_HAND_TARGET',
+            sourceCard: card,
+            sourceCoords: coords,
+            payload: {
+              tokenType: 'Revealed',
+              count: step2.details?.count || 1,
+              targetOwnerIdFromSource: true
+            }
+          }
+        }
+      } as AbilityAction
+    }
+
     // Generic multi-step fallback - not yet implemented for custom modes
     console.warn(`Multi-step ability not yet implemented for card ${card.baseId}`)
     return null
@@ -263,8 +303,25 @@ export function buildActionFromContentAbility(
         type: 'OPEN_MODAL',
         mode: ability.mode,
         sourceCard: card,
+        sourceCoords: coords,
         payload: details
       } as AbilityAction
+
+    case 'RETURN_FROM_DISCARD': {
+      // Opens discard viewing modal with filter, then returns selected card to target
+      const mode = ability.mode === 'ADJACENT_EMPTY' ? 'RETURN_FROM_DISCARD_TO_BOARD' : 'RETURN_FROM_DISCARD_TO_HAND'
+      return {
+        type: 'OPEN_MODAL',
+        mode,
+        sourceCard: card,
+        sourceCoords: coords,
+        payload: {
+          ...details,
+          filter: details.filter || null,
+          withToken: details.withToken || null,
+        }
+      } as AbilityAction
+    }
 
     case 'LOOK_AT_TOP_DECK':
       // Secret Informant - Look at top cards, put any on bottom, then draw

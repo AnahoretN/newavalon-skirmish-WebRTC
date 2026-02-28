@@ -469,6 +469,67 @@ function handleOpenModal(
       })
       markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
     }
+  } else if (action.mode === 'RETURN_FROM_DISCARD_TO_HAND') {
+    // Return card from discard to hand (e.g., Finn EG Setup)
+    const player = gameState.players.find(p => p.id === action.sourceCard?.ownerId)
+    if (player) {
+      // Extract filter type from filter string (e.g., "hasType_Device" → "Device")
+      let filterType = 'Unit'
+      const filterString = action.payload?.filter
+      if (filterString) {
+        if (filterString.startsWith('hasType_')) {
+          filterType = filterString.replace('hasType_', '')
+        } else if (filterString.startsWith('hasFaction_')) {
+          filterType = filterString.replace('hasFaction_', '')
+        }
+      }
+
+      setViewingDiscard({
+        player,
+        pickConfig: { filterType, action: 'recover' },
+      })
+      markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+    }
+  } else if (action.mode === 'RETURN_FROM_DISCARD_TO_BOARD') {
+    // Return card from discard to adjacent empty cell with token (e.g., Finn MW Deploy)
+    const player = gameState.players.find(p => p.id === action.sourceCard?.ownerId)
+    if (player) {
+      // Extract filter type from filter string
+      let filterType = 'Unit'
+      const filterString = action.payload?.filter
+      if (filterString) {
+        if (filterString.startsWith('hasType_')) {
+          filterType = filterString.replace('hasType_', '')
+        } else if (filterString.startsWith('hasFaction_')) {
+          filterType = filterString.replace('hasFaction_', '')
+        }
+      }
+
+      // Set ability mode for the second step (placing the card)
+      const resurrectAction: AbilityAction = {
+        type: 'ENTER_MODE',
+        mode: 'RESURRECT_FROM_DISCARD',
+        sourceCard: action.sourceCard,
+        sourceCoords: action.sourceCoords,
+        payload: {
+          withToken: action.payload?.withToken || 'Resurrection',
+          selectedCardIndex: -1, // Will be set after card selection
+        },
+        isDeployAbility: action.isDeployAbility,
+      }
+
+      setAbilityMode(resurrectAction)
+
+      setViewingDiscard({
+        player,
+        pickConfig: {
+          filterType,
+          action: 'resurrect',
+          targetCoords: action.sourceCoords,
+        },
+      })
+      // Don't mark ability as used yet - will mark after card is placed
+    }
   }
 }
 
@@ -485,11 +546,19 @@ function handleEnterMode(
   const mode = action.mode
 
   // SHIELD_SELF_THEN_RIOT_PUSH (Reclaimed Gawain)
-  // Don't add Shield immediately - let user click self to add Shield and transition to RIOT_PUSH
+  // Add Shield immediately, then let user select adjacent opponent to push
   if (mode === 'SHIELD_SELF_THEN_RIOT_PUSH') {
-    const targets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
-    setAbilityMode(action)
-    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, targets, commandContext)
+    const actorId = getSafePlayerId(action, localPlayerId)
+    addBoardCardStatus(sourceCoords, 'Shield', actorId)
+
+    const pushAction: AbilityAction = {
+      ...action,
+      payload: { ...action.payload, shieldApplied: true }
+    }
+    const targets = calculateValidTargets(pushAction, gameState, actorId, commandContext)
+
+    setAbilityMode(pushAction)
+    setTargetingMode(pushAction, actorId, sourceCoords, targets, commandContext)
     return
   }
 

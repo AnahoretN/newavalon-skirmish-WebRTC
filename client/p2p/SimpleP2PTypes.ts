@@ -45,6 +45,7 @@ export type ActionType =
   // Deck control
   | 'DRAW_CARD'
   | 'SHUFFLE_DECK'
+  | 'REQUEST_DECK_VIEW'
 
   // Score and status
   | 'UPDATE_SCORE'
@@ -80,6 +81,7 @@ export type ActionType =
 
   // Status effects
   | 'ADD_STATUS_TO_BOARD_CARD'
+  | 'ADD_STATUS_TO_HAND_CARD'
 
   // Token cards
   | 'PLAY_TOKEN_CARD'

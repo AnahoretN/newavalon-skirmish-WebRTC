@@ -214,15 +214,24 @@ export interface ContentAbility {
 
 /**
  * Get ABILITIES array for a card from contentDatabase
+ * Also checks tokenDatabase for tokens (Recon Drone, Walking Turret, etc.)
  * @param baseId - The card's base ID
  * @returns Array of ContentAbility objects or empty array if not found
  */
 export function getCardAbilities(baseId: string): ContentAbility[] {
+  // First check card database
   const card = cardDatabase[baseId]
-  if (!card || !card.ABILITIES) {
-    return []
+  if (card && card.ABILITIES) {
+    return card.ABILITIES as ContentAbility[]
   }
-  return card.ABILITIES as ContentAbility[]
+
+  // Also check token database (for tokens like Recon Drone, Walking Turret)
+  const token = tokenDatabase[baseId]
+  if (token && token.ABILITIES) {
+    return token.ABILITIES as ContentAbility[]
+  }
+
+  return []
 }
 
 /**
