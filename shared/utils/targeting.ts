@@ -307,9 +307,9 @@ export const calculateValidTargets = (
     return targets
   }
 
-  // Special case: SELECT_ALLIED_TRANSFER_COUNTERS (Reckless Provocateur Commit)
+  // Special case: TRANSFER_ALL_STATUSES (Reckless Provocateur Commit)
   // Can select any allied card (except self) that has transferable counters
-  if (mode === 'SELECT_ALLIED_TRANSFER_COUNTERS' && sourceCoords) {
+  if (mode === 'TRANSFER_ALL_STATUSES' && sourceCoords) {
     const ownerId = action.sourceCard?.ownerId || actorId
     const transferableTypes = ['Aim', 'Shield', 'Exploit', 'Stun', 'Revealed']
 
@@ -856,9 +856,9 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
     return false // No adjacent opponent cards
   }
 
-  // Special Case: SELECT_ALLIED_TRANSFER_COUNTERS (Reckless Provocateur Commit)
+  // Special Case: TRANSFER_ALL_STATUSES (Reckless Provocateur Commit)
   // Check if there's at least one allied card with transferable counters
-  if (action.mode === 'SELECT_ALLIED_TRANSFER_COUNTERS' && action.sourceCoords) {
+  if (action.mode === 'TRANSFER_ALL_STATUSES' && action.sourceCoords) {
     const ownerId = action.sourceCard?.ownerId || playerId
     const transferableTypes = ['Aim', 'Shield', 'Exploit', 'Stun', 'Revealed']
     const activeSize = currentGameState.activeGridSize

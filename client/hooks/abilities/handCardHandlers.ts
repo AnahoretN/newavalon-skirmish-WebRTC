@@ -116,9 +116,9 @@ export function handleHandCardClick(
             // Clear targeting mode and valid targets when last token is placed
             clearTargetingMode()
             clearValidTargets?.()
-            if (cursorStack.chainedAction) {
-              handleActionExecution(cursorStack.chainedAction, cursorStack.sourceCoords || { row: -1, col: -1 })
-            }
+            // For RECON_DRONE_COMMIT and similar multi-step abilities, skip chainedAction
+            // The ability is already marked as used by markAbilityUsed above
+            // chainedAction was only needed for intermediate steps, not final completion
             setCursorStack(null)
           }
         }
