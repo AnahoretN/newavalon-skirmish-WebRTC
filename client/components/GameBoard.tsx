@@ -494,6 +494,16 @@ const GridCell = memo<{
               />
             </div>
           )}
+
+          {/* Scoring line clickable overlay - captures clicks on cards during scoring */}
+          {showScoringHighlight && scoringLineInfo && (
+            <div
+              onClick={handleClick}
+              className="absolute inset-0 rounded-md cursor-pointer"
+              style={{ zIndex: 60 }}
+              title={`Click to score this line (${scoringLineInfo.score} points)`}
+            />
+          )}
         </div>
       )
     })
