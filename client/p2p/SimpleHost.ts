@@ -509,26 +509,54 @@ export class SimpleHost {
    * @param newState - Updated game state after scoring
    * @param playerId - Player who scored
    * @param lineType - Type of line scored ('row' | 'col')
-   * @param lineIndex - Index of line scored
+   * @param lineIndex - Index of line scored (from active player's perspective)
    * @param oldState - State before scoring (to find which cards contributed)
    */
   private broadcastFloatingTextForScoring(newState: GameState, playerId: number, lineType: string, lineIndex?: number, oldState?: any): void {
     const gridSize = newState.activeGridSize
     const scoreEvents: { row: number; col: number; text: string; playerId: number }[] = []
 
-    // Find cells in the scored line
-    const cellsToCheck: { row: number; col: number }[] = []
-    if (lineType === 'row' && lineIndex !== undefined) {
-      for (let c = 0; c < gridSize; c++) {
-        cellsToCheck.push({ row: lineIndex, col: c })
-      }
-    } else if (lineType === 'col' && lineIndex !== undefined) {
-      for (let r = 0; r < gridSize; r++) {
-        cellsToCheck.push({ row: r, col: lineIndex })
+    // IMPORTANT: Find the actual line where the scoring player's cards are located.
+    // The lineIndex passed in is based on the active player's scoring lines (calculated when entering scoring phase).
+    // But the scoring player (could be a dummy controlled by another player) might have cards in a different row/column.
+    // We need to find the scoring player's actual last played card location.
+    const scoringPlayer = newState.players.find((p: any) => p.id === playerId)
+    let actualLineIndex = lineIndex
+
+    if (scoringPlayer?.lastPlayedCardId) {
+      // Search the board for the scoring player's last played card
+      for (let r = 0; r < newState.board.length; r++) {
+        for (let c = 0; c < newState.board[r].length; c++) {
+          const cell = newState.board[r][c]
+          if (cell.card?.id === scoringPlayer.lastPlayedCardId) {
+            // Found the card! Use this row/column for floating text
+            if (lineType === 'row') {
+              actualLineIndex = r
+              logger.info(`[SimpleHost] broadcastFloatingTextForScoring: Found scoring player's card at row ${r}, using that instead of clicked row ${lineIndex}`)
+            } else if (lineType === 'col') {
+              actualLineIndex = c
+              logger.info(`[SimpleHost] broadcastFloatingTextForScoring: Found scoring player's card at col ${c}, using that instead of clicked col ${lineIndex}`)
+            }
+            break
+          }
+        }
+        if (actualLineIndex !== lineIndex) break  // Found and updated, exit loops
       }
     }
 
-    // Calculate total score from cards in line (don't rely on oldState)
+    // Find cells in the scored line (using actual line index for scoring player)
+    const cellsToCheck: { row: number; col: number }[] = []
+    if (lineType === 'row' && actualLineIndex !== undefined) {
+      for (let c = 0; c < gridSize; c++) {
+        cellsToCheck.push({ row: actualLineIndex, col: c })
+      }
+    } else if (lineType === 'col' && actualLineIndex !== undefined) {
+      for (let r = 0; r < gridSize; r++) {
+        cellsToCheck.push({ row: r, col: actualLineIndex })
+      }
+    }
+
+    // Calculate total score from cards in line
     let calculatedScore = 0
 
     // Generate floating text for each card that contributed
@@ -546,7 +574,7 @@ export class SimpleHost {
 
     // Only send floating text if there are actual scoring cards
     if (scoreEvents.length > 0) {
-      logger.info(`[SimpleHost] Broadcasting ${scoreEvents.length} score events for player ${playerId} scoring ${lineType} ${lineIndex || ''}, total: ${calculatedScore}`)
+      logger.info(`[SimpleHost] Broadcasting ${scoreEvents.length} score events for player ${playerId} (${lineType} ${actualLineIndex}), total: ${calculatedScore}`)
 
       const message = {
         type: 'FLOATING_TEXT',
