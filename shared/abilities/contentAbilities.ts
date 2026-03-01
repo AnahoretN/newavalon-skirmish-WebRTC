@@ -371,6 +371,7 @@ export function buildActionFromContentAbility(
         sourceCoords: coords,
         payload: {
           filter: buildFilterFromString(details.filter || 'isOwner', ownerId, coords),
+          filterString: details.filter || 'isOwner',  // Store string for serialization
           range,
           moveFromHand: false,
           selectedCard: null,

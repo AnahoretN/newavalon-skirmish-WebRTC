@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Finn Setup Ability**: Fixed "Move 1 allied card 1 or 2 cells" ability
   - Added missing `isOwner` filter to buildFilterFromString function
   - Updated ability text to "Move 1 allied card 1 or 2 cells"
+  - Added filterString serialization support for WebRTC P2P mode
+  - Filter functions are now rebuilt from string on client side
+  - Added special handling for SELECT_UNIT_FOR_MOVE in actionExecutionHandler
   - Cards can now be selected as valid targets for movement
 
 

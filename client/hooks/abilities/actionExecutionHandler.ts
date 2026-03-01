@@ -697,6 +697,22 @@ function handleEnterMode(
     setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, patrolTargets)
     return
   }
+
+  // SELECT_UNIT_FOR_MOVE (Finn Setup)
+  if (mode === 'SELECT_UNIT_FOR_MOVE') {
+    // Check if there are valid targets (allied cards on board)
+    const hasTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    if (!hasTargets) {
+      triggerNoTarget(action.sourceCoords || sourceCoords)
+      // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
+      return
+    }
+    const targets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    setAbilityMode(action)
+    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, targets, commandContext)
+    return
+  }
+
   // SELECT_TARGET
   if (mode === 'SELECT_TARGET') {
     // For Deploy abilities, don't check targets immediately - let player activate anytime

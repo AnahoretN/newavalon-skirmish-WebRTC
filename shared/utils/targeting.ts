@@ -4,6 +4,8 @@
  */
 
 import type { GameState, Card, CommandContext, AbilityAction } from '../../client/types.js'
+import { checkAdj } from '../abilities/abilityUtils.js'
+import { hasStatus } from '../abilities/index.js'
 
 // Constants for target validation
 const TARGET_OPPONENTS = -1
@@ -145,6 +147,46 @@ export const validateTarget = (
   }
 
   return true
+}
+
+/**
+ * Build a filter function from a filter string
+ * Local copy to avoid circular dependency with contentAbilities
+ */
+function buildFilterFromString(
+  filter: string,
+  ownerId: number,
+  _coords: { row: number; col: number }
+): ((card: Card, r?: number, c?: number) => boolean) | undefined {
+  // hasStatus_StatusName
+  if (filter.startsWith('hasStatus_')) {
+    const statusType = filter.replace('hasStatus_', '')
+    return (card: Card) => hasStatus(card, statusType, ownerId)
+  }
+
+  // hasStatus_StatusName1_or_StatusName2
+  if (filter.startsWith('hasStatus_') && filter.includes('_or_')) {
+    const statuses = filter.replace('hasStatus_', '').split('_or_')
+    return (card: Card) => statuses.some(s => hasStatus(card, s, ownerId))
+  }
+
+  // isAdjacent
+  if (filter === 'isAdjacent') {
+    return (_card: Card, r?: number, c?: number) =>
+      r !== undefined && c !== undefined && checkAdj(r, c, _coords.row, _coords.col)
+  }
+
+  // isOpponent
+  if (filter === 'isOpponent') {
+    return (card: Card) => card.ownerId !== ownerId
+  }
+
+  // isOwner
+  if (filter === 'isOwner') {
+    return (card: Card) => card.ownerId === ownerId
+  }
+
+  return undefined
 }
 
 /**
@@ -311,7 +353,7 @@ export const calculateValidTargets = (
   // Can select any allied card (except self) that has transferable counters
   if (mode === 'TRANSFER_ALL_STATUSES' && sourceCoords) {
     const ownerId = action.sourceCard?.ownerId || actorId
-    const transferableTypes = ['Aim', 'Shield', 'Exploit', 'Stun', 'Revealed']
+    const transferableTypes = ['Aim', 'Shield', 'Exploit', 'Stun', 'Revealed', 'Rule']
 
     // Iterate ONLY over active grid bounds
     for (let r = minBound; r <= maxBound; r++) {
@@ -349,7 +391,18 @@ export const calculateValidTargets = (
   }
 
   // 1. Generic TARGET selection
-  if ((mode === 'SELECT_TARGET' || mode === 'CENSOR_SWAP' || mode === 'ZEALOUS_WEAKEN' || mode === 'CENTURION_BUFF' || mode === 'SELECT_UNIT_FOR_MOVE') && payload.filter && typeof payload.filter === 'function') {
+  if ((mode === 'SELECT_TARGET' || mode === 'CENSOR_SWAP' || mode === 'ZEALOUS_WEAKEN' || mode === 'CENTURION_BUFF' || mode === 'SELECT_UNIT_FOR_MOVE') && (payload.filter || payload.filterString)) {
+
+    // Build filter function if not present (for serialization support)
+    let filterFn = payload.filter
+    if (!filterFn && payload.filterString) {
+      const ownerId = action.sourceCard?.ownerId || 0
+      filterFn = buildFilterFromString(payload.filterString, ownerId, sourceCoords || action.sourceCoords || { row: 0, col: 0 })
+    }
+
+    if (!filterFn || typeof filterFn !== 'function') {
+      return []
+    }
 
     // Strict Hand-Only actions check - return empty for board targets
     if (payload.actionType === 'SELECT_HAND_FOR_DISCARD_THEN_SPAWN' ||
@@ -365,7 +418,7 @@ export const calculateValidTargets = (
         const cell = board[r][c]
 
         // Check basic filter
-        let isValid = cell.card && payload.filter(cell.card, r, c)
+        let isValid = cell.card && filterFn(cell.card, r, c)
 
         // Check context requirements (e.g., Adjacent to last move)
         if (isValid && contextCheck === 'ADJACENT_TO_LAST_MOVE' && commandContext?.lastMovedCardCoords) {
@@ -860,7 +913,7 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
   // Check if there's at least one allied card with transferable counters
   if (action.mode === 'TRANSFER_ALL_STATUSES' && action.sourceCoords) {
     const ownerId = action.sourceCard?.ownerId || playerId
-    const transferableTypes = ['Aim', 'Shield', 'Exploit', 'Stun', 'Revealed']
+    const transferableTypes = ['Aim', 'Shield', 'Exploit', 'Stun', 'Revealed', 'Rule']
     const activeSize = currentGameState.activeGridSize
     const gridSize = currentGameState.board.length
     const offset = Math.floor((gridSize - activeSize) / 2)
