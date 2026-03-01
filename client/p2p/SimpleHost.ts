@@ -227,12 +227,16 @@ export class SimpleHost {
     const newState = applyAction(oldState, playerId, action, data)
 
     // Special handling for SELECT_SCORING_LINE - generate floating text for score
-    // IMPORTANT: Use activePlayerId (scoring player) not playerId (clicking player)
+    // CRITICAL: Use activePlayerId from oldState (before handlePassTurn changed it)
     // This ensures dummy players show floating text when controlled by other players
     if (action === 'SELECT_SCORING_LINE' && newState !== oldState) {
       const { lineType, lineIndex } = data || {}
       if (lineType) {
-        const scoringPlayerId = newState.activePlayerId
+        // Get scoring player from oldState BEFORE handlePassTurn changed activePlayerId
+        const scoringPlayerId = oldState?.activePlayerId ?? newState.activePlayerId
+        const clickingPlayer = oldState?.players.find((p: any) => p.id === playerId)
+        const scoringPlayer = oldState?.players.find((p: any) => p.id === scoringPlayerId)
+        logger.info(`[SimpleHost] SELECT_SCORING_LINE: clickingPlayer=${playerId} (${clickingPlayer?.name}) scoringPlayer=${scoringPlayerId} (${scoringPlayer?.name}) line=${lineType} ${lineIndex}`)
         this.broadcastFloatingTextForScoring(newState, scoringPlayerId, lineType, lineIndex, oldState)
       }
     }
@@ -506,8 +510,11 @@ export class SimpleHost {
 
   /**
    * Broadcast floating text for scoring to all players
+   * Shows floating text over cards that actually contributed to the score.
+   * The text color matches the player who received the points.
+   *
    * @param newState - Updated game state after scoring
-   * @param playerId - Player who scored
+   * @param playerId - Player who scored (receives the points)
    * @param lineType - Type of line scored ('row' | 'col')
    * @param lineIndex - Index of line scored (from active player's perspective)
    * @param oldState - State before scoring (to find which cards contributed)
@@ -516,65 +523,54 @@ export class SimpleHost {
     const gridSize = newState.activeGridSize
     const scoreEvents: { row: number; col: number; text: string; playerId: number }[] = []
 
-    // IMPORTANT: Find the actual line where the scoring player's cards are located.
-    // The lineIndex passed in is based on the active player's scoring lines (calculated when entering scoring phase).
-    // But the scoring player (could be a dummy controlled by another player) might have cards in a different row/column.
-    // We need to find the scoring player's actual last played card location.
-    const scoringPlayer = newState.players.find((p: any) => p.id === playerId)
-    let actualLineIndex = lineIndex
+    // IMPORTANT: We need to find ALL cards on the board that belong to the scoring player
+    // and are in the selected line (row/col). The floating text should appear over
+    // the actual cards that contributed points, regardless of where they are.
+    //
+    // The lineType and lineIndex tell us WHICH line was selected for scoring.
+    // We check each cell in that line, and if the card belongs to the scoring player,
+    // we add floating text for that card.
 
-    if (scoringPlayer?.lastPlayedCardId) {
-      // Search the board for the scoring player's last played card
-      for (let r = 0; r < newState.board.length; r++) {
-        for (let c = 0; c < newState.board[r].length; c++) {
-          const cell = newState.board[r][c]
-          if (cell.card?.id === scoringPlayer.lastPlayedCardId) {
-            // Found the card! Use this row/column for floating text
-            if (lineType === 'row') {
-              actualLineIndex = r
-              logger.info(`[SimpleHost] broadcastFloatingTextForScoring: Found scoring player's card at row ${r}, using that instead of clicked row ${lineIndex}`)
-            } else if (lineType === 'col') {
-              actualLineIndex = c
-              logger.info(`[SimpleHost] broadcastFloatingTextForScoring: Found scoring player's card at col ${c}, using that instead of clicked col ${lineIndex}`)
-            }
-            break
-          }
-        }
-        if (actualLineIndex !== lineIndex) break  // Found and updated, exit loops
-      }
-    }
-
-    // Find cells in the scored line (using actual line index for scoring player)
+    // Find cells in the selected line
     const cellsToCheck: { row: number; col: number }[] = []
-    if (lineType === 'row' && actualLineIndex !== undefined) {
+    if (lineType === 'row' && lineIndex !== undefined) {
       for (let c = 0; c < gridSize; c++) {
-        cellsToCheck.push({ row: actualLineIndex, col: c })
+        cellsToCheck.push({ row: lineIndex, col: c })
       }
-    } else if (lineType === 'col' && actualLineIndex !== undefined) {
+    } else if (lineType === 'col' && lineIndex !== undefined) {
       for (let r = 0; r < gridSize; r++) {
-        cellsToCheck.push({ row: r, col: actualLineIndex })
+        cellsToCheck.push({ row: r, col: lineIndex })
       }
     }
 
-    // Calculate total score from cards in line
-    let calculatedScore = 0
+    logger.info(`[SimpleHost] broadcastFloatingTextForScoring: checking ${lineType} ${lineIndex}, ${cellsToCheck.length} cells for player ${playerId}`)
 
-    // Generate floating text for each card that contributed
+    // Generate floating text for each card that belongs to scoring player in this line
     for (const { row, col } of cellsToCheck) {
       const cell = newState.board[row]?.[col]
       const card = cell?.card
-      if (card && card.ownerId === playerId && !card.statuses?.some((s: any) => s.type === 'Stun')) {
+      if (card) {
+        const belongsToScoringPlayer = card.ownerId === playerId
+        const isStunned = card.statuses?.some((s: any) => s.type === 'Stun')
         const points = Math.max(0, card.power + (card.powerModifier || 0) + (card.bonusPower || 0))
-        if (points > 0) {
-          calculatedScore += points
+
+        logger.info(`[SimpleHost]   Card at (${row},${col}): owner=${card.ownerId} (target=${playerId}) isTarget=${belongsToScoringPlayer} stunned=${isStunned} power=${points} name=${card.name}`)
+
+        // Only add floating text for cards that:
+        // 1. Belong to the scoring player (ownerId === playerId)
+        // 2. Are not stunned
+        // 3. Have positive power
+        if (belongsToScoringPlayer && !isStunned && points > 0) {
           scoreEvents.push({ row, col, text: `+${points}`, playerId })
+          logger.info(`[SimpleHost]   -> Added score event at (${row},${col}): +${points}`)
         }
       }
     }
 
     // Only send floating text if there are actual scoring cards
     if (scoreEvents.length > 0) {
-      logger.info(`[SimpleHost] Broadcasting ${scoreEvents.length} score events for player ${playerId} (${lineType} ${actualLineIndex}), total: ${calculatedScore}`)
+      const calculatedScore = scoreEvents.reduce((sum, e) => sum + parseInt(e.text), 0)
+      logger.info(`[SimpleHost] Broadcasting ${scoreEvents.length} score events for player ${playerId} (${lineType} ${lineIndex}), total: ${calculatedScore}`)
 
       const message = {
         type: 'FLOATING_TEXT',
