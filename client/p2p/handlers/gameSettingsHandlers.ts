@@ -14,6 +14,7 @@ import { DeckType } from '../../types'
 import { shuffleDeck } from '../../../shared/utils/array'
 import { createDeck } from '../../hooks/core/gameCreators'
 import { getDecksData } from '../../content'
+import { assignUniqueRandomColor } from '../../utils/colorAssigner'
 
 /**
  * SET_GAME_MODE - set game mode (FFA, 2v2, etc)
@@ -90,6 +91,10 @@ export function handleSetDummyPlayerCount(state: GameState, count: number): Game
 
     const dummyDeck = shuffleDeck(createDeck(randomDeckType, nextPlayerId, dummyName))
 
+    // Assign random unique color (not already used by existing players)
+    const existingColors = newPlayers.map(p => p.color)
+    const dummyColor = assignUniqueRandomColor(existingColors)
+
     const dummyPlayer: Player = {
       id: nextPlayerId,
       name: dummyName,
@@ -99,7 +104,7 @@ export function handleSetDummyPlayerCount(state: GameState, count: number): Game
       discard: [],
       announcedCard: null,
       selectedDeck: randomDeckType,
-      color: (['blue', 'purple', 'red', 'green'] as PlayerColor[])[nextPlayerId - 1] || 'blue',
+      color: dummyColor,
       isDummy: true,
       isReady: true,
       boardHistory: [],

@@ -19,6 +19,7 @@ import { logger } from '../utils/logger'
 import { createDeck } from '../hooks/core/gameCreators'
 import { getDecksData } from '../content'
 import type { DeckType } from '../types'
+import { getRandomHostColor, assignUniqueRandomColor } from '../utils/colorAssigner'
 
 /**
  * SimpleHost - simplified host
@@ -97,6 +98,10 @@ export class SimpleHost {
     const hostDeckType = this.getRandomDeckType()
     const hostDeck = this.createPlayerDeck(1, localStorage.getItem('player_name') || 'Host', hostDeckType)
 
+    // Assign random unique color for host
+    const hostColor = getRandomHostColor()
+    logger.info('[SimpleHost] Host assigned random color:', hostColor)
+
     this.state = {
       ...this.state,
       gameId,
@@ -110,7 +115,7 @@ export class SimpleHost {
           discard: [],
           announcedCard: null,
           selectedDeck: hostDeckType,
-          color: 'blue',
+          color: hostColor,
           isDummy: false,
           isDisconnected: false,
           isReady: false,
@@ -304,8 +309,10 @@ export class SimpleHost {
     const newPlayerDeck = this.createPlayerDeck(newPlayerId, playerName || `Player ${newPlayerId}`, randomDeckType)
 
     // Add player to state
-    const newPlayerColor = this.getPlayerColor(newPlayerId)
-    logger.info(`[SimpleHost] Creating player ${newPlayerId} with color: ${newPlayerColor} type=${typeof newPlayerColor}`)
+    // Assign random unique color (not already used by existing players)
+    const existingColors = this.state.players.map(p => p.color)
+    const newPlayerColor = assignUniqueRandomColor(existingColors)
+    logger.info(`[SimpleHost] Creating player ${newPlayerId} with random unique color: ${newPlayerColor}`)
 
     this.state = {
       ...this.state,
@@ -523,13 +530,30 @@ export class SimpleHost {
     const gridSize = newState.activeGridSize
     const scoreEvents: { row: number; col: number; text: string; playerId: number }[] = []
 
-    // IMPORTANT: We need to find ALL cards on the board that belong to the scoring player
-    // and are in the selected line (row/col). The floating text should appear over
-    // the actual cards that contributed points, regardless of where they are.
+    // IMPORTANT: We need to find ALL cards on the board that either:
+    // 1. Belong to the scoring player, OR
+    // 2. Have Exploit tokens from the scoring player (when Data Liberator with Support is on board)
+    // and are in the selected line (row/col).
     //
     // The lineType and lineIndex tell us WHICH line was selected for scoring.
-    // We check each cell in that line, and if the card belongs to the scoring player,
+    // We check each cell in that line, and if the card contributes to score,
     // we add floating text for that card.
+
+    // Check if player has Data Liberator with Support on board
+    // Data Liberator allows scoring points from cards with Exploit tokens
+    let hasDataLiberatorWithSupport = false
+    for (let r = 0; r < newState.board.length; r++) {
+      for (let c = 0; c < newState.board[r]?.length; c++) {
+        const cell = newState.board[r][c]
+        if (cell.card?.ownerId === playerId &&
+            cell.card.baseId === 'dataLiberator' &&
+            cell.card.statuses?.some((s: any) => s.type === 'Support' && s.addedByPlayerId === playerId)) {
+          hasDataLiberatorWithSupport = true
+          break
+        }
+      }
+      if (hasDataLiberatorWithSupport) break
+    }
 
     // Find cells in the selected line
     const cellsToCheck: { row: number; col: number }[] = []
@@ -543,9 +567,9 @@ export class SimpleHost {
       }
     }
 
-    logger.info(`[SimpleHost] broadcastFloatingTextForScoring: checking ${lineType} ${lineIndex}, ${cellsToCheck.length} cells for player ${playerId}`)
+    logger.info(`[SimpleHost] broadcastFloatingTextForScoring: checking ${lineType} ${lineIndex}, ${cellsToCheck.length} cells for player ${playerId}, hasDataLiberator=${hasDataLiberatorWithSupport}`)
 
-    // Generate floating text for each card that belongs to scoring player in this line
+    // Generate floating text for each card that contributes to score in this line
     for (const { row, col } of cellsToCheck) {
       const cell = newState.board[row]?.[col]
       const card = cell?.card
@@ -554,15 +578,23 @@ export class SimpleHost {
         const isStunned = card.statuses?.some((s: any) => s.type === 'Stun')
         const points = Math.max(0, card.power + (card.powerModifier || 0) + (card.bonusPower || 0))
 
-        logger.info(`[SimpleHost]   Card at (${row},${col}): owner=${card.ownerId} (target=${playerId}) isTarget=${belongsToScoringPlayer} stunned=${isStunned} power=${points} name=${card.name}`)
+        // Check if card has Exploit from scoring player (for Data Liberator passive)
+        const hasExploitFromPlayer = card.statuses?.some((s: any) =>
+          s.type === 'Exploit' && s.addedByPlayerId === playerId
+        )
 
-        // Only add floating text for cards that:
-        // 1. Belong to the scoring player (ownerId === playerId)
-        // 2. Are not stunned
-        // 3. Have positive power
+        logger.info(`[SimpleHost]   Card at (${row},${col}): owner=${card.ownerId} (target=${playerId}) isTarget=${belongsToScoringPlayer} hasExploit=${hasExploitFromPlayer} stunned=${isStunned} power=${points} name=${card.name}`)
+
+        // Add floating text for cards that:
+        // Case 1: Player's own cards (not stunned, positive power)
         if (belongsToScoringPlayer && !isStunned && points > 0) {
           scoreEvents.push({ row, col, text: `+${points}`, playerId })
-          logger.info(`[SimpleHost]   -> Added score event at (${row},${col}): +${points}`)
+          logger.info(`[SimpleHost]   -> Added score event at (${row},${col}): +${points} (own card)`)
+        }
+        // Case 2: Cards with Exploit from player (Data Liberator passive, not stunned, positive power)
+        else if (hasDataLiberatorWithSupport && hasExploitFromPlayer && !isStunned && points > 0) {
+          scoreEvents.push({ row, col, text: `+${points}`, playerId })
+          logger.info(`[SimpleHost]   -> Added score event at (${row},${col}): +${points} (Exploit card)`)
         }
       }
     }
@@ -811,16 +843,6 @@ export class SimpleHost {
   private findPlayerByToken(token: string): number | null {
     const player = this.state.players.find(p => p.playerToken === token)
     return player?.id || null
-  }
-
-  /**
-   * Get color for player
-   */
-  private getPlayerColor(playerId: number): any {
-    const colors = ['blue', 'purple', 'red', 'green', 'yellow', 'orange']
-    const color = colors[(playerId - 1) % colors.length]
-    logger.info(`[SimpleHost] getPlayerColor for player ${playerId}: ${color} type=${typeof color}`)
-    return color
   }
 
   /**

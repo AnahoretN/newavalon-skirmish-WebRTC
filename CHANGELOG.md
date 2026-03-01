@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+- **Unique Random Color Assignment**: Players now receive random unique colors
+  - Host gets random color when creating game
+  - Guests receive random colors that don't conflict with existing players
+  - Dummy players also receive unique random colors
+  - New utility `client/utils/colorAssigner.ts` for color management
+
+
 ## [0.2.11] - 2026-02-15
 
 ### Added
