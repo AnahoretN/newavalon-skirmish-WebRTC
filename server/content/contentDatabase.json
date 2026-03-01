@@ -224,7 +224,7 @@
           "type": "commit",
           "supportRequired": false,
           "action": "ENTER_MODE",
-          "mode": "SELECT_ALLIED_TRANSFER_TOKENS",
+          "mode": "SELECT_ALLIED_TRANSFER_COUNTERS",
           "details": {}
         }
       ]

@@ -271,6 +271,11 @@ export function handleModeCardClick(
     return handleReconDroneCommit(card, boardCoords, props)
   }
 
+  // SELECT_ALLIED_TRANSFER_COUNTERS (Reckless Provocateur Commit: move all tokens from allied card to this card)
+  if (mode === 'SELECT_ALLIED_TRANSFER_COUNTERS') {
+    return handleSelectAlliedTransferCounters(card, boardCoords, props)
+  }
+
   return false
 }
 
@@ -1383,6 +1388,7 @@ function handleReconDroneCommit(
 
     // Create cursor stack for Revealed tokens
     // Set targetOwnerId to the selected opponent's ID so only their hand cards can be targeted
+    // Include chainedAction to complete the ability after Revealed is placed
     setCursorStack({
       type: 'Revealed',
       count: payload.count || 1,
@@ -1390,7 +1396,8 @@ function handleReconDroneCommit(
       sourceCoords,
       sourceCard,
       isDeployAbility,
-      readyStatusToRemove
+      readyStatusToRemove,
+      chainedAction: payload.chainedAction // Pass through chainedAction to execute after Revealed is placed
     })
 
     return true
@@ -1399,6 +1406,86 @@ function handleReconDroneCommit(
   // Step 2: Target should be hand card (handled elsewhere via handCardHandlers)
   // This handler is only for board card selection (step 1)
   return false
+}
+
+/**
+ * Handle SELECT_ALLIED_TRANSFER_COUNTERS (Reckless Provocateur Commit: move all tokens from allied card to this card)
+ */
+function handleSelectAlliedTransferCounters(
+  card: Card,
+  boardCoords: { row: number; col: number },
+  props: ModeHandlersProps
+): boolean {
+  const { abilityMode, gameState, moveItem, markAbilityUsed, triggerFloatingText, setAbilityMode, clearTargetingMode, clearValidTargets } = props
+
+  if (!abilityMode || abilityMode.mode !== 'SELECT_ALLIED_TRANSFER_COUNTERS') {
+    return false
+  }
+
+  const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
+  const ownerId = sourceCard?.ownerId || 0
+
+  // Must be allied card (same owner)
+  if (card.ownerId !== ownerId) {
+    return false
+  }
+
+  // Cannot select the source card itself
+  if (sourceCoords && boardCoords.row === sourceCoords.row && boardCoords.col === sourceCoords.col) {
+    return false
+  }
+
+  // Collect all transferable statuses/counters from the target card
+  // Transferable statuses: Aim, Shield, Exploit, Stun, Revealed
+  const transferableTypes = ['Aim', 'Shield', 'Exploit', 'Stun', 'Revealed']
+  const statusesToTransfer = (card.statuses || []).filter((s: any) => transferableTypes.includes(s.type))
+
+  if (statusesToTransfer.length === 0) {
+    return false // No tokens to transfer
+  }
+
+  // Move all statuses from target card to source card (Reckless Provocateur)
+  // First, remove all statuses from target card
+  const newTargetStatuses = (card.statuses || []).filter((s: any) => !transferableTypes.includes(s.type))
+
+  // Then, add all transferred statuses to source card
+  const sourceCardAtLocation = gameState.board[sourceCoords?.row ?? 0]?.[sourceCoords?.col ?? 0]?.card
+  const newSourceStatuses = [...(sourceCard?.statuses || []), ...statusesToTransfer]
+
+  // Apply changes via moveItem for proper syncing
+  // First, clear statuses from target
+  moveItem({
+    card: { ...card, statuses: newTargetStatuses },
+    source: 'board',
+    sourceCoords: boardCoords
+  }, { target: 'board', boardCoords })
+
+  // Then, add statuses to source
+  moveItem({
+    card: { ...sourceCard, statuses: newSourceStatuses },
+    source: 'board',
+    sourceCoords
+  }, { target: 'board', boardCoords: sourceCoords || boardCoords })
+
+  // Show floating text for each transferred token
+  const tokenCounts: Record<string, number> = {}
+  statusesToTransfer.forEach((s: any) => {
+    tokenCounts[s.type] = (tokenCounts[s.type] || 0) + 1
+  })
+
+  Object.entries(tokenCounts).forEach(([type, count]) => {
+    triggerFloatingText(`+${count} ${type}`, 'board', sourceCoords || boardCoords, ownerId)
+  })
+
+  // Mark ability as used
+  markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
+
+  // Clear targeting mode
+  clearTargetingMode()
+  clearValidTargets?.()
+  setAbilityMode(null)
+
+  return true
 }
 
 /**

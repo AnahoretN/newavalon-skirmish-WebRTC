@@ -307,6 +307,33 @@ export const calculateValidTargets = (
     return targets
   }
 
+  // Special case: SELECT_ALLIED_TRANSFER_COUNTERS (Reckless Provocateur Commit)
+  // Can select any allied card (except self) that has transferable counters
+  if (mode === 'SELECT_ALLIED_TRANSFER_COUNTERS' && sourceCoords) {
+    const ownerId = action.sourceCard?.ownerId || actorId
+    const transferableTypes = ['Aim', 'Shield', 'Exploit', 'Stun', 'Revealed']
+
+    // Iterate ONLY over active grid bounds
+    for (let r = minBound; r <= maxBound; r++) {
+      for (let c = minBound; c <= maxBound; c++) {
+        // Skip source card
+        if (r === sourceCoords.row && c === sourceCoords.col) {
+          continue
+        }
+
+        const cell = board[r][c]
+        if (cell.card && cell.card.ownerId === ownerId) {
+          // Check if card has any transferable statuses
+          const hasTransferableStatus = cell.card.statuses?.some((s: any) => transferableTypes.includes(s.type))
+          if (hasTransferableStatus) {
+            targets.push({ row: r, col: c })
+          }
+        }
+      }
+    }
+    return targets
+  }
+
   // Special case: REVEREND_DOUBLE_EXPLOIT - can target ANY card on battlefield
   if (mode === 'REVEREND_DOUBLE_EXPLOIT') {
     // Iterate ONLY over active grid bounds - all cards with any unit are valid targets
@@ -827,6 +854,37 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
       }
     }
     return false // No adjacent opponent cards
+  }
+
+  // Special Case: SELECT_ALLIED_TRANSFER_COUNTERS (Reckless Provocateur Commit)
+  // Check if there's at least one allied card with transferable counters
+  if (action.mode === 'SELECT_ALLIED_TRANSFER_COUNTERS' && action.sourceCoords) {
+    const ownerId = action.sourceCard?.ownerId || playerId
+    const transferableTypes = ['Aim', 'Shield', 'Exploit', 'Stun', 'Revealed']
+    const activeSize = currentGameState.activeGridSize
+    const gridSize = currentGameState.board.length
+    const offset = Math.floor((gridSize - activeSize) / 2)
+    const minBound = offset
+    const maxBound = offset + activeSize - 1
+
+    for (let r = minBound; r <= maxBound; r++) {
+      for (let c = minBound; c <= maxBound; c++) {
+        // Skip source card
+        if (action.sourceCoords && r === action.sourceCoords.row && c === action.sourceCoords.col) {
+          continue
+        }
+
+        const cell = currentGameState.board[r][c]
+        if (cell.card && cell.card.ownerId === ownerId) {
+          // Check if card has any transferable statuses
+          const hasTransferableStatus = cell.card.statuses?.some((s: any) => transferableTypes.includes(s.type))
+          if (hasTransferableStatus) {
+            return true // Found allied card with transferable counters
+          }
+        }
+      }
+    }
+    return false // No allied cards with transferable counters
   }
 
   // Special Case: MOVE_SELF_ANY_EMPTY (Recon Drone Setup)
