@@ -291,9 +291,12 @@ export function updateCardReadyStatuses(
     return
   }
 
+  const cardId = card.baseId || 'unknown'
+
   // Face-down cards on battlefield do not receive ready statuses
   // They will get ready statuses when flipped face-up
   if (card.isFaceDown) {
+    console.log('[updateCardReadyStatuses]', cardId, 'is face-down, skipping ready statuses')
     // Remove any existing ready statuses from face-down cards
     syncCardStatuses(card, new Set()) // Empty set = remove all ready statuses
     return
@@ -336,6 +339,23 @@ export function updateCardReadyStatuses(
     if (canCommit && currentPhase === 3 && !hasUsedAbilityThisTurn(card, 'commit')) {
       shouldHave.add(READY_STATUS.COMMIT)
     }
+  }
+
+  // Log for cards with Setup ability (like Finn)
+  if (abilityInfo.hasSetupAbility) {
+    console.log('[updateCardReadyStatuses]', cardId, {
+      cardOwnerId: card.ownerId,
+      activePlayerId,
+      currentPhase,
+      isActivePlayer,
+      isStunned: isStunned(card),
+      hasSetupAbility: abilityInfo.hasSetupAbility,
+      setupRequiresSupport: abilityInfo.setupRequiresSupport,
+      usedSetupThisTurn: hasUsedAbilityThisTurn(card, 'setup'),
+      shouldHaveSetup: shouldHave.has(READY_STATUS.SETUP),
+      shouldHaveDeploy: shouldHave.has(READY_STATUS.DEPLOY),
+      currentReadyStatuses: card.statuses?.filter((s: CardStatus) => isReadyStatus(s.type)).map((s: CardStatus) => s.type)
+    })
   }
 
   // Sync statuses to match what should exist
@@ -390,14 +410,15 @@ function getAllCardsOnBoard(gameState: GameState): Card[] {
  *
  * Logic:
  * - Deploy ability → always gets readyDeploy (works in ANY phase)
- * - Setup ability → also gets readySetup if currently in Setup phase
- * - Commit ability → also gets readyCommit if currently in Commit phase
+ * - Setup ability → also gets readySetup if currently in Setup phase AND has Support if required
+ * - Commit ability → also gets readyCommit if currently in Commit phase AND has Support if required
  *
  * Examples:
  * - Walking Turret (Deploy + Setup) enters in Setup phase → gets BOTH readyDeploy AND readySetup
  * - Walking Turret (Deploy + Setup) enters in Main phase → gets readyDeploy only
  * - Recon Drone (Setup + Commit) enters in Setup phase → gets readySetup only
  * - Recon Drone (Setup + Commit) enters in Commit phase → gets readyCommit only
+ * - Inventive Maker (Deploy + Setup requires Support) → gets readySetup ONLY if has Support
  */
 export function initializeCardReadyStatuses(
   card: Card,
@@ -413,11 +434,14 @@ export function initializeCardReadyStatuses(
   }
 
   // Phase-specific abilities - only add if currently in that phase
-  if (currentPhase === 1 && abilityInfo.hasSetupAbility) {
+  // AND support requirement is met (if support is required)
+  const canSetup = abilityInfo.hasSetupAbility && canCardActivate(card, abilityInfo.setupRequiresSupport, ownerId)
+  if (currentPhase === 1 && canSetup) {
     addReadyStatus(card, READY_STATUS.SETUP, ownerId)
   }
 
-  if (currentPhase === 3 && abilityInfo.hasCommitAbility) {
+  const canCommit = abilityInfo.hasCommitAbility && canCardActivate(card, abilityInfo.commitRequiresSupport, ownerId)
+  if (currentPhase === 3 && canCommit) {
     addReadyStatus(card, READY_STATUS.COMMIT, ownerId)
   }
 }
@@ -440,25 +464,32 @@ export function skipDeployAbility(card: Card): void {
  * Cards can have multiple ready statuses simultaneously (e.g., Deploy + Setup).
  * This function returns which one takes priority when clicking the card.
  *
- * Priority: Setup (phase 1) > Commit (phase 3) > Deploy (any phase)
+ * Priority: Deploy > Setup (phase 1 or just played in phase 2) > Commit (phase 3)
  *
  * Example: Walking Turret in Setup phase with both readyDeploy and readySetup
- * → clicking activates Setup ability first (priority), then can use Deploy
+ * → clicking activates Deploy ability first (priority), then can use Setup
+ *
+ * SPECIAL CASE: If a Setup ability card is played during Setup phase, it gets
+ * readySetup status which persists into Main phase (2). This allows the player
+ * to use the Setup ability immediately after playing the card.
  */
 export function getReadyStatusForPhase(card: Card, phaseIndex: number): ReadyStatusType | null {
-  // Priority 1: Setup in Setup phase
-  if (phaseIndex === 1 && hasReadyStatus(card, READY_STATUS.SETUP)) {
+  // Priority 1: Deploy in any phase
+  if (hasReadyStatus(card, READY_STATUS.DEPLOY)) {
+    return READY_STATUS.DEPLOY
+  }
+
+  // Priority 2: Setup in Setup phase OR in Main phase if card was just played
+  const hasSetup = hasReadyStatus(card, READY_STATUS.SETUP)
+  const justPlayed = card.enteredThisTurn || hasStatus(card, 'LastPlayed')
+
+  if (hasSetup && (phaseIndex === 1 || (phaseIndex === 2 && justPlayed))) {
     return READY_STATUS.SETUP
   }
 
-  // Priority 2: Commit in Commit phase
+  // Priority 3: Commit in Commit phase
   if (phaseIndex === 3 && hasReadyStatus(card, READY_STATUS.COMMIT)) {
     return READY_STATUS.COMMIT
-  }
-
-  // Priority 3: Deploy in any phase
-  if (hasReadyStatus(card, READY_STATUS.DEPLOY)) {
-    return READY_STATUS.DEPLOY
   }
 
   return null

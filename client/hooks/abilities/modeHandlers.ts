@@ -444,7 +444,7 @@ function handleSelectTargetActionType(
 
   // DESTROY
   if (payload.actionType === 'DESTROY') {
-    if (payload.filter && !payload.filter(card)) {
+    if (payload.filter && !payload.filter(card, boardCoords.row, boardCoords.col)) {
       return false
     }
 
@@ -733,6 +733,12 @@ function handleShieldSelfThenRiotPush(
   const isTeammate = targetPlayer?.teamId !== undefined && actorPlayer?.teamId !== undefined && targetPlayer.teamId === actorPlayer.teamId
 
   if (isAdj && card.ownerId !== ownerId && !isTeammate) {
+    // IMPORTANT: Apply Shield first if not already applied
+    // This handles the case where player clicks directly on adjacent card
+    if (!shieldAlreadyApplied) {
+      addBoardCardStatus(sourceCoords, 'Shield', ownerId)
+    }
+
     const dRow = boardCoords.row - sourceCoords.row
     const dCol = boardCoords.col - sourceCoords.col
     const targetRow = boardCoords.row + dRow
@@ -854,7 +860,7 @@ function handleTransferStatus(
     if (!card.statuses || card.statuses.length === 0) {
       return false
     }
-    const validTokens = ['Aim', 'Exploit', 'Rule', 'Shield', 'Stun']
+    const validTokens = ['Aim', 'Exploit', 'Rule', 'Shield', 'Stun', 'Revealed']
     if (!card.statuses.some(s => validTokens.includes(s.type))) {
       return false
     }
@@ -1342,7 +1348,7 @@ function handleReconDroneCommit(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, gameState, setAbilityMode, setCursorStack, triggerClickWave } = props
+  const { abilityMode, gameState, setAbilityMode, setCursorStack, triggerClickWave, setTargetingMode, markAbilityUsed } = props
 
   if (!abilityMode || abilityMode.mode !== 'RECON_DRONE_COMMIT') {
     return false
@@ -1371,29 +1377,80 @@ function handleReconDroneCommit(
     // Step 1 complete - transition to step 2
     triggerClickWave('board', boardCoords)
 
+    // Get token owner ID (the player who owns Recon Drone)
+    const tokenOwnerId = sourceCard?.ownerId || gameState.activePlayerId || props.localPlayerId || 1
+    const targetOwnerId = card.ownerId ?? 1 // Ensure targetOwnerId is defined
+
+    // Calculate hand targets for the targeted opponent's hand
+    // Revealed can be placed on cards that don't already have Revealed from this player
+    const handTargets: {playerId: number, cardIndex: number}[] = []
+    const targetPlayer = gameState.players.find(p => p.id === targetOwnerId)
+    if (targetPlayer?.hand) {
+      targetPlayer.hand.forEach((handCard, index) => {
+        // Card is valid if it doesn't already have Revealed from this player
+        const alreadyHasRevealed = handCard.statuses?.some(s => s.type === 'Revealed' && s.addedByPlayerId === tokenOwnerId)
+        if (!alreadyHasRevealed) {
+          handTargets.push({ playerId: targetOwnerId, cardIndex: index })
+        }
+      })
+    }
+
+    // Check if there are any valid hand targets
+    if (handTargets.length === 0) {
+      // No valid targets - show "no target" effect and don't proceed
+      triggerNoTarget(boardCoords)
+      // Clear ability mode and preserve ready status
+      setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+      return true
+    }
+
     // Update ability mode to step 2
     setAbilityMode({
       ...abilityMode,
       payload: {
         ...payload,
-        _step2TargetOwnerId: card.ownerId, // Save for step 2
+        _step2TargetOwnerId: targetOwnerId, // Save for step 2
         _step1TargetCardId: card.id
       }
     })
 
     // Create cursor stack for Revealed tokens
     // Set targetOwnerId to the selected opponent's ID so only their hand cards can be targeted
-    // Include chainedAction to complete the ability after Revealed is placed
+    // NOTE: We do NOT pass chainedAction here - the ability is completed by clicking a hand card
+    // The chainedAction from payload would cause unwanted "no target" effects after completion
     setCursorStack({
       type: 'Revealed',
       count: payload.count || 1,
-      targetOwnerId: card.ownerId,
+      targetOwnerId,
+      isDragging: false,
       sourceCoords,
       sourceCard,
       isDeployAbility,
-      readyStatusToRemove,
-      chainedAction: payload.chainedAction // Pass through chainedAction to execute after Revealed is placed
+      readyStatusToRemove
+      // No chainedAction - ability completes when hand card is clicked
     })
+
+    // Create a dummy action for setTargetingMode (required parameter)
+    const dummyAction: AbilityAction = {
+      type: 'CREATE_STACK',
+      mode: 'SELECT_TARGET',
+      payload: {
+        tokenType: 'Revealed',
+        filter: () => true,
+      },
+      sourceCoords,
+      sourceCard,
+    }
+
+    // Activate targeting mode so all players see the valid hand targets highlighted
+    setTargetingMode(dummyAction, tokenOwnerId, sourceCoords, undefined, undefined, handTargets)
+
+    // Mark ability as used after creating cursorStack (Recon Drone ability is now complete)
+    markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+
+    // Clear abilityMode after creating cursorStack
+    // This allows the token placement to complete without interference
+    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
 
     return true
   }

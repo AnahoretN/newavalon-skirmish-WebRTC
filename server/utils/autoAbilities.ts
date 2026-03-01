@@ -971,6 +971,8 @@ export const getAbilitiesForCard = (card: Card): CardAbilityDefinition[] => {
   const baseId = card.baseId || ''
   const contentAbilities = getCardAbilities(baseId)
 
+  console.log(`[getAbilitiesForCard] Card ${baseId} has ${contentAbilities.length} abilities:`, contentAbilities.map(a => ({ type: a.type, action: a.action, mode: a.mode })))
+
   // Convert ContentAbility to CardAbilityDefinition with dynamic getAction
   return contentAbilities.map((contentAbility): CardAbilityDefinition => ({
     baseId,

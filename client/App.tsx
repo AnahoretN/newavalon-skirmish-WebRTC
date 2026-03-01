@@ -469,22 +469,28 @@ const AppInner = function AppInner() {
       return
     }
 
+    // CRITICAL: Convert full board coordinates to active grid coordinates
+    // The active grid is centered in the full board, so we subtract the offset
+    const totalSize = gameState.board.length
+    const offset = Math.floor((totalSize - gameState.activeGridSize) / 2)
+    const activeRow = boardCoords.row - offset
+    const activeCol = boardCoords.col - offset
+
     // Find which scoring line was clicked based on the cell coordinates
     const scoringLines = gameState.scoringLines || []
     const clickedLine = scoringLines.find(line => {
-      if (line.lineType === 'row' && line.lineIndex === boardCoords.row) {
+      if (line.lineType === 'row' && line.lineIndex === activeRow) {
         return true
       }
-      if (line.lineType === 'col' && line.lineIndex === boardCoords.col) {
+      if (line.lineType === 'col' && line.lineIndex === activeCol) {
         return true
       }
-      if (line.lineType === 'diagonal' && boardCoords.row === boardCoords.col) {
+      if (line.lineType === 'diagonal' && activeRow === activeCol) {
         return true
       }
-      // Anti-diagonal: row + col = gridSize - 1 (e.g., for 7x7: 0+6=6, 1+5=6, etc.)
+      // Anti-diagonal: row + col = gridSize - 1 (e.g., for 5x5: 0+4=4, 1+3=4, etc.)
       if (line.lineType === 'anti-diagonal') {
-        const gridSize = 7 // TODO: use actual grid size from gameState.activeGridSize
-        if (boardCoords.row + boardCoords.col === gridSize - 1) {
+        if (activeRow + activeCol === gameState.activeGridSize - 1) {
           return true
         }
       }
@@ -494,7 +500,7 @@ const AppInner = function AppInner() {
     if (clickedLine) {
       selectScoringLine(clickedLine.lineType, clickedLine.lineIndex)
     }
-  }, [gameState.isScoringStep, gameState.activePlayerId, gameState.scoringLines, gameState.activeGridSize, gameState.players, localPlayerId, selectScoringLine])
+  }, [gameState.isScoringStep, gameState.activePlayerId, gameState.scoringLines, gameState.activeGridSize, gameState.board.length, gameState.players, localPlayerId, selectScoringLine])
 
   // Create a wrapper for handleEmptyCellClick that includes scoring line handling
   const handleEmptyCellClickWithScoring = useCallback((boardCoords: { row: number; col: number }) => {
@@ -1391,7 +1397,9 @@ const AppInner = function AppInner() {
         return { ...base, _color: (ft as any).color }
       }) as Array<FloatingTextData | { id: string; text: string; row?: number; col?: number; playerId?: number; _color?: string; timestamp: number }>
 
-      setActiveFloatingTexts(prev => [...prev, ...newTexts] as any)
+      // CRITICAL FIX: Clear previous floating texts before adding new ones
+      // This prevents floating texts from multiple scorings from being visible simultaneously
+      setActiveFloatingTexts(newTexts as any)
 
       const timer = setTimeout(() => {
         setActiveFloatingTexts((prev: any) => prev.filter((item: any) => !newTexts.find((nt: any) => nt.id === item.id)))

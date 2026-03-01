@@ -19,6 +19,7 @@ import { initializeReadyStatuses, recalculateAllReadyStatuses, getCardAbilityInf
 import { READY_STATUS } from '@shared/abilities/index.js'
 import { createDeck } from '../hooks/core/gameCreators'
 import { logger } from '../utils/logger'
+import { getCardDefinition } from '@/content'
 
 // Import handlers from separate modules
 import * as ScoringHandlers from './handlers/scoringHandlers'
@@ -309,7 +310,7 @@ export function applyAction(
       break
 
     case 'SELECT_SCORING_LINE':
-      newState = ScoringHandlers.handleSelectScoringLine(newState, playerId, data, handlePassTurn)
+      newState = ScoringHandlers.handleSelectScoringLine(newState, playerId, data)
       break
 
     case 'COMPLETE_ROUND':
@@ -799,6 +800,7 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
   ) : state.board
 
   // Add card to board with LastPlayed status (only if from hand)
+  const wasSetupPhase = state.currentPhase === 1
   const newBoard = boardWithoutLastPlayed.map((row, r) =>
     row.map((cell, c) => {
       if (r === boardCoords.row && c === boardCoords.col) {
@@ -808,9 +810,20 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
 
         // Add LastPlayed status only when card is played from hand
         // This status is used to determine if player can enter scoring phase
-        const finalStatuses = isFromHand
+        let finalStatuses = isFromHand
           ? [...filteredStatuses, { type: 'LastPlayed', addedByPlayerId: actualPlayerId }]
           : filteredStatuses
+
+        // SPECIAL CASE: If played during Setup phase and card has Setup ability,
+        // add readySetup status so it can be used even after phase switches to Main
+        // This allows cards like Finn to use their "Move 1 allied card" ability upon entering
+        if (wasSetupPhase && !faceDown) {
+          const cardDef = getCardDefinition(cardToPlay.baseId)
+          if (cardDef?.abilities?.some((a: any) => a.type === 'setup')) {
+            finalStatuses = [...finalStatuses, { type: 'readySetup', addedByPlayerId: actualPlayerId }]
+            console.log('[handlePlayCard] Adding readySetup to Setup ability card played during Setup phase:', cardToPlay.baseId)
+          }
+        }
 
         const boardCard = {
           ...cardToPlay,
@@ -818,12 +831,6 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
           isFaceDown: faceDown,
           enteredThisTurn: true,
           statuses: finalStatuses
-        }
-
-        // Initialize ready statuses for this card (readyDeploy, readySetup, readyCommit)
-        // Only add ready statuses if card is face-up (face-down cards shouldn't get readyDeploy)
-        if (!faceDown) {
-          initializeReadyStatuses(boardCard, actualPlayerId, state.currentPhase)
         }
 
         return {
@@ -857,12 +864,23 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
       : p
   )
 
-  return {
+  // Switch to Main phase (2) - this should happen before ready status recalculation
+  let newState: GameState = {
     ...state,
     board: newBoard,
     players: newPlayers,
     currentPhase: 2  // Main phase after playing card
   }
+
+  // Clear scoring mode if somehow active
+  newState.isScoringStep = false
+  newState.scoringLines = []
+
+  // Recalculate ready statuses AFTER phase switch
+  // This ensures cards get correct ready statuses for the new phase
+  recalculateAllReadyStatuses(newState)
+
+  return newState
 }
 
 /**
@@ -1418,16 +1436,11 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
   // Check if cell is empty
   if (state.board[row]?.[col]?.card) {return state}
 
-  const cardToPlay = { ...player.announcedCard, isFaceDown: faceDown }
+  const cardToPlay = { ...player.announcedCard, ownerId: actualPlayerId, isFaceDown: faceDown }
 
   const newBoard = state.board.map((r, rIdx) =>
     r.map((cell, cIdx) => {
       if (rIdx === row && cIdx === col) {
-        // Initialize ready statuses for this card
-        // Only add ready statuses if card is face-up (face-down cards shouldn't get readyDeploy)
-        if (!faceDown) {
-          initializeReadyStatuses(cardToPlay, actualPlayerId, state.currentPhase)
-        }
         return { card: cardToPlay }
       }
       return cell
@@ -1440,7 +1453,54 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
       : p
   )
 
-  return { ...state, board: newBoard, players: newPlayers as Player[] }
+  // Switch to Main phase (2) if currently in Setup phase (1)
+  // This matches the behavior of playing cards from hand
+  const wasSetupPhase = state.currentPhase === 1
+  const wasFaceDown = faceDown
+
+  // Check if card has Setup ability before creating final board state
+  const cardDef = getCardDefinition(cardToPlay.baseId)
+  const cardHasSetupAbility = cardDef?.abilities?.some((a: any) => a.type === 'setup')
+
+  let newState: GameState = {
+    ...state,
+    board: newBoard,
+    players: newPlayers as Player[]
+  }
+
+  if (wasSetupPhase) {
+    newState.currentPhase = 2
+    // Clear scoring mode if somehow active
+    newState.isScoringStep = false
+    newState.scoringLines = []
+
+    // If card has Setup ability and is not face-down, add readySetup status
+    if (cardHasSetupAbility && !wasFaceDown) {
+      newState = {
+        ...newState,
+        board: newState.board.map((r, rIdx) =>
+          r.map((cell, cIdx) => {
+            if (rIdx === row && cIdx === col && cell.card) {
+              return {
+                card: {
+                  ...cell.card,
+                  statuses: [...(cell.card.statuses || []), { type: 'readySetup', addedByPlayerId: actualPlayerId }]
+                }
+              }
+            }
+            return cell
+          })
+        )
+      }
+      console.log('[handlePlayAnnouncedToBoard] Adding readySetup to Setup ability card played during Setup phase:', cardToPlay.baseId)
+    }
+  }
+
+  // Recalculate ready statuses AFTER phase switch
+  // This ensures cards get correct ready statuses for the new phase
+  recalculateAllReadyStatuses(newState)
+
+  return newState
 }
 
 /**
@@ -1632,10 +1692,6 @@ function handleSpawnToken(state: GameState, playerId: number, data?: any): GameS
     enteredThisTurn: false
   }
 
-  // Initialize ready statuses for the token
-  // This allows tokens like Recon Drone and Walking Turret to use their abilities
-  initializeReadyStatuses(tokenCard, ownerId, state.currentPhase)
-
   const newBoard = state.board.map((r, rIdx) =>
     r.map((cell, cIdx) => {
       if (rIdx === row && cIdx === col) {
@@ -1645,12 +1701,54 @@ function handleSpawnToken(state: GameState, playerId: number, data?: any): GameS
     })
   )
 
-  console.log('[handleSpawnToken] Spawned', tokenName, 'at', coords, 'for owner', ownerId)
+  // Switch to Main phase (2) if currently in Setup phase (1)
+  // This matches the behavior of playing cards from hand
+  const wasSetupPhase = state.currentPhase === 1
 
-  return {
+  // Check if token has Setup ability before creating final board state
+  const tokenDef = getCardDefinition(tokenName)
+  const tokenHasSetupAbility = tokenDef?.abilities?.some((a: any) => a.type === 'setup')
+
+  let newState: GameState = {
     ...state,
     board: newBoard
   }
+
+  if (wasSetupPhase) {
+    newState.currentPhase = 2
+    // Clear scoring mode if somehow active
+    newState.isScoringStep = false
+    newState.scoringLines = []
+
+    // If token has Setup ability, add readySetup status
+    if (tokenHasSetupAbility) {
+      newState = {
+        ...newState,
+        board: newState.board.map((r, rIdx) =>
+          r.map((cell, cIdx) => {
+            if (rIdx === row && cIdx === col && cell.card) {
+              return {
+                card: {
+                  ...cell.card,
+                  statuses: [...(cell.card.statuses || []), { type: 'readySetup', addedByPlayerId: ownerId }]
+                }
+              }
+            }
+            return cell
+          })
+        )
+      }
+      console.log('[handleSpawnToken] Adding readySetup to Setup ability token spawned during Setup phase:', tokenName)
+    }
+  }
+
+  console.log('[handleSpawnToken] Spawned', tokenName, 'at', coords, 'for owner', ownerId, 'phase', newState.currentPhase)
+
+  // Recalculate ready statuses for all cards AFTER phase switch
+  // This ensures the token gets correct ready statuses for the new phase
+  recalculateAllReadyStatuses(newState)
+
+  return newState
 }
 
 // ============================================================================

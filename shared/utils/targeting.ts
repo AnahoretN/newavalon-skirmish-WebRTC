@@ -395,12 +395,15 @@ export const calculateValidTargets = (
 
     // Build filter function if not present (for serialization support)
     let filterFn = payload.filter
+    console.log('[calculateValidTargets] Before filter build:', { mode, hasFilterFn: !!filterFn, hasFilterString: !!payload.filterString, filterString: payload.filterString })
     if (!filterFn && payload.filterString) {
       const ownerId = action.sourceCard?.ownerId || 0
       filterFn = buildFilterFromString(payload.filterString, ownerId, sourceCoords || action.sourceCoords || { row: 0, col: 0 })
+      console.log('[calculateValidTargets] Built filter from string:', { filterString: payload.filterString, ownerId, hasFilterFn: !!filterFn, typeofFilterFn: typeof filterFn })
     }
 
     if (!filterFn || typeof filterFn !== 'function') {
+      console.log('[calculateValidTargets] No valid filter function:', { hasFilterFn: !!filterFn, typeofFilterFn: typeof filterFn, mode })
       return []
     }
 
@@ -419,6 +422,9 @@ export const calculateValidTargets = (
 
         // Check basic filter
         let isValid = cell.card && filterFn(cell.card, r, c)
+        if (cell.card && mode === 'SELECT_UNIT_FOR_MOVE') {
+          console.log('[calculateValidTargets] Checking cell', { r, c, cardId: cell.card.baseId, cardOwnerId: cell.card.ownerId, sourceOwnerId: actorId, isValid })
+        }
 
         // Check context requirements (e.g., Adjacent to last move)
         if (isValid && contextCheck === 'ADJACENT_TO_LAST_MOVE' && commandContext?.lastMovedCardCoords) {
@@ -957,6 +963,15 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
       }
     }
     return false // No empty cells
+  }
+
+  // Special Case: SELECT_UNIT_FOR_MOVE (Finn Setup) - needs allied cards on board
+  if (action.mode === 'SELECT_UNIT_FOR_MOVE' && action.payload) {
+    console.log('[checkActionHasTargets] SELECT_UNIT_FOR_MOVE check', {
+      filterString: action.payload.filterString,
+      hasFilter: !!action.payload.filter,
+      sourceOwnerId: action.sourceCard?.ownerId || playerId
+    })
   }
 
   // Special Case: Hand-only actions that require discarding (Faber, Lucius)

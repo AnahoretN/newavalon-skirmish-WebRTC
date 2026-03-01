@@ -36,21 +36,31 @@ export interface ContentAbility {
  */
 /* eslint-disable no-unused-vars */
 export function buildFilterFromString(
-  filter: string,
+  filter: string | Function,
   ownerId: number,
   _coords: { row: number; col: number }
 ): ((_target: Card, _r?: number, _c?: number) => boolean) | undefined {
   /* eslint-enable no-unused-vars */
+  // If filter is already a function, return it as-is
+  if (typeof filter === 'function') {
+    return filter as any
+  }
+
+  // If not a string, can't process
+  if (typeof filter !== 'string') {
+    return undefined
+  }
+
+  // hasStatus_StatusName1_or_StatusName2 (must check BEFORE single status)
+  if (filter.startsWith('hasStatus_') && filter.includes('_or_')) {
+    const statuses = filter.replace('hasStatus_', '').split('_or_')
+    return (_target: Card) => statuses.some(s => hasStatus(_target, s, ownerId))
+  }
+
   // hasStatus_StatusName
   if (filter.startsWith('hasStatus_')) {
     const statusType = filter.replace('hasStatus_', '')
     return (_target: Card) => hasStatus(_target, statusType, ownerId)
-  }
-
-  // hasStatus_StatusName1_or_StatusName2
-  if (filter.startsWith('hasStatus_') && filter.includes('_or_')) {
-    const statuses = filter.replace('hasStatus_', '').split('_or_')
-    return (_target: Card) => statuses.some(s => hasStatus(_target, s, ownerId))
   }
 
   // isAdjacent
@@ -83,18 +93,38 @@ export function buildDetailsFromContent(
   const details: Record<string, any> = { ...ability.details }
 
   // Convert filter string to function if present
+  let mainFilter: ((card: Card, r?: number, c?: number) => boolean) | undefined = undefined
   if (details.filter && typeof details.filter === 'string') {
     const filterFn = buildFilterFromString(details.filter, ownerId, coords)
     if (filterFn) {
-      details.filter = filterFn
+      mainFilter = filterFn
     }
+  } else if (details.filter && typeof details.filter === 'function') {
+    mainFilter = details.filter
   }
 
   // Convert additionalFilter string to function if present
+  let additionalFilter: ((card: Card) => boolean) | undefined = undefined
   if (details.additionalFilter && typeof details.additionalFilter === 'string') {
     const filterFn = buildFilterFromString(details.additionalFilter, ownerId, coords)
     if (filterFn) {
-      details.additionalFilter = filterFn
+      additionalFilter = filterFn
+    }
+  } else if (details.additionalFilter && typeof details.additionalFilter === 'function') {
+    additionalFilter = details.additionalFilter
+  }
+
+  // Combine both filters into a single filter function
+  if (mainFilter || additionalFilter) {
+    if (mainFilter && additionalFilter) {
+      // Both filters present - target must pass both checks
+      details.filter = (card: Card, r?: number, c?: number) => {
+        return mainFilter!(card, r, c) && additionalFilter!(card)
+      }
+    } else if (mainFilter) {
+      details.filter = mainFilter
+    } else if (additionalFilter) {
+      details.filter = additionalFilter
     }
   }
 
@@ -364,20 +394,31 @@ export function buildActionFromContentAbility(
       // Convert MOVE_CARD to SELECT_UNIT_FOR_MOVE mode (Finn Setup)
       // Uses range from details to determine movement distance
       const range = details.distance || 2
-      return {
+      const filterString = details.filter || 'isOwner'
+      const filter = buildFilterFromString(filterString, ownerId, coords)
+      const action = {
         type: 'ENTER_MODE',
         mode: 'SELECT_UNIT_FOR_MOVE',
         sourceCard: card,
         sourceCoords: coords,
         payload: {
-          filter: buildFilterFromString(details.filter || 'isOwner', ownerId, coords),
-          filterString: details.filter || 'isOwner',  // Store string for serialization
+          filter,
+          filterString,  // Store string for serialization
           range,
           moveFromHand: false,
           selectedCard: null,
           allowSelf: false
         }
       } as AbilityAction
+      console.log('[buildActionFromContentAbility] MOVE_CARD for', card?.baseId || 'unknown', {
+        ownerId,
+        filterString,
+        range,
+        hasFilter: !!filter,
+        typeofFilter: typeof filter,
+        payloadFilterString: action.payload.filterString
+      })
+      return action
     }
 
     case 'SCORE_POINTS': {

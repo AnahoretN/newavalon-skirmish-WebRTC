@@ -22,8 +22,9 @@ export function handleStartScoring(state: GameState, playerId: number, enterScor
 
 /**
  * SELECT_SCORING_LINE - select line for scoring
+ * CRITICAL: Does NOT pass turn here - turn is passed after floating texts are sent
  */
-export function handleSelectScoringLine(state: GameState, playerId: number, data: any, handlePassTurn: (state: GameState, playerId: number, reason: string) => GameState): GameState {
+export function handleSelectScoringLine(state: GameState, playerId: number, data: any): GameState {
   if (!state.isScoringStep) {return state}
 
   // Check who can control scoring:
@@ -41,7 +42,7 @@ export function handleSelectScoringLine(state: GameState, playerId: number, data
   if (!lineType) {return state}
 
   // Score goes to the ACTIVE player (the dummy or the player whose turn it is)
-  const scoringPlayerId = state.activePlayerId
+  const scoringPlayerId = state.activePlayerId ?? 1  // Default to player 1 if null
 
   // Calculate points based on cards in line
   const points = calculateLineScore(state, scoringPlayerId, lineType, lineIndex)
@@ -54,7 +55,8 @@ export function handleSelectScoringLine(state: GameState, playerId: number, data
       : p
   )
 
-  // Pass turn
+  // CRITICAL: Do NOT pass turn here - just update scores and clear scoring step
+  // Turn will be passed AFTER floating texts are sent (in SimpleHost)
   const newState = {
     ...state,
     players: newPlayers,
@@ -62,7 +64,7 @@ export function handleSelectScoringLine(state: GameState, playerId: number, data
     scoringLines: []  // Clear scoring lines
   }
 
-  return handlePassTurn(newState, playerId, 'scoring_complete')
+  return newState
 }
 
 /**
@@ -74,38 +76,84 @@ export function calculateLineScore(state: GameState, playerId: number, lineType:
   const gridSize = state.activeGridSize
   const cellsToCheck: { row: number; col: number }[] = []
 
+  // CRITICAL: Calculate offset to convert active grid coordinates to full board coordinates
+  // The active grid is centered in the full board, so we need to add the offset
+  const totalSize = state.board.length
+  const offset = Math.floor((totalSize - gridSize) / 2)
+
   if (lineType === 'row' && lineIndex !== undefined) {
-    // Horizontal line
+    // Horizontal line - convert lineIndex to full board coordinate
+    const actualRow = lineIndex + offset
     for (let c = 0; c < gridSize; c++) {
-      cellsToCheck.push({ row: lineIndex, col: c })
+      cellsToCheck.push({ row: actualRow, col: c + offset })
     }
   } else if (lineType === 'col' && lineIndex !== undefined) {
-    // Vertical line
+    // Vertical line - convert lineIndex to full board coordinate
+    const actualCol = lineIndex + offset
     for (let r = 0; r < gridSize; r++) {
-      cellsToCheck.push({ row: r, col: lineIndex })
+      cellsToCheck.push({ row: r + offset, col: actualCol })
     }
   } else if (lineType === 'diagonal') {
     // Main diagonal (top-left to bottom-right)
     for (let i = 0; i < gridSize; i++) {
-      cellsToCheck.push({ row: i, col: i })
+      cellsToCheck.push({ row: i + offset, col: i + offset })
     }
   } else if (lineType === 'anti-diagonal') {
     // Anti-diagonal (top-right to bottom-left)
     for (let i = 0; i < gridSize; i++) {
-      cellsToCheck.push({ row: i, col: gridSize - 1 - i })
+      cellsToCheck.push({ row: i + offset, col: (gridSize - 1 - i) + offset })
     }
   }
 
   // Count sum of power of all player's cards in this line
   // Power includes: base power + powerModifier + bonusPower
+
+  // Check if player has Data Liberator with Support on board
+  // Data Liberator allows scoring points from cards with Exploit tokens
+  let hasDataLiberatorWithSupport = false
+  for (let r = 0; r < state.board.length; r++) {
+    for (let c = 0; c < state.board[r]?.length; c++) {
+      const cell = state.board[r][c]
+      if (cell.card?.ownerId === playerId &&
+          cell.card.baseId === 'dataLiberator' &&
+          cell.card.statuses?.some((s: any) => s.type === 'Support' && s.addedByPlayerId === playerId)) {
+        hasDataLiberatorWithSupport = true
+        break
+      }
+    }
+    if (hasDataLiberatorWithSupport) break
+  }
+
   let score = 0
   for (const { row, col } of cellsToCheck) {
     const cell = state.board[row]?.[col]
-    if (cell.card?.ownerId === playerId && !cell.card.statuses?.some((s: any) => s.type === 'Stun')) {
-      const power = cell.card.power || 0
-      const powerModifier = cell.card.powerModifier || 0
-      const bonusPower = cell.card.bonusPower || 0
+    if (!cell.card) continue
+
+    const card = cell.card
+
+    // Skip stunned cards
+    if (card.statuses?.some((s: any) => s.type === 'Stun')) {
+      continue
+    }
+
+    // Standard scoring: player's own cards
+    if (card.ownerId === playerId) {
+      const power = card.power || 0
+      const powerModifier = card.powerModifier || 0
+      const bonusPower = card.bonusPower || 0
       score += power + powerModifier + bonusPower
+    }
+    // Data Liberator passive: cards with Exploit tokens (from same player) also score
+    else if (hasDataLiberatorWithSupport) {
+      const hasExploitFromPlayer = card.statuses?.some((s: any) =>
+        s.type === 'Exploit' && s.addedByPlayerId === playerId
+      )
+      if (hasExploitFromPlayer) {
+        const power = card.power || 0
+        const powerModifier = card.powerModifier || 0
+        const bonusPower = card.bonusPower || 0
+        score += power + powerModifier + bonusPower
+      }
     }
   }
 
@@ -167,6 +215,12 @@ export function findScoringLinesWithPlayerCard(
   }
 
   const { row, col } = lastPlayedCoords
+
+  // CRITICAL: Convert full board coordinates to active grid coordinates
+  // The active grid is centered in the full board, so we subtract the offset
+  const totalSize = state.board.length
+  const offset = Math.floor((totalSize - state.activeGridSize) / 2)
+
   const lines: Array<{ type: string; index?: number; cells: { row: number; col: number }[] }> = []
 
   // Horizontal line (row)
@@ -174,14 +228,16 @@ export function findScoringLinesWithPlayerCard(
   for (let c = 0; c < state.activeGridSize; c++) {
     rowCells.push({ row, col: c })
   }
-  lines.push({ type: 'row', index: row, cells: rowCells })
+  // Convert full board coordinate to active grid coordinate for index
+  lines.push({ type: 'row', index: row - offset, cells: rowCells })
 
   // Vertical line (col)
   const colCells: { row: number; col: number }[] = []
   for (let r = 0; r < state.activeGridSize; r++) {
     colCells.push({ row: r, col })
   }
-  lines.push({ type: 'col', index: col, cells: colCells })
+  // Convert full board coordinate to active grid coordinate for index
+  lines.push({ type: 'col', index: col - offset, cells: colCells })
 
   // Diagonal lines not currently used in scoring phase
   // (may be used in card abilities)

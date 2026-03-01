@@ -112,6 +112,7 @@ export function handleActionExecution(
   const hasTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
 
   if (!hasTargets) {
+    logger.info('[handleActionExecution] No valid targets for action', { type: action.type, mode: action.mode, payloadFilter: !!action.payload?.filter, payloadFilterString: action.payload?.filterString })
     triggerNoTarget(sourceCoords)
     // Only execute chained action if skipChainedActionOnNoTargets is not set
     // This prevents abilities like Recon Drone Commit from creating token stacks when no valid targets exist
@@ -788,6 +789,7 @@ function handleEnterMode(
   // Default mode activation
   // Calculate valid targets if mode supports targeting
   const defaultTargets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+  console.log('[handleEnterMode] Default mode activation', { mode: action.mode, targetCount: defaultTargets.length, sourceCard: action.sourceCard?.baseId })
   setAbilityMode(action)
   setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, defaultTargets, commandContext)
 }

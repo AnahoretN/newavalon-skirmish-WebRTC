@@ -227,24 +227,46 @@ export class SimpleHost {
       return
     }
 
-    // Apply action to state
-    const oldState = this.state
-    const newState = applyAction(oldState, playerId, action, data)
-
-    // Special handling for SELECT_SCORING_LINE - generate floating text for score
-    // CRITICAL: Use activePlayerId from oldState (before handlePassTurn changed it)
-    // This ensures dummy players show floating text when controlled by other players
-    if (action === 'SELECT_SCORING_LINE' && newState !== oldState) {
+    // Special handling for SELECT_SCORING_LINE - need to send floating texts BEFORE passing turn
+    if (action === 'SELECT_SCORING_LINE') {
+      const oldState = this.state
       const { lineType, lineIndex } = data || {}
-      if (lineType) {
-        // Get scoring player from oldState BEFORE handlePassTurn changed activePlayerId
-        const scoringPlayerId = oldState?.activePlayerId ?? newState.activePlayerId
+
+      if (lineType && oldState.isScoringStep) {
+        // Get scoring player BEFORE any state changes
+        const scoringPlayerId = oldState?.activePlayerId ?? 0
         const clickingPlayer = oldState?.players.find((p: any) => p.id === playerId)
         const scoringPlayer = oldState?.players.find((p: any) => p.id === scoringPlayerId)
         logger.info(`[SimpleHost] SELECT_SCORING_LINE: clickingPlayer=${playerId} (${clickingPlayer?.name}) scoringPlayer=${scoringPlayerId} (${scoringPlayer?.name}) line=${lineType} ${lineIndex}`)
-        this.broadcastFloatingTextForScoring(newState, scoringPlayerId, lineType, lineIndex, oldState)
+
+        // CRITICAL: Send floating texts FIRST using current state (before turn pass)
+        this.broadcastFloatingTextForScoring(oldState, scoringPlayerId, lineType, lineIndex, oldState)
+
+        // NOW apply action (which updates scores but does NOT pass turn yet)
+        let intermediateState = applyAction(oldState, playerId, action, data)
+
+        // NOW pass turn after floating texts were sent
+        intermediateState = applyAction(intermediateState, playerId, 'PASS_TURN', { reason: 'scoring_complete' })
+
+        // Update state if changed
+        if (intermediateState !== oldState) {
+          this.state = intermediateState
+          const maxPlayerId = intermediateState.players.length > 0
+            ? Math.max(...intermediateState.players.map(p => p.id))
+            : 0
+          if (maxPlayerId >= this.playerIdCounter) {
+            this.playerIdCounter = maxPlayerId + 1
+          }
+          this.version++
+          this.broadcastAll()
+        }
+        return
       }
     }
+
+    // Apply action to state (normal flow for all other actions)
+    const oldState = this.state
+    const newState = applyAction(oldState, playerId, action, data)
 
     // If state changed - broadcast
     if (newState !== oldState) {
@@ -555,15 +577,22 @@ export class SimpleHost {
       if (hasDataLiberatorWithSupport) break
     }
 
-    // Find cells in the selected line
+    // CRITICAL: Calculate offset to convert active grid coordinates to full board coordinates
+    // The active grid is centered in the full board, so we need to add the offset
+    const totalSize = newState.board.length
+    const offset = Math.floor((totalSize - gridSize) / 2)
+
+    // Find cells in the selected line (CONVERT to full board coordinates with offset)
     const cellsToCheck: { row: number; col: number }[] = []
     if (lineType === 'row' && lineIndex !== undefined) {
+      const actualRow = lineIndex + offset  // Convert to full board coordinate
       for (let c = 0; c < gridSize; c++) {
-        cellsToCheck.push({ row: lineIndex, col: c })
+        cellsToCheck.push({ row: actualRow, col: c + offset })
       }
     } else if (lineType === 'col' && lineIndex !== undefined) {
+      const actualCol = lineIndex + offset  // Convert to full board coordinate
       for (let r = 0; r < gridSize; r++) {
-        cellsToCheck.push({ row: r, col: lineIndex })
+        cellsToCheck.push({ row: r + offset, col: actualCol })
       }
     }
 

@@ -116,11 +116,19 @@ const GridCell = memo<{
       // MUST be declared before handleClick since handleClick uses it
       const scoringLineInfo = useMemo(() => {
         if (!scoringLines || scoringLines.length === 0) {return null}
+        // CRITICAL: Convert full board coordinates to active grid coordinates
+        // The active grid is centered in the full board
+        // board is available in parent scope, use fixed size 7 for consistency
+        const totalSize = 7  // Board is always 7x7
+        const offset = Math.floor((totalSize - activeGridSize) / 2)
+        const activeRow = row - offset
+        const activeCol = col - offset
+
         // Check if this cell is part of any scoring line (only row and col for now)
         for (const line of scoringLines) {
           const inLine =
-            (line.lineType === 'row' && line.lineIndex === row) ||
-            (line.lineType === 'col' && line.lineIndex === col)
+            (line.lineType === 'row' && line.lineIndex === activeRow) ||
+            (line.lineType === 'col' && line.lineIndex === activeCol)
           if (inLine) {
             return { line, score: line.score }
           }
@@ -245,8 +253,8 @@ const GridCell = memo<{
       const isOccupied = !!cell.card
       const baseClasses = 'w-full h-full rounded-lg transition-colors duration-200 flex items-center justify-center relative'
 
-      // Check if dragged item is from hand/deck/discard (cards that can be played)
-      const isDraggingCard = draggedItem && ['hand', 'deck', 'discard'].includes(draggedItem.source)
+      // Check if dragged item is from hand/deck/discard/board (cards that can be played/moved)
+      const isDraggingCard = draggedItem && ['hand', 'deck', 'discard', 'board'].includes(draggedItem.source)
 
       const canDrop = !!draggedItem && (!isOccupied || (isOccupied && draggedItem.source === 'counter_panel'))
       const canPlay = isInPlayMode && !isOccupied
@@ -272,7 +280,7 @@ const GridCell = memo<{
 
       // Only add cursor pointer for interactive cells - visual highlight comes from shared highlights
       const targetClasses = isInteractive ? 'cursor-pointer z-10' : ''
-      const cellClasses = `bg-board-cell-active ${isOver && canDrop ? 'bg-indigo-400 opacity-80' : ''} ${isInPlayMode && isOccupied ? 'cursor-not-allowed' : ''} ${targetClasses}`
+      const cellClasses = `bg-board-cell-active ${isInPlayMode && isOccupied ? 'cursor-not-allowed' : ''} ${targetClasses}`
 
       const isFaceUp: boolean = useMemo(() => {
         const card = cell.card
@@ -334,21 +342,36 @@ const GridCell = memo<{
         >
           {/* Drag highlight - only when cursor is over the cell */}
           {showDragHighlight && (() => {
-            const playerColor = playerColorMap.get(localPlayerId!)
+            // Use the dragged card's owner color, not local player color
+            const draggedCardOwnerId = draggedItem?.card?.ownerId ?? draggedItem?.playerId ?? localPlayerId!
+            const draggedCardOwner = players?.find(p => p.id === draggedCardOwnerId)
+            const playerColor = draggedCardOwner ? playerColorMap.get(draggedCardOwnerId) : playerColorMap.get(localPlayerId!)
             const rgb = playerColor && PLAYER_COLOR_RGB[playerColor]
               ? PLAYER_COLOR_RGB[playerColor]
               : { r: 37, g: 99, b: 235 }
+
             return (
-              <div
-                className="absolute inset-0 rounded-md pointer-events-none"
-                style={{
-                  zIndex: 40,
-                  boxShadow: `0 0 12px 2px ${rgba(rgb, 0.6)}`,
-                  border: '4px solid',
-                  borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
-                  background: `radial-gradient(circle at center, transparent 20%, ${rgba(rgb, 0.4)} 100%)`,
-                }}
-              />
+              <>
+                {/* Cell border with owner's color */}
+                <div
+                  className="absolute inset-0 rounded-md pointer-events-none"
+                  style={{
+                    zIndex: 40,
+                    border: '3px solid',
+                    borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
+                    boxSizing: 'border-box',
+                  }}
+                />
+                {/* Inner square (15% smaller) filled with owner's color, no border */}
+                <div
+                  className="absolute pointer-events-none rounded-sm"
+                  style={{
+                    zIndex: 40,
+                    inset: '7.5%',  // 15% smaller on each side
+                    backgroundColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.3)`,
+                  }}
+                />
+              </>
             )
           })()}
 
@@ -423,10 +446,10 @@ const GridCell = memo<{
                 className="absolute inset-0 rounded-md pointer-events-none animate-glow-pulse"
                 style={{
                   zIndex: 50,
-                  boxShadow: `0 0 12px 2px ${rgba(glowRgb, 0.5)}`,
+                  boxShadow: `0 0 10px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75)`,
                   border: '4px solid',
-                  borderColor: `rgb(255, 255, 255)`,
-                  background: `radial-gradient(circle at center, transparent 25%, ${rgba(rgb, 0.75)} 100%)`,
+                  borderColor: 'white',
+                  background: `radial-gradient(circle at center, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 0%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 100%)`,
                 }}
               />
             )
@@ -447,10 +470,10 @@ const GridCell = memo<{
                 className="absolute inset-0 rounded-md pointer-events-none animate-glow-pulse"
                 style={{
                   zIndex: 45,
-                  boxShadow: `0 0 12px 2px ${rgba(glowRgb, 0.5)}`,
+                  boxShadow: `0 0 10px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75)`,
                   border: '4px dashed',
-                  borderColor: `rgb(255, 255, 255)`,
-                  background: `radial-gradient(circle at center, transparent 25%, ${rgba(rgb, 0.75)} 100%)`,
+                  borderColor: 'white',
+                  background: `radial-gradient(circle at center, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 0%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 100%)`,
                 }}
               />
             )

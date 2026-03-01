@@ -471,10 +471,14 @@ export function handleEmptyCellClick(
   if (abilityMode && abilityMode.mode === 'MOVE_SELF_ANY_EMPTY') {
     const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
 
+    console.log('[MOVE_SELF_ANY_EMPTY] Clicked on empty cell', { boardCoords, sourceCoords, hasSourceCard: !!sourceCard })
+
     if (!sourceCoords || !sourceCard) {return false}
 
     // Check if cell is empty
     if (gameState.board[boardCoords.row][boardCoords.col].card !== null) {return false}
+
+    console.log('[MOVE_SELF_ANY_EMPTY] Moving card from', sourceCoords, 'to', boardCoords)
 
     // Move the card to the selected empty cell
     moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })

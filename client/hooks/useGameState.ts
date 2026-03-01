@@ -904,13 +904,19 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   }, [])
 
   // ============================================================================
-  // Status effects (заглушки)
+  // Status effects
   // ============================================================================
   const addBoardCardStatus = useCallback((coords: any, status: any, playerId?: number) => {
-    sendAction('ADD_BOARD_STATUS', { coords, status, playerId })
-  }, [sendAction])
+    // Map to P2P action format
+    sendAction('ADD_STATUS_TO_BOARD_CARD', {
+      boardCoords: coords,
+      statusType: status,
+      ownerId: playerId ?? localPlayerId ?? 0
+    })
+  }, [sendAction, localPlayerId])
   const removeBoardCardStatus = useCallback((coords: any, status: any) => {
-    sendAction('REMOVE_BOARD_STATUS', { coords, status })
+    // Map to P2P action format
+    sendAction('REMOVE_STATUS_BY_TYPE', { coords, type: status })
   }, [sendAction])
   const removeBoardCardStatusByOwner = useCallback(() => {}, [])
   const modifyBoardCardPower = useCallback(() => {}, [])
@@ -970,7 +976,9 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   }, [sendAction])
   const transferStatus = useCallback(() => {}, [])
   const transferAllCounters = useCallback(() => {}, [])
-  const transferAllStatusesWithoutException = useCallback(() => {}, [])
+  const transferAllStatusesWithoutException = useCallback((fromCoords: {row: number, col: number}, toCoords: {row: number, col: number}) => {
+    sendAction('TRANSFER_ALL_STATUSES', { fromCoords, toCoords })
+  }, [sendAction])
   const recoverDiscardedCard = useCallback((playerId: number, cardIndex: number) => {
     sendAction('RECOVER_DISCARDED', { playerId, cardIndex })
   }, [sendAction])

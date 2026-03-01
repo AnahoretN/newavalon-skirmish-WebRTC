@@ -82,6 +82,7 @@ export type ActionType =
   // Status effects
   | 'ADD_STATUS_TO_BOARD_CARD'
   | 'ADD_STATUS_TO_HAND_CARD'
+  | 'TRANSFER_ALL_STATUSES'  // Reckless Provocateur Commit
 
   // Token cards
   | 'PLAY_TOKEN_CARD'
