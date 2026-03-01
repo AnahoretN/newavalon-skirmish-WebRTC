@@ -97,13 +97,15 @@ export function calculateLineScore(state: GameState, playerId: number, lineType:
   }
 
   // Count sum of power of all player's cards in this line
+  // Power includes: base power + powerModifier + bonusPower
   let score = 0
   for (const { row, col } of cellsToCheck) {
     const cell = state.board[row]?.[col]
-    if (cell.card?.ownerId === playerId) {
+    if (cell.card?.ownerId === playerId && !cell.card.statuses?.some((s: any) => s.type === 'Stun')) {
       const power = cell.card.power || 0
       const powerModifier = cell.card.powerModifier || 0
-      score += power + powerModifier
+      const bonusPower = cell.card.bonusPower || 0
+      score += power + powerModifier + bonusPower
     }
   }
 
