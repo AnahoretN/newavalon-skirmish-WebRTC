@@ -528,12 +528,8 @@ export class SimpleHost {
       }
     }
 
-    // Calculate which cards contributed to score (by checking score difference)
-    const oldPlayer = oldState?.players.find((p: any) => p.id === playerId)
-    const newPlayer = newState.players.find((p: any) => p.id === playerId)
-    const scoreDelta = newPlayer && oldPlayer ? newPlayer.score - oldPlayer.score : 0
-
-    if (scoreDelta <= 0) return  // No score change, no floating text
+    // Calculate total score from cards in line (don't rely on oldState)
+    let calculatedScore = 0
 
     // Generate floating text for each card that contributed
     for (const { row, col } of cellsToCheck) {
@@ -542,12 +538,16 @@ export class SimpleHost {
       if (card && card.ownerId === playerId && !card.statuses?.some((s: any) => s.type === 'Stun')) {
         const points = Math.max(0, card.power + (card.powerModifier || 0) + (card.bonusPower || 0))
         if (points > 0) {
+          calculatedScore += points
           scoreEvents.push({ row, col, text: `+${points}`, playerId })
         }
       }
     }
 
+    // Only send floating text if there are actual scoring cards
     if (scoreEvents.length > 0) {
+      logger.info(`[SimpleHost] Broadcasting ${scoreEvents.length} score events for player ${playerId} scoring ${lineType} ${lineIndex || ''}, total: ${calculatedScore}`)
+
       const message = {
         type: 'FLOATING_TEXT',
         data: { batch: scoreEvents.map((item, i) => ({ ...item, timestamp: Date.now() + i })) }
@@ -564,6 +564,8 @@ export class SimpleHost {
 
       // Notify host locally
       this.config.onFloatingTextBatch?.(scoreEvents)
+    } else {
+      logger.info(`[SimpleHost] No score events for player ${playerId} scoring ${lineType} ${lineIndex || ''}`)
     }
   }
 
