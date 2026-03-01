@@ -64,6 +64,11 @@ export function buildFilterFromString(
     return (_target: Card) => _target.ownerId !== ownerId
   }
 
+  // isOwner
+  if (filter === 'isOwner') {
+    return (_target: Card) => _target.ownerId === ownerId
+  }
+
   return undefined
 }
 
@@ -225,6 +230,8 @@ export function buildActionFromContentAbility(
         onlyOpponents: details.onlyOpponents,
         mustBeAdjacentToSource: details.mustBeAdjacentToSource,
         mustBeInLineWithSource: details.mustBeInLineWithSource,
+        maxDistanceFromSource: details.maxDistanceFromSource,
+        maxOrthogonalDistance: details.maxOrthogonalDistance,
         sourceCoords: coords,
         sourceCard: card,
         placeAllAtOnce: details.placeAllAtOnce,
@@ -267,6 +274,23 @@ export function buildActionFromContentAbility(
         payload.actionType = 'DESTROY'
       } else if (ability.actionType) {
         payload.actionType = ability.actionType
+      }
+
+      // Special case: TRANSFER_ALL_STATUSES (Reckless Provocateur Commit)
+      // Automatically create filter if not provided
+      if (ability.mode === 'TRANSFER_ALL_STATUSES' && !payload.filter) {
+        const cardOwnerId = ownerId
+        const sourceCardId = card.id
+        const validTokens = ['Aim', 'Exploit', 'Rule', 'Shield', 'Stun', 'Revealed']
+        payload.filter = (target: Card) => {
+          // Cannot target itself
+          if (target.id === sourceCardId) return false
+          // Must be owned by the same player
+          if (target.ownerId !== cardOwnerId) return false
+          // Must have at least one of the specified tokens/statuses
+          if (!target.statuses || target.statuses.length === 0) return false
+          return target.statuses.some(s => validTokens.includes(s.type))
+        }
       }
 
       // Handle chained actions
@@ -335,6 +359,47 @@ export function buildActionFromContentAbility(
           actionType: 'LOOK_AT_TOP_DECK'
         }
       } as AbilityAction
+
+    case 'MOVE_CARD': {
+      // Convert MOVE_CARD to SELECT_UNIT_FOR_MOVE mode (Finn Setup)
+      // Uses range from details to determine movement distance
+      const range = details.distance || 2
+      return {
+        type: 'ENTER_MODE',
+        mode: 'SELECT_UNIT_FOR_MOVE',
+        sourceCard: card,
+        sourceCoords: coords,
+        payload: {
+          filter: buildFilterFromString(details.filter || 'isOwner', ownerId, coords),
+          range,
+          moveFromHand: false,
+          selectedCard: null,
+          allowSelf: false
+        }
+      } as AbilityAction
+    }
+
+    case 'SCORE_POINTS': {
+      // Convert SCORE_POINTS to GLOBAL_AUTO_APPLY with customAction
+      // Used by Finn Commit (points per revealed card) and other abilities
+      const { amount = 1, per } = details
+
+      if (per === 'revealedToOwner') {
+        // Finn Commit: Gain 1 point for each card revealed to you
+        return {
+          type: 'GLOBAL_AUTO_APPLY',
+          payload: {
+            customAction: 'FINN_SCORING'
+          },
+          sourceCard: card,
+          sourceCoords: coords
+        } as AbilityAction
+      }
+
+      // For other SCORE_POINTS variations, can add more cases here
+      console.warn(`[buildActionFromContentAbility] SCORE_POINTS with per=${per} not yet implemented`)
+      return null
+    }
 
     case 'MODIFY_SCORING':
     case 'BUFF_ALLY_POWER':

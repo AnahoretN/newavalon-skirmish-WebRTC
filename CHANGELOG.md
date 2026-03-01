@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Ready statuses are recalculated after each action when board statuses are updated
   - Cards requiring Support (e.g., Inventive Maker) now correctly lose ready status when Support is removed
   - Cards regain ready status when Support is gained (if ability not used this turn)
+- **Finn Setup Ability**: Fixed "Move 1 allied card 1 or 2 cells" ability
+  - Added missing `isOwner` filter to buildFilterFromString function
+  - Updated ability text to "Move 1 allied card 1 or 2 cells"
+  - Cards can now be selected as valid targets for movement
 
 
 ## [0.2.11] - 2026-02-15

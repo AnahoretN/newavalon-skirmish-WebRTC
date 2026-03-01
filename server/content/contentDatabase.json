@@ -207,7 +207,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365268/HOO_RECKLESS_PROVOCATEUR_wvfdcr.webp",
       "fallbackImage": "/images/cards/HOO_RECKLESS_PROVOCATEUR.png",
       "power": 3,
-      "abilityText": "Deploy: Swap places with an adjacent card.\nCommit: Move all tokens from a chosen allied card onto this card.",
+      "abilityText": "Deploy: Swap places with an adjacent card.\nCommit: Move all counters from a chosen allied card onto this card.",
       "flavorText": "- \"Patience is a weapon. Vengeance is an art.\"",
       "types": ["Unit", "Hoods"],
       "faction": "Hoods",
@@ -282,7 +282,7 @@
           "details": {
             "tokenType": "Aim",
             "count": 1,
-            "maxDistance": 2
+            "maxOrthogonalDistance": 2
           }
         },
         {
@@ -302,7 +302,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365268/HOO_VIGILANT_SPOTTER_xo8ig7.webp",
       "fallbackImage": "/images/cards/HOO_VIGILANT_SPOTTER.png",
       "power": 1,
-      "abilityText": "Pass (requires Support): When a revealed card of the opponent enters the battlefield, gain 2 points.\nCommit: Place a Revealed token on an adjacent opponent card.",
+      "abilityText": "Pass (requires Support): When a revealed card of the opponent enters the battlefield, gain 2 points.\nCommit: Place 1 reveal counter on your opponent's card.",
       "flavorText": "- \"Patience is a weapon. Vengeance is an art.\"",
       "types": ["Unit", "Hoods"],
       "faction": "Hoods",
@@ -329,7 +329,7 @@
           "details": {
             "tokenType": "Revealed",
             "count": 1,
-            "mustBeAdjacentToSource": true
+            "onlyOpponents": true
           }
         }
       ]
@@ -371,7 +371,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367436/HERO_Finn_c8637x.webp",
       "fallbackImage": "/images/cards/HOO_RECKLESS_PROVOCATEUR.png",
       "power": 2,
-      "abilityText": "Setup: Move any one of your cards 1 or 2 cells.\nCommit: Gain 1 point for each card that is revealed to you in opponents' hands or on the battlefield.",
+      "abilityText": "Setup: Move 1 allied card 1 or 2 cells.\nCommit: Gain 1 point for each card that is revealed to you in opponents' hands or on the battlefield.",
       "flavorText": "Catch me if you can. Spoiler: You can't.",
       "types": ["Unit", "Hero", "Hoods"],
       "faction": "Hoods",
@@ -1232,7 +1232,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365220/TKN_RECON_DRONE_w3elir.webp",
       "fallbackImage": "/images/cards/TKN_RECON_DRONE.png",
       "power": 1,
-      "abilityText": "Setup: Move to any empty cell on the battlefield.\nCommit: Select an adjacent opponent card, then reveal 1 card from that opponent's hand.",
+      "abilityText": "Setup: Move to any empty cell on the battlefield.\nCommit: Choose an adjacent opponent's card. Place 1 reveal counter on any card of that card's owner.",
       "flavorText": "SynchroTech has created lightweight drones to patrol the streets, but the Hoods have other plans for them.",
       "color": "bg-gray-400",
       "types": ["Unit", "Device"],
