@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added filterString serialization support for WebRTC P2P mode
   - Filter functions are now rebuilt from string on client side
   - Added special handling for SELECT_UNIT_FOR_MOVE in actionExecutionHandler
+  - Added client-side getCardAbilityAction function for WebRTC P2P mode
   - Cards can now be selected as valid targets for movement
 
 

@@ -8,9 +8,10 @@
  * Client-specific helper functions for UI are still here.
  */
 
-import type { Card, GameState } from '@/types'
+import type { Card, GameState, AbilityAction } from '@/types'
 import { logger } from './logger'
 import type { CardAbilityInfo } from '@shared/abilities/index.js'
+import { buildActionFromContentAbility } from '@shared/abilities/contentAbilities.js'
 
 // Import unified ready system from shared - import for local use AND re-export
 import {
@@ -304,4 +305,88 @@ export const initializeReadyStatuses_Deprecated = (card: Card, ownerId: number, 
 export const resetPhaseReadyStatuses = (_card: Card, _ownerId: number): void => {
   // This was used for single-card reset, now handled by updateReadyStatuses
   logger.warn('[resetPhaseReadyStatuses] Deprecated, use updateReadyStatuses instead')
+}
+
+// ============================================================================
+// getCardAbilityAction - Client-side version for WebRTC P2P mode
+// ============================================================================
+
+/**
+ * Get the ability action for a card in the current phase.
+ * Client-side version of getCardAbilityAction for WebRTC P2P mode.
+ *
+ * Determines which ability to activate based on:
+ * 1. Setup abilities - ONLY in Setup phase (phase 1)
+ * 2. Commit abilities - ONLY in Commit phase (phase 3)
+ * 3. Deploy abilities - in ANY phase (when no phase-specific ability is active)
+ */
+export const getCardAbilityAction = (
+  card: Card,
+  gameState: GameState,
+  localPlayerId: number | null,
+  coords: { row: number; col: number }
+): { type: string; mode: string; sourceCard: Card; sourceCoords: { row: number; col: number }; payload?: any } | null => {
+  // Ownership check
+  if (localPlayerId !== card.ownerId) {
+    // Check if the card belongs to a dummy player - if so, local player can control it
+    if (card.ownerId !== undefined) {
+      const cardOwner = gameState.players.find(p => p.id === card.ownerId)
+      if (!cardOwner?.isDummy) {
+        return null
+      }
+    } else {
+      return null
+    }
+  }
+
+  const phaseIndex = gameState.currentPhase
+  const actorId = card.ownerId ?? localPlayerId ?? 0
+
+  // Priority 1: Setup ability (ONLY in Setup phase / phase 1)
+  if (phaseIndex === 1) {
+    const setupAbility = getAbilitiesForCard(card).find(a => a.activationType === 'setup')
+    if (setupAbility && hasReadyStatus(card, READY_STATUS.SETUP)) {
+      if (setupAbility.supportRequired && !hasStatus(card, 'Support', actorId)) {
+        return null
+      }
+      const action = setupAbility.getAction(card, gameState, actorId, coords)
+      if (action) {
+        return { ...action, readyStatusToRemove: READY_STATUS.SETUP }
+      }
+    }
+  }
+
+  // Priority 2: Commit ability (ONLY in Commit phase / phase 3)
+  if (phaseIndex === 3) {
+    const commitAbility = getAbilitiesForCard(card).find(a => a.activationType === 'commit')
+    if (commitAbility && hasReadyStatus(card, READY_STATUS.COMMIT)) {
+      if (commitAbility.supportRequired && !hasStatus(card, 'Support', actorId)) {
+        return null
+      }
+      const action = commitAbility.getAction(card, gameState, actorId, coords)
+      if (action) {
+        return { ...action, readyStatusToRemove: READY_STATUS.COMMIT }
+      }
+    }
+  }
+
+  // Priority 3: Deploy ability (works in ANY phase when card has readyDeploy)
+  const hasPhaseSpecificStatus =
+    (phaseIndex === 1 && hasReadyStatus(card, READY_STATUS.SETUP)) ||
+    (phaseIndex === 3 && hasReadyStatus(card, READY_STATUS.COMMIT))
+
+  if (!hasPhaseSpecificStatus) {
+    const deployAbility = getAbilitiesForCard(card).find(a => a.activationType === 'deploy')
+    if (deployAbility && hasReadyStatus(card, READY_STATUS.DEPLOY)) {
+      if (deployAbility.supportRequired && !hasStatus(card, 'Support', actorId)) {
+        return null
+      }
+      const action = deployAbility.getAction(card, gameState, actorId, coords)
+      if (action) {
+        return { ...action, isDeployAbility: true, readyStatusToRemove: READY_STATUS.DEPLOY }
+      }
+    }
+  }
+
+  return null
 }
