@@ -15,7 +15,7 @@ import { DeckType } from '../types'
 import type { ActionType } from './SimpleP2PTypes'
 import { shuffleDeck } from '../../shared/utils/array'
 import { recalculateBoardStatuses } from '../../shared/utils/boardUtils'
-import { initializeReadyStatuses, recalculateAllReadyStatuses, getCardAbilityInfo } from '../utils/autoAbilities'
+import { initializeReadyStatuses, recalculateAllReadyStatuses, getCardAbilityInfo, recheckReadyStatuses } from '../utils/autoAbilities'
 import { READY_STATUS } from '@shared/abilities/index.js'
 import { createDeck } from '../hooks/core/gameCreators'
 import { logger } from '../utils/logger'
@@ -348,6 +348,10 @@ export function applyAction(
       newState = handleAddStatusToHandCard(newState, playerId, data)
       break
 
+    case 'TRANSFER_ALL_STATUSES':
+      newState = handleTransferAllStatuses(newState, playerId, data)
+      break
+
     case 'PLAY_TOKEN_CARD':
       newState = handlePlayTokenCard(newState, playerId, data)
       break
@@ -392,8 +396,12 @@ export function applyAction(
       console.warn(`[SimpleGameLogic] Unknown action: ${action}`)
   }
 
-  // Always recalculate board card statuses
+  // Always recalculate board card statuses (Support, Threat, etc.)
   newState.board = recalculateBoardStatuses(newState)
+
+  // After board statuses are recalculated, recalculate ready statuses
+  // This ensures cards gain/lose readySetup/readyCommit when Support changes
+  recalculateAllReadyStatuses(newState)
 
   return newState
 }
@@ -1840,18 +1848,34 @@ function handleRemoveStatusByType(state: GameState, data: any): GameState {
   const { row, col } = coords
   if (row === undefined || col === undefined) return state
 
+  const cell = state.board[row][col]
+  if (!cell?.card) return state
+
+  const targetCard = cell.card
+  const hadSupport = targetCard.statuses?.some(s => s.type === 'Support') ?? false
+
   const newBoard = state.board.map((r, rIdx) =>
-    r.map((cell, cIdx) => {
+    r.map((c, cIdx) => {
       if (rIdx === row && cIdx === col && cell.card) {
         const newStatuses = cell.card.statuses?.filter(s => s.type !== type) || []
         const newCard = { ...cell.card, statuses: newStatuses }
         return { ...cell, card: newCard }
       }
-      return cell
+      return c
     })
   )
 
-  return { ...state, board: newBoard }
+  let newState = { ...state, board: newBoard }
+
+  // If Support status was removed, recalculate ready statuses for this card
+  if (type === 'Support' && hadSupport) {
+    const newCard = newBoard[row][col].card
+    if (newCard) {
+      recheckReadyStatuses(newCard, newState)
+    }
+  }
+
+  return newState
 }
 
 /**
@@ -2022,7 +2046,28 @@ function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: a
     })
   )
 
-  return { ...state, board: newBoard }
+  let newState = { ...state, board: newBoard }
+
+  // If Support status was added/removed, recalculate ready statuses for this card
+  // This handles abilities that require Support (like Inventive Maker's Setup)
+  if (statusType === 'Support' || replaceStatusType === 'Support') {
+    recheckReadyStatuses(newCard, newState)
+    // Get the updated card from the board after recheckReadyStatuses modified it
+    const updatedCard = newState.board[row][col].card
+    if (updatedCard !== newCard) {
+      // Card was modified, update the board again
+      newState = { ...newState, board: newState.board.map((r, rIdx) =>
+        r.map((c, cIdx) => {
+          if (rIdx === row && cIdx === col) {
+            return c
+          }
+          return c
+        })
+      )}
+    }
+  }
+
+  return newState
 }
 
 /**
@@ -2110,6 +2155,86 @@ function handleAddStatusToHandCard(state: GameState, _playerId: number, data: an
   const newPlayers = state.players.map(p => p.id === playerId ? { ...p, hand: newHand } : p)
 
   return { ...state, players: newPlayers }
+}
+
+/**
+ * TRANSFER_ALL_STATUSES - transfer all statuses from one card to another
+ * Used by Reckless Provocateur Commit
+ * fromCoords: source card (has tokens to transfer)
+ * toCoords: destination card (receives all tokens)
+ */
+function handleTransferAllStatuses(state: GameState, _playerId: number, data: any): GameState {
+  const { fromCoords, toCoords } = data || {}
+  if (!fromCoords || !toCoords) {
+    return state
+  }
+
+  const { row: fromRow, col: fromCol } = fromCoords
+  const { row: toRow, col: toCol } = toCoords
+
+  // Validate bounds
+  if (fromRow === undefined || fromCol === undefined || toRow === undefined || toCol === undefined) {
+    return state
+  }
+  if (fromRow < 0 || fromRow >= state.board.length || fromCol < 0 || fromCol >= state.board[fromRow]?.length) {
+    return state
+  }
+  if (toRow < 0 || toRow >= state.board.length || toCol < 0 || toCol >= state.board[toRow]?.length) {
+    return state
+  }
+
+  const fromCell = state.board[fromRow][fromCol]
+  const toCell = state.board[toRow][toCol]
+
+  if (!fromCell.card || !toCell.card) {
+    return state
+  }
+
+  const fromCard = fromCell.card
+  const toCard = toCell.card
+
+  // Get all statuses from source card
+  const statusesToTransfer = fromCard.statuses || []
+
+  if (statusesToTransfer.length === 0) {
+    logger.info('[handleTransferAllStatuses] No statuses to transfer')
+    return state
+  }
+
+  logger.info(`[handleTransferAllStatuses] Transferring ${statusesToTransfer.length} statuses from card ${fromCard.id} to ${toCard.id}`)
+
+  // Add all statuses to destination card
+  const newToCardStatuses = [...(toCard.statuses || []), ...statusesToTransfer]
+
+  // Clear all statuses from source card
+  const newFromCardStatuses: any[] = []
+
+  // Update both cards
+  const newBoard = state.board.map((row, rIdx) =>
+    row.map((cell, cIdx) => {
+      if (rIdx === fromRow && cIdx === fromCol) {
+        return {
+          ...cell,
+          card: {
+            ...fromCard,
+            statuses: newFromCardStatuses
+          }
+        }
+      }
+      if (rIdx === toRow && cIdx === toCol) {
+        return {
+          ...cell,
+          card: {
+            ...toCard,
+            statuses: newToCardStatuses
+          }
+        }
+      }
+      return cell
+    })
+  )
+
+  return { ...state, board: newBoard }
 }
 
 /**

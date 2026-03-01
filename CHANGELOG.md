@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Scoring Line Selection**: Clicking on a scoring line now works even when clicking on cards
   - Added clickable overlay with z-index 60 on top of cards during scoring phase
   - Scoring lines are now properly clickable through occupied cells
+- **Dynamic Ready Status Recalculation**: Cards now properly gain/lose readySetup/readyCommit when Support changes
+  - Ready statuses are recalculated after each action when board statuses are updated
+  - Cards requiring Support (e.g., Inventive Maker) now correctly lose ready status when Support is removed
+  - Cards regain ready status when Support is gained (if ability not used this turn)
 
 
 ## [0.2.11] - 2026-02-15
