@@ -583,10 +583,29 @@ const AppInner = function AppInner() {
     [gameState?.gameId, gameState?.players, localPlayerId, isSpectator],
   )
 
+  // PERFORMANCE: Use useRef to track player colors and only update when they actually change
+  // This prevents unnecessary re-renders of components that depend on playerColorMap
+  const playerColorMapRef = useRef<Map<number, PlayerColor>>(new Map())
+  const prevPlayersRef = useRef<string>('')
+
   const playerColorMap = useMemo(() => {
-    const map = new Map<number, PlayerColor>()
-    gameState?.players?.forEach(p => map.set(p.id, p.color))
-    return map
+    const currentPlayers = gameState?.players || []
+
+    // Create a signature of player IDs and their colors
+    const playersSignature = currentPlayers
+      .map(p => `${p.id}:${p.color}`)
+      .sort()
+      .join('|')
+
+    // Only recreate Map if player colors actually changed
+    if (prevPlayersRef.current !== playersSignature) {
+      prevPlayersRef.current = playersSignature
+      const newMap = new Map<number, PlayerColor>()
+      currentPlayers.forEach(p => newMap.set(p.id, p.color))
+      playerColorMapRef.current = newMap
+    }
+
+    return playerColorMapRef.current
   }, [gameState?.players])
 
   // Sort players by turn order relative to local player

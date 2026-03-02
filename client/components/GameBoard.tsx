@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useCallback, useState } from 'react'
+import React, { memo, useMemo, useCallback, useRef } from 'react'
 import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerColor, HighlightData, FloatingTextData, TargetingModeData, ClickWave, CursorStackState, AbilityAction, VisualEffect, VisualEffectsState, FloatingTextEffect, ClickWaveEffect, ScoringLineData, Player } from '@/types'
 import { ClickWave as ClickWaveComponent } from './ClickWave'
 import { Card } from './Card'
@@ -38,7 +38,7 @@ interface GameBoardProps {
   abilityMode?: AbilityAction | null; // For line selection mode highlight color
   scoringLines?: ScoringLineData[]; // Lines available for scoring during Scoring phase
   activePlayerIdForScoring?: number | null; // Player who is scoring (for correct color)
-  clickWaves?: ClickWave[];
+  clickWaves?: ClickWave[]; // Reserved for future use
   triggerClickWave?: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
   // NEW: ID-based visual effects
   visualEffects?: VisualEffectsState;
@@ -110,7 +110,8 @@ const GridCell = memo<{
       triggerClickWave, players,
   } = props
 
-  const [isOver, setIsOver] = useState(false)
+  // PERFORMANCE: Use useRef instead of useState to prevent re-renders during drag
+  const isOverRef = useRef(false)
 
       // Scoring lines highlight - show cells that are part of scoring lines
       // MUST be declared before handleClick since handleClick uses it
@@ -142,7 +143,10 @@ const GridCell = memo<{
         if (draggedItem) {
           handleDrop(draggedItem, { target: 'board', boardCoords: { row, col } })
         }
-        setIsOver(false)
+        isOverRef.current = false
+        // Remove drag-over class directly from DOM
+        const cellEl = e.currentTarget.closest('[data-board-coords]')
+        if (cellEl) cellEl.classList.remove('drag-over-active')
       }, [draggedItem, handleDrop, row, col])
 
       const handleClick = useCallback(() => {
@@ -177,6 +181,8 @@ const GridCell = memo<{
         }
       }, [showScoringHighlight, scoringLineInfo, onEmptyCellClick, playMode, cell.card, onCardClick, handleDrop, setPlayMode, row, col, triggerClickWave, localPlayerId, abilityMode])
 
+      // PERFORMANCE: Throttle drag events to prevent excessive re-renders
+      const rafRef = useRef<number | null>(null)
       const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault()
         const isCounter = draggedItem?.source === 'counter_panel'
@@ -184,18 +190,40 @@ const GridCell = memo<{
         const canDrop = cellIsEmpty || (cell.card && isCounter)
 
         if (canDrop) {
-          setIsOver(true)
+          // Use requestAnimationFrame to throttle updates
+          if (rafRef.current === null) {
+            rafRef.current = requestAnimationFrame(() => {
+              isOverRef.current = true
+              // Add drag-over class directly to DOM element
+              const cellEl = e.currentTarget.closest('[data-board-coords]')
+              if (cellEl) cellEl.classList.add('drag-over-active')
+              rafRef.current = null
+            })
+          }
           e.dataTransfer.dropEffect = 'move'
         } else {
-          // Cell is occupied and we can't place here - show forbidden cursor
+          // Cell is occupied - cancel any pending update and remove highlight
+          if (rafRef.current !== null) {
+            cancelAnimationFrame(rafRef.current)
+            rafRef.current = null
+          }
+          isOverRef.current = false
+          const cellEl = e.currentTarget.closest('[data-board-coords]')
+          if (cellEl) cellEl.classList.remove('drag-over-active')
           e.dataTransfer.dropEffect = 'none'
-          setIsOver(false)
         }
       }, [draggedItem, cell.card])
 
       const onDragLeave = useCallback(() => {
-        setIsOver(false)
-      }, [])
+        if (rafRef.current !== null) {
+          cancelAnimationFrame(rafRef.current)
+          rafRef.current = null
+        }
+        isOverRef.current = false
+        // Remove class on drag leave
+        const cellEl = document.querySelector(`[data-board-coords="${row},${col}"]`)
+        if (cellEl) cellEl.classList.remove('drag-over-active')
+      }, [row, col])
 
       const handleContextMenu = useCallback((e: React.MouseEvent) => {
         // Right-click cancels all targeting/ability modes for all players
@@ -256,11 +284,8 @@ const GridCell = memo<{
       // Check if dragged item is from hand/deck/discard/board (cards that can be played/moved)
       const isDraggingCard = draggedItem && ['hand', 'deck', 'discard', 'board'].includes(draggedItem.source)
 
-      const canDrop = !!draggedItem && (!isOccupied || (isOccupied && draggedItem.source === 'counter_panel'))
-      const canPlay = isInPlayMode && !isOccupied
-      const canStack = isStackMode && isValidTarget
       // Interactive for click handling, but visual highlight comes from shared highlights
-      const isInteractive = isValidTarget || canPlay || canStack
+      const isInteractive = isValidTarget || (isInPlayMode && !isOccupied) || (isStackMode && isValidTarget)
       // Check if card has ready ability (for activation) - ONLY for active player's cards
       const hasReadyAbility = cell.card && hasReadyAbilityInCurrentPhase(
         cell.card,
@@ -272,7 +297,9 @@ const GridCell = memo<{
 
       // Visual highlights:
       // 1. For drag: only highlight when cursor is over the cell
-      const showDragHighlight = !isOccupied && isDraggingCard && isOver && localPlayerId !== null
+      // PERFORMANCE: Use ref instead of state to prevent re-renders
+      // Actual highlight is applied via CSS class 'drag-over-active' to DOM element
+      const showDragHighlight = !isOccupied && isDraggingCard && isOverRef.current && localPlayerId !== null
       // 2. For play mode: highlight all empty cells as valid targets
       const showPlayModeHighlight = !isOccupied && isInPlayMode && localPlayerId !== null
       // 3. Scoring lines highlight - show cells that are part of scoring lines (declared earlier before handleClick)
@@ -439,7 +466,6 @@ const GridCell = memo<{
             const rgb = targetingPlayerColor && PLAYER_COLOR_RGB[targetingPlayerColor]
               ? PLAYER_COLOR_RGB[targetingPlayerColor]
               : { r: 37, g: 99, b: 235 }
-            const glowRgb = calculateGlowColor(rgb)
             return (
               <div
                 key={`targeting-mode-${highlightOwnerId}`}
@@ -463,7 +489,6 @@ const GridCell = memo<{
             const rgb = targetingPlayerColor && PLAYER_COLOR_RGB[targetingPlayerColor]
               ? PLAYER_COLOR_RGB[targetingPlayerColor]
               : { r: 37, g: 99, b: 235 }
-            const glowRgb = calculateGlowColor(rgb)
             return (
               <div
                 key={`line-selection-${row}-${col}`}
@@ -650,7 +675,7 @@ export const GameBoard = memo<GameBoardProps>(({
   abilityMode = null,
   scoringLines = [],
   activePlayerIdForScoring = null,
-  clickWaves,
+  clickWaves: _clickWaves, // Reserved for future use
   visualEffects,
   setCursorStack,
   onCancelAllModes,
@@ -719,49 +744,41 @@ export const GameBoard = memo<GameBoardProps>(({
     return null
   }, [highlight, playerColorMap, activeGridSize, board.length])
 
-  const processedCells = useMemo(() => {
-    const totalSize = board.length
-    const offset = Math.floor((totalSize - activeGridSize) / 2)
-    // Combine local validTargets with shared targetingMode boardTargets
-    // Ensure both are arrays before mapping
+  // PERFORMANCE: Pre-compute target sets separately to avoid recalculation on every render
+  const validTargetsSet = useMemo(() => {
     const validTargetsArray = Array.isArray(validTargets) ? validTargets : []
-    const localTargetsSet = new Set(validTargetsArray.map((t: {row: number, col: number}) => `${t.row}-${t.col}`))
-    // Ensure boardTargets is always an array
+    return new Set(validTargetsArray.map((t: {row: number, col: number}) => `${t.row}-${t.col}`))
+  }, [validTargets])
+
+  const targetingModeTargetsSet = useMemo(() => {
     const boardTargetsArray = Array.isArray(targetingMode?.boardTargets) ? targetingMode.boardTargets : []
-    const targetingModeTargetsSet = new Set(boardTargetsArray.map((t: {row: number, col: number}) => `${t.row}-${t.col}`))
+    return new Set(boardTargetsArray.map((t: {row: number, col: number}) => `${t.row}-${t.col}`))
+  }, [targetingMode?.boardTargets])
 
-    // OPTIMIZATION: Create lookup Maps instead of filtering for each cell
-    // This changes complexity from O(cells * items) to O(items) + O(cells)
-    const clickWavesMap = new Map<string, any[]>()
-    if (clickWaves) {
-      for (const wave of clickWaves) {
-        if (wave.location === 'board' && wave.boardCoords) {
-          const key = `${wave.boardCoords.row}-${wave.boardCoords.col}`
-          if (!clickWavesMap.has(key)) {
-            clickWavesMap.set(key, [])
-          }
-          clickWavesMap.get(key)!.push(wave)
-        }
-      }
-    }
-
-    const floatingTextsMap = new Map<string, any[]>()
+  // PERFORMANCE: Pre-compute visual effects maps separately
+  const floatingTextsMap = useMemo(() => {
+    const map = new Map<string, any[]>()
     if (activeFloatingTexts) {
       for (const ft of activeFloatingTexts) {
         const key = `${ft.row}-${ft.col}`
-        if (!floatingTextsMap.has(key)) {
-          floatingTextsMap.set(key, [])
-        }
-        floatingTextsMap.get(key)!.push(ft)
+        if (!map.has(key)) map.set(key, [])
+        map.get(key)!.push(ft)
       }
     }
+    return map
+  }, [activeFloatingTexts])
 
-    // Convert visualEffects Map to array for filtering
-    const visualEffectsArray = visualEffects ? Array.from(visualEffects.values()) : []
+  const visualEffectsArray = useMemo(() => {
+    return visualEffects ? Array.from(visualEffects.values()) : []
+  }, [visualEffects])
+
+  const processedCells = useMemo(() => {
+    const totalSize = board.length
+    const offset = Math.floor((totalSize - activeGridSize) / 2)
 
     // A cell is valid if it's in either local targets OR targeting mode targets
     const isValidTargetCell = (row: number, col: number) => {
-      return localTargetsSet.has(`${row}-${col}`) || targetingModeTargetsSet.has(`${row}-${col}`)
+      return validTargetsSet.has(`${row}-${col}`) || targetingModeTargetsSet.has(`${row}-${col}`)
     }
 
     return activeBoard.map((rowItems, rowIndex) =>
@@ -783,7 +800,6 @@ export const GameBoard = memo<GameBoardProps>(({
           return false
         })
 
-        // OPTIMIZATION: Use Map lookup instead of filtering - O(1) instead of O(n)
         return {
           cellKey,
           originalRowIndex,
@@ -794,12 +810,11 @@ export const GameBoard = memo<GameBoardProps>(({
           targetingModeActionMode: targetingMode?.action?.mode,
           isNoTarget: noTargetOverlay?.row === originalRowIndex && noTargetOverlay.col === originalColIndex,
           cellFloatingTexts: floatingTextsMap.get(cellKey) || [],
-          cellClickWaves: clickWavesMap.get(cellKey) || [],
-          cellVisualEffects, // NEW: ID-based effects for this cell
+          cellVisualEffects,
         }
       }),
     )
-  }, [activeBoard, board.length, activeGridSize, validTargets, targetingMode, noTargetOverlay, activeFloatingTexts, clickWaves, visualEffects])
+  }, [activeBoard, board.length, activeGridSize, validTargetsSet, targetingModeTargetsSet, targetingMode?.action?.mode, noTargetOverlay, floatingTextsMap, visualEffectsArray])
 
   return (
     <div className="relative p-2 bg-board-bg rounded-xl h-full aspect-square transition-all duration-300">
@@ -808,7 +823,7 @@ export const GameBoard = memo<GameBoardProps>(({
           rowCells.map(({
             cellKey, originalRowIndex, originalColIndex, cell, isValidTarget,
             isTargetingModeValidTarget, targetingModeActionMode, isNoTarget, cellFloatingTexts,
-            cellClickWaves, cellVisualEffects,
+            cellVisualEffects,
           }) => (
             <div key={cellKey} className="relative w-full h-full" data-row={originalRowIndex} data-col={originalColIndex}>
               <GridCell
@@ -867,14 +882,6 @@ export const GameBoard = memo<GameBoardProps>(({
                   playerColorMap={playerColorMap}
                 />
               ))}
-              {/* React wave disabled - using instant direct DOM approach only */}
-              {/* {cellClickWaves.map(wave => (
-                <ClickWaveComponent
-                  key={wave.timestamp}
-                  timestamp={wave.timestamp}
-                  playerColor={wave.playerColor}
-                />
-              ))} */}
             </div>
           )),
         )}

@@ -119,8 +119,12 @@
   }
 }
 
+/* PERFORMANCE: Use GPU acceleration and contain layout for animated elements */
 .animate-glow-pulse {
   animation: glow-pulse 1.33s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  will-change: opacity;
+  transform: translateZ(0); /* Force GPU acceleration */
+  contain: layout style paint; /* Isolate from rest of page */
 }
 
 /* Custom scrollbar for modal content */
@@ -161,4 +165,14 @@
 /* Block all draggable interactions when cursor has a token stack */
 .cursor-stack-active [data-interactive='true'] {
   pointer-events: none !important;
+}
+
+/* PERFORMANCE: Drag highlight applied via JS instead of React state */
+[data-board-coords].drag-over-active {
+  animation: drag-pulse 0.5s ease-in-out;
+}
+
+@keyframes drag-pulse {
+  0%, 100% { background-color: rgba(59, 130, 246, 0.1); }
+  50% { background-color: rgba(59, 130, 246, 0.3); }
 }
