@@ -28,7 +28,7 @@ validateConfig();
 try {
   await initializeContent();
 } catch (error) {
-  logger.error('Failed to initialize content database:', error);
+  logger.error('Failed to initialize content database:', error as Error);
   process.exit(1);
 }
 
@@ -49,7 +49,7 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
-  next();
+  return next();
 });
 
 // Determine static file path based on environment
