@@ -1326,7 +1326,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
 
                 // CARDS IN OTHER PLAYERS' HANDS should be FACE-DOWN by default
                 // Only exceptions: owner, dummy (if not hidden), teammate (rare), or Revealed
-                const isVisible: boolean = isOwner || (!!isOwnerDummy && !hideDummyCards) || isTeammate || isRevealedToAll || isRevealedToMe || isRevealedByStatus
+                const isVisible: boolean = isOwner || (!!isOwnerDummy && !hideDummyCards) || isTeammate || isRevealedToAll || isRevealedToMe || (isRevealedByStatus ?? false)
 
                 return (
                   <div

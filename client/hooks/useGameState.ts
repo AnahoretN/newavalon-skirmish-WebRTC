@@ -72,7 +72,7 @@ interface UseGameStateResult {
   // Status effects
   addBoardCardStatus: (coords: any, status: any, playerId?: number) => void
   removeBoardCardStatus: (coords: any, status: any) => void
-  removeBoardCardStatusByOwner: (ownerId: number) => void
+  removeBoardCardStatusByOwner: (coords: any, status: any, ownerId: number) => void
   modifyBoardCardPower: (coords: any, delta: number) => void
   addAnnouncedCardStatus: (playerId: number, status: any, addedByPlayerId?: number) => void
   removeAnnouncedCardStatus: (playerId: number, status: any) => void
@@ -133,8 +133,8 @@ interface UseGameStateResult {
   transferAllCounters: (from: any, to: any) => void
   transferAllStatusesWithoutException: (from: any, to: any) => void
   recoverDiscardedCard: (playerId: number, cardIndex: number) => void
-  resurrectDiscardedCard: (playerId: number) => void
-  spawnToken: (token: any) => void
+  resurrectDiscardedCard: (playerId: number, cardIndex: number, boardCoords: { row: number; col: number }) => void
+  spawnToken: (coords: { row: number; col: number }, name: string, ownerId: number) => void
 
   // Game reset
   resetGame: () => void

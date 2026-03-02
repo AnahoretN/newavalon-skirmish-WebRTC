@@ -9,7 +9,7 @@
  * - Game reset
  */
 
-import type { GameState, Card, Player, PlayerColor } from '../../types'
+import type { GameState, Card, Player } from '../../types'
 import { DeckType } from '../../types'
 import { shuffleDeck } from '../../../shared/utils/array'
 import { createDeck } from '../../hooks/core/gameCreators'

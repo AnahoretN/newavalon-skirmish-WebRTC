@@ -2092,12 +2092,12 @@ const AppInner = function AppInner() {
         setViewingDiscard(null)
 
         // Set targeting mode for adjacent empty cells
-        if (prev?.sourceCoords) {
+        if (abilityMode?.sourceCoords) {
           const neighbors = [
-            { r: prev.sourceCoords.row - 1, c: prev.sourceCoords.col },
-            { r: prev.sourceCoords.row + 1, c: prev.sourceCoords.col },
-            { r: prev.sourceCoords.row, c: prev.sourceCoords.col - 1 },
-            { r: prev.sourceCoords.row, c: prev.sourceCoords.col + 1 },
+            { r: abilityMode.sourceCoords.row - 1, c: abilityMode.sourceCoords.col },
+            { r: abilityMode.sourceCoords.row + 1, c: abilityMode.sourceCoords.col },
+            { r: abilityMode.sourceCoords.row, c: abilityMode.sourceCoords.col - 1 },
+            { r: abilityMode.sourceCoords.row, c: abilityMode.sourceCoords.col + 1 },
           ]
           const validTargets = neighbors
             .filter(nb =>
@@ -2108,7 +2108,7 @@ const AppInner = function AppInner() {
             .map(nb => ({ row: nb.r, col: nb.c }))
 
           if (validTargets.length > 0) {
-            setTargetingMode(prev!, gameState.activePlayerId ?? localPlayerId ?? 1, prev.sourceCoords, validTargets)
+            setTargetingMode(abilityMode, gameState.activePlayerId ?? localPlayerId ?? 1, abilityMode.sourceCoords, validTargets)
           }
         }
       } else if (abilityMode?.mode === 'RESURRECT_FROM_DISCARD') {

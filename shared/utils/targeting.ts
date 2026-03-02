@@ -377,9 +377,10 @@ export const calculateValidTargets = (
       if (nb.r >= minBound && nb.r <= maxBound && nb.c >= minBound && nb.c <= maxBound) {
         const cell = board[nb.r][nb.c]
         if (cell.card && cell.card.ownerId !== ownerId) {
+          const targetOwnerId = cell.card.ownerId
           // Check if target is opponent (not teammate)
           const actorPlayer = currentGameState.players.find(p => p.id === ownerId)
-          const targetPlayer = currentGameState.players.find(p => p.id === cell.card.ownerId)
+          const targetPlayer = currentGameState.players.find(p => p.id === targetOwnerId)
           const isTeammate = actorPlayer?.teamId !== undefined && targetPlayer?.teamId !== undefined &&
                             actorPlayer.teamId === targetPlayer.teamId
 
@@ -1043,9 +1044,10 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
           nb.c >= 0 && nb.c < currentGameState.board[0].length) {
         const cell = currentGameState.board[nb.r][nb.c]
         if (cell.card && cell.card.ownerId !== ownerId) {
+          const targetOwnerId = cell.card.ownerId
           // Check if target is opponent (not teammate)
           const actorPlayer = currentGameState.players.find(p => p.id === ownerId)
-          const targetPlayer = currentGameState.players.find(p => p.id === cell.card.ownerId)
+          const targetPlayer = currentGameState.players.find(p => p.id === targetOwnerId)
           const isTeammate = actorPlayer?.teamId !== undefined && targetPlayer?.teamId !== undefined &&
                             actorPlayer.teamId === targetPlayer.teamId
 

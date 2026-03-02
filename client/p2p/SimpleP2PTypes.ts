@@ -24,6 +24,8 @@ export type ActionType =
   | 'PLAY_CARD_FROM_DISCARD'
   | 'MOVE_CARD'
   | 'MOVE_CARD_ON_BOARD'
+  | 'SWAP_CARDS'
+  | 'SPAWN_TOKEN'
   | 'RETURN_CARD_TO_HAND'
   | 'ANNOUNCE_CARD'
   | 'DESTROY_CARD'

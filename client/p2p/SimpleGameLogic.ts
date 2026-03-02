@@ -10,7 +10,7 @@
  * - handlers/gameSettingsHandlers.ts - game configuration
  */
 
-import type { GameState, Card, Player, ScoringLineData } from '../types'
+import type { GameState, Card, Player, ScoringLineData, CardStatus } from '../types'
 import { DeckType } from '../types'
 import type { ActionType } from './SimpleP2PTypes'
 import { shuffleDeck } from '../../shared/utils/array'
@@ -540,11 +540,11 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
     if (hasLastPlayedCards) {
       // Has cards with LastPlayed status - enter Scoring and calculate lines
       console.log('[NEXT_PHASE to Scoring] Entering scoring phase for player', activePlayerId)
-      return enterScoringPhase(state, activePlayerId)
+      return enterScoringPhase(state, activePlayerId ?? 0)
     } else {
       // No cards with LastPlayed status - pass turn to next player
       console.log('[NEXT_PHASE to Scoring] No LastPlayed cards, passing turn')
-      return handlePassTurn(state, activePlayerId, 'no_new_cards')
+      return handlePassTurn(state, activePlayerId ?? 0, 'no_new_cards')
     }
   }
 
@@ -833,8 +833,8 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
         // add readySetup status so it can be used even after phase switches to Main
         // This allows cards like Finn to use their "Move 1 allied card" ability upon entering
         if (wasSetupPhase && !faceDown) {
-          const cardDef = getCardDefinition(cardToPlay.baseId)
-          if (cardDef?.abilities?.some((a: any) => a.type === 'setup')) {
+          const cardDef = getCardDefinition(cardToPlay.baseId ?? '')
+          if (cardDef && (cardDef as any).ABILITIES?.some((a: any) => a.type === 'setup')) {
             finalStatuses = [...finalStatuses, { type: 'readySetup', addedByPlayerId: actualPlayerId }]
             console.log('[handlePlayCard] Adding readySetup to Setup ability card played during Setup phase:', cardToPlay.baseId)
           }
@@ -1540,8 +1540,8 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
   const wasFaceDown = faceDown
 
   // Check if card has Setup ability before creating final board state
-  const cardDef = getCardDefinition(cardToPlay.baseId)
-  const cardHasSetupAbility = cardDef?.abilities?.some((a: any) => a.type === 'setup')
+  const cardDef = getCardDefinition(cardToPlay.baseId ?? '')
+  const cardHasSetupAbility = cardDef && (cardDef as any).ABILITIES?.some((a: any) => a.type === 'setup')
 
   let newState: GameState = {
     ...state,
@@ -1688,10 +1688,13 @@ function handleDestroyCard(state: GameState, _playerId: number, data: any): Game
 
   // Restore LastPlayed to previous card if destroyed card had it
   // Use the card with original statuses (before clearing)
-  const cardWithOriginalStatuses = { ...destroyedCard, statuses: originalStatuses }
-  updatedState = restoreLastPlayedToPreviousCard(updatedState, cardWithOriginalStatuses, ownerId)
+  if (destroyedCard) {
+    const card: Card = destroyedCard
+    const cardWithOriginalStatuses = { ...card, statuses: originalStatuses }
+    updatedState = restoreLastPlayedToPreviousCard(updatedState as any, cardWithOriginalStatuses, ownerId ?? 0)
+  }
 
-  return updatedState
+  return updatedState as any
 }
 
 /**
@@ -1789,11 +1792,11 @@ function handleSpawnToken(state: GameState, playerId: number, data?: any): GameS
 
   // Use tokenData if provided, otherwise create basic token
   const tokenData = data?.tokenData
-  const tokenCard = {
+  const tokenCard: Card = {
     id: `token_${Date.now()}_${Math.random()}`,
     baseId: tokenName,
     name: tokenData?.name || tokenName,
-    deck: 'Tokens',
+    deck: 'Tokens' as DeckType,
     types: tokenData?.types || ['Token'],
     power: tokenData?.power ?? 1,
     abilityText: tokenData?.abilityText || '',
@@ -1807,7 +1810,7 @@ function handleSpawnToken(state: GameState, playerId: number, data?: any): GameS
   const newBoard = state.board.map((r, rIdx) =>
     r.map((cell, cIdx) => {
       if (rIdx === row && cIdx === col) {
-        return { card: tokenCard }
+        return { card: tokenCard } as any
       }
       return cell
     })
@@ -1819,7 +1822,7 @@ function handleSpawnToken(state: GameState, playerId: number, data?: any): GameS
 
   // Check if token has Setup ability before creating final board state
   const tokenDef = getCardDefinition(tokenName)
-  const tokenHasSetupAbility = tokenDef?.abilities?.some((a: any) => a.type === 'setup')
+  const tokenHasSetupAbility = tokenDef && (tokenDef as any).ABILITIES?.some((a: any) => a.type === 'setup')
 
   let newState: GameState = {
     ...state,
@@ -1901,8 +1904,7 @@ function handleResurrectDiscarded(state: GameState, playerId: number, data?: any
     ...cardToResurrect,
     id: `resurrected_${cardToResurrect.id}_${Date.now()}`, // New ID to avoid conflicts
     ownerId: cardOwnerId,
-    enteredThisTurn: false,
-    isFaceUp: true, // Resurrected cards are face up
+    enteredThisTurn: false
   }
 
   // Remove card from discard

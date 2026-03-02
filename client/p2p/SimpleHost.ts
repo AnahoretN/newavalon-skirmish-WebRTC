@@ -850,7 +850,7 @@ export class SimpleHost {
 
     // Clear the deck view request flag after processing
     if (deckViewRequest) {
-      delete result._deckViewRequest
+      delete (result as any)._deckViewRequest
     }
 
     return result as PersonalizedState
