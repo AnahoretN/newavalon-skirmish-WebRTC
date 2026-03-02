@@ -192,10 +192,11 @@ const GridCell = memo<{
         if (canDrop) {
           // Use requestAnimationFrame to throttle updates
           if (rafRef.current === null) {
+            // CRITICAL: Find element NOW before RAF callback (e.currentTarget becomes null in RAF)
+            const cellEl = e.currentTarget.closest('[data-board-coords]')
             rafRef.current = requestAnimationFrame(() => {
               isOverRef.current = true
               // Add drag-over class directly to DOM element
-              const cellEl = e.currentTarget.closest('[data-board-coords]')
               if (cellEl) cellEl.classList.add('drag-over-active')
               rafRef.current = null
             })
