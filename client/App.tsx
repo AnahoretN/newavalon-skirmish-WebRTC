@@ -1157,8 +1157,9 @@ const AppInner = function AppInner() {
       if (abilityMode.payload.actionType === 'SELECT_HAND_FOR_DEPLOY' || abilityMode.payload.filter) {
         gameState.players.forEach(p => {
           p.hand.forEach((card, index) => {
-            // Ensure payload filter is used for hand targets too
-            if (abilityMode.payload.filter?.(card)) {
+            // CRITICAL: Check that filter is a function before calling it
+            const filterFn = abilityMode.payload.filter
+            if (!filterFn || (typeof filterFn === 'function' && filterFn(card))) {
               // For Deploy from Hand, only check owner
               if (abilityMode.payload.actionType === 'SELECT_HAND_FOR_DEPLOY') {
                 if (p.id === actorId) {
