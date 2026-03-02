@@ -5,8 +5,7 @@
  */
 
 import type { Card, GameState, AbilityAction } from '@/types'
-import { getCardAbilityAction, getAbilitiesForCard } from '@/utils/autoAbilities'
-import { canActivateAbility } from '@server/utils/autoAbilities'
+import { getCardAbilityAction, getAbilitiesForCard, canActivateAbility } from '@/utils/autoAbilities'
 import { hasReadyAbilityInCurrentPhase } from '@/utils/autoAbilities'
 import { hasStatus } from '@shared/abilities/readySystem'
 

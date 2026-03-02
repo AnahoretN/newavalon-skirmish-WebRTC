@@ -1,4 +1,7 @@
 /**
+ * @deprecated This is the legacy ready status system.
+ * Please use the unified system from './readySystem.js' instead.
+ *
  * Ready Status System for Card Abilities
  *
  * Each card has hidden statuses that control ability availability:
@@ -10,6 +13,11 @@
  * 1. When card enters battlefield -> gains ready statuses ONLY for abilities it has
  * 2. At start of owner's turn -> card regains readySetup, readyCommit (if it has those abilities)
  * 3. When ability is used, cancelled, or shows "no target" -> card loses that ready status
+ *
+ * Migration guide:
+ * - READY_STATUS_DEPLOY -> READY_STATUS.DEPLOY from './readySystem.js'
+ * - hasReadyStatus -> use from './readySystem.js'
+ * - canActivateAbility -> use canActivateAbility from '@/utils/autoAbilities' (client) or './readySystem.js' (canCardActivate)
  */
 
 // Use any for Card to avoid type conflicts between client/server Card types

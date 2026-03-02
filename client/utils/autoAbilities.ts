@@ -109,18 +109,6 @@ export {
   CardAbilityInfo,
 }
 
-// Export combined function that clears all ready statuses including usage tracking
-// This should be called when a card leaves the battlefield
-export function clearAllReadyStatuses(card: Card): void {
-  removeAllReadyStatuses(card)      // Remove readyDeploy, readySetup, readyCommit
-  clearTurnLimitedAbilities(card)   // Remove deployUsedThisTurn, setupUsedThisTurn, commitUsedThisTurn
-}
-
-// Re-export constants for backward compatibility
-export const READY_STATUS_DEPLOY = 'readyDeploy'
-export const READY_STATUS_SETUP = 'readySetup'
-export const READY_STATUS_COMMIT = 'readyCommit'
-
 // Import getCardAbilityTypes from server (works via @server alias in Vite)
 import { getCardAbilityTypes as serverGetCardAbilityTypes, getAbilitiesForCard, setClientGetCardAbilitiesProvider } from '@server/utils/autoAbilities'
 import { getCardAbilities as clientGetCardAbilities, type ContentAbility } from '@/content'
@@ -337,66 +325,143 @@ export const getCardAbilityAction = (
     }
   }
 
+  const abilities = getAbilitiesForCard(card as any)
   const phaseIndex = gameState.currentPhase
   const actorId = card.ownerId ?? localPlayerId ?? 0
 
-  // Priority 1: Deploy ability (works in ANY phase when card has readyDeploy)
-  const deployAbility = getAbilitiesForCard(card as any).find(a => a.activationType === 'deploy')
-  if (deployAbility && hasReadyStatus(card, READY_STATUS.DEPLOY)) {
-    const action = deployAbility.getAction(card as any, gameState as any, actorId, coords)
-    console.log('[getCardAbilityAction] Deploy ability for', card.baseId, {
-      hasAction: !!action,
-      actionType: action?.type,
-      actionMode: action?.mode,
-      supportRequired: deployAbility.supportRequired,
-      hasSupport: hasStatus(card, 'Support', actorId)
-    })
-    if (action) {
-      return {
-        ...action,
-        isDeployAbility: true,
-        readyStatusToRemove: READY_STATUS.DEPLOY,
-        supportRequired: deployAbility.supportRequired
-      }
-    }
-  }
-
-  // Priority 2: Setup ability (ONLY in Setup phase / phase 1, or in Main phase if just played)
+  // Priority 1: Setup ability (ONLY in Setup phase / phase 1)
   if (phaseIndex === 1) {
-    const setupAbility = getAbilitiesForCard(card as any).find(a => a.activationType === 'setup')
-    console.log('[getCardAbilityAction] Phase 1 (Setup) - Checking card', {
-      cardId: card.baseId,
-      cardOwnerId: card.ownerId,
-      hasSetupAbility: !!setupAbility,
-      hasReadySetup: hasReadyStatus(card, READY_STATUS.SETUP),
-      readyStatuses: card.statuses?.filter(s => s.type?.startsWith('ready')).map(s => s.type)
-    })
+    const setupAbility = abilities.find(a => a.activationType === 'setup')
     if (setupAbility && hasReadyStatus(card, READY_STATUS.SETUP)) {
       if (setupAbility.supportRequired && !hasStatus(card, 'Support', actorId)) {
-        console.log('[getCardAbilityAction] Setup ability requires Support but missing')
         return null
       }
       const action = setupAbility.getAction(card as any, gameState as any, actorId, coords)
-      console.log('[getCardAbilityAction] Setup ability for', card.baseId, { hasAction: !!action, actionType: action?.type, actionMode: action?.mode })
       if (action) {
-        return { ...action, readyStatusToRemove: READY_STATUS.SETUP }
+        return { ...action, readyStatusToRemove: READY_STATUS.SETUP, supportRequired: setupAbility.supportRequired }
       }
     }
   }
 
-  // Priority 3: Commit ability (ONLY in Commit phase / phase 3)
+  // Priority 2: Commit ability (ONLY in Commit phase / phase 3)
   if (phaseIndex === 3) {
-    const commitAbility = getAbilitiesForCard(card as any).find(a => a.activationType === 'commit')
+    const commitAbility = abilities.find(a => a.activationType === 'commit')
     if (commitAbility && hasReadyStatus(card, READY_STATUS.COMMIT)) {
       if (commitAbility.supportRequired && !hasStatus(card, 'Support', actorId)) {
         return null
       }
       const action = commitAbility.getAction(card as any, gameState as any, actorId, coords)
       if (action) {
-        return { ...action, readyStatusToRemove: READY_STATUS.COMMIT }
+        return { ...action, readyStatusToRemove: READY_STATUS.COMMIT, supportRequired: commitAbility.supportRequired }
+      }
+    }
+  }
+
+  // Priority 3: Deploy ability (works in ANY phase when card has readyDeploy)
+  // Deploy takes priority UNLESS the card has the phase-specific status for current phase
+  const hasPhaseSpecificStatus =
+    (phaseIndex === 1 && hasReadyStatus(card, READY_STATUS.SETUP)) ||
+    (phaseIndex === 3 && hasReadyStatus(card, READY_STATUS.COMMIT))
+
+  if (!hasPhaseSpecificStatus) {
+    const deployAbility = abilities.find(a => a.activationType === 'deploy')
+    if (deployAbility && hasReadyStatus(card, READY_STATUS.DEPLOY)) {
+      if (deployAbility.supportRequired && !hasStatus(card, 'Support', actorId)) {
+        return null
+      }
+      const action = deployAbility.getAction(card as any, gameState as any, actorId, coords)
+      if (action) {
+        return {
+          ...action,
+          isDeployAbility: true,
+          readyStatusToRemove: READY_STATUS.DEPLOY,
+          supportRequired: deployAbility.supportRequired
+        }
       }
     }
   }
 
   return null
+}
+
+// ============================================================================
+// canActivateAbility - Check if a card can activate an ability
+// ============================================================================
+
+/**
+ * Check if a card can activate an ability in the current phase.
+ *
+ * Determines if a card has any usable ability based on:
+ * 1. Ownership check (dummy player cards can be activated by anyone)
+ * 2. Not stunned
+ * 3. Has ready status for current phase
+ * 4. Has Support if required
+ *
+ * Priority: Setup (phase 1) > Commit (phase 3) > Deploy (any phase)
+ */
+export const canActivateAbility = (
+  card: Card,
+  phaseIndex: number,
+  activePlayerId: number | undefined,
+  gameState?: GameState
+): boolean => {
+  // Ownership check: active player must own the card
+  // Exception: dummy player cards can be activated by anyone
+  if (gameState && card.ownerId !== undefined) {
+    const cardOwner = gameState.players.find((p: any) => p.id === card.ownerId)
+    // If card belongs to dummy player, skip the ownership check (anyone can activate)
+    if (!cardOwner?.isDummy && activePlayerId !== card.ownerId) {
+      return false
+    }
+  } else if (activePlayerId !== card.ownerId) {
+    return false
+  }
+
+  if (card.statuses?.some((s: any) => s.type === 'Stun')) {
+    return false
+  }
+
+  const abilities = getAbilitiesForCard(card as any)
+
+  // Check if card has a phase-specific ability for current phase
+  const hasPhaseSpecificAbility =
+    (phaseIndex === 1 && abilities.some((a: any) => a.activationType === 'setup')) ||
+    (phaseIndex === 3 && abilities.some((a: any) => a.activationType === 'commit'))
+
+  // === 1. CHECK SETUP ABILITY (ONLY in Setup phase) ===
+  if (phaseIndex === 1) {
+    const setupAbility = abilities.find((a: any) => a.activationType === 'setup')
+    if (setupAbility && hasReadyStatus(card, READY_STATUS.SETUP)) {
+      if (setupAbility.supportRequired && !hasStatus(card, 'Support', activePlayerId)) {
+        return false
+      }
+      return true
+    }
+  }
+
+  // === 2. CHECK COMMIT ABILITY (ONLY in Commit phase) ===
+  if (phaseIndex === 3) {
+    const commitAbility = abilities.find((a: any) => a.activationType === 'commit')
+    if (commitAbility && hasReadyStatus(card, READY_STATUS.COMMIT)) {
+      if (commitAbility.supportRequired && !hasStatus(card, 'Support', activePlayerId)) {
+        return false
+      }
+      return true
+    }
+  }
+
+  // === 3. CHECK DEPLOY ABILITY (works in ANY phase if no phase-specific ability for this phase) ===
+  // Deploy abilities can be used in any phase UNLESS the card has a phase-specific ability
+  // for the current phase that should take priority
+  if (!hasPhaseSpecificAbility) {
+    const deployAbility = abilities.find((a: any) => a.activationType === 'deploy')
+    if (deployAbility && hasReadyStatus(card, READY_STATUS.DEPLOY)) {
+      if (deployAbility.supportRequired && !hasStatus(card, 'Support', activePlayerId)) {
+        return false
+      }
+      return true
+    }
+  }
+
+  return false
 }

@@ -59,9 +59,22 @@ export {
 } from './readySystem.js'
 
 // ============================================================================
-// Legacy Ready Status (kept for migration period)
+// @deprecated Legacy Ready Status - use readySystem.js instead
 // ============================================================================
 
+/**
+ * @deprecated Legacy ready status system. Use READY_STATUS from './readySystem.js' instead.
+ *
+ * Migration:
+ * - READY_STATUS_DEPLOY -> READY_STATUS.DEPLOY
+ * - READY_STATUS_SETUP -> READY_STATUS.SETUP
+ * - READY_STATUS_COMMIT -> READY_STATUS.COMMIT
+ */
+export const READY_STATUS_DEPLOY = 'readyDeploy'
+export const READY_STATUS_SETUP = 'readySetup'
+export const READY_STATUS_COMMIT = 'readyCommit'
+
+// Legacy re-exports (marked with _Legacy suffix where possible)
 export {
   hasReadyStatusForPhase as hasReadyStatusForPhase_Legacy,
   hasReadyAbilityInCurrentPhase as hasReadyAbilityInCurrentPhase_Legacy,
@@ -71,15 +84,10 @@ export {
   type Card,
 } from './readyStatus.js'
 
-// Re-export the old functions for backward compatibility
+// @deprecated Re-export of old functions for backward compatibility - use _Legacy versions or readySystem.js
 export { canActivateAbility } from './readyStatus.js'
 export { hasReadyStatusForPhase } from './readyStatus.js'
 export { hasReadyAbilityInCurrentPhase } from './readyStatus.js'
-
-// Re-export constants for backward compatibility
-export const READY_STATUS_DEPLOY = 'readyDeploy'
-export const READY_STATUS_SETUP = 'readySetup'
-export const READY_STATUS_COMMIT = 'readyCommit'
 
 // ============================================================================
 // Ability Utils

@@ -7,7 +7,8 @@
 import type { Card, Player, AbilityAction, CursorStackState } from '@/types'
 import { TIMING } from '@/utils/common'
 import { validateTarget } from '@shared/utils/targeting'
-import { canActivateAbility as canActivateAbilityOld } from '@shared/abilities/readyStatus.js'
+import { READY_STATUS } from '@shared/abilities/readySystem.js'
+import { hasReadyStatus } from '@shared/abilities/readySystem.js'
 
  
 
@@ -299,7 +300,8 @@ export function handleAnnouncedCardDoubleClick(
   if (gameState.activePlayerId !== player.id) {
     return
   }
-  if (!canActivateAbilityOld(card as any, 'setup', gameState.currentPhase)) {
+  // Check if card can use Setup ability (phase 1 only)
+  if (gameState.currentPhase !== 1 || !hasReadyStatus(card as any, READY_STATUS.SETUP)) {
     return
   }
   activateAbility(card, { row: -1, col: -1 })
