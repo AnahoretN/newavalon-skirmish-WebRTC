@@ -439,11 +439,20 @@ export const calculateValidTargets = (
 
     // Build filter function if not present (for serialization support)
     let filterFn = payload.filter
-    console.log('[calculateValidTargets] Before filter build:', { mode, hasFilterFn: !!filterFn, hasFilterString: !!payload.filterString, filterString: payload.filterString })
-    if (!filterFn && payload.filterString) {
+    console.log('[calculateValidTargets] Before filter build:', { mode, hasFilterFn: !!filterFn, hasFilterString: !!payload.filterString, filterString: payload.filterString, typeofFilterFn: typeof filterFn })
+
+    // CRITICAL: Convert filter string to function if needed
+    // JSON stores filter as string, need to convert to function
+    if (typeof filterFn !== 'function' && payload.filterString) {
       const ownerId = action.sourceCard?.ownerId || 0
       filterFn = buildFilterFromString(payload.filterString, ownerId, sourceCoords || action.sourceCoords || { row: 0, col: 0 })
-      console.log('[calculateValidTargets] Built filter from string:', { filterString: payload.filterString, ownerId, hasFilterFn: !!filterFn, typeofFilterFn: typeof filterFn })
+      console.log('[calculateValidTargets] Built filter from filterString:', { filterString: payload.filterString, ownerId, hasFilterFn: !!filterFn, typeofFilterFn: typeof filterFn })
+    }
+    // Also handle case where filter is a string (not a function) - convert it
+    else if (typeof filterFn !== 'function' && typeof filterFn === 'string') {
+      const ownerId = action.sourceCard?.ownerId || 0
+      filterFn = buildFilterFromString(filterFn, ownerId, sourceCoords || action.sourceCoords || { row: 0, col: 0 })
+      console.log('[calculateValidTargets] Built filter from string:', { filterString: filterFn, ownerId, hasFilterFn: !!filterFn, typeofFilterFn: typeof filterFn })
     }
 
     if (!filterFn || typeof filterFn !== 'function') {

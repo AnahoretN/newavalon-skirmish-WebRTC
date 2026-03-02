@@ -621,7 +621,9 @@ function handleSelectTargetActionType(
     console.log('[SACRIFICE_TARGET] Starting execution')
     console.log('[SACRIFICE_TARGET] Selected card:', card.name, 'at', boardCoords)
 
-    if (payload.filter && !payload.filter(card, boardCoords.row, boardCoords.col)) {
+    // CRITICAL: payload.filter may be a string (e.g., "isOwner") instead of a function
+    // Skip local filter check if filter is not a function - calculateValidTargets will handle it
+    if (payload.filter && typeof payload.filter === 'function' && !payload.filter(card, boardCoords.row, boardCoords.col)) {
       console.log('[SACRIFICE_TARGET] Filter failed')
       return false
     }
