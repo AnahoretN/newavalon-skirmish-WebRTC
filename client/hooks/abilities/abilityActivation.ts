@@ -5,9 +5,10 @@
  */
 
 import type { Card, GameState, AbilityAction } from '@/types'
-import { getCardAbilityAction } from '@/utils/autoAbilities'
+import { getCardAbilityAction, getAbilitiesForCard } from '@/utils/autoAbilities'
 import { canActivateAbility } from '@server/utils/autoAbilities'
 import { hasReadyAbilityInCurrentPhase } from '@/utils/autoAbilities'
+import { hasStatus } from '@shared/abilities/readySystem'
 
 export interface AbilityActivationProps {
   gameState: GameState
@@ -16,7 +17,8 @@ export interface AbilityActivationProps {
   cursorStack: any
   handleActionExecution: (action: AbilityAction, sourceCoords: { row: number; col: number }) => void
   markAbilityUsed: (coords: { row: number; col: number }, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void
-  addBoardCardStatus: (coords: {row: number, col: number}, status: string, pid: number) => void
+  addBoardCardStatus?: (coords: {row: number, col: number}, status: string, pid: number) => void
+  setAbilityMode?: React.Dispatch<React.SetStateAction<AbilityAction | null>>
 }
 
 /**
@@ -35,7 +37,7 @@ export function activateAbility(
     cursorStack,
     handleActionExecution,
     markAbilityUsed,
-    addBoardCardStatus,
+    setAbilityMode,
   } = props
 
   if (abilityMode || cursorStack) {
@@ -64,29 +66,62 @@ export function activateAbility(
     return null
   }
 
-  if (!canActivateAbility(card as any, gameState.currentPhase, gameState.activePlayerId ?? undefined, gameState as any)) {
+  // Check if card can activate (includes Support requirement check)
+  const canActivate = canActivateAbility(card as any, gameState.currentPhase, gameState.activePlayerId ?? undefined, gameState as any)
+  if (!canActivate) {
+    // Check if it's specifically because of missing Support
+    const abilities = getAbilitiesForCard(card as any)
+    const deployAbility = abilities?.find((a: any) => a.activationType === 'deploy')
+    if (deployAbility?.supportRequired && !hasStatus(card, 'Support', card.ownerId!)) {
+      // Show "No Target" effect to indicate missing Support
+      const { triggerNoTarget } = props as any
+      triggerNoTarget?.(boardCoords)
+      console.log('[activateAbility] Deploy ability requires Support but missing for', card.baseId)
+    }
     return null
   }
 
   const action = getCardAbilityAction(card as any, gameState as any, card.ownerId!, boardCoords)
   if (action) {
+    // Check for DISCARD_FROM_HAND cost (Faber, etc.)
+    if (action.payload?.cost?.type === 'DISCARD_FROM_HAND' && setAbilityMode) {
+      // Enter SELECT_TARGET mode first with DISCARD_FROM_HAND prompt
+      // Player must select a card from their hand to discard
+      const discardMode: AbilityAction = {
+        type: 'ENTER_MODE',
+        mode: 'SELECT_TARGET',
+        sourceCard: card,
+        sourceCoords: boardCoords,
+        isDeployAbility: action.isDeployAbility,
+        readyStatusToRemove: action.readyStatusToRemove,
+        payload: {
+          actionType: 'SELECT_HAND_FOR_DISCARD_THEN_PLACE_TOKEN',
+          tokenId: action.payload.tokenId,
+          range: action.payload.range || 'adjacent',
+          filter: action.payload.filter
+        }
+      }
+      // Remove ready status
+      if (action.readyStatusToRemove) {
+        markAbilityUsed(boardCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+      }
+      // Execute the action via handleActionExecution - this will call handleEnterMode
+      // which will set targeting mode with hand targets
+      handleActionExecution(discardMode, boardCoords)
+      return discardMode
+    }
+
     // NEW FLOW: Remove ready status FIRST, then execute
     // This ensures the visual highlight disappears immediately on click
     if (action.readyStatusToRemove) {
       markAbilityUsed(boardCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
     }
 
-    // Add ABILITY_COMPLETE at the end of the action chain to trigger readiness recheck
-    const actionWithComplete: AbilityAction = {
-      ...action,
-      chainedAction: action.chainedAction
-        ? { ...action.chainedAction, chainedAction: { type: 'ABILITY_COMPLETE' } }
-        : { type: 'ABILITY_COMPLETE' }
-    }
-
-    // Execute the action
-    handleActionExecution(actionWithComplete, boardCoords)
-    return actionWithComplete
+    // Execute the action WITHOUT modifying chainedAction type
+    // The ABILITY_COMPLETE replacement was breaking REVEAL_ENEMY_CHAINED and other chained actions
+    // Readiness recheck is now handled by individual handlers
+    handleActionExecution(action, boardCoords)
+    return action
   }
 
   return null

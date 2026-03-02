@@ -268,8 +268,9 @@ export const useAppAbilities = ({
       handleActionExecution,
       markAbilityUsed,
       addBoardCardStatus,
+      setAbilityMode,
     })
-  }, [gameState, localPlayerId, abilityMode, cursorStack, handleActionExecution, markAbilityUsed, addBoardCardStatus])
+  }, [gameState, localPlayerId, abilityMode, cursorStack, handleActionExecution, markAbilityUsed, addBoardCardStatus, setAbilityMode])
   /**
    * Handle click on board card
    */

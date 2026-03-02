@@ -10,6 +10,7 @@ import { checkActionHasTargets, calculateValidTargets } from '@shared/utils/targ
 import { logger } from '@/utils/logger'
 import { TIMING } from '@/utils/common'
 import { createTokenCursorStack } from '@/utils/tokenTargeting'
+import { executeInstantAutoStep, type AutoStep } from './modeHandlers.js'
 
 export interface ActionHandlerProps {
   gameState: GameState
@@ -292,6 +293,9 @@ function handleGlobalAutoApply(
     return
   }
 
+  // Note: SACRIFICE_AND_BUFF_LINES (Centurion Commit) and CENSOR_SWAP (Censor Commit)
+  // are now handled in modeHandlers.ts, not here
+
   // Standard global apply with targets
   if (action.payload && !action.payload.cleanupCommand) {
     const { tokenType, filter } = action.payload
@@ -351,7 +355,9 @@ function handleCreateStack(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
-  const { gameState, setAbilityMode, setCursorStack, triggerNoTarget, localPlayerId } = props
+  const { gameState, setAbilityMode, setCursorStack, triggerNoTarget, localPlayerId, setTargetingMode } = props
+
+  console.log('[handleCreateStack] Called with action:', { type: action.type, tokenType: action.tokenType, count: action.count, targetOwnerId: action.targetOwnerId, sourceCoords: action.sourceCoords })
 
   let count = action.count || 0
 
@@ -369,6 +375,8 @@ function handleCreateStack(
     })
     count = dynamic
   }
+
+  console.log('[handleCreateStack] Final count:', count)
 
   if (count > 0) {
     setAbilityMode(null)
@@ -407,7 +415,49 @@ function handleCreateStack(
       recordContext: action.recordContext,
     }
 
-    setCursorStack(createTokenCursorStack(action.tokenType || 'Aim', tokenOwnerId, null, modifications))
+    const tokenType = action.tokenType || 'Aim'
+
+    // Special handling for Revealed token with targetOwnerId - include hand targets
+    if (tokenType === 'Revealed' && action.targetOwnerId) {
+      // Collect hand targets for the specific opponent
+      const handTargets: {playerId: number, cardIndex: number}[] = []
+      const targetPlayer = gameState.players.find(p => p.id === action.targetOwnerId)
+
+      if (targetPlayer && targetPlayer.hand) {
+        for (let i = 0; i < targetPlayer.hand.length; i++) {
+          const card = targetPlayer.hand[i]
+          // Check if card doesn't already have our Revealed token
+          const hasOurRevealed = card.statuses?.some(s =>
+            s.type === 'Revealed' && s.addedByPlayerId === tokenOwnerId
+          )
+          if (!hasOurRevealed) {
+            handTargets.push({ playerId: targetPlayer.id, cardIndex: i })
+          }
+        }
+      }
+
+      // Create cursorStack
+      setCursorStack(createTokenCursorStack(tokenType, tokenOwnerId, null, modifications))
+
+      // Create a dummy action for setTargetingMode (required parameter)
+      const dummyAction: AbilityAction = {
+        type: 'CREATE_STACK',
+        mode: 'SELECT_TARGET',
+        payload: {
+          tokenType,
+          filter: () => true,
+          targetOwnerId: action.targetOwnerId,
+        },
+        sourceCoords: action.sourceCoords || sourceCoords,
+        sourceCard: action.sourceCard,
+      }
+
+      // Activate targeting mode so all players see the valid hand targets highlighted
+      setTargetingMode(dummyAction, tokenOwnerId, sourceCoords, undefined, undefined, handTargets)
+    } else {
+      // Normal token placement (board only)
+      setCursorStack(createTokenCursorStack(tokenType, tokenOwnerId, null, modifications))
+    }
   } else {
     triggerNoTarget(sourceCoords)
   }
@@ -478,10 +528,15 @@ function handleOpenModal(
       let filterType = 'Unit'
       const filterString = action.payload?.filter
       if (filterString) {
-        if (filterString.startsWith('hasType_')) {
-          filterType = filterString.replace('hasType_', '')
-        } else if (filterString.startsWith('hasFaction_')) {
-          filterType = filterString.replace('hasFaction_', '')
+        if (typeof filterString === 'string') {
+          if (filterString.startsWith('hasType_')) {
+            filterType = filterString.replace('hasType_', '')
+          } else if (filterString.startsWith('hasFaction_')) {
+            filterType = filterString.replace('hasFaction_', '')
+          }
+        } else if (typeof filterString === 'function') {
+          // Filter is a function - can't extract type, use default
+          console.log('[handleOpenModal] Filter is a function, using default Unit type')
         }
       }
 
@@ -492,17 +547,22 @@ function handleOpenModal(
       markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
     }
   } else if (action.mode === 'RETURN_FROM_DISCARD_TO_BOARD') {
-    // Return card from discard to adjacent empty cell with token (e.g., Finn MW Deploy)
+    // Return card from discard to adjacent empty cell with token (e.g., Finn MW Deploy, Immunis Deploy)
     const player = gameState.players.find(p => p.id === action.sourceCard?.ownerId)
     if (player) {
-      // Extract filter type from filter string
+      // Extract filter type from filter string or function
       let filterType = 'Unit'
       const filterString = action.payload?.filter
       if (filterString) {
-        if (filterString.startsWith('hasType_')) {
-          filterType = filterString.replace('hasType_', '')
-        } else if (filterString.startsWith('hasFaction_')) {
-          filterType = filterString.replace('hasFaction_', '')
+        if (typeof filterString === 'string') {
+          if (filterString.startsWith('hasType_')) {
+            filterType = filterString.replace('hasType_', '')
+          } else if (filterString.startsWith('hasFaction_')) {
+            filterType = filterString.replace('hasFaction_', '')
+          }
+        } else if (typeof filterString === 'function') {
+          // Filter is a function - can't extract type, use default
+          console.log('[handleOpenModal] Filter is a function, using default Unit type')
         }
       }
 
@@ -542,9 +602,10 @@ function handleEnterMode(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
-  const { gameState, localPlayerId, commandContext, triggerNoTarget, setAbilityMode, addBoardCardStatus, setTargetingMode, handleActionExecution: execAction } = props
+  const { gameState, localPlayerId, commandContext, triggerNoTarget, setAbilityMode, addBoardCardStatus, setTargetingMode, handleActionExecution: execAction, markAbilityUsed } = props
 
   const mode = action.mode
+  const payload = action.payload || {}
 
   // SHIELD_SELF_THEN_RIOT_PUSH (Reclaimed Gawain)
   // Add Shield immediately, then let user select adjacent opponent to push
@@ -714,6 +775,45 @@ function handleEnterMode(
     return
   }
 
+  // SELECT_TARGET with hand-only actionTypes (discard abilities)
+  if (mode === 'SELECT_TARGET' && payload.actionType) {
+    const actionType = payload.actionType
+
+    // Hand-only discard actions
+    if (actionType === 'SELECT_HAND_FOR_DISCARD_THEN_SPAWN' ||
+        actionType === 'SELECT_HAND_FOR_DISCARD_THEN_PLACE_TOKEN' ||
+        actionType === 'LUCIUS_SETUP' ||
+        actionType === 'SELECT_HAND_FOR_DEPLOY') {
+
+      const ownerId = action.sourceCard?.ownerId || localPlayerId
+      const player = gameState.players.find(p => p.id === ownerId)
+
+      if (!player || player.hand.length === 0) {
+        triggerNoTarget(action.sourceCoords || sourceCoords)
+        return
+      }
+
+      // Calculate hand targets - all cards in owner's hand are valid
+      const handTargets: {playerId: number, cardIndex: number}[] = []
+      for (let i = 0; i < player.hand.length; i++) {
+        // Apply filter if present (e.g., Faber only discards SynchroTech cards)
+        if (payload.filter && !payload.filter(player.hand[i])) {
+          continue
+        }
+        handTargets.push({ playerId: player.id, cardIndex: i })
+      }
+
+      if (handTargets.length === 0) {
+        triggerNoTarget(action.sourceCoords || sourceCoords)
+        return
+      }
+
+      setAbilityMode(action)
+      setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, [], commandContext, handTargets)
+      return
+    }
+  }
+
   // SELECT_TARGET
   if (mode === 'SELECT_TARGET') {
     // For Deploy abilities, don't check targets immediately - let player activate anytime
@@ -783,6 +883,146 @@ function handleEnterMode(
 
     setAbilityMode(targetingAction)
     setTargetingMode(targetingAction, getSafePlayerId(action, localPlayerId), sourceCoords, boardTargets, commandContext)
+    return
+  }
+
+  // AUTO_STEPS (Generic multi-step ability system)
+  // Handles Edith Byron Deploy, Centurion Commit, and other multi-step abilities
+  if (mode === 'AUTO_STEPS') {
+    console.log('[handleEnterMode] AUTO_STEPS activation for', action.sourceCard?.baseId)
+
+    const steps = action.payload?.steps as AutoStep[] | undefined
+    if (steps && steps.length > 0) {
+      const firstStep = steps[0]
+      console.log('[handleEnterMode] First step:', firstStep)
+
+      // If first step is instant (no mode), execute it immediately
+      if (!firstStep.mode) {
+        console.log('[handleEnterMode] Executing instant first step:', firstStep.action)
+
+        // Use the universal instant step handler
+        const ownerId = getSafePlayerId(action, localPlayerId)
+        const result = executeInstantAutoStep(
+          firstStep,
+          action.sourceCoords,
+          ownerId,
+          {
+            gameState,
+            localPlayerId,
+            commandContext,
+            addBoardCardStatus,
+            modifyBoardCardPower: props.modifyBoardCardPower,
+          }
+        )
+
+        if (!result.success) {
+          console.warn('[handleEnterMode] Instant step failed:', result.message)
+        }
+
+        // Now process the next step
+        const nextStepIndex = 1
+
+        // If there are no more steps, mark ability as used
+        if (nextStepIndex >= steps.length) {
+          console.log('[handleEnterMode] All instant steps complete')
+          markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+          return
+        }
+
+        const nextStep = steps[nextStepIndex]
+        console.log('[handleEnterMode] Processing next step:', nextStep)
+
+        // If next step is also instant, execute it recursively
+        if (!nextStep.mode) {
+          const updatedAction = {
+            ...action,
+            payload: {
+              ...action.payload,
+              currentStepIndex: nextStepIndex
+            }
+          }
+          setTimeout(() => {
+            handleEnterMode(updatedAction, sourceCoords, props)
+          }, 50)
+          return
+        }
+
+        // Next step requires interaction - set up ability mode with context
+        const updatedAction = {
+          ...action,
+          payload: {
+            ...action.payload,
+            currentStepIndex: nextStepIndex
+          }
+        }
+        setAbilityMode(updatedAction)
+
+        // Enter the appropriate mode for the next step
+        if (nextStep.action === 'CREATE_TOKEN') {
+          // CREATE_TOKEN needs to be converted to OPEN_MODAL with PLACE_TOKEN mode
+          const tokenAction: AbilityAction = {
+            type: 'OPEN_MODAL',
+            mode: 'PLACE_TOKEN',
+            sourceCard: action.sourceCard,
+            sourceCoords: action.sourceCoords,
+            isDeployAbility: action.isDeployAbility,
+            readyStatusToRemove: action.readyStatusToRemove,
+            payload: {
+              ...nextStep.details,
+              tokenId: nextStep.details?.tokenId,
+              range: nextStep.mode === 'ADJACENT_EMPTY' ? 'adjacent' : 'global',
+              _autoStepsContext: {
+                steps: steps,
+                currentStepIndex: nextStepIndex + 1,
+                originalType: action.payload?.originalType,
+                supportRequired: action.payload?.supportRequired
+              }
+            }
+          }
+          handleOpenModal(tokenAction, sourceCoords, props)
+          return
+        }
+
+        // Default interactive step handling
+        const stepAction: AbilityAction = {
+          type: 'ENTER_MODE',
+          mode: nextStep.mode || 'SELECT_TARGET',
+          sourceCard: action.sourceCard,
+          sourceCoords: action.sourceCoords,
+          isDeployAbility: action.isDeployAbility,
+          readyStatusToRemove: action.readyStatusToRemove,
+          payload: {
+            ...nextStep.details,
+            tokenType: nextStep.details?.tokenType,
+            count: nextStep.details?.count,
+            mustBeInLineWithSource: nextStep.mode === 'LINE_TARGET' ? true : undefined,
+            mustBeAdjacentToSource: nextStep.mode === 'ADJACENT_TARGET' ? true : undefined,
+            _autoStepsContext: {
+              steps: steps,
+              currentStepIndex: nextStepIndex + 1,
+              originalType: action.payload?.originalType,
+              supportRequired: action.payload?.supportRequired
+            }
+          }
+        }
+
+        // Calculate targets for the interactive mode
+        const targets = calculateValidTargets(stepAction, gameState, ownerId, commandContext)
+        setTargetingMode(stepAction, ownerId, sourceCoords, targets, commandContext)
+        return
+      } else {
+        // First step is interactive - set mode and wait for player input
+        console.log('[handleEnterMode] First step is interactive, setting mode:', firstStep.mode)
+        setAbilityMode(action)
+
+        // Calculate targets for the interactive mode
+        const targets = calculateValidTargets(action, gameState, getSafePlayerId(action, localPlayerId), commandContext)
+        setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, targets, commandContext)
+      }
+    } else {
+      console.warn('[handleEnterMode] AUTO_STEPS has no steps defined')
+      setAbilityMode(action)
+    }
     return
   }
 

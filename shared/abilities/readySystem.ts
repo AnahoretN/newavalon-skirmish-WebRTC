@@ -242,6 +242,7 @@ export interface CardAbilityInfo {
   hasDeployAbility: boolean
   hasSetupAbility: boolean
   hasCommitAbility: boolean
+  deployRequiresSupport: boolean
   setupRequiresSupport: boolean
   commitRequiresSupport: boolean
 }
@@ -324,7 +325,12 @@ export function updateCardReadyStatuses(
     // Deploy ability is single-use - once used, cannot be used again unless card leaves battlefield
     // Deploy works in ANY phase
     const deployAlreadyUsed = hasDeployAbilityUsed(card)
-    if (abilityInfo.hasDeployAbility && !deployAlreadyUsed) {
+    const canDeploy = abilityInfo.hasDeployAbility && canCardActivate(
+      card,
+      abilityInfo.deployRequiresSupport,
+      activePlayerId
+    )
+    if (canDeploy && !deployAlreadyUsed) {
       shouldHave.add(READY_STATUS.DEPLOY)
     }
 
@@ -409,7 +415,7 @@ function getAllCardsOnBoard(gameState: GameState): Card[] {
  * Initialize ready statuses when card enters battlefield.
  *
  * Logic:
- * - Deploy ability → always gets readyDeploy (works in ANY phase)
+ * - Deploy ability → gets readyDeploy only if Support requirement is met (if required)
  * - Setup ability → also gets readySetup if currently in Setup phase AND has Support if required
  * - Commit ability → also gets readyCommit if currently in Commit phase AND has Support if required
  *
@@ -419,6 +425,7 @@ function getAllCardsOnBoard(gameState: GameState): Card[] {
  * - Recon Drone (Setup + Commit) enters in Setup phase → gets readySetup only
  * - Recon Drone (Setup + Commit) enters in Commit phase → gets readyCommit only
  * - Inventive Maker (Deploy + Setup requires Support) → gets readySetup ONLY if has Support
+ * - Immunis (Deploy requires Support) → gets readyDeploy ONLY if has Support
  */
 export function initializeCardReadyStatuses(
   card: Card,
@@ -428,8 +435,9 @@ export function initializeCardReadyStatuses(
 ): void {
   if (!card.statuses) card.statuses = []
 
-  // Deploy ability - always available (works in ANY phase)
-  if (abilityInfo.hasDeployAbility) {
+  // Deploy ability - only if support requirement is met (if required)
+  const canDeploy = abilityInfo.hasDeployAbility && canCardActivate(card, abilityInfo.deployRequiresSupport, ownerId)
+  if (canDeploy) {
     addReadyStatus(card, READY_STATUS.DEPLOY, ownerId)
   }
 

@@ -200,8 +200,6 @@ Before commit **MANDATORY**:
 │   │   └── deckUtils.ts          # export const COMMAND_CARD_IDS: Set<string>, export function shuffleDeck<T>(deck: T[]): T[], export function generatePlayerToken(): string, export function createDeck(deckType, playerId, playerName): any[], export function createNewPlayer(id, isDummy): any
 │   ├── constants/                # Server constants
 │   │   └── playerColors.ts       # export const PLAYER_COLOR_MAP: Map<string, PlayerColor>
-│   ├── content/                  # Game content data
-│   │   └── contentDatabase.json  # Cards, tokens, decks definitions
 │   └── dev.ts                    # Development server entry point (no exports)
 ├── shared/                     # Shared code between client and server
 │   ├── types/                    # Shared type definitions
@@ -210,6 +208,13 @@ Before commit **MANDATORY**:
 │   │   ├── array.ts              # Shared array utilities (shuffleDeck)
 │   │   ├── boardUtils.ts         # Board utilities (createInitialBoard, recalculateBoardStatuses)
 │   │   └── targeting.ts          # Targeting utilities (validateTarget, calculateValidTargets, checkActionHasTargets)
+│   ├── abilities/                # Shared ability system
+│   │   ├── contentAbilities.ts   # Converts contentDatabase abilities to game actions
+│   │   ├── readySystem.ts        # Ready status management (readyDeploy, readySetup, readyCommit)
+│   │   ├── index.ts              # Exports shared ability utilities
+│   │   └── abilityUtils.ts       # Helper functions for abilities
+│   └── content/                  # Game content data - SHARED between all modes
+│       └── contentDatabase.json  # Cards, tokens, decks definitions (SINGLE SOURCE OF TRUTH)
 ├── Dockerfile                    # (no exports - build configuration)
 ├── index.html                    # (no exports - HTML template)
 ├── package.json                  # (no exports - dependencies and scripts)

@@ -27,15 +27,15 @@ export async function initializeContent() {
     // Try multiple possible paths for robustness in different environments
     const possiblePaths = isProduction
       ? [
-          // Production: from dist-server/server/services/ to project/server/content/
-          // services -> server (1) -> dist-server (2) -> project root (3) -> server/content/
-          path.join(__dirname, '../../../server/content/contentDatabase.json'),
-          path.join(process.cwd(), 'server/content/contentDatabase.json'),
+          // Production: from dist-server/server/services/ to project/shared/content/
+          // services -> server (1) -> dist-server (2) -> project root (3) -> shared/content/
+          path.join(__dirname, '../../../shared/content/contentDatabase.json'),
+          path.join(process.cwd(), 'shared/content/contentDatabase.json'),
         ]
       : [
-          // Development: from server/services/
-          path.join(__dirname, '../content/contentDatabase.json'),
-          path.join(process.cwd(), 'server/content/contentDatabase.json'),
+          // Development: from server/services/ to shared/content/
+          path.join(__dirname, '../../shared/content/contentDatabase.json'),
+          path.join(process.cwd(), 'shared/content/contentDatabase.json'),
         ];
 
     let contentPath = null;

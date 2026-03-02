@@ -77,7 +77,9 @@ export type ActionType =
 
   // Ability tracking
   | 'MARK_ABILITY_USED'
-  | 'REMOVE_STATUS_BY_TYPE'
+  | 'REMOVE_ALL_COUNTERS_BY_TYPE'
+  | 'REMOVE_COUNTER_BY_TYPE'  // Remove counter by type and owner (for Censor Commit)
+  | 'MODIFY_CARD_POWER'
 
   // Status effects
   | 'ADD_STATUS_TO_BOARD_CARD'
@@ -86,6 +88,7 @@ export type ActionType =
 
   // Token cards
   | 'PLAY_TOKEN_CARD'
+  | 'RESURRECT_DISCARDED'  // Immunis Deploy - return card from discard to board
 
   // Card orientation
   | 'FLIP_CARD'

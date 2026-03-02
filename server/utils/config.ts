@@ -14,7 +14,7 @@ export const CONFIG = {
   RATE_LIMIT_WINDOW: 60000, // 1 minute
   MESSAGE_RATE_LIMIT: 1000, // Max messages per minute (increased for development)
   MAX_STRING_LENGTH: 1000, // Max string length for user input
-  DECKS_FILE_PATH: 'server/content/contentDatabase.json',
+  DECKS_FILE_PATH: 'shared/content/contentDatabase.json',
   LOGS_DIR: 'logs'
 };
 

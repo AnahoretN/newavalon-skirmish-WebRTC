@@ -158,16 +158,47 @@ function buildFilterFromString(
   ownerId: number,
   _coords: { row: number; col: number }
 ): ((card: Card, r?: number, c?: number) => boolean) | undefined {
+  // hasStatus_StatusName1_or_StatusName2 (must check BEFORE single status)
+  if (filter.startsWith('hasStatus_') && filter.includes('_or_')) {
+    const statuses = filter.replace('hasStatus_', '').split('_or_')
+    return (card: Card) => statuses.some(s => hasStatus(card, s, ownerId))
+  }
+
   // hasStatus_StatusName
   if (filter.startsWith('hasStatus_')) {
     const statusType = filter.replace('hasStatus_', '')
     return (card: Card) => hasStatus(card, statusType, ownerId)
   }
 
-  // hasStatus_StatusName1_or_StatusName2
-  if (filter.startsWith('hasStatus_') && filter.includes('_or_')) {
-    const statuses = filter.replace('hasStatus_', '').split('_or_')
-    return (card: Card) => statuses.some(s => hasStatus(card, s, ownerId))
+  // hasToken_TokenName (alias for hasStatus_ - tokens are stored as statuses)
+  if (filter.startsWith('hasToken_')) {
+    const tokenType = filter.replace('hasToken_', '')
+    return (card: Card) => hasStatus(card, tokenType, ownerId)
+  }
+
+  // hasTokenOwner_TokenName - checks if card has token added by specific owner
+  if (filter.startsWith('hasTokenOwner_')) {
+    const tokenType = filter.replace('hasTokenOwner_', '')
+    return (card: Card) => {
+      if (!card.statuses) return false
+      return card.statuses.some((s: any) => s.type === tokenType && s.addedByPlayerId === ownerId)
+    }
+  }
+
+  // hasCounter_CounterName - counters (Aim, Exploit, Stun, Shield) - alias for hasStatus_
+  if (filter.startsWith('hasCounter_')) {
+    const counterType = filter.replace('hasCounter_', '')
+    return (card: Card) => hasStatus(card, counterType, ownerId)
+  }
+
+  // hasCounterOwner_CounterName - checks if card has counter added by specific owner
+  // Used by Censor Commit to find cards with YOUR Exploit counters
+  if (filter.startsWith('hasCounterOwner_')) {
+    const counterType = filter.replace('hasCounterOwner_', '')
+    return (card: Card) => {
+      if (!card.statuses) return false
+      return card.statuses.some((s: any) => s.type === counterType && s.addedByPlayerId === ownerId)
+    }
   }
 
   // isAdjacent
@@ -181,9 +212,21 @@ function buildFilterFromString(
     return (card: Card) => card.ownerId !== ownerId
   }
 
-  // isOwner
-  if (filter === 'isOwner') {
+  // isOwner / isAlly (both check if card belongs to owner)
+  if (filter === 'isOwner' || filter === 'isAlly') {
     return (card: Card) => card.ownerId === ownerId
+  }
+
+  // hasFaction_FactionName
+  if (filter.startsWith('hasFaction_')) {
+    const faction = filter.replace('hasFaction_', '')
+    return (card: Card) => card.faction === faction
+  }
+
+  // hasType_TypeName
+  if (filter.startsWith('hasType_')) {
+    const typeName = filter.replace('hasType_', '')
+    return (card: Card) => card.types?.includes(typeName) === true
   }
 
   return undefined
@@ -409,6 +452,7 @@ export const calculateValidTargets = (
 
     // Strict Hand-Only actions check - return empty for board targets
     if (payload.actionType === 'SELECT_HAND_FOR_DISCARD_THEN_SPAWN' ||
+             payload.actionType === 'SELECT_HAND_FOR_DISCARD_THEN_PLACE_TOKEN' ||
              payload.actionType === 'LUCIUS_SETUP' ||
              payload.actionType === 'SELECT_HAND_FOR_DEPLOY' ||
              payload.handOnly) {
@@ -701,6 +745,25 @@ export const calculateValidTargets = (
       }
     }
   }
+  // SHIELD_SELF_THEN_SPAWN (Edith Byron Deploy) - after Shield is added, spawn token adjacent
+  else if (mode === 'SHIELD_SELF_THEN_SPAWN' && sourceCoords) {
+    // Adjacent empty cells only (same as SPAWN_TOKEN)
+    const neighbors = [
+      { r: sourceCoords.row - 1, c: sourceCoords.col },
+      { r: sourceCoords.row + 1, c: sourceCoords.col },
+      { r: sourceCoords.row, c: sourceCoords.col - 1 },
+      { r: sourceCoords.row, c: sourceCoords.col + 1 },
+    ]
+
+    neighbors.forEach(nb => {
+      if (nb.r >= minBound && nb.r <= maxBound && nb.c >= minBound && nb.c <= maxBound) {
+        const cell = board[nb.r][nb.c]
+        if (!cell.card) {
+          targets.push({ row: nb.r, col: nb.c })
+        }
+      }
+    })
+  }
   // 9. Select Line Start (Any cell in active grid)
   else if (mode === 'SELECT_LINE_START') {
     // Iterate ONLY over active grid bounds
@@ -811,6 +874,11 @@ export const calculateValidTargets = (
  * Checks if an action has ANY valid targets (Board or Hand).
  */
 export const checkActionHasTargets = (action: AbilityAction, currentGameState: GameState, playerId: number | null, commandContext?: CommandContext): boolean => {
+  // AUTO_STEPS always has targets (it's a multi-step ability that executes step by step)
+  if (action.type === 'ENTER_MODE' && action.mode === 'AUTO_STEPS') {
+    return true
+  }
+
   // If modal open, check mode for specific conditions
   if (action.type === 'OPEN_MODAL') {
     // PLACE_TOKEN with adjacent range needs adjacent empty cell
@@ -832,6 +900,81 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
       }
       return false // No adjacent empty cells
     }
+
+    // RETURN_FROM_DISCARD_TO_BOARD needs both cards in discard AND adjacent empty cell
+    if (action.mode === 'RETURN_FROM_DISCARD_TO_BOARD' && action.sourceCoords) {
+      const ownerId = action.sourceCard?.ownerId ?? playerId ?? 0
+      const player = currentGameState.players.find(p => p.id === ownerId)
+
+      // Check if player has cards in discard that match filter
+      let hasValidCards = false
+      if (player && player.discard && player.discard.length > 0) {
+        const filter = action.payload?.filter
+        if (filter) {
+          if (typeof filter === 'function') {
+            hasValidCards = player.discard.some(card => filter(card))
+          } else if (typeof filter === 'string') {
+            // Handle string filters like 'hasFaction_Optimates'
+            if (filter.startsWith('hasFaction_')) {
+              const faction = filter.replace('hasFaction_', '')
+              hasValidCards = player.discard.some(card => card.faction === faction)
+            } else if (filter.startsWith('hasType_')) {
+              const type = filter.replace('hasType_', '')
+              hasValidCards = player.discard.some(card => card.types?.includes(type) === true)
+            }
+          }
+        } else {
+          hasValidCards = true // No filter means any card is valid
+        }
+      }
+
+      // Also need adjacent empty cell
+      const { row, col } = action.sourceCoords
+      const neighbors = [
+        { r: row - 1, c: col },
+        { r: row + 1, c: col },
+        { r: row, c: col - 1 },
+        { r: row, c: col + 1 },
+      ]
+      let hasAdjacentEmpty = false
+      for (const nb of neighbors) {
+        if (nb.r >= 0 && nb.r < currentGameState.board.length &&
+            nb.c >= 0 && nb.c < currentGameState.board[0].length) {
+          if (!currentGameState.board[nb.r][nb.c].card) {
+            hasAdjacentEmpty = true
+            break
+          }
+        }
+      }
+
+      return hasValidCards && hasAdjacentEmpty
+    }
+
+    // RETURN_FROM_DISCARD_TO_HAND needs cards in discard
+    if (action.mode === 'RETURN_FROM_DISCARD_TO_HAND') {
+      const ownerId = action.sourceCard?.ownerId ?? playerId ?? 0
+      const player = currentGameState.players.find(p => p.id === ownerId)
+
+      if (player && player.discard && player.discard.length > 0) {
+        const filter = action.payload?.filter
+        if (filter) {
+          if (typeof filter === 'function') {
+            return player.discard.some(card => filter(card))
+          } else if (typeof filter === 'string') {
+            if (filter.startsWith('hasFaction_')) {
+              const faction = filter.replace('hasFaction_', '')
+              return player.discard.some(card => card.faction === faction)
+            } else if (filter.startsWith('hasType_')) {
+              const type = filter.replace('hasType_', '')
+              return player.discard.some(card => card.types?.includes(type) === true)
+            }
+          }
+        }
+        return true // No filter means any card is valid
+      }
+      return false // No cards in discard
+    }
+
     return true // Other modals are always valid
   }
 
@@ -979,6 +1122,7 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
   if (action.mode === 'SELECT_TARGET' && action.payload?.actionType) {
     const actionType = action.payload.actionType
     if (actionType === 'SELECT_HAND_FOR_DISCARD_THEN_SPAWN' ||
+        actionType === 'SELECT_HAND_FOR_DISCARD_THEN_PLACE_TOKEN' ||
         actionType === 'LUCIUS_SETUP' ||
         actionType === 'SELECT_HAND_FOR_DEPLOY') {
       // Check if source card's owner has cards in hand
@@ -991,6 +1135,66 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
       }
       return false // No cards in hand
     }
+  }
+
+  // Special Case: SACRIFICE_AND_BUFF_LINES (Centurion Commit)
+  // Needs allied units on the board (can sacrifice itself in a pinch)
+  if (action.mode === 'SELECT_TARGET' && action.payload?.actionType === 'SACRIFICE_AND_BUFF_LINES') {
+    const ownerId = action.sourceCard?.ownerId || playerId
+    if (ownerId !== null) {
+      // Check if there are any allied cards on the board
+      const activeSize = currentGameState.activeGridSize
+      const gridSize = currentGameState.board.length
+      const offset = Math.floor((gridSize - activeSize) / 2)
+      const minBound = offset
+      const maxBound = offset + activeSize - 1
+
+      for (let r = minBound; r <= maxBound; r++) {
+        for (let c = minBound; c <= maxBound; c++) {
+          const card = currentGameState.board[r][c].card
+          if (card && card.ownerId === ownerId) {
+            return true // Found allied card to sacrifice
+          }
+        }
+      }
+    }
+    return false // No allied cards on board
+  }
+
+  // Special Case: CENSOR_SWAP (Censor Commit - replace Exploit with Stun)
+  // Needs cards on the board with the specified token from this player
+  if (action.mode === 'SELECT_TARGET' && action.payload?.actionType === 'CENSOR_SWAP') {
+    const ownerId = action.sourceCard?.ownerId || playerId
+    const fromToken = action.payload.fromToken
+
+    if (ownerId !== null && fromToken) {
+      const activeSize = currentGameState.activeGridSize
+      const gridSize = currentGameState.board.length
+      const offset = Math.floor((gridSize - activeSize) / 2)
+      const minBound = offset
+      const maxBound = offset + activeSize - 1
+
+      for (let r = minBound; r <= maxBound; r++) {
+        for (let c = minBound; c <= maxBound; c++) {
+          const card = currentGameState.board[r][c].card
+          if (card && card.statuses) {
+            // Check if card has the token
+            const hasToken = card.statuses.some((s: any) => {
+              if (s.type !== fromToken) return false
+              // If requireTokenFromSourceOwner, check if added by this owner
+              if (action.payload.requireTokenFromSourceOwner) {
+                return s.addedByPlayerId === ownerId
+              }
+              return true
+            })
+            if (hasToken) {
+              return true // Found card with the token
+            }
+          }
+        }
+      }
+    }
+    return false // No cards with the token
   }
 
   // Note: CREATE_STACK is now checked via calculateValidTargets as well
@@ -1037,7 +1241,7 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
   }
 
   // 1. Check Hand Targets first (for handOnly actions like IP Dept Agent)
-  // DESTROY with filter (e.g., hasStatus_Aim) targets board cards, not hand
+  // DESTROY with filter (e.g., hasCounter_Aim) targets board cards, not hand
   if (action.mode === 'SELECT_TARGET' && action.payload?.filter) {
     if (action.payload.handOnly || action.payload.allowHandTargets) {
       // Iterate all players hands

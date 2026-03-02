@@ -63,10 +63,31 @@ export function buildFilterFromString(
     return (_target: Card) => hasStatus(_target, statusType, ownerId)
   }
 
+  // hasToken_TokenName (alias for hasStatus_ - tokens are stored as statuses)
+  if (filter.startsWith('hasToken_')) {
+    const tokenType = filter.replace('hasToken_', '')
+    return (_target: Card) => hasStatus(_target, tokenType, ownerId)
+  }
+
+  // hasCounter_CounterName (alias for hasStatus_ - counters are stored as statuses)
+  if (filter.startsWith('hasCounter_')) {
+    const counterType = filter.replace('hasCounter_', '')
+    return (_target: Card) => hasStatus(_target, counterType, ownerId)
+  }
+
   // isAdjacent
   if (filter === 'isAdjacent') {
     return (_target: Card, r?: number, c?: number) =>
       r !== undefined && c !== undefined && checkAdj(r, c, _coords.row, _coords.col)
+  }
+
+  // isAdjacentOpponent - adjacent AND opponent
+  if (filter === 'isAdjacentOpponent') {
+    return (_target: Card, r?: number, c?: number) => {
+      const isAdj = r !== undefined && c !== undefined && checkAdj(r, c, _coords.row, _coords.col)
+      const isOpponent = _target.ownerId !== ownerId
+      return isAdj && isOpponent
+    }
   }
 
   // isOpponent
@@ -77,6 +98,18 @@ export function buildFilterFromString(
   // isOwner
   if (filter === 'isOwner') {
     return (_target: Card) => _target.ownerId === ownerId
+  }
+
+  // hasFaction_FactionName
+  if (filter.startsWith('hasFaction_')) {
+    const faction = filter.replace('hasFaction_', '')
+    return (_target: Card) => _target.faction === faction
+  }
+
+  // hasType_TypeName
+  if (filter.startsWith('hasType_')) {
+    const typeName = filter.replace('hasType_', '')
+    return (_target: Card) => _target.types?.includes(typeName) === true
   }
 
   return undefined
@@ -141,107 +174,24 @@ export function buildActionFromContentAbility(
   ownerId: number,
   coords: { row: number; col: number }
 ): AbilityAction | null {
-  // Handle multi-step abilities - map to appropriate custom mode
+  // Handle multi-step abilities - use generic AUTO_STEPS system
   if (ability.steps && ability.steps.length > 0) {
-    const step1 = ability.steps[0]
-    const step2 = ability.steps[1]
-
-    // Detect pattern: CREATE_STACK_SELF (Shield) + CREATE_STACK (Aim, LINE_TARGET)
-    // This is the GAWAIN_DEPLOY pattern (used by abrGawain)
-    if (
-      step1.action === 'CREATE_STACK_SELF' &&
-      step1.details?.tokenType === 'Shield' &&
-      step2.action === 'CREATE_STACK' &&
-      step2.details?.tokenType === 'Aim' &&
-      step2.mode === 'LINE_TARGET'
-    ) {
-      return {
-        type: 'ENTER_MODE',
-        mode: 'GAWAIN_DEPLOY_SHIELD_AIM',
-        sourceCard: card,
-        sourceCoords: coords,
-        payload: {}
-      } as AbilityAction
-    }
-
-    // Detect pattern: CREATE_STACK_SELF (Shield) + PUSH (ADJACENT_TARGET, isOpponent)
-    // This is the RECLAIMED_GAWAIN pattern
-    if (
-      step1.action === 'CREATE_STACK_SELF' &&
-      step1.details?.tokenType === 'Shield' &&
-      step2.action === 'PUSH' &&
-      step2.mode === 'ADJACENT_TARGET'
-    ) {
-      return {
-        type: 'ENTER_MODE',
-        mode: 'SHIELD_SELF_THEN_RIOT_PUSH',
-        sourceCard: card,
-        sourceCoords: coords,
-        payload: {}
-      } as AbilityAction
-    }
-
-    // Detect pattern: CREATE_STACK_SELF (Shield) + CREATE_TOKEN (reconDrone, ADJACENT_EMPTY)
-    // This is the EDITH_BYRON pattern
-    if (
-      step1.action === 'CREATE_STACK_SELF' &&
-      step1.details?.tokenType === 'Shield' &&
-      step2.action === 'CREATE_TOKEN' &&
-      step2.details?.tokenId === 'reconDrone' &&
-      step2.mode === 'ADJACENT_EMPTY'
-    ) {
-      return {
-        type: 'ENTER_MODE',
-        mode: 'SHIELD_SELF_THEN_SPAWN',
-        sourceCard: card,
-        sourceCoords: coords,
-        payload: { tokenName: 'Recon Drone' }
-      } as AbilityAction
-    }
-
-    // Detect pattern: ENTER_MODE (SELECT_TARGET, isAdjacent, opponent) + CREATE_STACK (SELECT_HAND_TARGET)
-    // This is the RECON_DRONE_COMMIT pattern
-    // Check filter as either original string ('isAdjacent') or check the details structure
-    const isReconDroneCommitPattern =
-      step1.action === 'ENTER_MODE' &&
-      step1.mode === 'SELECT_TARGET' &&
-      step1.details?.selectFrom === 'opponent' &&
-      (step1.details?.filter === 'isAdjacent' || step1.details?.hasOwnProperty('filter')) &&
-      step2.action === 'CREATE_STACK' &&
-      step2.mode === 'SELECT_HAND_TARGET' &&
-      step2.details?.tokenType === 'Revealed'
-
-    if (isReconDroneCommitPattern) {
-      // Build the filter function for selecting adjacent opponents
-      const filterFn = buildFilterFromString('isAdjacent', ownerId, coords)
-
-      return {
-        type: 'ENTER_MODE',
-        mode: 'RECON_DRONE_COMMIT',
-        sourceCard: card,
-        sourceCoords: coords,
-        payload: {
-          filter: filterFn,
-          tokenType: 'Revealed',
-          count: step2.details?.count || 1,
-          chainedAction: {
-            type: 'CREATE_STACK',
-            mode: 'SELECT_HAND_TARGET',
-            sourceCard: card,
-            sourceCoords: coords,
-            payload: {
-              tokenType: 'Revealed',
-              count: step2.details?.count || 1,
-              targetOwnerIdFromSource: true
-            }
-          }
-        }
-      } as AbilityAction
-    }
-
-    // Generic multi-step fallback - not yet implemented for custom modes
-    console.warn(`Multi-step ability not yet implemented for card ${card.baseId}`)
-    return null
+    // NEW: Generic AUTO_STEPS system - processes steps dynamically from database
+    // No more hardcoded pattern detection!
+    return {
+      type: 'ENTER_MODE',
+      mode: 'AUTO_STEPS',
+      sourceCard: card,
+      sourceCoords: coords,
+      payload: {
+        steps: ability.steps,
+        currentStepIndex: 0,
+        // Store original ability type for ready status tracking
+        originalType: ability.type,
+        // Copy supportRequired from ability level
+        supportRequired: ability.supportRequired
+      }
+    } as AbilityAction
   }
 
   // Handle single action abilities
@@ -251,6 +201,18 @@ export function buildActionFromContentAbility(
   // Build action based on type
   switch (actionType) {
     case 'CREATE_STACK':
+      // Convert mode to constraints
+      // LINE_TARGET -> mustBeInLineWithSource
+      // ADJACENT_TARGET -> mustBeAdjacentToSource
+      let mustBeInLineWithSource = details.mustBeInLineWithSource
+      let mustBeAdjacentToSource = details.mustBeAdjacentToSource
+
+      if (ability.mode === 'LINE_TARGET') {
+        mustBeInLineWithSource = true
+      } else if (ability.mode === 'ADJACENT_TARGET') {
+        mustBeAdjacentToSource = true
+      }
+
       return {
         type: 'CREATE_STACK',
         tokenType: details.tokenType,
@@ -258,8 +220,8 @@ export function buildActionFromContentAbility(
         requiredTargetStatus: details.requiredTargetStatus,
         requireStatusFromSourceOwner: details.requireStatusFromSourceOwner,
         onlyOpponents: details.onlyOpponents,
-        mustBeAdjacentToSource: details.mustBeAdjacentToSource,
-        mustBeInLineWithSource: details.mustBeInLineWithSource,
+        mustBeAdjacentToSource,
+        mustBeInLineWithSource,
         maxDistanceFromSource: details.maxDistanceFromSource,
         maxOrthogonalDistance: details.maxOrthogonalDistance,
         sourceCoords: coords,
@@ -280,23 +242,59 @@ export function buildActionFromContentAbility(
         sourceCard: card,
       } as AbilityAction
 
-    case 'CREATE_TOKEN':
+    case 'CREATE_STACK_MULTI': {
+      // CREATE_STACK_MULTI places tokens on multiple cards matching a pattern
+      // Modes: LINES_WITH_THREAT, LINES_WITH_SUPPORT
+      return {
+        type: 'ENTER_MODE',
+        mode: ability.mode || 'SELECT_TARGET',
+        sourceCard: card,
+        sourceCoords: coords,
+        payload: {
+          ...details,
+          actionType: 'CREATE_STACK_MULTI'
+        }
+      } as AbilityAction
+    }
+
+    case 'SEARCH_DECK': {
+      // SEARCH_DECK allows searching deck and selecting a card
+      const processedDetails = buildDetailsFromContent(ability, ownerId, coords)
+      return {
+        type: 'ENTER_MODE',
+        mode: ability.mode || 'SEARCH_DECK',
+        sourceCard: card,
+        sourceCoords: coords,
+        payload: {
+          ...processedDetails,
+          actionType: 'SEARCH_DECK'
+        }
+      } as AbilityAction
+    }
+
+    case 'CREATE_TOKEN': {
       // CREATE_TOKEN places a token unit on the board
-      // Preserve the mode information (e.g., ADJACENT_EMPTY) in payload
+      // Preserve ALL details including cost, filter, etc.
+      // DISCARD_FROM_HAND cost is handled in abilityActivation.ts
       return {
         type: 'OPEN_MODAL',
         mode: 'PLACE_TOKEN',
         sourceCard: card,
         sourceCoords: coords,
         payload: {
+          ...details,
           tokenId: details.tokenId,
           range: ability.mode === 'ADJACENT_EMPTY' ? 'adjacent' : 'global'
         }
       } as AbilityAction
+    }
 
     case 'ENTER_MODE': {
-      // Build the payload based on actionType and mode
-      const payload: Record<string, any> = { ...details }
+      // Use buildDetailsFromContent to convert filter strings to functions
+      const processedDetails = buildDetailsFromContent(ability, ownerId, coords)
+
+      // Start with processedDetails, then ensure all critical properties from original details are preserved
+      const payload: Record<string, any> = { ...processedDetails }
 
       // Handle different action types
       if (ability.actionType === 'DESTROY' && !payload.filter) {
@@ -319,27 +317,38 @@ export function buildActionFromContentAbility(
           if (target.ownerId !== cardOwnerId) return false
           // Must have at least one of the specified tokens/statuses
           if (!target.statuses || target.statuses.length === 0) return false
-          return target.statuses.some(s => validTokens.includes(s.type))
+          return target.statuses.some((s: any) => validTokens.includes(s.type))
         }
       }
 
-      // Handle chained actions
-      if (details.chainedAction) {
-        payload.chainedAction = details.chainedAction
-      }
-
-      // Special skip flag
-      if (details.skipChainedActionOnNoTargets !== undefined) {
-        payload.skipChainedActionOnNoTargets = details.skipChainedActionOnNoTargets
-      }
-
-      return {
+      // Build the action with properties that should be at top level
+      const action: AbilityAction = {
         type: 'ENTER_MODE',
         mode: ability.mode,
         sourceCard: card,
         sourceCoords: coords,
         payload
       } as AbilityAction
+
+      // IMPORTANT: Preserve these properties from original ability.details at the TOP LEVEL
+      // modeHandlers.ts expects abilityMode.chainedAction, not abilityMode.payload.chainedAction
+      const originalDetails = ability.details || {}
+      const topLevelProps = ['chainedAction', 'skipChainedActionOnNoTargets']
+      for (const prop of topLevelProps) {
+        if (originalDetails[prop] !== undefined) {
+          (action as any)[prop] = originalDetails[prop]
+        }
+      }
+
+      // Keep these in payload as they're accessed from there
+      const payloadOnlyProps = ['targetOwnerId', 'onlyOpponents', 'onlyFaceDown']
+      for (const prop of payloadOnlyProps) {
+        if (originalDetails[prop] !== undefined && payload[prop] === undefined) {
+          payload[prop] = originalDetails[prop]
+        }
+      }
+
+      return action
     }
 
     case 'PUSH':
@@ -361,18 +370,31 @@ export function buildActionFromContentAbility(
         payload: details
       } as AbilityAction
 
-    case 'RETURN_FROM_DISCARD': {
-      // Opens discard viewing modal with filter, then returns selected card to target
-      const mode = ability.mode === 'ADJACENT_EMPTY' ? 'RETURN_FROM_DISCARD_TO_BOARD' : 'RETURN_FROM_DISCARD_TO_HAND'
+    case 'RETURN_FROM_DISCARD_TO_BOARD': {
+      // Immunis Deploy: Return card from discard to adjacent empty cell on battlefield
       return {
         type: 'OPEN_MODAL',
-        mode,
+        mode: 'RETURN_FROM_DISCARD_TO_BOARD',
         sourceCard: card,
         sourceCoords: coords,
         payload: {
           ...details,
           filter: details.filter || null,
           withToken: details.withToken || null,
+        }
+      } as AbilityAction
+    }
+
+    case 'RETURN_FROM_DISCARD_TO_HAND': {
+      // Inventive Maker Setup: Return card from discard to owner's hand
+      return {
+        type: 'OPEN_MODAL',
+        mode: 'RETURN_FROM_DISCARD_TO_HAND',
+        sourceCard: card,
+        sourceCoords: coords,
+        payload: {
+          ...details,
+          filter: details.filter || null,
         }
       } as AbilityAction
     }
@@ -424,7 +446,7 @@ export function buildActionFromContentAbility(
     case 'SCORE_POINTS': {
       // Convert SCORE_POINTS to GLOBAL_AUTO_APPLY with customAction
       // Used by Finn Commit (points per revealed card) and other abilities
-      const { amount = 1, per } = details
+      const { per } = details
 
       if (per === 'revealedToOwner') {
         // Finn Commit: Gain 1 point for each card revealed to you
@@ -443,7 +465,100 @@ export function buildActionFromContentAbility(
       return null
     }
 
-    case 'MODIFY_SCORING':
+    case 'MODIFY_POWER': {
+      // MODIFY_POWER changes power of target cards by amount
+      // Used by Walking Turret Setup: Give -1 power to a card with an Aim token
+      const processedDetails = buildDetailsFromContent(ability, ownerId, coords)
+      return {
+        type: 'ENTER_MODE',
+        mode: 'SELECT_TARGET',
+        sourceCard: card,
+        sourceCoords: coords,
+        payload: {
+          ...processedDetails,
+          actionType: 'MODIFY_POWER'
+        }
+      } as AbilityAction
+    }
+
+    // SACRIFICE_FOR_BUFF has been moved to the steps system
+    // See Centurion's commit ability in contentDatabase.json
+
+    case 'REPLACE_COUNTER': {
+      // Replace one type of counter with another on a selected card
+      // Used by Censor Commit: Replace Exploit with Stun
+      // actionType is CENSOR_SWAP to match the handler in modeHandlers.ts
+      const fromToken = details.fromToken
+
+      // Create a custom filter that finds cards with the counter that were added by this player
+      // For Censor: replace YOUR Exploit counter means any Exploit on the board that you placed
+      const filterFn = (_card: Card) => {
+        if (!_card.statuses) return false
+        // Check if card has the counter and it was added by the source card's owner
+        return _card.statuses.some((s: any) =>
+          s.type === fromToken && s.addedByPlayerId === ownerId
+        )
+      }
+
+      return {
+        type: 'ENTER_MODE',
+        mode: 'SELECT_TARGET',
+        sourceCard: card,
+        sourceCoords: coords,
+        payload: {
+          actionType: 'CENSOR_SWAP',
+          fromToken: details.fromToken,
+          toToken: details.toToken,
+          filter: filterFn, // Function for runtime checking
+          filterString: `hasCounterOwner_${fromToken}`, // String for serialization (custom format)
+          requireTokenFromSourceOwner: details.requireTokenFromSourceOwner
+        }
+      } as AbilityAction
+    }
+
+    case 'DOUBLE_TOKEN': {
+      // DOUBLE_TOKEN doubles the number of tokens on a selected card
+      // Used by Reverend of The Choir Deploy: Double Exploit tokens on any one card
+      const processedDetails = buildDetailsFromContent(ability, ownerId, coords)
+      return {
+        type: 'ENTER_MODE',
+        mode: 'SELECT_TARGET',
+        sourceCard: card,
+        sourceCoords: coords,
+        payload: {
+          ...processedDetails,
+          actionType: 'DOUBLE_TOKEN'
+        }
+      } as AbilityAction
+    }
+
+    case 'MODIFY_SCORING': {
+      // MODIFY_SCORING creates a passive scoring modifier
+      // Used by Data Liberator Pass: Cards with your Exploit tokens score points for you
+      const { targetFilter, requireTokenFromSourceOwner, effect } = details
+
+      // Convert filter string to function
+      const filter = buildFilterFromString(
+        targetFilter || '',
+        ownerId,
+        coords
+      )
+
+      return {
+        type: 'GLOBAL_AUTO_APPLY',
+        payload: {
+          customAction: 'MODIFY_SCORING',
+          targetFilter,
+          requireTokenFromSourceOwner: requireTokenFromSourceOwner ?? false,
+          effect,
+          // Include the filter function for runtime use
+          filterFn: filter
+        },
+        sourceCard: card,
+        sourceCoords: coords
+      } as AbilityAction
+    }
+
     case 'BUFF_ALLY_POWER':
     case 'MODIFY_THREAT_TARGETING':
     case 'TRIGGER_ON_EVENT':

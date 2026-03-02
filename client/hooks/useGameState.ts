@@ -916,10 +916,15 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   }, [sendAction, localPlayerId])
   const removeBoardCardStatus = useCallback((coords: any, status: any) => {
     // Map to P2P action format
-    sendAction('REMOVE_STATUS_BY_TYPE', { coords, type: status })
+    sendAction('REMOVE_ALL_COUNTERS_BY_TYPE', { coords, type: status })
   }, [sendAction])
-  const removeBoardCardStatusByOwner = useCallback(() => {}, [])
-  const modifyBoardCardPower = useCallback(() => {}, [])
+  const removeBoardCardStatusByOwner = useCallback((coords: any, status: any, ownerId: number) => {
+    // Remove status by type and owner (for removing counters added by specific player)
+    sendAction('REMOVE_COUNTER_BY_TYPE', { coords, type: status, ownerId })
+  }, [sendAction])
+  const modifyBoardCardPower = useCallback((coords: any, delta: number) => {
+    sendAction('MODIFY_CARD_POWER', { coords, delta })
+  }, [sendAction])
   const addAnnouncedCardStatus = useCallback((playerId: number, status: any, addedByPlayerId?: number) => {
     sendAction('ADD_ANNOUNCED_STATUS', { playerId, status, addedByPlayerId })
   }, [sendAction])
@@ -982,7 +987,9 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   const recoverDiscardedCard = useCallback((playerId: number, cardIndex: number) => {
     sendAction('RECOVER_DISCARDED', { playerId, cardIndex })
   }, [sendAction])
-  const resurrectDiscardedCard = useCallback(() => {}, [])
+  const resurrectDiscardedCard = useCallback((playerId: number, cardIndex: number, boardCoords: {row: number, col: number}) => {
+    sendAction('RESURRECT_DISCARDED', { cardOwnerId: playerId, cardIndex, boardCoords })
+  }, [sendAction])
   const spawnToken = useCallback((coords: {row: number, col: number}, name: string, ownerId: number) => {
     // Get token data from tokenDatabase
     const tokenDef = tokenDatabase.get(name)
@@ -1007,7 +1014,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   }, [sendAction])
   const resetDeployStatus = useCallback(() => {}, [])
   const removeStatusByType = useCallback((coords: { row: number; col: number }, type: string) => {
-    sendAction('REMOVE_STATUS_BY_TYPE', { coords, type })
+    sendAction('REMOVE_ALL_COUNTERS_BY_TYPE', { coords, type })
   }, [sendAction])
   const reorderTopDeck = useCallback((playerId: number, newTopCards: any[]) => {
     sendAction('REORDER_TOP_DECK', { playerId, newTopCards })

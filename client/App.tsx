@@ -2034,23 +2034,31 @@ const AppInner = function AppInner() {
   }, [viewingDiscard?.pickConfig?.filterType])
 
   const handleDiscardCardClick = (cardIndex: number) => {
-    if (!viewingDiscard?.pickConfig) {
+    if (!viewingDiscard || !viewingDiscardPlayer) {
       return
     }
 
-    const { action, isDeck } = viewingDiscard.pickConfig
+    const { pickConfig } = viewingDiscard
+
+    // Only handle clicks when there's a pickConfig (ability-related card selection)
+    // Normal card movement should be done via drag-and-drop
+    if (!pickConfig) {
+      return
+    }
+
+    const { action, isDeck: pickIsDeck } = pickConfig
 
     if (action === 'recover') {
       // Add to hand
-      if (isDeck) {
+      if (pickIsDeck) {
         moveItem({
-          card: viewingDiscardPlayer!.deck[cardIndex],
+          card: viewingDiscardPlayer.deck[cardIndex],
           source: 'deck',
-          playerId: viewingDiscardPlayer!.id,
+          playerId: viewingDiscardPlayer.id,
           cardIndex,
         }, {
           target: 'hand',
-          playerId: viewingDiscardPlayer!.id,
+          playerId: viewingDiscardPlayer.id,
         })
 
         // Shuffle deck after search for specific abilities that mention "shuffle" in their text
@@ -2063,7 +2071,7 @@ const AppInner = function AppInner() {
         )
         if (shouldShuffle) {
           updateState((currentState: any) => {
-            const player = currentState.players.find((p: any) => p.id === viewingDiscardPlayer!.id)
+            const player = currentState.players.find((p: any) => p.id === viewingDiscardPlayer.id)
             if (player) {
               player.deck = shuffleDeck(player.deck)
             }
@@ -2071,7 +2079,7 @@ const AppInner = function AppInner() {
           })
         }
       } else {
-        recoverDiscardedCard(viewingDiscardPlayer!.id, cardIndex)
+        recoverDiscardedCard(viewingDiscardPlayer.id, cardIndex)
       }
       setViewingDiscard(null)
     } else if (action === 'resurrect') {
@@ -2082,6 +2090,27 @@ const AppInner = function AppInner() {
           payload: { ...prev!.payload, selectedCardIndex: cardIndex },
         }))
         setViewingDiscard(null)
+
+        // Set targeting mode for adjacent empty cells
+        if (prev?.sourceCoords) {
+          const neighbors = [
+            { r: prev.sourceCoords.row - 1, c: prev.sourceCoords.col },
+            { r: prev.sourceCoords.row + 1, c: prev.sourceCoords.col },
+            { r: prev.sourceCoords.row, c: prev.sourceCoords.col - 1 },
+            { r: prev.sourceCoords.row, c: prev.sourceCoords.col + 1 },
+          ]
+          const validTargets = neighbors
+            .filter(nb =>
+              nb.r >= 0 && nb.r < gameState.activeGridSize &&
+              nb.c >= 0 && nb.c < gameState.activeGridSize &&
+              !gameState.board[nb.r][nb.c].card
+            )
+            .map(nb => ({ row: nb.r, col: nb.c }))
+
+          if (validTargets.length > 0) {
+            setTargetingMode(prev!, gameState.activePlayerId ?? localPlayerId ?? 1, prev.sourceCoords, validTargets)
+          }
+        }
       } else if (abilityMode?.mode === 'RESURRECT_FROM_DISCARD') {
         // For Finn MW Deploy: Select card, then click empty adjacent cell to place
         setAbilityMode(prev => ({
@@ -2089,6 +2118,27 @@ const AppInner = function AppInner() {
           payload: { ...prev!.payload, selectedCardIndex: cardIndex },
         }))
         setViewingDiscard(null)
+
+        // Set targeting mode for adjacent empty cells
+        if (abilityMode?.sourceCoords) {
+          const neighbors = [
+            { r: abilityMode.sourceCoords.row - 1, c: abilityMode.sourceCoords.col },
+            { r: abilityMode.sourceCoords.row + 1, c: abilityMode.sourceCoords.col },
+            { r: abilityMode.sourceCoords.row, c: abilityMode.sourceCoords.col - 1 },
+            { r: abilityMode.sourceCoords.row, c: abilityMode.sourceCoords.col + 1 },
+          ]
+          const validTargets = neighbors
+            .filter(nb =>
+              nb.r >= 0 && nb.r < gameState.activeGridSize &&
+              nb.c >= 0 && nb.c < gameState.activeGridSize &&
+              !gameState.board[nb.r][nb.c].card
+            )
+            .map(nb => ({ row: nb.r, col: nb.c }))
+
+          if (validTargets.length > 0) {
+            setTargetingMode(abilityMode, gameState.activePlayerId ?? localPlayerId ?? 1, abilityMode.sourceCoords, validTargets)
+          }
+        }
       }
     }
   }

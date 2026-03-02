@@ -132,10 +132,44 @@ export function handleTargetingModeCardClick(
 
   const { payload, sourceCoords, isDeployAbility, readyStatusToRemove } = abilityMode
 
+  // Rebuild filter from filterString if needed (for P2P serialization support)
+  let filterFn = payload?.filter
+  if (!filterFn && payload?.filterString) {
+    const ownerId = abilityMode.sourceCard?.ownerId || localPlayerId || 0
+    const filterString = payload.filterString
+
+    // Handle special filters
+    if (filterString.startsWith('hasToken_')) {
+      const tokenType = filterString.replace('hasToken_', '')
+      filterFn = (c: any) => c.statuses?.some((s: any) => s.type === tokenType)
+    } else if (filterString.startsWith('hasCounter_')) {
+      const counterType = filterString.replace('hasCounter_', '')
+      filterFn = (c: any) => c.statuses?.some((s: any) => s.type === counterType)
+    } else if (filterString.startsWith('hasTokenOwner_')) {
+      const tokenType = filterString.replace('hasTokenOwner_', '')
+      filterFn = (c: any) => c.statuses?.some((s: any) => s.type === tokenType && s.addedByPlayerId === ownerId)
+    } else if (filterString.startsWith('hasCounterOwner_')) {
+      const counterType = filterString.replace('hasCounterOwner_', '')
+      filterFn = (c: any) => c.statuses?.some((s: any) => s.type === counterType && s.addedByPlayerId === ownerId)
+    } else if (filterString === 'isAlly' || filterString === 'isOwner') {
+      filterFn = (c: any) => c.ownerId === ownerId
+    } else if (filterString === 'isOpponent') {
+      filterFn = (c: any) => c.ownerId !== ownerId
+    }
+    // Add more filter types as needed
+  }
+
   // Check if this card matches the filter
-  if (payload?.filter && !payload.filter(card)) {
+  if (filterFn && !filterFn(card)) {
     return false
   }
+
+  // Debug: Log what actionType we're handling
+  console.log('[handleTargetingModeCardClick] SELECT_TARGET mode', {
+    actionType: payload?.actionType,
+    cardId: card.baseId,
+    hasFilterFn: !!filterFn,
+  })
 
   // Handle SELECT_HAND_FOR_DISCARD_THEN_SPAWN (Faber)
   if (payload.actionType === 'SELECT_HAND_FOR_DISCARD_THEN_SPAWN') {
@@ -200,5 +234,9 @@ export function handleTargetingModeCardClick(
     return true
   }
 
+  // Note: SACRIFICE_AND_BUFF_LINES (Centurion Commit) and CENSOR_SWAP (Censor Commit)
+  // are handled in modeHandlers.ts, not here
+
+  console.log('[handleTargetingModeCardClick] No handler matched for actionType:', payload?.actionType)
   return false
 }

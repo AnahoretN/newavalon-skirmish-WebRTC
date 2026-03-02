@@ -191,6 +191,47 @@ export function handleHandCardClick(
       return
     }
 
+    // SELECT_HAND_FOR_DISCARD_THEN_PLACE_TOKEN (Faber - CREATE_TOKEN with cost)
+    if (payload.actionType === 'SELECT_HAND_FOR_DISCARD_THEN_PLACE_TOKEN') {
+      // Apply filter to validate the card
+      if (payload.filter && !payload.filter(card)) {
+        return
+      }
+      if (player.id !== sourceCard?.ownerId) {
+        return
+      } // Only discard own cards
+
+      // 1. Discard the selected card
+      moveItem({ card, source: 'hand', playerId: player.id, cardIndex, bypassOwnershipCheck: true }, { target: 'discard', playerId: player.id })
+
+      // 2. Clear old targeting mode (SELECT_TARGET) and valid targets (hand cards)
+      clearTargetingMode()
+      clearValidTargets?.()
+
+      // 3. Chain to PLACE_TOKEN mode for token creation
+      const placeTokenAction: AbilityAction = {
+        type: 'OPEN_MODAL',
+        mode: 'PLACE_TOKEN',
+        sourceCard: sourceCard,
+        sourceCoords: sourceCoords,
+        isDeployAbility: isDeployAbility,
+        payload: {
+          tokenId: payload.tokenId,
+          range: payload.range || 'adjacent'
+        }
+      }
+
+      setAbilityMode(placeTokenAction)
+
+      // 4. Set new targeting mode for PLACE_TOKEN to show valid empty cells
+      if (sourceCoords && sourceCoords.row >= 0) {
+        setTimeout(() => {
+          handleActionExecution(placeTokenAction, sourceCoords)
+        }, 0)
+      }
+      return
+    }
+
     // LUCIUS SETUP: Discard 1 -> Search Command
     if (payload.actionType === 'LUCIUS_SETUP') {
       if (player.id !== sourceCard?.ownerId) {

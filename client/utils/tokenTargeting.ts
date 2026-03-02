@@ -75,10 +75,11 @@ export function createTokenCursorStack(
   // Apply token-specific targeting rules
   const tokenRules: Partial<CursorStackState> = {}
 
-  // For Revealed token: cannot place on own cards, only on face-down cards
+  // For Revealed token: cannot place on own cards
+  // Note: allowedTargets from countersDatabase controls where it can be placed
   if (tokenType === 'Revealed') {
     tokenRules.excludeOwnerId = tokenOwnerId
-    tokenRules.onlyFaceDown = true
+    // onlyFaceDown removed - can now target any opponent card
   }
 
   // For tokens that don't allow hand targeting, this is enforced via allowedTargets

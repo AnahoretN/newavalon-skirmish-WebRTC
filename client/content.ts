@@ -9,7 +9,7 @@ import type { Card, CounterDefinition } from './types'
 import { logger } from './utils/logger'
 
 // Import embedded content database for static builds (GitHub Pages)
-import embeddedDatabase from '../server/content/contentDatabase.json'
+import embeddedDatabase from '@shared/content/contentDatabase.json'
 
 // --- Type assertion for the imported JSON data ---
 interface RawDecksJson {

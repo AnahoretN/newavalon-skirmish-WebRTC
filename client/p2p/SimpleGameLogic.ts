@@ -35,9 +35,12 @@ export { startGame } from './handlers/gameSettingsHandlers'
 
 /**
  * Check if card is a token
+ * Tokens are identified by deck === 'counter', deck === 'Tokens', or having 'Token' type
  */
 function isToken(card: Card): boolean {
-  return card.deck === 'counter'
+  return card.deck === 'counter' ||
+         card.deck === 'Tokens' ||
+         card.types?.includes('Token') === true
 }
 
 /**
@@ -281,6 +284,10 @@ export function applyAction(
       newState = handleSpawnToken(newState, playerId, data)
       break
 
+    case 'RESURRECT_DISCARDED':
+      newState = handleResurrectDiscarded(newState, playerId, data)
+      break
+
     case 'DRAW_CARD':
       newState = handleDrawCard(newState, playerId, data)
       break
@@ -337,8 +344,12 @@ export function applyAction(
       newState = handleMarkAbilityUsed(newState, data)
       break
 
-    case 'REMOVE_STATUS_BY_TYPE':
-      newState = handleRemoveStatusByType(newState, data)
+    case 'REMOVE_ALL_COUNTERS_BY_TYPE':
+      newState = handleRemoveAllCountersByType(newState, data)
+      break
+
+    case 'REMOVE_COUNTER_BY_TYPE':
+      newState = handleRemoveCounterByType(newState, data)
       break
 
     case 'ADD_STATUS_TO_BOARD_CARD':
@@ -391,6 +402,10 @@ export function applyAction(
 
     case 'REQUEST_DECK_VIEW':
       newState = handleRequestDeckView(newState, playerId, data)
+      break
+
+    case 'MODIFY_CARD_POWER':
+      newState = handleModifyCardPower(newState, data)
       break
 
     default:
@@ -994,11 +1009,12 @@ function handleReturnCardToHand(state: GameState, playerId: number, data: any): 
  * MOVE_CARD_TO_HAND - move card from board/discard/deck to hand
  */
 function handleMoveCardToHand(state: GameState, playerId: number, data: any): GameState {
-  const { cardId, source, cardIndex: dataCardIndex } = data || {}
+  const { cardId, source, cardIndex: dataCardIndex, playerId: dataPlayerId } = data || {}
   if (!cardId) {return state}
 
   let cardToMove: Card | null = null
-  let targetPlayerId = playerId
+  // Use data.playerId if provided, otherwise fall back to sender's playerId
+  let targetPlayerId = dataPlayerId ?? playerId
   let newBoard = state.board
   let newDiscard: Card[] | null = null
   let newDeck: Card[] | null = null
@@ -1026,16 +1042,20 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
       })
     )
   } else if (source === 'discard') {
-    const player = state.players.find(p => p.id === playerId)
+    // Use data.playerId if provided, otherwise fall back to sender's playerId
+    const sourcePlayerId = dataPlayerId ?? playerId
+    const player = state.players.find(p => p.id === sourcePlayerId)
     if (!player) {return state}
     const idx = player.discard?.findIndex(c => c.id === cardId)
     if (idx === undefined || idx === -1) {return state}
     cardToMove = player.discard[idx]
-    targetPlayerId = playerId
+    targetPlayerId = sourcePlayerId
     newDiscard = [...player.discard]
     newDiscard.splice(idx, 1)
   } else if (source === 'deck') {
-    const player = state.players.find(p => p.id === playerId)
+    // Use data.playerId if provided, otherwise fall back to sender's playerId
+    const sourcePlayerId = dataPlayerId ?? playerId
+    const player = state.players.find(p => p.id === sourcePlayerId)
     if (!player || !player.deck) {return state}
     // For deck, use cardIndex if provided, otherwise find by cardId
     let idx = dataCardIndex
@@ -1044,13 +1064,13 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
     }
     if (idx === undefined || idx === -1) {return state}
     cardToMove = player.deck[idx]
-    targetPlayerId = playerId
+    targetPlayerId = sourcePlayerId
     // Update player deck by removing card
     newDeck = [...player.deck]
     newDeck.splice(idx, 1)
     // Update players array with new deck
     const playersWithUpdatedDeck = newState.players.map(p =>
-      p.id === playerId ? { ...p, deck: newDeck!, deckSize: newDeck!.length } : p
+      p.id === sourcePlayerId ? { ...p, deck: newDeck!, deckSize: newDeck!.length } : p
     )
     newState = { ...newState, players: playersWithUpdatedDeck as Player[] }
   }
@@ -1062,7 +1082,8 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
     // Token is removed from source and not added to destination
     // Still restore LastPlayed if token had it
     let resultState = { ...newState, board: newBoard, players: newState.players.map(p => {
-      if (p.id === playerId && newDiscard !== null) {
+      // Update discard for the source player (targetPlayerId, not sender's playerId)
+      if (p.id === targetPlayerId && newDiscard !== null) {
         return { ...p, discard: newDiscard, discardSize: newDiscard.length }
       }
       return p
@@ -1078,7 +1099,8 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
       const newHand = [...p.hand, cardToMove]
       return { ...p, hand: newHand, handSize: newHand.length }
     }
-    if (p.id === playerId && newDiscard !== null) {
+    // Update discard for the source player (targetPlayerId, not sender's playerId)
+    if (p.id === targetPlayerId && newDiscard !== null) {
       return { ...p, discard: newDiscard, discardSize: newDiscard.length }
     }
     return p
@@ -1096,11 +1118,13 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
  * MOVE_CARD_TO_DECK - move card from board/hand/discard to deck
  */
 function handleMoveCardToDeck(state: GameState, playerId: number, data: any): GameState {
-  const { cardId, source } = data || {}
+  const { cardId, source, playerId: dataPlayerId } = data || {}
   if (!cardId) {return state}
 
+  // Use data.playerId if provided, otherwise fall back to sender's playerId
+  const sourcePlayerId = dataPlayerId ?? playerId
   let cardToMove: Card | null = null
-  let targetPlayerId = playerId
+  let targetPlayerId = sourcePlayerId
   let newBoard = state.board
   let newHand: Card[] | null = null
   let newDiscard: Card[] | null = null
@@ -1127,21 +1151,21 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
       })
     )
   } else if (source === 'hand') {
-    const player = state.players.find(p => p.id === playerId)
+    const player = state.players.find(p => p.id === sourcePlayerId)
     if (!player) {return state}
     const cardIndex = player.hand?.findIndex(c => c.id === cardId)
     if (cardIndex === undefined || cardIndex === -1) {return state}
     cardToMove = player.hand[cardIndex]
-    targetPlayerId = playerId
+    targetPlayerId = sourcePlayerId
     newHand = [...player.hand]
     newHand.splice(cardIndex, 1)
   } else if (source === 'discard') {
-    const player = state.players.find(p => p.id === playerId)
+    const player = state.players.find(p => p.id === sourcePlayerId)
     if (!player) {return state}
     const cardIndex = player.discard?.findIndex(c => c.id === cardId)
     if (cardIndex === undefined || cardIndex === -1) {return state}
     cardToMove = player.discard[cardIndex]
-    targetPlayerId = playerId
+    targetPlayerId = sourcePlayerId
     newDiscard = [...player.discard]
     newDiscard.splice(cardIndex, 1)
   }
@@ -1152,7 +1176,7 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
   if (isToken(cardToMove)) {
     // Token is removed from source and not added to destination
     let resultState = { ...state, board: newBoard, players: state.players.map(p => {
-      if (p.id === playerId) {
+      if (p.id === sourcePlayerId) {
         const updates: any = {}
         if (newHand !== null) {
           updates.hand = newHand
@@ -1177,7 +1201,7 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
       const newDeck = [cardToMove, ...(p.deck || [])]
       return { ...p, deck: newDeck, deckSize: newDeck.length }
     }
-    if (p.id === playerId) {
+    if (p.id === sourcePlayerId) {
       const updates: any = {}
       if (newHand !== null) {
         updates.hand = newHand
@@ -1203,11 +1227,13 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
  * MOVE_CARD_TO_DISCARD - move card from board/hand/deck to discard
  */
 function handleMoveCardToDiscard(state: GameState, playerId: number, data: any): GameState {
-  const { cardId, source } = data || {}
+  const { cardId, source, playerId: dataPlayerId } = data || {}
   if (!cardId) {return state}
 
+  // Use data.playerId if provided, otherwise fall back to sender's playerId
+  const sourcePlayerId = dataPlayerId ?? playerId
   let cardToMove: Card | null = null
-  let targetPlayerId = playerId
+  let targetPlayerId = sourcePlayerId
   let newBoard = state.board
   let newHand: Card[] | null = null
   let newDeck: Card[] | null = null
@@ -1234,21 +1260,21 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
       })
     )
   } else if (source === 'hand') {
-    const player = state.players.find(p => p.id === playerId)
+    const player = state.players.find(p => p.id === sourcePlayerId)
     if (!player) {return state}
     const cardIndex = player.hand?.findIndex(c => c.id === cardId)
     if (cardIndex === undefined || cardIndex === -1) {return state}
     cardToMove = player.hand[cardIndex]
-    targetPlayerId = playerId
+    targetPlayerId = sourcePlayerId
     newHand = [...player.hand]
     newHand.splice(cardIndex, 1)
   } else if (source === 'deck') {
-    const player = state.players.find(p => p.id === playerId)
+    const player = state.players.find(p => p.id === sourcePlayerId)
     if (!player) {return state}
     const cardIndex = player.deck?.findIndex(c => c.id === cardId)
     if (cardIndex === undefined || cardIndex === -1) {return state}
     cardToMove = player.deck[cardIndex]
-    targetPlayerId = playerId
+    targetPlayerId = sourcePlayerId
     newDeck = [...player.deck]
     newDeck.splice(cardIndex, 1)
   }
@@ -1259,7 +1285,7 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
   if (isToken(cardToMove)) {
     // Token is removed from source and not added to destination
     let resultState = { ...state, board: newBoard, players: state.players.map(p => {
-      if (p.id === playerId) {
+      if (p.id === sourcePlayerId) {
         const updates: any = {}
         if (newHand !== null) {
           updates.hand = newHand
@@ -1284,7 +1310,7 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
       const newDiscard = [...(p.discard || []), cardToMove]
       return { ...p, discard: newDiscard, discardSize: newDiscard.length }
     }
-    if (p.id === playerId) {
+    if (p.id === sourcePlayerId) {
       const updates: any = {}
       if (newHand !== null) {
         updates.hand = newHand
@@ -1321,6 +1347,17 @@ function handleMoveHandCardToDeck(state: GameState, playerId: number, data: any)
   const cardToMove = player.hand[cardIndex]
   const newHand = [...player.hand]
   newHand.splice(cardIndex, 1)
+
+  // If card is a token, destroy it instead of adding to deck
+  if (isToken(cardToMove)) {
+    const newPlayers = state.players.map(p =>
+      p.id === actualPlayerId
+        ? { ...p, hand: newHand, handSize: newHand.length }
+        : p
+    )
+    return { ...state, players: newPlayers }
+  }
+
   const newDeck = [cardToMove, ...player.deck]
 
   const newPlayers = state.players.map(p =>
@@ -1347,6 +1384,17 @@ function handleMoveHandCardToDiscard(state: GameState, playerId: number, data: a
   const cardToMove = player.hand[cardIndex]
   const newHand = [...player.hand]
   newHand.splice(cardIndex, 1)
+
+  // If card is a token, destroy it instead of adding to discard
+  if (isToken(cardToMove)) {
+    const newPlayers = state.players.map(p =>
+      p.id === actualPlayerId
+        ? { ...p, hand: newHand, handSize: newHand.length }
+        : p
+    )
+    return { ...state, players: newPlayers }
+  }
+
   const newDiscard = [...player.discard, cardToMove]
 
   const newPlayers = state.players.map(p =>
@@ -1368,6 +1416,17 @@ function handleMoveAnnouncedToHand(state: GameState, playerId: number, data: any
   if (!player || !player.announcedCard) {return state}
 
   const cardToMove = player.announcedCard
+
+  // If card is a token, destroy it instead of adding to hand
+  if (isToken(cardToMove)) {
+    const newPlayers = state.players.map(p =>
+      p.id === actualPlayerId
+        ? { ...p, announcedCard: null }
+        : p
+    )
+    return { ...state, players: newPlayers }
+  }
+
   const newHand = [...player.hand, cardToMove]
 
   const newPlayers = state.players.map(p =>
@@ -1389,6 +1448,17 @@ function handleMoveAnnouncedToDeck(state: GameState, playerId: number, data: any
   if (!player || !player.announcedCard) {return state}
 
   const cardToMove = player.announcedCard
+
+  // If card is a token, destroy it instead of adding to deck
+  if (isToken(cardToMove)) {
+    const newPlayers = state.players.map(p =>
+      p.id === actualPlayerId
+        ? { ...p, announcedCard: null }
+        : p
+    )
+    return { ...state, players: newPlayers }
+  }
+
   const newDeck = [cardToMove, ...player.deck]
 
   const newPlayers = state.players.map(p =>
@@ -1410,6 +1480,17 @@ function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, data: 
   if (!player || !player.announcedCard) {return state}
 
   const cardToMove = player.announcedCard
+
+  // If card is a token, destroy it instead of adding to discard
+  if (isToken(cardToMove)) {
+    const newPlayers = state.players.map(p =>
+      p.id === actualPlayerId
+        ? { ...p, announcedCard: null }
+        : p
+    )
+    return { ...state, players: newPlayers }
+  }
+
   const newDiscard = [...player.discard, cardToMove]
 
   const newPlayers = state.players.map(p =>
@@ -1659,6 +1740,7 @@ function handleSwapCards(state: GameState, playerId: number, data?: any): GameSt
 
 /**
  * SPAWN_TOKEN - spawn a token card on the board
+ * Special case: Resurrection is added as a status to existing card (Immunis Deploy)
  */
 function handleSpawnToken(state: GameState, playerId: number, data?: any): GameState {
   const { coords, tokenName, ownerId } = data || {}
@@ -1672,7 +1754,37 @@ function handleSpawnToken(state: GameState, playerId: number, data?: any): GameS
     return state
   }
 
-  // Check if cell is empty
+  // Special case: Resurrection is a status, not a token card (for Immunis Deploy)
+  if (tokenName === 'Resurrection') {
+    const cell = state.board[row][col]
+    if (!cell.card) { return state } // Must have a card to add status to
+
+    const newBoard = state.board.map((r, rIdx) =>
+      r.map((cell, cIdx) => {
+        if (rIdx === row && cIdx === col && cell.card) {
+          return {
+            card: {
+              ...cell.card,
+              statuses: [...(cell.card.statuses || []), {
+                type: 'Resurrection',
+                                        addedByPlayerId: ownerId
+                                      }]
+            }
+          }
+        }
+        return cell
+      })
+    )
+
+    console.log('[handleSpawnToken] Added Resurrection status to card at', coords)
+
+    // Recalculate ready statuses
+    const newState = { ...state, board: newBoard }
+    recalculateAllReadyStatuses(newState)
+    return newState
+  }
+
+  // Check if cell is empty (for regular token cards)
   if (state.board[row][col].card) { return state }
 
   // Use tokenData if provided, otherwise create basic token
@@ -1746,6 +1858,92 @@ function handleSpawnToken(state: GameState, playerId: number, data?: any): GameS
 
   // Recalculate ready statuses for all cards AFTER phase switch
   // This ensures the token gets correct ready statuses for the new phase
+  recalculateAllReadyStatuses(newState)
+
+  return newState
+}
+
+/**
+ * RESURRECT_DISCARDED - return a card from discard pile to board (Immunis Deploy)
+ * Takes a card from discard and places it on the board at specified coordinates.
+ * The card will then receive a token via SPAWN_TOKEN.
+ */
+function handleResurrectDiscarded(state: GameState, playerId: number, data?: any): GameState {
+  const { cardOwnerId, cardIndex, boardCoords } = data || {}
+
+  if (cardOwnerId === undefined || cardIndex === undefined || !boardCoords) {
+    return state
+  }
+
+  const { row, col } = boardCoords
+
+  // Check bounds
+  if (row < 0 || row >= state.board.length || col < 0 || col >= state.board[0].length) {
+    return state
+  }
+
+  // Check if cell is empty
+  if (state.board[row][col].card) {
+    return state
+  }
+
+  // Find the player and their discard pile
+  const player = state.players.find(p => p.id === cardOwnerId)
+  if (!player || !player.discard || cardIndex < 0 || cardIndex >= player.discard.length) {
+    return state
+  }
+
+  // Get the card to resurrect
+  const cardToResurrect = player.discard[cardIndex]
+
+  // Create the card for the board
+  const boardCard: Card = {
+    ...cardToResurrect,
+    id: `resurrected_${cardToResurrect.id}_${Date.now()}`, // New ID to avoid conflicts
+    ownerId: cardOwnerId,
+    enteredThisTurn: false,
+    isFaceUp: true, // Resurrected cards are face up
+  }
+
+  // Remove card from discard
+  const newDiscard = [...player.discard]
+  newDiscard.splice(cardIndex, 1)
+
+  // Place card on board
+  const newBoard = state.board.map((r, rIdx) =>
+    r.map((cell, cIdx) => {
+      if (rIdx === row && cIdx === col) {
+        return { card: boardCard }
+      }
+      return cell
+    })
+  )
+
+  // Update player's discard
+  const newPlayers = state.players.map(p =>
+    p.id === cardOwnerId
+      ? { ...p, discard: newDiscard, discardSize: newDiscard.length }
+      : p
+  )
+
+  let newState: GameState = {
+    ...state,
+    board: newBoard,
+    players: newPlayers
+  }
+
+  // Switch to Main phase (2) if currently in Setup phase (1)
+  const wasSetupPhase = state.currentPhase === 1
+  if (wasSetupPhase) {
+    newState = {
+      ...newState,
+      currentPhase: 2
+    }
+  }
+
+  console.log('[handleResurrectDiscarded] Resurrected', boardCard.name, 'from discard to', boardCoords)
+
+  // Recalculate ready statuses
   recalculateAllReadyStatuses(newState)
 
   return newState
@@ -1937,9 +2135,9 @@ function handleMarkAbilityUsed(state: GameState, data: any): GameState {
 }
 
 /**
- * REMOVE_STATUS_BY_TYPE - remove status of specific type from card
+ * REMOVE_ALL_COUNTERS_BY_TYPE - remove all counters/statuses of specific type from card
  */
-function handleRemoveStatusByType(state: GameState, data: any): GameState {
+function handleRemoveAllCountersByType(state: GameState, data: any): GameState {
   const { coords, type } = data || {}
   if (!coords || !type) return state
 
@@ -1974,6 +2172,76 @@ function handleRemoveStatusByType(state: GameState, data: any): GameState {
   }
 
   return newState
+}
+
+/**
+ * REMOVE_COUNTER_BY_TYPE - remove counter/status of specific type added by specific owner from card
+ * Used by Censor Commit to remove Exploit counters from specific player
+ */
+function handleRemoveCounterByType(state: GameState, data: any): GameState {
+  const { coords, type, ownerId } = data || {}
+  if (!coords || !type || ownerId === undefined) return state
+
+  const { row, col } = coords
+  if (row === undefined || col === undefined) return state
+
+  const cell = state.board[row][col]
+  if (!cell?.card) return state
+
+  const targetCard = cell.card
+  const hadSupport = targetCard.statuses?.some(s => s.type === 'Support') ?? false
+
+  const newBoard = state.board.map((r, rIdx) =>
+    r.map((c, cIdx) => {
+      if (rIdx === row && cIdx === col && cell.card) {
+        // Filter out statuses that match both type AND ownerId
+        const newStatuses = cell.card.statuses?.filter(s => !(s.type === type && (s as any).addedByPlayerId === ownerId)) || []
+        const newCard = { ...cell.card, statuses: newStatuses }
+        return { ...cell, card: newCard }
+      }
+      return c
+    })
+  )
+
+  let newState = { ...state, board: newBoard }
+
+  // If Support status was removed, recalculate ready statuses for this card
+  if (type === 'Support' && hadSupport) {
+    const newCard = newBoard[row][col].card
+    if (newCard) {
+      recheckReadyStatuses(newCard, newState)
+    }
+  }
+
+  return newState
+}
+
+/**
+ * MODIFY_CARD_POWER - modify power of a card on the battlefield
+ * Used by Walking Turret Setup and other MODIFY_POWER abilities
+ */
+function handleModifyCardPower(state: GameState, data: any): GameState {
+  const { coords, delta } = data || {}
+  if (!coords || delta === undefined) return state
+
+  const { row, col } = coords
+  if (row === undefined || col === undefined) return state
+
+  const cell = state.board[row][col]
+  if (!cell?.card) return state
+
+  const newBoard = state.board.map((r, rIdx) =>
+    r.map((c, cIdx) => {
+      if (rIdx === row && cIdx === col && cell.card) {
+        const currentPowerModifier = cell.card.powerModifier || 0
+        const newCard = { ...cell.card, powerModifier: currentPowerModifier + delta }
+        return { ...cell, card: newCard }
+      }
+      return c
+    })
+  )
+
+  return { ...state, board: newBoard }
 }
 
 /**

@@ -11,7 +11,6 @@
 import type { Card, GameState, AbilityAction } from '@/types'
 import { logger } from './logger'
 import type { CardAbilityInfo } from '@shared/abilities/index.js'
-import { buildActionFromContentAbility } from '@shared/abilities/contentAbilities.js'
 
 // Import unified ready system from shared - import for local use AND re-export
 import {
@@ -145,6 +144,7 @@ export function getCardAbilityInfo(card: Card): CardAbilityInfo {
 
   // Check if abilities require Support
   const abilities = getAbilitiesForCard(card as any)
+  const deployAbility = abilities.find(a => a.activationType === 'deploy')
   const setupAbility = abilities.find(a => a.activationType === 'setup')
   const commitAbility = abilities.find(a => a.activationType === 'commit')
 
@@ -152,6 +152,7 @@ export function getCardAbilityInfo(card: Card): CardAbilityInfo {
     hasDeployAbility,
     hasSetupAbility,
     hasCommitAbility,
+    deployRequiresSupport: deployAbility?.supportRequired ?? false,
     setupRequiresSupport: setupAbility?.supportRequired ?? false,
     commitRequiresSupport: commitAbility?.supportRequired ?? false,
   }
@@ -322,7 +323,7 @@ export const getCardAbilityAction = (
   gameState: GameState,
   localPlayerId: number | null,
   coords: { row: number; col: number }
-): { type: string; mode: string; sourceCard: Card; sourceCoords: { row: number; col: number }; payload?: any } | null => {
+): (AbilityAction & { supportRequired?: boolean }) | null => {
   // Ownership check
   if (localPlayerId !== card.ownerId) {
     // Check if the card belongs to a dummy player - if so, local player can control it
@@ -340,22 +341,29 @@ export const getCardAbilityAction = (
   const actorId = card.ownerId ?? localPlayerId ?? 0
 
   // Priority 1: Deploy ability (works in ANY phase when card has readyDeploy)
-  const deployAbility = getAbilitiesForCard(card).find(a => a.activationType === 'deploy')
+  const deployAbility = getAbilitiesForCard(card as any).find(a => a.activationType === 'deploy')
   if (deployAbility && hasReadyStatus(card, READY_STATUS.DEPLOY)) {
-    if (deployAbility.supportRequired && !hasStatus(card, 'Support', actorId)) {
-      console.log('[getCardAbilityAction] Deploy ability requires Support but missing')
-    } else {
-      const action = deployAbility.getAction(card, gameState, actorId, coords)
-      console.log('[getCardAbilityAction] Deploy ability for', card.baseId, { hasAction: !!action, actionType: action?.type, actionMode: action?.mode })
-      if (action) {
-        return { ...action, isDeployAbility: true, readyStatusToRemove: READY_STATUS.DEPLOY }
+    const action = deployAbility.getAction(card as any, gameState as any, actorId, coords)
+    console.log('[getCardAbilityAction] Deploy ability for', card.baseId, {
+      hasAction: !!action,
+      actionType: action?.type,
+      actionMode: action?.mode,
+      supportRequired: deployAbility.supportRequired,
+      hasSupport: hasStatus(card, 'Support', actorId)
+    })
+    if (action) {
+      return {
+        ...action,
+        isDeployAbility: true,
+        readyStatusToRemove: READY_STATUS.DEPLOY,
+        supportRequired: deployAbility.supportRequired
       }
     }
   }
 
   // Priority 2: Setup ability (ONLY in Setup phase / phase 1, or in Main phase if just played)
   if (phaseIndex === 1) {
-    const setupAbility = getAbilitiesForCard(card).find(a => a.activationType === 'setup')
+    const setupAbility = getAbilitiesForCard(card as any).find(a => a.activationType === 'setup')
     console.log('[getCardAbilityAction] Phase 1 (Setup) - Checking card', {
       cardId: card.baseId,
       cardOwnerId: card.ownerId,
@@ -368,7 +376,7 @@ export const getCardAbilityAction = (
         console.log('[getCardAbilityAction] Setup ability requires Support but missing')
         return null
       }
-      const action = setupAbility.getAction(card, gameState, actorId, coords)
+      const action = setupAbility.getAction(card as any, gameState as any, actorId, coords)
       console.log('[getCardAbilityAction] Setup ability for', card.baseId, { hasAction: !!action, actionType: action?.type, actionMode: action?.mode })
       if (action) {
         return { ...action, readyStatusToRemove: READY_STATUS.SETUP }
@@ -378,12 +386,12 @@ export const getCardAbilityAction = (
 
   // Priority 3: Commit ability (ONLY in Commit phase / phase 3)
   if (phaseIndex === 3) {
-    const commitAbility = getAbilitiesForCard(card).find(a => a.activationType === 'commit')
+    const commitAbility = getAbilitiesForCard(card as any).find(a => a.activationType === 'commit')
     if (commitAbility && hasReadyStatus(card, READY_STATUS.COMMIT)) {
       if (commitAbility.supportRequired && !hasStatus(card, 'Support', actorId)) {
         return null
       }
-      const action = commitAbility.getAction(card, gameState, actorId, coords)
+      const action = commitAbility.getAction(card as any, gameState as any, actorId, coords)
       if (action) {
         return { ...action, readyStatusToRemove: READY_STATUS.COMMIT }
       }

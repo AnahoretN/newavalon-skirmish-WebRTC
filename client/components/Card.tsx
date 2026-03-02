@@ -505,11 +505,12 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
       setHighlightDismissed(true)
     }
     // Call the parent's onCardClick handler if provided
+    // IMPORTANT: During targeting mode, allow clicking on ANY card (for targeting mode)
     // Note: Hand cards are handled by the parent component's onClick, not here
-    if (onCardClick && boardCoords && canActivateAbility) {
+    if (onCardClick && boardCoords && (canActivateAbility || targetingMode)) {
       onCardClick(card, boardCoords)
     }
-  }, [shouldHighlight, localPlayerId, card, onCardClick, boardCoords, triggerClickWave, players])
+  }, [shouldHighlight, localPlayerId, card, onCardClick, boardCoords, triggerClickWave, players, targetingMode])
 
   // Aggregate statuses by TYPE and PLAYER ID to allow separate icons for different players.
   // DEBUG: All statuses are now visible for debugging ability readiness.

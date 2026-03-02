@@ -160,7 +160,7 @@ export function handleEmptyCellClick(
   if (abilityMode && abilityMode.mode === 'SPAWN_TOKEN') {
     const { sourceCoords, payload, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
 
-    if (!sourceCoords || !payload?.tokenName) {
+    if (!sourceCoords || !payload?.tokenId) {
       return false
     }
 
@@ -170,7 +170,7 @@ export function handleEmptyCellClick(
     }
 
     const tokenOwnerId = sourceCard?.ownerId ?? abilityMode.sourceCard?.ownerId
-    spawnToken(boardCoords, payload.tokenName, tokenOwnerId!)
+    spawnToken(boardCoords, payload.tokenId, tokenOwnerId!)
     markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
     setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
     return true
@@ -192,6 +192,27 @@ export function handleEmptyCellClick(
       if (!isAdj) {
         return false
       }
+    }
+
+    const tokenOwnerId = sourceCard?.ownerId ?? abilityMode.sourceCard?.ownerId
+    spawnToken(boardCoords, payload.tokenId, tokenOwnerId!)
+    markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+    return true
+  }
+
+  // === ABILITY MODE - SHIELD_SELF_THEN_SPAWN (Edith Byron Deploy) ===
+  if (abilityMode && abilityMode.mode === 'SHIELD_SELF_THEN_SPAWN') {
+    const { sourceCoords, payload, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
+
+    if (!sourceCoords || !payload?.tokenId) {
+      return false
+    }
+
+    // Check if the selected cell is adjacent to source
+    const isAdj = Math.abs(boardCoords.row - sourceCoords.row) + Math.abs(boardCoords.col - sourceCoords.col) === 1
+    if (!isAdj) {
+      return false
     }
 
     const tokenOwnerId = sourceCard?.ownerId ?? abilityMode.sourceCard?.ownerId

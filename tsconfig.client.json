@@ -25,7 +25,8 @@
   "include": [
     "client/**/*",
     "server/types/**/*",
-    "server/utils/**/*"
+    "server/utils/**/*",
+    "shared/**/*"
   ],
   "exclude": [
     "node_modules",

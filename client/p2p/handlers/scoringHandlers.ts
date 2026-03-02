@@ -9,6 +9,7 @@
  */
 
 import type { GameState, Player } from '../../types'
+import { getCardDefinition } from '@/content'
 
 /**
  * START_SCORING - start scoring phase
@@ -108,20 +109,52 @@ export function calculateLineScore(state: GameState, playerId: number, lineType:
   // Count sum of power of all player's cards in this line
   // Power includes: base power + powerModifier + bonusPower
 
-  // Check if player has Data Liberator with Support on board
-  // Data Liberator allows scoring points from cards with Exploit tokens
-  let hasDataLiberatorWithSupport = false
+  // Collect active scoring modifiers from cards with Support status
+  // Scoring modifiers allow cards matching the filter to score for the modifier owner
+  type ScoringModifier = {
+    targetFilter: string
+    requireTokenFromSourceOwner: boolean
+    effect: string
+    sourceOwnerId: number
+  }
+  const scoringModifiers: ScoringModifier[] = []
+
   for (let r = 0; r < state.board.length; r++) {
     for (let c = 0; c < state.board[r]?.length; c++) {
       const cell = state.board[r][c]
-      if (cell.card?.ownerId === playerId &&
-          cell.card.baseId === 'dataLiberator' &&
-          cell.card.statuses?.some((s: any) => s.type === 'Support' && s.addedByPlayerId === playerId)) {
-        hasDataLiberatorWithSupport = true
-        break
+      if (!cell.card) continue
+
+      const card = cell.card
+      // Check if card is owned by this player
+      if (card.ownerId !== playerId) continue
+
+      // Check if card has Support status added by this player
+      const hasSupport = card.statuses?.some((s: any) =>
+        s.type === 'Support' && s.addedByPlayerId === playerId
+      )
+      if (!hasSupport) continue
+
+      // Check if card has MODIFY_SCORING ability in its pass abilities
+      if (!card.baseId) continue
+      const cardDef = getCardDefinition(card.baseId)
+      if (!cardDef) continue
+
+      // ABILITIES is stored as uppercase in contentDatabase
+      const abilities = (cardDef as any).ABILITIES
+      if (!abilities) continue
+
+      for (const ability of abilities) {
+        if (ability.type === 'pass' && ability.action === 'MODIFY_SCORING') {
+          const { targetFilter, requireTokenFromSourceOwner, effect } = ability.details || {}
+          scoringModifiers.push({
+            targetFilter: targetFilter || '',
+            requireTokenFromSourceOwner: requireTokenFromSourceOwner ?? false,
+            effect: effect || '',
+            sourceOwnerId: playerId
+          })
+        }
       }
     }
-    if (hasDataLiberatorWithSupport) break
   }
 
   let score = 0
@@ -143,16 +176,28 @@ export function calculateLineScore(state: GameState, playerId: number, lineType:
       const bonusPower = card.bonusPower || 0
       score += power + powerModifier + bonusPower
     }
-    // Data Liberator passive: cards with Exploit tokens (from same player) also score
-    else if (hasDataLiberatorWithSupport) {
-      const hasExploitFromPlayer = card.statuses?.some((s: any) =>
-        s.type === 'Exploit' && s.addedByPlayerId === playerId
-      )
-      if (hasExploitFromPlayer) {
-        const power = card.power || 0
-        const powerModifier = card.powerModifier || 0
-        const bonusPower = card.bonusPower || 0
-        score += power + powerModifier + bonusPower
+    // Scoring modifiers: cards matching the modifier filter also score for the modifier owner
+    else if (scoringModifiers.length > 0) {
+      for (const modifier of scoringModifiers) {
+        let shouldScore = false
+
+        // Check based on targetFilter
+        if (modifier.targetFilter === 'hasCounter_Exploit') {
+          // Cards with Exploit tokens from the modifier owner score
+          const hasExploitFromPlayer = (card.statuses || []).some((s: any) =>
+            s.type === 'Exploit' && s.addedByPlayerId === modifier.sourceOwnerId
+          )
+          shouldScore = hasExploitFromPlayer
+        }
+        // Add more targetFilter cases here as needed
+
+        if (shouldScore && modifier.effect === 'scoreForOwner') {
+          const power = card.power || 0
+          const powerModifier = card.powerModifier || 0
+          const bonusPower = card.bonusPower || 0
+          score += power + powerModifier + bonusPower
+          break // Only apply one scoring modifier per card
+        }
       }
     }
   }
