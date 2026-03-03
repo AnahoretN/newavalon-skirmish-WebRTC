@@ -11,7 +11,7 @@ import { countersDatabase } from './content'
  * The current version of the application.
  * This should match the version in package.json
  */
-export const APP_VERSION = '0.2.10'
+export const APP_VERSION = '0.2.11'
 
 /**
  * The maximum number of players allowed in a game.
