@@ -141,6 +141,7 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [localCards, setLocalCards] = useState<CardType[]>(cards)
   const [droppedOutside, setDroppedOutside] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
   const modalRef = useRef<HTMLDivElement>(null)
   const draggedCardRef = useRef<CardType | null>(null)
 
@@ -152,9 +153,73 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
       setDragOverIndex(null)
       setLocalCards(cards)
       setDroppedOutside(false)
+      setIsDragging(false)
       draggedCardRef.current = null
     }
   }, [isOpen, cards])
+
+  // Set data attribute to hide tooltips during drag
+  useEffect(() => {
+    if (isDragging) {
+      document.body.setAttribute('data-dragging-card', 'true')
+    } else {
+      document.body.removeAttribute('data-dragging-card')
+    }
+    return () => {
+      document.body.removeAttribute('data-dragging-card')
+    }
+  }, [isDragging])
+
+  // Track drag on document level for more reliable outside detection
+  useEffect(() => {
+    if (!isDragging || !isOpen || droppedOutside) {
+      return
+    }
+
+    const handleDocumentDragOver = (e: DragEvent) => {
+      if (!modalRef.current || droppedOutside) {
+        return
+      }
+
+      const rect = modalRef.current.getBoundingClientRect()
+      const x = e.clientX
+      const y = e.clientY
+
+      // If cursor is outside modal bounds, close modal and set up draggedItem
+      if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+        const card = draggedCardRef.current
+        if (!card) {
+          return
+        }
+        const index = draggedIndex ?? 0
+
+        setDraggedItem({
+          card,
+          source: isDeckView ? 'deck' : 'discard',
+          playerId: player.id,
+          cardIndex: index,
+        })
+
+        setDroppedOutside(true)
+        setIsDragging(false)
+
+        // Close modal immediately so drop can happen on underlying elements
+        onClose()
+      }
+    }
+
+    const handleDocumentDragEnd = () => {
+      setIsDragging(false)
+    }
+
+    document.addEventListener('dragover', handleDocumentDragOver)
+    document.addEventListener('dragend', handleDocumentDragEnd)
+
+    return () => {
+      document.removeEventListener('dragover', handleDocumentDragOver)
+      document.removeEventListener('dragend', handleDocumentDragEnd)
+    }
+  }, [isDragging, isOpen, droppedOutside, draggedIndex, isDeckView, player.id, setDraggedItem, onClose])
 
   // Determine which cards to display (with reordering applied if drag is active)
   const displayCards = useMemo(() => {
@@ -176,6 +241,7 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
     setDraggedCardId(card.id)
     draggedCardRef.current = card
     setDroppedOutside(false)
+    setIsDragging(true)
   }, [canInteract])
 
   const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
@@ -186,41 +252,14 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
     }
   }, [dragOverIndex])
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    if (!draggedCardRef.current || !modalRef.current) {
-      return
-    }
-
-    const rect = modalRef.current.getBoundingClientRect()
-    const x = e.clientX
-    const y = e.clientY
-
-    // If cursor is outside modal bounds, set up draggedItem and close modal
-    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-      const card = draggedCardRef.current
-      const index = draggedIndex ?? 0
-
-      setDraggedItem({
-        card,
-        source: isDeckView ? 'deck' : 'discard',
-        playerId: player.id,
-        cardIndex: index,
-      })
-
-      setDroppedOutside(true)
-
-      // Close modal immediately so drop can happen on underlying elements
-      onClose()
-    }
-  }, [draggedIndex, isDeckView, player.id, setDraggedItem, onClose])
-
   const handleDragEnd = useCallback(() => {
-    // Only cleanup if we didn't drop outside (outside case is handled by dragLeave)
+    // Only cleanup if we didn't drop outside (outside case is handled by document dragover)
     if (!droppedOutside) {
       setDraggedCardId(null)
       setDraggedIndex(null)
       setDragOverIndex(null)
     }
+    setIsDragging(false)
     draggedCardRef.current = null
   }, [droppedOutside])
 
@@ -274,7 +313,6 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
       <div
         ref={modalRef}
         onClick={(e) => e.stopPropagation()}
-        onDragLeave={handleDragLeave}
         className="bg-gray-800 rounded-lg p-4 shadow-xl w-auto max-w-4xl max-h-[95vh] flex flex-col">
         <div className="flex justify-between items-center mb-2 flex-shrink-0">
           <h2 className="text-xl font-bold">{title}</h2>

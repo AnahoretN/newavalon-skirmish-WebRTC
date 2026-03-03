@@ -225,9 +225,23 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
       setTooltipVisible(false)
     }
 
+    const checkDraggingAttribute = () => {
+      if (document.body.getAttribute('data-dragging-card') === 'true') {
+        if (tooltipTimeoutRef.current) {
+          clearTimeout(tooltipTimeoutRef.current)
+          tooltipTimeoutRef.current = null
+        }
+        setTooltipVisible(false)
+      }
+    }
+
     window.addEventListener('cardDragStart', handleDragStart)
+    // Also check periodically when hovering (using mousemove as proxy)
+    window.addEventListener('mousemove', checkDraggingAttribute)
+
     return () => {
       window.removeEventListener('cardDragStart', handleDragStart)
+      window.removeEventListener('mousemove', checkDraggingAttribute)
     }
   }, [])
 

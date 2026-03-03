@@ -988,6 +988,14 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
   // This ensures cards get correct ready statuses for the new phase
   recalculateAllReadyStatuses(newState)
 
+  // Check and apply triggers when a card with Revealed status is played from hand
+  // This handles the drag-and-drop case where ANNOUNCE_CARD is not used
+  if (isFromHand && cardToPlay.statuses?.some((s: any) => s.type === 'Revealed')) {
+    console.log('[handlePlayCard] Checking triggers for Revealed card played from hand:', cardToPlay.baseId)
+    const triggerState = checkAndApplyTriggers(newState, cardToPlay, boardCoords, actualPlayerId, 'hand')
+    return triggerState
+  }
+
   return newState
 }
 
@@ -1130,8 +1138,8 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
             ownerIdFromBoard = foundCard.ownerId || playerId
             targetPlayerId = foundCard.ownerId || playerId
             sourcePlayerId = foundCard.ownerId || playerId
-            // Clear all statuses except Revealed when card leaves battlefield
-            clearAllStatusesExceptRevealed(foundCard)
+            // Clear ALL statuses including Revealed when card leaves battlefield to hand
+            clearAllStatuses(foundCard)
           }
           return { card: null }
         }
@@ -1199,7 +1207,13 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
     // Update hand for the target player
     if (p.id === targetPlayerId) {
       const newHand = [...p.hand, cardToMove]
-      return { ...p, hand: newHand, handSize: newHand.length }
+      const updates: any = { hand: newHand, handSize: newHand.length }
+      // Also update discard if source and target are the same player
+      if (sourcePlayerId !== undefined && p.id === sourcePlayerId && newDiscard !== null) {
+        updates.discard = newDiscard
+        updates.discardSize = newDiscard.length
+      }
+      return { ...p, ...updates }
     }
     // Update discard for the source player (different from target player)
     if (sourcePlayerId !== undefined && p.id === sourcePlayerId && newDiscard !== null) {
@@ -1220,9 +1234,7 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
  * MOVE_CARD_TO_DECK - move card from board/hand/discard to deck
  */
 function handleMoveCardToDeck(state: GameState, playerId: number, data: any): GameState {
-  const { cardId, source, playerId: dataPlayerId } = data || {}
-  if (!cardId) {return state}
-
+  const { cardId, cardIndex, source, playerId: dataPlayerId } = data || {}
   // Use data.playerId if provided, otherwise fall back to sender's playerId
   const sourcePlayerId = dataPlayerId ?? playerId
   let cardToMove: Card | null = null
@@ -1234,6 +1246,7 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
   let ownerIdFromBoard: number | null = null
 
   if (source === 'board') {
+    if (!cardId) {return state}
     newBoard = state.board.map((row, _r) =>
       row.map((cell, _c) => {
         if (cell.card?.id === cardId) {
@@ -1244,8 +1257,8 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
             cardFromBoard = { ...foundCard, statuses: [...(foundCard.statuses || [])] }
             ownerIdFromBoard = foundCard.ownerId || playerId
             targetPlayerId = foundCard.ownerId || playerId
-            // Clear all statuses except Revealed when card leaves battlefield
-            clearAllStatusesExceptRevealed(foundCard)
+            // Clear ALL statuses including Revealed when card leaves battlefield to deck/discard
+            clearAllStatuses(foundCard)
           }
           return { card: null }
         }
@@ -1255,25 +1268,40 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
   } else if (source === 'hand') {
     const player = state.players.find(p => p.id === sourcePlayerId)
     if (!player) {return state}
-    const cardIndex = player.hand?.findIndex(c => c.id === cardId)
-    if (cardIndex === undefined || cardIndex === -1) {return state}
-    cardToMove = player.hand[cardIndex]
+    let idx: number
+    if (cardIndex !== undefined) {
+      idx = cardIndex
+    } else {
+      if (!cardId) {return state}
+      idx = player.hand?.findIndex(c => c.id === cardId) ?? -1
+    }
+    if (idx < 0 || idx >= (player.hand?.length || 0)) {return state}
+    cardToMove = player.hand[idx]
     targetPlayerId = sourcePlayerId
     newHand = [...player.hand]
-    newHand.splice(cardIndex, 1)
+    newHand.splice(idx, 1)
     // Clear ALL statuses including Revealed when card goes to deck
     clearAllStatuses(cardToMove)
   } else if (source === 'discard') {
     const player = state.players.find(p => p.id === sourcePlayerId)
     if (!player) {return state}
-    const cardIndex = player.discard?.findIndex(c => c.id === cardId)
-    if (cardIndex === undefined || cardIndex === -1) {return state}
-    cardToMove = player.discard[cardIndex]
+    let idx: number
+    if (cardIndex !== undefined) {
+      idx = cardIndex
+    } else {
+      if (!cardId) {return state}
+      idx = player.discard?.findIndex(c => c.id === cardId) ?? -1
+    }
+    if (idx < 0 || idx >= (player.discard?.length || 0)) {return state}
+    cardToMove = player.discard[idx]
     targetPlayerId = sourcePlayerId
     newDiscard = [...player.discard]
-    newDiscard.splice(cardIndex, 1)
+    newDiscard.splice(idx, 1)
     // Clear ALL statuses including Revealed when card goes to deck
     clearAllStatuses(cardToMove)
+  } else if (source === 'deck') {
+    // Moving from deck to deck (should be a no-op or reorder, but handle it)
+    return state
   }
 
   if (!cardToMove) {return state}
@@ -1304,10 +1332,26 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
 
   const newPlayers = state.players.map(p => {
     if (p.id === targetPlayerId) {
+      const updates: any = {}
+      // Add card to deck
       const newDeck = [cardToMove, ...(p.deck || [])]
-      return { ...p, deck: newDeck, deckSize: newDeck.length }
+      updates.deck = newDeck
+      updates.deckSize = newDeck.length
+
+      // If source and target are the same player, also update source arrays
+      if (p.id === sourcePlayerId) {
+        if (newHand !== null) {
+          updates.hand = newHand
+          updates.handSize = newHand.length
+        }
+        if (newDiscard !== null) {
+          updates.discard = newDiscard
+          updates.discardSize = newDiscard.length
+        }
+      }
+      return { ...p, ...updates }
     }
-    if (p.id === sourcePlayerId) {
+    if (p.id === sourcePlayerId && p.id !== targetPlayerId) {
       const updates: any = {}
       if (newHand !== null) {
         updates.hand = newHand
@@ -1333,9 +1377,7 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
  * MOVE_CARD_TO_DISCARD - move card from board/hand/deck to discard
  */
 function handleMoveCardToDiscard(state: GameState, playerId: number, data: any): GameState {
-  const { cardId, source, playerId: dataPlayerId } = data || {}
-  if (!cardId) {return state}
-
+  const { cardId, cardIndex, source, playerId: dataPlayerId } = data || {}
   // Use data.playerId if provided, otherwise fall back to sender's playerId
   const sourcePlayerId = dataPlayerId ?? playerId
   let cardToMove: Card | null = null
@@ -1347,6 +1389,7 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
   let ownerIdFromBoard: number | null = null
 
   if (source === 'board') {
+    if (!cardId) {return state}
     newBoard = state.board.map((row, _r) =>
       row.map((cell, _c) => {
         if (cell.card?.id === cardId) {
@@ -1357,8 +1400,8 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
             cardFromBoard = { ...foundCard, statuses: [...(foundCard.statuses || [])] }
             ownerIdFromBoard = foundCard.ownerId || playerId
             targetPlayerId = foundCard.ownerId || playerId
-            // Clear all statuses except Revealed when card leaves battlefield
-            clearAllStatusesExceptRevealed(foundCard)
+            // Clear ALL statuses including Revealed when card leaves battlefield to deck/discard
+            clearAllStatuses(foundCard)
           }
           return { card: null }
         }
@@ -1368,25 +1411,40 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
   } else if (source === 'hand') {
     const player = state.players.find(p => p.id === sourcePlayerId)
     if (!player) {return state}
-    const cardIndex = player.hand?.findIndex(c => c.id === cardId)
-    if (cardIndex === undefined || cardIndex === -1) {return state}
-    cardToMove = player.hand[cardIndex]
+    let idx: number
+    if (cardIndex !== undefined) {
+      idx = cardIndex
+    } else {
+      if (!cardId) {return state}
+      idx = player.hand?.findIndex(c => c.id === cardId) ?? -1
+    }
+    if (idx < 0 || idx >= (player.hand?.length || 0)) {return state}
+    cardToMove = player.hand[idx]
     targetPlayerId = sourcePlayerId
     newHand = [...player.hand]
-    newHand.splice(cardIndex, 1)
+    newHand.splice(idx, 1)
     // Clear ALL statuses including Revealed when card goes to discard
     clearAllStatuses(cardToMove)
   } else if (source === 'deck') {
     const player = state.players.find(p => p.id === sourcePlayerId)
     if (!player) {return state}
-    const cardIndex = player.deck?.findIndex(c => c.id === cardId)
-    if (cardIndex === undefined || cardIndex === -1) {return state}
-    cardToMove = player.deck[cardIndex]
+    let idx: number
+    if (cardIndex !== undefined) {
+      idx = cardIndex
+    } else {
+      if (!cardId) {return state}
+      idx = player.deck?.findIndex(c => c.id === cardId) ?? -1
+    }
+    if (idx < 0 || idx >= (player.deck?.length || 0)) {return state}
+    cardToMove = player.deck[idx]
     targetPlayerId = sourcePlayerId
     newDeck = [...player.deck]
-    newDeck.splice(cardIndex, 1)
+    newDeck.splice(idx, 1)
     // Clear ALL statuses including Revealed when card goes to discard
     clearAllStatuses(cardToMove)
+  } else if (source === 'discard') {
+    // Moving from discard to discard (should be a no-op or reorder, but handle it)
+    return state
   }
 
   if (!cardToMove) {return state}
@@ -1417,10 +1475,26 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
 
   const newPlayers = state.players.map(p => {
     if (p.id === targetPlayerId) {
+      const updates: any = {}
+      // Add card to discard
       const newDiscard = [...(p.discard || []), cardToMove]
-      return { ...p, discard: newDiscard, discardSize: newDiscard.length }
+      updates.discard = newDiscard
+      updates.discardSize = newDiscard.length
+
+      // If source and target are the same player, also update source arrays
+      if (p.id === sourcePlayerId) {
+        if (newHand !== null) {
+          updates.hand = newHand
+          updates.handSize = newHand.length
+        }
+        if (newDeck !== null) {
+          updates.deck = newDeck
+          updates.deckSize = newDeck.length
+        }
+      }
+      return { ...p, ...updates }
     }
-    if (p.id === sourcePlayerId) {
+    if (p.id === sourcePlayerId && p.id !== targetPlayerId) {
       const updates: any = {}
       if (newHand !== null) {
         updates.hand = newHand
@@ -1468,6 +1542,9 @@ function handleMoveHandCardToDeck(state: GameState, playerId: number, data: any)
     return { ...state, players: newPlayers }
   }
 
+  // Clear ALL statuses including Revealed when card goes to deck
+  clearAllStatuses(cardToMove)
+
   const newDeck = [cardToMove, ...player.deck]
 
   const newPlayers = state.players.map(p =>
@@ -1504,6 +1581,9 @@ function handleMoveHandCardToDiscard(state: GameState, playerId: number, data: a
     )
     return { ...state, players: newPlayers }
   }
+
+  // Clear ALL statuses including Revealed when card goes to discard
+  clearAllStatuses(cardToMove)
 
   const newDiscard = [...player.discard, cardToMove]
 
@@ -1569,6 +1649,9 @@ function handleMoveAnnouncedToDeck(state: GameState, playerId: number, data: any
     return { ...state, players: newPlayers }
   }
 
+  // Clear ALL statuses including Revealed when card goes to deck
+  clearAllStatuses(cardToMove)
+
   const newDeck = [cardToMove, ...player.deck]
 
   const newPlayers = state.players.map(p =>
@@ -1600,6 +1683,9 @@ function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, data: 
     )
     return { ...state, players: newPlayers }
   }
+
+  // Clear ALL statuses including Revealed when card goes to discard
+  clearAllStatuses(cardToMove)
 
   const newDiscard = [...player.discard, cardToMove]
 

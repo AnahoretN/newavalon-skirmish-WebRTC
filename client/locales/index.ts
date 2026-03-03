@@ -186,6 +186,7 @@ const enUI = {
   gameWillBegin: 'The game will begin once all players are ready. You can still change your name and deck.',
   dragCardsReorder: 'Drag cards to reorder. Drag outside to move card to another zone.',
   dragOutsideAnotherZone: 'Drag outside to move card to another zone.',
+  dropHere: 'Drop here',
   ready: 'Ready',
   dragOutsideToMove: 'Drag outside to move card to another zone.',
   empty: 'Empty',

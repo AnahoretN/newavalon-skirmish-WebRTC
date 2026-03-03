@@ -660,6 +660,13 @@ export function useGameState(_props: any = {}): UseGameStateResult {
         sendAction('MOVE_ANNOUNCED_TO_DECK', {
           playerId: item.playerId
         })
+      } else if (item.source === 'discard') {
+        // Из сброса в колоду
+        sendAction('MOVE_CARD_TO_DECK', {
+          cardIndex: item.cardIndex,
+          source: 'discard',
+          playerId: item.playerId
+        })
       }
     } else if (target.target === 'discard') {
       // Перемещение в сброс
@@ -680,6 +687,13 @@ export function useGameState(_props: any = {}): UseGameStateResult {
       } else if (item.source === 'announced') {
         // Из витрины в сброс
         sendAction('MOVE_ANNOUNCED_TO_DISCARD', {
+          playerId: item.playerId
+        })
+      } else if (item.source === 'deck') {
+        // Из колоды в сброс
+        sendAction('MOVE_CARD_TO_DISCARD', {
+          cardIndex: item.cardIndex,
+          source: 'deck',
           playerId: item.playerId
         })
       }
@@ -784,6 +798,13 @@ export function useGameState(_props: any = {}): UseGameStateResult {
         sendAction('MOVE_ANNOUNCED_TO_DECK', {
           playerId: item.playerId
         })
+      } else if (item.source === 'discard') {
+        // Из сброса в колоду
+        sendAction('MOVE_CARD_TO_DECK', {
+          cardIndex: item.cardIndex,
+          source: 'discard',
+          playerId: item.playerId
+        })
       }
     } else if (target.target === 'discard') {
       if (item.source === 'hand') {
@@ -802,6 +823,13 @@ export function useGameState(_props: any = {}): UseGameStateResult {
         }
       } else if (item.source === 'announced') {
         sendAction('MOVE_ANNOUNCED_TO_DISCARD', {
+          playerId: item.playerId
+        })
+      } else if (item.source === 'deck') {
+        // Из колоды в сброс
+        sendAction('MOVE_CARD_TO_DISCARD', {
+          cardIndex: item.cardIndex,
+          source: 'deck',
           playerId: item.playerId
         })
       }

@@ -703,7 +703,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       <div className="relative z-20">
                         <span className="text-base sm:text-lg font-bold">{getDeckSize()}</span>
                         {deckChangeDelta !== null && (
-                          <span key={deckChangeKey} className={`absolute left-full top-0 ml-1 text-base sm:text-lg font-bold animate-fade-out ${deckChangeDelta > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          <span key={deckChangeKey} className={`absolute left-full top-0 ml-1 text-base sm:text-lg font-bold animate-fade-out z-40 ${deckChangeDelta > 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {deckChangeDelta > 0 ? `+${deckChangeDelta}` : deckChangeDelta}
                           </span>
                         )}

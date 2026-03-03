@@ -226,6 +226,7 @@ export interface TranslationResource {
     gameWillBegin: string;
     dragCardsReorder: string;
     dragOutsideAnotherZone: string;
+    dropHere: string;
     ready: string;
     dragOutsideToMove: string;
     empty: string;

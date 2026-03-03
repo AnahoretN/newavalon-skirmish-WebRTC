@@ -213,6 +213,7 @@ export const sr: TranslationResource = {
     gameWillBegin: 'Igra će početi kada svi igrači budu spremni. I dalje možete promeniti ime i špil.',
     dragCardsReorder: 'Prevucite karte za ređanje. Prevucite napolje da biste premestili kartu u drugu zonu.',
     dragOutsideAnotherZone: 'Prevucite napolje da biste premestili kartu u drugu zonu.',
+    dropHere: 'Spusti ovde',
     ready: 'Spreman',
     dragOutsideToMove: 'Prevucite napolje da biste premestili kartu u drugu zonu.',
     empty: 'Prazno',
