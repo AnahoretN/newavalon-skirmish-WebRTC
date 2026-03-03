@@ -116,7 +116,7 @@
           "type": "deploy",
           "supportRequired": false,
           "action": "ENTER_MODE",
-          "mode": "RIOT_PUSH",
+          "mode": "PUSH",
           "details": {}
         },
         {

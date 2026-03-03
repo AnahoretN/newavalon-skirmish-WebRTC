@@ -282,9 +282,25 @@ export function buildActionFromContentAbility(
     case 'CREATE_STACK_MULTI': {
       // CREATE_STACK_MULTI places tokens on multiple cards matching a pattern
       // Modes: LINES_WITH_THREAT, LINES_WITH_SUPPORT
+      const mode = ability.mode || 'SELECT_TARGET'
+
+      // LINES_WITH_SUPPORT: Select a line, then place tokens on all Support cards in that line
+      if (mode === 'LINES_WITH_SUPPORT') {
+        return {
+          type: 'ENTER_MODE',
+          mode: 'SELECT_LINE_FOR_SUPPORT_TOKENS',
+          sourceCard: card,
+          sourceCoords: coords,
+          payload: {
+            ...details,
+            actionType: 'CREATE_STACK_MULTI'
+          }
+        } as AbilityAction
+      }
+
       return {
         type: 'ENTER_MODE',
-        mode: ability.mode || 'SELECT_TARGET',
+        mode,
         sourceCard: card,
         sourceCoords: coords,
         payload: {
@@ -389,10 +405,10 @@ export function buildActionFromContentAbility(
     }
 
     case 'PUSH':
-      // Push is handled by RIOT_PUSH mode
+      // Push mode
       return {
         type: 'ENTER_MODE',
-        mode: 'RIOT_PUSH',
+        mode: 'PUSH',
         sourceCard: card,
         sourceCoords: coords,
         payload: details

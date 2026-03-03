@@ -254,10 +254,11 @@ export function handleModeCardClick(
       abilityMode.mode !== 'IP_AGENT_THREAT_SCORING' &&
       abilityMode.mode !== 'SELECT_UNIT_FOR_MOVE' &&
       abilityMode.mode !== 'SELECT_TARGET' &&
-      abilityMode.mode !== 'RIOT_PUSH' &&
-      abilityMode.mode !== 'RIOT_MOVE' &&
+      abilityMode.mode !== 'PUSH' &&
+      abilityMode.mode !== 'PUSH_MOVE' &&
       abilityMode.mode !== 'REVEREND_DOUBLE_EXPLOIT' &&
-      abilityMode.mode !== 'SHIELD_SELF_THEN_RIOT_PUSH'
+      abilityMode.mode !== 'SHIELD_SELF_THEN_PUSH' &&
+      abilityMode.mode !== 'SELECT_LINE_FOR_SUPPORT_TOKENS'
   ) {
     return false
   }
@@ -312,19 +313,19 @@ export function handleModeCardClick(
     return handleSelectTargetActionType(card, boardCoords, props)
   }
 
-  // RIOT_PUSH
-  if (mode === 'RIOT_PUSH') {
-    return handleRiotPush(card, boardCoords, props)
+  // PUSH
+  if (mode === 'PUSH') {
+    return handlePush(card, boardCoords, props)
   }
 
-  // SHIELD_SELF_THEN_RIOT_PUSH (Reclaimed Gawain Deploy)
-  if (mode === 'SHIELD_SELF_THEN_RIOT_PUSH') {
-    return handleShieldSelfThenRiotPush(card, boardCoords, props)
+  // SHIELD_SELF_THEN_PUSH (Reclaimed Gawain Deploy)
+  if (mode === 'SHIELD_SELF_THEN_PUSH') {
+    return handleShieldSelfThenPush(card, boardCoords, props)
   }
 
-  // RIOT_MOVE
-  if (mode === 'RIOT_MOVE') {
-    return handleRiotMove(card, boardCoords, props)
+  // PUSH_MOVE
+  if (mode === 'PUSH_MOVE') {
+    return handlePushMove(card, boardCoords, props)
   }
 
   // SWAP_POSITIONS
@@ -422,7 +423,12 @@ export function handleModeCardClick(
     return handleLinesWithThreat(card, boardCoords, props)
   }
 
-  // LINES_WITH_SUPPORT (Signal Prophet)
+  // SELECT_LINE_FOR_SUPPORT_TOKENS (Signal Prophet Deploy)
+  if (mode === 'SELECT_LINE_FOR_SUPPORT_TOKENS') {
+    return handleSelectLineForSupportTokens(card, boardCoords, props)
+  }
+
+  // LINES_WITH_SUPPORT (Signal Prophet - legacy)
   if (mode === 'LINES_WITH_SUPPORT') {
     return handleLinesWithSupport(card, boardCoords, props)
   }
@@ -1069,14 +1075,14 @@ function handleSelectTargetActionType(
 }
 
 /**
- * Handle RIOT_PUSH mode
+ * Handle PUSH mode
  */
-function handleRiotPush(
+function handlePush(
   card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, gameState, setAbilityMode, moveItem, markAbilityUsed, interactionLock } = props
+  const { abilityMode, gameState, setAbilityMode, moveItem, markAbilityUsed, interactionLock, setTargetingMode } = props
 
   if (interactionLock.current) {
     return false
@@ -1123,29 +1129,80 @@ function handleRiotPush(
     return false
   }
 
+  // vacatedCoords is the cell where the pushed card was (before being pushed)
+  const vacatedCoords = boardCoords
+
   moveItem({ card, source: 'board', boardCoords, bypassOwnershipCheck: true }, { target: 'board', boardCoords: { row: targetRow, col: targetCol } })
-  setAbilityMode({
+
+  // Calculate valid targets for PUSH_MOVE
+  // Valid targets: sourceCoords (stay in place), vacatedCoords, and cells between them
+  const pushMoveTargets: {row: number, col: number}[] = []
+
+  // 1. Source coords (stay in place)
+  pushMoveTargets.push(sourceCoords)
+
+  // 2. Vacated coords
+  pushMoveTargets.push(vacatedCoords)
+
+  // 3. Intermediate cells (if source and vacated are more than 1 cell apart)
+  if (sourceCoords.row === vacatedCoords.row) {
+    // Same row - add intermediate columns
+    const minCol = Math.min(sourceCoords.col, vacatedCoords.col)
+    const maxCol = Math.max(sourceCoords.col, vacatedCoords.col)
+    for (let c = minCol + 1; c < maxCol; c++) {
+      // Only add if cell is empty
+      if (gameState.board[sourceCoords.row][c].card === null) {
+        pushMoveTargets.push({ row: sourceCoords.row, col: c })
+      }
+    }
+  } else if (sourceCoords.col === vacatedCoords.col) {
+    // Same column - add intermediate rows
+    const minRow = Math.min(sourceCoords.row, vacatedCoords.row)
+    const maxRow = Math.max(sourceCoords.row, vacatedCoords.row)
+    for (let r = minRow + 1; r < maxRow; r++) {
+      // Only add if cell is empty
+      if (gameState.board[r][sourceCoords.col].card === null) {
+        pushMoveTargets.push({ row: r, col: sourceCoords.col })
+      }
+    }
+  }
+
+  const pushMoveAction: AbilityAction = {
     type: 'ENTER_MODE',
-    mode: 'RIOT_MOVE',
+    mode: 'PUSH_MOVE',
     sourceCard,
     sourceCoords,
     isDeployAbility,
-    payload: { vacatedCoords: boardCoords }
-  })
+    payload: { vacatedCoords }
+  }
+
+  setAbilityMode(pushMoveAction)
+
+  // Set up targeting mode for PUSH_MOVE
+  const ownerId = sourceCard?.ownerId ?? 0
+  if (setTargetingMode) {
+    setTargetingMode(pushMoveAction, ownerId, sourceCoords, pushMoveTargets)
+  }
+
   return true
 }
 
 /**
- * Handle RIOT_MOVE mode (after push)
+ * Handle PUSH_MOVE mode (after push)
+ * Options:
+ * 1. Click on sourceCoords (pusher's cell) → stay in place
+ * 2. Click on vacated cell (where pushed card was) → move there
+ * 3. Click on intermediate cells (between source and vacated) → move there
+ * 4. Click elsewhere → cancel (finish ability)
  */
-function handleRiotMove(
+function handlePushMove(
   _card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, moveItem, markAbilityUsed, setAbilityMode } = props
+  const { abilityMode, moveItem, markAbilityUsed, setAbilityMode, clearTargetingMode } = props
 
-  if (!abilityMode || abilityMode.mode !== 'RIOT_MOVE') {
+  if (!abilityMode || abilityMode.mode !== 'PUSH_MOVE') {
     return false
   }
 
@@ -1155,31 +1212,70 @@ function handleRiotMove(
     return false
   }
 
+  // Option 1: Stay in place (click on sourceCoords)
+  if (boardCoords.row === sourceCoords.row && boardCoords.col === sourceCoords.col) {
+    clearTargetingMode()
+    markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+    return true
+  }
+
+  // Option 2: Move to vacated cell (where the pushed card was)
   if (boardCoords.row === payload.vacatedCoords.row && boardCoords.col === payload.vacatedCoords.col) {
-    // Move to vacated cell
+    clearTargetingMode()
     moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
     markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
     setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
     return true
   }
 
-  // If clicked elsewhere, cancel
+  // Option 3: Move to intermediate cells (between source and vacated)
+  // Check if source, vacated, and clicked are in a line (row or column)
+  const sameRow = sourceCoords.row === payload.vacatedCoords.row && payload.vacatedCoords.row === boardCoords.row
+  const sameCol = sourceCoords.col === payload.vacatedCoords.col && payload.vacatedCoords.col === boardCoords.col
+
+  if (sameRow) {
+    const minCol = Math.min(sourceCoords.col, payload.vacatedCoords.col)
+    const maxCol = Math.max(sourceCoords.col, payload.vacatedCoords.col)
+    if (boardCoords.col > minCol && boardCoords.col < maxCol) {
+      // Intermediate cell in the same row
+      clearTargetingMode()
+      moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
+      markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
+      setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+      return true
+    }
+  } else if (sameCol) {
+    const minRow = Math.min(sourceCoords.row, payload.vacatedCoords.row)
+    const maxRow = Math.max(sourceCoords.row, payload.vacatedCoords.row)
+    if (boardCoords.row > minRow && boardCoords.row < maxRow) {
+      // Intermediate cell in the same column
+      clearTargetingMode()
+      moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
+      markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
+      setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+      return true
+    }
+  }
+
+  // Option 4: If clicked elsewhere, cancel (finish ability)
+  clearTargetingMode()
   markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
   setAbilityMode(null)
   return true
 }
 
 /**
- * Handle SHIELD_SELF_THEN_RIOT_PUSH (Reclaimed Gawain Deploy)
+ * Handle SHIELD_SELF_THEN_PUSH (Reclaimed Gawain Deploy)
  * 1. Add Shield status to self (if not already added)
- * 2. Transition to RIOT_PUSH mode or perform push directly
+ * 2. Transition to PUSH mode or perform push directly
  *
  * IMPORTANT: If shieldApplied is true in payload, Shield was already added.
  * In that case:
  * - Self-click → cancel mode and mark ability as used (skip push)
  * - Adjacent opponent click → do push directly
  */
-function handleShieldSelfThenRiotPush(
+function handleShieldSelfThenPush(
   card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
@@ -1207,12 +1303,12 @@ function handleShieldSelfThenRiotPush(
       setAbilityMode(null)
       return true
     } else {
-      // Old behavior: add Shield and transition to RIOT_PUSH
+      // Old behavior: add Shield and transition to PUSH
       addBoardCardStatus(sourceCoords, 'Shield', ownerId)
 
-      const riotPushAction: AbilityAction = {
+      const pushAction: AbilityAction = {
         type: 'ENTER_MODE',
-        mode: 'RIOT_PUSH',
+        mode: 'PUSH',
         sourceCard,
         sourceCoords,
         isDeployAbility,
@@ -1220,9 +1316,9 @@ function handleShieldSelfThenRiotPush(
         payload: {}
       }
 
-      setAbilityMode(riotPushAction)
+      setAbilityMode(pushAction)
 
-      // Recalculate valid targets for RIOT_PUSH
+      // Recalculate valid targets for PUSH
       const dRow = sourceCoords.row
       const dCol = sourceCoords.col
       const preCalculatedTargets: {row: number, col: number}[] = []
@@ -1253,7 +1349,7 @@ function handleShieldSelfThenRiotPush(
         }
       }
 
-      setTargetingMode(riotPushAction, ownerId, sourceCoords, preCalculatedTargets, commandContext)
+      setTargetingMode(pushAction, ownerId, sourceCoords, preCalculatedTargets, commandContext)
       return true
     }
   }
@@ -1293,10 +1389,10 @@ function handleShieldSelfThenRiotPush(
     // Perform the push
     moveItem({ card, source: 'board', boardCoords, bypassOwnershipCheck: true }, { target: 'board', boardCoords: { row: targetRow, col: targetCol } })
 
-    // Transition to RIOT_MOVE mode (move into vacated cell)
+    // Transition to PUSH_MOVE mode (move into vacated cell or intermediate cells)
     setAbilityMode({
       type: 'ENTER_MODE',
-      mode: 'RIOT_MOVE',
+      mode: 'PUSH_MOVE',
       sourceCard,
       sourceCoords,
       isDeployAbility,
@@ -2490,6 +2586,81 @@ function handleLinesWithSupport(
       targetIndex: 0
     }
   })
+
+  return true
+}
+
+/**
+ * Handle SELECT_LINE_FOR_SUPPORT_TOKENS (Signal Prophet Deploy)
+ * Player selects a line (horizontal or vertical through source card),
+ * then Exploit tokens are placed on all ally cards with Support in that line
+ */
+function handleSelectLineForSupportTokens(
+  _card: Card,
+  boardCoords: { row: number; col: number },
+  props: ModeHandlersProps
+): boolean {
+  const { abilityMode, gameState, markAbilityUsed, setAbilityMode, addBoardCardStatus, clearTargetingMode } = props
+
+  if (!abilityMode || abilityMode.mode !== 'SELECT_LINE_FOR_SUPPORT_TOKENS') {
+    return false
+  }
+
+  const { sourceCoords, payload, isDeployAbility, readyStatusToRemove, sourceCard } = abilityMode
+  const ownerId = sourceCard?.ownerId ?? gameState.activePlayerId
+
+  if (!sourceCoords) {
+    return false
+  }
+
+  const { row: sourceRow, col: sourceCol } = sourceCoords
+  const { row: clickRow, col: clickCol } = boardCoords
+
+  // Check if clicked cell is in same row or column as source
+  const sameRow = clickRow === sourceRow
+  const sameCol = clickCol === sourceCol
+
+  if (!sameRow && !sameCol) {
+    // Clicked outside valid lines - cancel ability
+    clearTargetingMode()
+    markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    setAbilityMode(null)
+    return true
+  }
+
+  // Determine which line was selected
+  let targets: { row: number; col: number }[] = []
+  const gridSize = gameState.board.length
+
+  if (sameRow) {
+    // Horizontal line selected - find all cards with Support in this row
+    for (let c = 0; c < gridSize; c++) {
+      const cell = gameState.board[clickRow][c]
+      if (cell.card?.ownerId === ownerId && cell.card.statuses?.some((s: any) => s.type === 'Support')) {
+        targets.push({ row: clickRow, col: c })
+      }
+    }
+  } else {
+    // Vertical line selected - find all cards with Support in this column
+    for (let r = 0; r < gridSize; r++) {
+      const cell = gameState.board[r][clickCol]
+      if (cell.card?.ownerId === ownerId && cell.card.statuses?.some((s: any) => s.type === 'Support')) {
+        targets.push({ row: r, col: clickCol })
+      }
+    }
+  }
+
+  // Apply Exploit token to all targets
+  const tokenType = payload?.tokenType || 'Exploit'
+  const tokenOwnerId = ownerId ?? 0
+
+  for (const target of targets) {
+    addBoardCardStatus(target, tokenType, tokenOwnerId)
+  }
+
+  clearTargetingMode()
+  markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+  setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
 
   return true
 }

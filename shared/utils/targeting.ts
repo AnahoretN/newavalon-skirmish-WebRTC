@@ -625,8 +625,8 @@ export const calculateValidTargets = (
       }
     }
   }
-  // 3. Riot Push (Adjacent opponent who can be pushed into empty space)
-  else if (mode === 'RIOT_PUSH' && sourceCoords) {
+  // 3. Push (Adjacent opponent who can be pushed into empty space)
+  else if (mode === 'PUSH' && sourceCoords) {
     const neighbors = [
       { r: sourceCoords.row - 1, c: sourceCoords.col },
       { r: sourceCoords.row + 1, c: sourceCoords.col },
@@ -666,8 +666,8 @@ export const calculateValidTargets = (
       }
     })
   }
-  // 3b. SHIELD_SELF_THEN_RIOT_PUSH (Reclaimed Gawain - same as RIOT_PUSH but includes self as valid target)
-  else if (mode === 'SHIELD_SELF_THEN_RIOT_PUSH' && sourceCoords) {
+  // 3b. SHIELD_SELF_THEN_PUSH (Reclaimed Gawain - same as PUSH but includes self as valid target)
+  else if (mode === 'SHIELD_SELF_THEN_PUSH' && sourceCoords) {
     // Include self as valid target (clicking self just adds Shield)
     if (sourceCoords) {
       targets.push(sourceCoords)
@@ -1130,7 +1130,7 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
   // Even if there are no targets for secondary part (e.g., Aim), first part (Shield) still happens.
   if (action.mode === 'PRINCEPS_SHIELD_THEN_AIM' ||
          action.mode === 'SHIELD_SELF_THEN_SPAWN' ||
-         action.mode === 'SHIELD_SELF_THEN_RIOT_PUSH' ||
+         action.mode === 'SHIELD_SELF_THEN_PUSH' ||
          action.mode === 'ABR_DEPLOY_SHIELD_AIM' ||
          action.mode === 'GAWAIN_DEPLOY_SHIELD_AIM') {
     return true

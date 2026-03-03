@@ -377,20 +377,63 @@ export function handleEmptyCellClick(
     return true
   }
 
-  // === ABILITY MODE - RIOT_MOVE ===
-  if (abilityMode && abilityMode.mode === 'RIOT_MOVE') {
+  // === ABILITY MODE - PUSH_MOVE ===
+  if (abilityMode && abilityMode.mode === 'PUSH_MOVE') {
     const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove, payload } = abilityMode
 
     if (!sourceCoords || !sourceCard || !payload?.vacatedCoords) {return false}
 
+    // Option 1: Stay in place (click on sourceCoords)
+    if (boardCoords.row === sourceCoords.row && boardCoords.col === sourceCoords.col) {
+      clearTargetingMode()
+      markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+      setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+      return true
+    }
+
+    // Option 2: Move to vacated cell (where the pushed card was)
     if (boardCoords.row === payload.vacatedCoords.row && boardCoords.col === payload.vacatedCoords.col) {
+      clearTargetingMode()
       moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
       markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
       setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
       return true
     }
 
+    // Option 3: Move to intermediate cells (between source and vacated)
+    // Check if source, vacated, and clicked are in a line (row or column)
+    const sameRow = sourceCoords.row === payload.vacatedCoords.row && payload.vacatedCoords.row === boardCoords.row
+    const sameCol = sourceCoords.col === payload.vacatedCoords.col && payload.vacatedCoords.col === boardCoords.col
+
+    if (sameRow || sameCol) {
+      // Check if clicked cell is between source and vacated (inclusive, but we already handled exact positions above)
+      if (sameRow) {
+        const minCol = Math.min(sourceCoords.col, payload.vacatedCoords.col)
+        const maxCol = Math.max(sourceCoords.col, payload.vacatedCoords.col)
+        if (boardCoords.col > minCol && boardCoords.col < maxCol) {
+          // Intermediate cell in the same row
+          clearTargetingMode()
+          moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
+          markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
+          setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+          return true
+        }
+      } else if (sameCol) {
+        const minRow = Math.min(sourceCoords.row, payload.vacatedCoords.row)
+        const maxRow = Math.max(sourceCoords.row, payload.vacatedCoords.row)
+        if (boardCoords.row > minRow && boardCoords.row < maxRow) {
+          // Intermediate cell in the same column
+          clearTargetingMode()
+          moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
+          markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
+          setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+          return true
+        }
+      }
+    }
+
     // If clicked elsewhere, cancel
+    clearTargetingMode()
     markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
     setAbilityMode(null)
     return true
@@ -414,6 +457,70 @@ export function handleEmptyCellClick(
     }
 
     return false
+  }
+
+  // === ABILITY MODE - SELECT_LINE_FOR_SUPPORT_TOKENS ===
+  if (abilityMode && abilityMode.mode === 'SELECT_LINE_FOR_SUPPORT_TOKENS') {
+    const { sourceCoords, payload, isDeployAbility, readyStatusToRemove, sourceCard } = abilityMode
+    const { updateState } = props
+
+    if (!sourceCoords) {return false}
+    if (!updateState) {return false}
+
+    const ownerId = sourceCard?.ownerId ?? 0
+    const { row: sourceRow, col: sourceCol } = sourceCoords
+    const { row: clickRow, col: clickCol } = boardCoords
+
+    // Check if clicked cell is in same row or column as source
+    const sameRow = clickRow === sourceRow
+    const sameCol = clickCol === sourceCol
+
+    if (!sameRow && !sameCol) {
+      // Clicked outside valid lines - cancel ability
+      clearTargetingMode()
+      markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+      setAbilityMode(null)
+      return true
+    }
+
+    // Find all ally cards with Support in the selected line
+    let targets: { row: number; col: number }[] = []
+    const gridSize = gameState.board.length
+
+    if (sameRow) {
+      // Horizontal line selected
+      for (let c = 0; c < gridSize; c++) {
+        const cell = gameState.board[clickRow][c]
+        if (cell.card?.ownerId === ownerId && cell.card.statuses?.some((s: any) => s.type === 'Support')) {
+          targets.push({ row: clickRow, col: c })
+        }
+      }
+    } else {
+      // Vertical line selected
+      for (let r = 0; r < gridSize; r++) {
+        const cell = gameState.board[r][clickCol]
+        if (cell.card?.ownerId === ownerId && cell.card.statuses?.some((s: any) => s.type === 'Support')) {
+          targets.push({ row: r, col: clickCol })
+        }
+      }
+    }
+
+    // Apply Exploit token to all targets using ADD_BOARD_STATUS
+    const tokenType = payload?.tokenType || 'Exploit'
+
+    for (const target of targets) {
+      updateState({
+        type: 'ADD_BOARD_STATUS',
+        coords: target,
+        status: tokenType,
+        playerId: ownerId
+      })
+    }
+
+    clearTargetingMode()
+    markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+    return true
   }
 
   // === ABILITY MODE - RESURRECT_FROM_DISCARD ===

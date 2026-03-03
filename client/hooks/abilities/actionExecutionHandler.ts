@@ -434,7 +434,7 @@ function handleCreateStack(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
-  const { gameState, setAbilityMode, setCursorStack, triggerNoTarget, localPlayerId, setTargetingMode } = props
+  const { gameState, setAbilityMode, setCursorStack, triggerNoTarget, localPlayerId, setTargetingMode, addBoardCardStatus, markAbilityUsed, handleActionExecution: execAction } = props
 
   let count = action.count || 0
 
@@ -451,6 +451,54 @@ function handleCreateStack(
       })
     })
     count = dynamic
+  }
+
+  // CREATE_STACK_SELF: Add token directly to source card, then continue AUTO_STEPS
+  if ((action as any).onlySelf && action.sourceCoords) {
+    if (count > 0) {
+      const tokenType = action.tokenType || 'Aim'
+      let tokenOwnerId = action.sourceCard?.ownerId ?? localPlayerId ?? 0
+      if (!action.sourceCard?.ownerId && localPlayerId !== null) {
+        tokenOwnerId = localPlayerId
+      }
+
+      // Add token directly to source card
+      addBoardCardStatus(action.sourceCoords, tokenType, tokenOwnerId)
+      setAbilityMode(null)
+
+      // Mark ability as used (first step of AUTO_STEPS)
+      markAbilityUsed(action.sourceCoords, action.isDeployAbility, false, action.readyStatusToRemove)
+
+      // Continue to next AUTO_STEPS step
+      const autoStepsContext = action.payload?._autoStepsContext
+      if (autoStepsContext?.steps && autoStepsContext.currentStepIndex !== undefined) {
+        const nextStepIndex = autoStepsContext.currentStepIndex + 1
+        if (nextStepIndex < autoStepsContext.steps.length) {
+          // Execute next step
+          const nextStep = autoStepsContext.steps[nextStepIndex]
+          setTimeout(() => {
+            execAction({
+              type: 'ENTER_MODE',
+              mode: 'AUTO_STEPS',
+              payload: {
+                ...nextStep,
+                _autoStepsContext: {
+                  steps: autoStepsContext.steps,
+                  currentStepIndex: nextStepIndex,
+                  sourceCard: action.sourceCard,
+                }
+              },
+              sourceCard: action.sourceCard,
+              sourceCoords: action.sourceCoords,
+              isDeployAbility: action.isDeployAbility,
+            }, action.sourceCoords || { row: -1, col: -1 })
+          }, 100)
+        }
+      }
+    } else {
+      triggerNoTarget(sourceCoords)
+    }
+    return
   }
 
   if (count > 0) {
@@ -685,9 +733,9 @@ function handleEnterMode(
   const mode = action.mode
   const payload = action.payload || {}
 
-  // SHIELD_SELF_THEN_RIOT_PUSH (Reclaimed Gawain)
+  // SHIELD_SELF_THEN_PUSH (Reclaimed Gawain)
   // Add Shield immediately, then let user select adjacent opponent to push
-  if (mode === 'SHIELD_SELF_THEN_RIOT_PUSH') {
+  if (mode === 'SHIELD_SELF_THEN_PUSH') {
     const actorId = getSafePlayerId(action, localPlayerId)
     addBoardCardStatus(sourceCoords, 'Shield', actorId)
 
@@ -776,8 +824,8 @@ function handleEnterMode(
     return
   }
 
-  // RIOT_PUSH
-  if (mode === 'RIOT_PUSH') {
+  // PUSH
+  if (mode === 'PUSH') {
     // Check targets BEFORE activating targeting mode
     // This ensures "no target" is shown if there are no adjacent cards to push
     const hasPushTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
@@ -1117,6 +1165,30 @@ function handleEnterMode(
           return
         }
 
+        // PUSH action
+        if (nextStep.action === 'PUSH') {
+          const pushAction: AbilityAction = {
+            type: 'ENTER_MODE',
+            mode: 'PUSH',
+            sourceCard: action.sourceCard,
+            sourceCoords: action.sourceCoords,
+            isDeployAbility: action.isDeployAbility,
+            readyStatusToRemove: action.readyStatusToRemove,
+            payload: {
+              ...nextStep.details,
+              _autoStepsContext: {
+                steps: steps,
+                currentStepIndex: nextStepIndex + 1,
+                originalType: action.payload?.originalType,
+                supportRequired: action.payload?.supportRequired,
+                readyStatusToRemove: action.readyStatusToRemove
+              }
+            }
+          }
+          handleEnterMode(pushAction, sourceCoords, props)
+          return
+        }
+
         // Default interactive step handling
         const stepAction: AbilityAction = {
           type: 'ENTER_MODE',
@@ -1179,6 +1251,30 @@ function handleEnterMode(
       console.warn('[handleEnterMode] AUTO_STEPS has no steps defined')
       setAbilityMode(action)
     }
+    return
+  }
+
+  // SELECT_LINE_FOR_SUPPORT_TOKENS (Signal Prophet Deploy)
+  // Show horizontal and vertical lines through source card for selection
+  if (mode === 'SELECT_LINE_FOR_SUPPORT_TOKENS') {
+    const { row, col } = sourceCoords
+    const gridSize = gameState.board.length
+    const boardTargets: { row: number; col: number }[] = []
+
+    // Add all cells in horizontal line (same row)
+    for (let c = 0; c < gridSize; c++) {
+      boardTargets.push({ row, col: c })
+    }
+
+    // Add all cells in vertical line (same column)
+    for (let r = 0; r < gridSize; r++) {
+      boardTargets.push({ row: r, col })
+    }
+
+    console.log('[handleEnterMode] SELECT_LINE_FOR_SUPPORT_TOKENS', { sourceCoords, targetCount: boardTargets.length })
+
+    setAbilityMode(action)
+    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, boardTargets, commandContext)
     return
   }
 
