@@ -116,8 +116,12 @@ export function handleActionExecution(
   }
 
   // 2. Check Valid Targets (before CREATE_STACK)
-  // Skip check for SELECT_LINE_FOR_SUPPORT_COUNTERS and SELECT_LINE_FOR_THREAT_COUNTERS - they always have valid targets (the lines through source card)
-  const shouldSkipTargetCheck = action.type === 'ENTER_MODE' && (action.mode === 'SELECT_LINE_FOR_SUPPORT_COUNTERS' || action.mode === 'SELECT_LINE_FOR_THREAT_COUNTERS')
+  // Skip check for line selection modes - they always have valid targets (the lines through source card)
+  const shouldSkipTargetCheck = action.type === 'ENTER_MODE' && (
+    action.mode === 'SELECT_LINE_FOR_SUPPORT_COUNTERS' ||
+    action.mode === 'SELECT_LINE_FOR_THREAT_COUNTERS' ||
+    action.mode === 'SELECT_LINE_FOR_EXPLOIT_SCORING'
+  )
 
   if (!shouldSkipTargetCheck) {
     const hasTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)

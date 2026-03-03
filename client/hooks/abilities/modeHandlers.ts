@@ -252,6 +252,7 @@ export function handleModeCardClick(
       abilityMode.mode !== 'INTEGRATOR_LINE_SELECT' &&
       abilityMode.mode !== 'ZIUS_LINE_SELECT' &&
       abilityMode.mode !== 'IP_AGENT_THREAT_SCORING' &&
+      abilityMode.mode !== 'SELECT_LINE_FOR_EXPLOIT_SCORING' &&
       abilityMode.mode !== 'SELECT_UNIT_FOR_MOVE' &&
       abilityMode.mode !== 'SELECT_TARGET' &&
       abilityMode.mode !== 'PUSH' &&
@@ -2141,7 +2142,6 @@ function handleIntegratorLineSelect(
   } else if (sourceCoords) {
     for (let r = 0; r < gameState.board.length; r++) {
       const card = gameState.board[r][boardCoords.col].card
-      if (r === sourceCoords.row) {continue}
       if (card?.statuses) {
         exploitCount += card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
       }
@@ -2205,7 +2205,6 @@ function handleIpAgentThreatScoring(
   } else {
     for (let r = 0; r < gameState.board.length; r++) {
       const card = gameState.board[r][boardCoords.col].card
-      if (r === sourceCoords.row) {continue}
       if (card?.statuses) {
         threatCount += card.statuses.filter((s: any) => s.type === 'Threat' && s.addedByPlayerId === ownerId).length
       }
@@ -2271,7 +2270,6 @@ function handleSelectLineForExploitScoring(
   } else {
     for (let r = 0; r < gameState.board.length; r++) {
       const card = gameState.board[r][boardCoords.col].card
-      if (r === sourceCoords.row) {continue}
       if (card?.statuses) {
         exploitCount += card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
       }

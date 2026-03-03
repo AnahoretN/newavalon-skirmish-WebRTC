@@ -711,7 +711,6 @@ export function handleEmptyCellClick(
     } else {
       for (let r = 0; r < gridSize; r++) {
         const card = gameState.board[r][boardCoords.col].card
-        if (r === sourceCoords.row) {continue}
         if (card?.statuses) {
           exploitCount += card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
         }
@@ -778,7 +777,6 @@ export function handleEmptyCellClick(
     } else {
       for (let r = 0; r < gridSize; r++) {
         const card = gameState.board[r][boardCoords.col].card
-        if (r === sourceCoords.row) {continue}
         if (card?.statuses) {
           threatCount += card.statuses.filter((s: any) => s.type === 'Threat' && s.addedByPlayerId === ownerId).length
         }
@@ -825,7 +823,6 @@ export function handleEmptyCellClick(
     } else {
       for (let r = 0; r < gridSize; r++) {
         const card = gameState.board[r][boardCoords.col].card
-        if (r === sourceCoords.row) {continue}
         if (card?.statuses) {
           exploitCount += card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
         }
