@@ -116,19 +116,24 @@ export function handleActionExecution(
   }
 
   // 2. Check Valid Targets (before CREATE_STACK)
-  const hasTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+  // Skip check for SELECT_LINE_FOR_SUPPORT_TOKENS - it always has valid targets (the lines through source card)
+  const shouldSkipTargetCheck = action.type === 'ENTER_MODE' && action.mode === 'SELECT_LINE_FOR_SUPPORT_TOKENS'
 
-  if (!hasTargets) {
-    logger.info('[handleActionExecution] No valid targets for action', { type: action.type, mode: action.mode, payloadFilter: !!action.payload?.filter, payloadFilterString: action.payload?.filterString })
-    triggerNoTarget(sourceCoords)
-    // Only execute chained action if skipChainedActionOnNoTargets is not set
-    // This prevents abilities like Recon Drone Commit from creating token stacks when no valid targets exist
-    if (action.chainedAction && !action.skipChainedActionOnNoTargets) {
-      setTimeout(() => {
-        execAction(action.chainedAction!, sourceCoords)
-      }, 500)
+  if (!shouldSkipTargetCheck) {
+    const hasTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+
+    if (!hasTargets) {
+      logger.info('[handleActionExecution] No valid targets for action', { type: action.type, mode: action.mode, payloadFilter: !!action.payload?.filter, payloadFilterString: action.payload?.filterString })
+      triggerNoTarget(sourceCoords)
+      // Only execute chained action if skipChainedActionOnNoTargets is not set
+      // This prevents abilities like Recon Drone Commit from creating token stacks when no valid targets exist
+      if (action.chainedAction && !action.skipChainedActionOnNoTargets) {
+        setTimeout(() => {
+          execAction(action.chainedAction!, sourceCoords)
+        }, 500)
+      }
+      return
     }
-    return
   }
 
   // 3. CREATE_STACK
