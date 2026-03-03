@@ -10,7 +10,7 @@ import { checkActionHasTargets, calculateValidTargets } from '@shared/utils/targ
 import { logger } from '@/utils/logger'
 import { TIMING } from '@/utils/common'
 import { createTokenCursorStack } from '@/utils/tokenTargeting'
-import { executeInstantAutoStep, type AutoStep } from './modeHandlers.js'
+import { executeInstantAutoStep, advanceToNextStepWithCoords, type AutoStep } from './modeHandlers.js'
 
 export interface ActionHandlerProps {
   gameState: GameState
@@ -103,6 +103,12 @@ export function handleActionExecution(
     return
   }
 
+  // Handle CONTINUE_AUTO_STEPS - Continues AUTO_STEPS after cursorStack completion
+  if (action.type === 'CONTINUE_AUTO_STEPS') {
+    handleContinueAutoSteps(action, sourceCoords, props)
+    return
+  }
+
   // 1. GLOBAL_AUTO_APPLY
   if (action.type === 'GLOBAL_AUTO_APPLY') {
     handleGlobalAutoApply(action, sourceCoords, props)
@@ -180,6 +186,79 @@ function handleReverendSetupScore(
   }])
 
   markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+}
+
+/**
+ * Handle CONTINUE_AUTO_STEPS action
+ * Continues AUTO_STEPS sequence after cursorStack completion
+ * This enables abilities like Centurion Commit to continue after CREATE_STACK step
+ */
+function handleContinueAutoSteps(
+  action: AbilityAction,
+  sourceCoords: { row: number; col: number },
+  props: ActionHandlerProps
+): void {
+  const { gameState, setAbilityMode, setTargetingMode, commandContext, localPlayerId, markAbilityUsed, addBoardCardStatus, modifyBoardCardPower } = props
+
+  const autoStepsContext = action.payload?._autoStepsContext
+  if (!autoStepsContext || !autoStepsContext.steps) {
+    logger.warn('[handleContinueAutoSteps] No _autoStepsContext found')
+    markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+    return
+  }
+
+  const steps = autoStepsContext.steps
+  const currentStepIndex = autoStepsContext.currentStepIndex
+  const stepContext = action.payload?.stepContext
+
+  console.log('[handleContinueAutoSteps] Continuing AUTO_STEPS from index:', currentStepIndex, 'of', steps.length, 'steps')
+
+  // Check if there are more steps
+  if (currentStepIndex >= steps.length) {
+    // All steps complete!
+    console.log('[handleContinueAutoSteps] All steps complete, calling markAbilityUsed')
+    markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+    setAbilityMode(null)
+    return
+  }
+
+  const nextStep = steps[currentStepIndex]
+  console.log('[handleContinueAutoSteps] Processing next step:', nextStep.action, nextStep.mode)
+
+  // Create a temporary abilityMode for advanceToNextStepWithCoords
+  const tempAbilityMode: AbilityAction = {
+    type: 'ENTER_MODE',
+    mode: 'AUTO_STEPS',
+    sourceCard: action.sourceCard,
+    sourceCoords: action.sourceCoords,
+    isDeployAbility: action.isDeployAbility,
+    readyStatusToRemove: action.readyStatusToRemove,
+    payload: {
+      steps: steps,
+      currentStepIndex: currentStepIndex,
+      _autoStepsContext: autoStepsContext,
+    },
+  }
+
+  // Call advanceToNextStepWithCoords with the necessary props
+  // Type assertion: we pass a subset of ModeHandlersProps
+  advanceToNextStepWithCoords(
+    {
+      abilityMode: tempAbilityMode,
+      setAbilityMode,
+      markAbilityUsed,
+      gameState,
+      commandContext,
+      setTargetingMode,
+      calculateValidTargets,
+      localPlayerId,
+      addBoardCardStatus,
+      modifyBoardCardPower,
+    } as any,
+    sourceCoords,
+    currentStepIndex,
+    stepContext
+  )
 }
 
 /**
@@ -357,8 +436,6 @@ function handleCreateStack(
 ): void {
   const { gameState, setAbilityMode, setCursorStack, triggerNoTarget, localPlayerId, setTargetingMode } = props
 
-  console.log('[handleCreateStack] Called with action:', { type: action.type, tokenType: action.tokenType, count: action.count, targetOwnerId: action.targetOwnerId, sourceCoords: action.sourceCoords })
-
   let count = action.count || 0
 
   // Handle Dynamic Count
@@ -375,8 +452,6 @@ function handleCreateStack(
     })
     count = dynamic
   }
-
-  console.log('[handleCreateStack] Final count:', count)
 
   if (count > 0) {
     setAbilityMode(null)
@@ -413,6 +488,9 @@ function handleCreateStack(
       replaceStatus: action.replaceStatus,
       chainedAction: action.chainedAction,
       recordContext: action.recordContext,
+      // CRITICAL: Pass _autoStepsContext for AUTO_STEPS continuation after cursorStack completes
+      // This enables abilities like Centurion Commit to continue after CREATE_STACK step
+      _autoStepsContext: action.payload?._autoStepsContext,
     }
 
     const tokenType = action.tokenType || 'Aim'
@@ -887,19 +965,16 @@ function handleEnterMode(
   }
 
   // AUTO_STEPS (Generic multi-step ability system)
-  // Handles Edith Byron Deploy, Centurion Commit, and other multi-step abilities
+  // Handles Edith Byron Deploy, Centurion Commit, Princeps Deploy, and other multi-step abilities
   if (mode === 'AUTO_STEPS') {
     console.log('[handleEnterMode] AUTO_STEPS activation for', action.sourceCard?.baseId)
 
     const steps = action.payload?.steps as AutoStep[] | undefined
     if (steps && steps.length > 0) {
       const firstStep = steps[0]
-      console.log('[handleEnterMode] First step:', firstStep)
 
       // If first step is instant (no mode), execute it immediately
       if (!firstStep.mode) {
-        console.log('[handleEnterMode] Executing instant first step:', firstStep.action)
-
         // Use the universal instant step handler
         const ownerId = getSafePlayerId(action, localPlayerId)
         const result = executeInstantAutoStep(
@@ -916,7 +991,7 @@ function handleEnterMode(
         )
 
         if (!result.success) {
-          console.warn('[handleEnterMode] Instant step failed:', result.message)
+          console.warn('[handleEnterMode] Instant step failed:', firstStep.action, result.message)
         }
 
         // Now process the next step
@@ -924,13 +999,12 @@ function handleEnterMode(
 
         // If there are no more steps, mark ability as used
         if (nextStepIndex >= steps.length) {
-          console.log('[handleEnterMode] All instant steps complete')
           markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
           return
         }
 
         const nextStep = steps[nextStepIndex]
-        console.log('[handleEnterMode] Processing next step:', nextStep)
+        console.log('[handleEnterMode] Processing next step:', nextStep.action, nextStep.mode)
 
         // If next step is also instant, execute it recursively
         if (!nextStep.mode) {
@@ -975,11 +1049,71 @@ function handleEnterMode(
                 steps: steps,
                 currentStepIndex: nextStepIndex + 1,
                 originalType: action.payload?.originalType,
-                supportRequired: action.payload?.supportRequired
+                supportRequired: action.payload?.supportRequired,
+                readyStatusToRemove: action.readyStatusToRemove
               }
             }
           }
           handleOpenModal(tokenAction, sourceCoords, props)
+          return
+        }
+
+        if (nextStep.action === 'CREATE_STACK') {
+          // CREATE_STACK needs special handling to create token cursor stack
+          // Properties must be at action level (not in payload) for handleCreateStack to read them
+          const mustBeInLineWithSource = nextStep.mode === 'LINE_TARGET' ? true : undefined
+          const mustBeAdjacentToSource = nextStep.mode === 'ADJACENT_TARGET' ? true : undefined
+
+          const stackAction: AbilityAction = {
+            type: 'CREATE_STACK',
+            tokenType: nextStep.details?.tokenType,
+            count: nextStep.details?.count || 1,
+            mustBeInLineWithSource,
+            mustBeAdjacentToSource,
+            sourceCard: action.sourceCard,
+            sourceCoords: action.sourceCoords,
+            isDeployAbility: action.isDeployAbility,
+            readyStatusToRemove: action.readyStatusToRemove,
+            payload: {
+              ...nextStep.details,
+              _autoStepsContext: {
+                steps: steps,
+                currentStepIndex: nextStepIndex + 1,
+                originalType: action.payload?.originalType,
+                supportRequired: action.payload?.supportRequired,
+                readyStatusToRemove: action.readyStatusToRemove
+              }
+            }
+          }
+          handleCreateStack(stackAction, sourceCoords, props)
+
+          // Also set abilityMode to SELECT_TARGET so handleSelectTargetWithToken
+          // is called when target is clicked, which handles AUTO_STEPS continuation
+          const selectTargetAction: AbilityAction = {
+            type: 'ENTER_MODE',
+            mode: 'SELECT_TARGET',
+            sourceCard: action.sourceCard,
+            sourceCoords: action.sourceCoords,
+            isDeployAbility: action.isDeployAbility,
+            readyStatusToRemove: action.readyStatusToRemove,
+            payload: {
+              ...nextStep.details,
+              tokenType: nextStep.details?.tokenType,
+              count: nextStep.details?.count || 1,
+              mustBeInLineWithSource,
+              mustBeAdjacentToSource,
+              filter: nextStep.details?.filter,
+              _autoStepsContext: {
+                steps: steps,
+                currentStepIndex: nextStepIndex + 1,
+                originalType: action.payload?.originalType,
+                supportRequired: action.payload?.supportRequired,
+                readyStatusToRemove: action.readyStatusToRemove
+              }
+            }
+          }
+          const targets = calculateValidTargets(selectTargetAction, gameState, ownerId, commandContext)
+          setTargetingMode(selectTargetAction, ownerId, sourceCoords, targets, commandContext)
           return
         }
 
@@ -1001,7 +1135,8 @@ function handleEnterMode(
               steps: steps,
               currentStepIndex: nextStepIndex + 1,
               originalType: action.payload?.originalType,
-              supportRequired: action.payload?.supportRequired
+              supportRequired: action.payload?.supportRequired,
+              readyStatusToRemove: action.readyStatusToRemove
             }
           }
         }
@@ -1011,13 +1146,34 @@ function handleEnterMode(
         setTargetingMode(stepAction, ownerId, sourceCoords, targets, commandContext)
         return
       } else {
-        // First step is interactive - set mode and wait for player input
-        console.log('[handleEnterMode] First step is interactive, setting mode:', firstStep.mode)
-        setAbilityMode(action)
+        // First step is interactive - create proper action with the step's mode
+        const stepAction: AbilityAction = {
+          type: 'ENTER_MODE',
+          mode: firstStep.mode || 'SELECT_TARGET',
+          sourceCard: action.sourceCard,
+          sourceCoords: action.sourceCoords,
+          isDeployAbility: action.isDeployAbility,
+          readyStatusToRemove: action.readyStatusToRemove,
+          payload: {
+            ...firstStep.details,
+            tokenType: firstStep.details?.tokenType,
+            count: firstStep.details?.count,
+            mustBeInLineWithSource: firstStep.mode === 'LINE_TARGET' ? true : undefined,
+            mustBeAdjacentToSource: firstStep.mode === 'ADJACENT_TARGET' ? true : undefined,
+            _autoStepsContext: {
+              steps: steps,
+              currentStepIndex: 1,
+              originalType: action.payload?.originalType,
+              supportRequired: action.payload?.supportRequired,
+              readyStatusToRemove: action.readyStatusToRemove
+            }
+          }
+        }
+        setAbilityMode(stepAction)
 
         // Calculate targets for the interactive mode
-        const targets = calculateValidTargets(action, gameState, getSafePlayerId(action, localPlayerId), commandContext)
-        setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, targets, commandContext)
+        const targets = calculateValidTargets(stepAction, gameState, getSafePlayerId(action, localPlayerId), commandContext)
+        setTargetingMode(stepAction, getSafePlayerId(action, localPlayerId), sourceCoords, targets, commandContext)
       }
     } else {
       console.warn('[handleEnterMode] AUTO_STEPS has no steps defined')

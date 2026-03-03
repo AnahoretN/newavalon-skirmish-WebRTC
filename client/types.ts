@@ -366,6 +366,7 @@ export interface CursorStackState {
     recordContext?: boolean; // Optional: If true, saves the target to CommandContext
     replaceStatus?: boolean; // If true, replace the requiredTargetStatus with type (e.g., Censor: Exploit -> Stun)
     originalOwnerId?: number; // The owner of the card that initiated the action (for multi-step commands)
+    _autoStepsContext?: any; // AUTO_STEPS context for continuing multi-step abilities after cursorStack completes (e.g., Centurion Commit)
 }
 
 /**
@@ -374,6 +375,7 @@ export interface CursorStackState {
 export interface CommandContext {
     lastMovedCardCoords?: { row: number, col: number };
     lastMovedCardId?: string; // To track power of moved card
+    sourceOwnerId?: number; // Owner of the ability source (e.g., Centurion's owner for BUFF_LINES_FROM_CONTEXT)
     selectedHandCard?: { playerId: number, cardIndex: number }; // For Quick Response Team
 }
 
@@ -394,7 +396,7 @@ export interface CounterSelectionData {
  * Represents a structured action for the auto-ability system.
  */
 export type AbilityAction = {
-    type: 'CREATE_STACK' | 'ENTER_MODE' | 'OPEN_MODAL' | 'GLOBAL_AUTO_APPLY' | 'ABILITY_COMPLETE' | 'REVEREND_SETUP_SCORE' | 'MODIFY_SCORE';
+    type: 'CREATE_STACK' | 'ENTER_MODE' | 'OPEN_MODAL' | 'GLOBAL_AUTO_APPLY' | 'ABILITY_COMPLETE' | 'REVEREND_SETUP_SCORE' | 'MODIFY_SCORE' | 'CONTINUE_AUTO_STEPS';
     mode?: string;
     tokenType?: string;
     count?: number;

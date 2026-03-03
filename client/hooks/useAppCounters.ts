@@ -7,7 +7,7 @@ interface UseAppCountersProps {
     gameState: GameState;
     localPlayerId: number | null;
     handleDrop: (item: DragItem, target: DropTarget) => void;
-    markAbilityUsed: (coords: { row: number, col: number }, isDeployAbility?: boolean, setDeployAttempted?: boolean) => void;
+    markAbilityUsed: (coords: { row: number; col: number }, isDeployAbility?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void;
     requestCardReveal: (data: any, playerId: number) => void;
     interactionLock: React.MutableRefObject<boolean>;
     setCommandContext: React.Dispatch<React.SetStateAction<CommandContext>>;

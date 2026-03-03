@@ -7,7 +7,7 @@
  * - Works in both P2P and WebSocket modes
  */
 
-import { useCallback, useRef, useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import { flushSync } from 'react-dom'
 import type { HighlightData, FloatingTextData, TargetingModeData, AbilityAction, CommandContext, GameState } from '../types'
 import { SimpleVisualEffects } from '../p2p/SimpleVisualEffects'

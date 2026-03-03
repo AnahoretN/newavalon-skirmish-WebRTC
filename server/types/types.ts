@@ -358,6 +358,7 @@ export interface CursorStackState {
 export interface CommandContext {
     lastMovedCardCoords?: { row: number, col: number };
     lastMovedCardId?: string; // To track power of moved card
+    sourceOwnerId?: number; // Owner of the ability source (e.g., Centurion's owner for BUFF_LINES_FROM_CONTEXT)
     selectedHandCard?: { playerId: number, cardIndex: number }; // For Quick Response Team
 }
 

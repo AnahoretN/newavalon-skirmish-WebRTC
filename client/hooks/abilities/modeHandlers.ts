@@ -11,6 +11,19 @@ import { TIMING } from '@/utils/common'
 import { createTokenCursorStack } from '@/utils/tokenTargeting'
 import { handleLineSelection as handleLineSelectionModule } from './lineSelectionHandlers.js'
 
+// Track cards that are transitioning from AUTO_STEPS to actual mode
+// Prevents infinite re-processing due to asynchronous React state updates
+const transitioningCards = new Set<string>()
+
+/**
+ * Clear a card from transitioning set (call after state updates)
+ */
+function clearTransitioning(cardId: string, delay: number = 100) {
+  setTimeout(() => {
+    transitioningCards.delete(cardId)
+  }, delay)
+}
+
 /**
  * Step definition from contentDatabase.json AUTO_STEPS abilities
  */
@@ -55,11 +68,13 @@ export function executeInstantAutoStep(
   step: AutoStep,
   sourceCoords: { row: number; col: number } | undefined,
   ownerId: number,
-  props: InstantStepProps
+  props: InstantStepProps,
+  stepContext?: { lastMovedCardCoords?: { row: number; col: number }; sourceOwnerId?: number; lastMovedCardId?: string }
 ): InstantStepResult {
   const { gameState, commandContext, addBoardCardStatus, modifyBoardCardPower } = props
 
-  console.log('[executeInstantAutoStep] Executing:', step.action, step.details)
+  // Use stepContext if provided (from AUTO_STEPS), otherwise fall back to commandContext
+  const context = stepContext || commandContext
 
   switch (step.action) {
     case 'CREATE_STACK_SELF': {
@@ -77,31 +92,36 @@ export function executeInstantAutoStep(
       for (let i = 0; i < count; i++) {
         addBoardCardStatus(sourceCoords, tokenType, ownerId)
       }
-      console.log('[executeInstantAutoStep] CREATE_STACK_SELF: Added', count, tokenType, 'to self')
       return { success: true, shouldAdvance: true }
     }
 
     case 'BUFF_LINES_FROM_CONTEXT': {
-      // Buff all allies in the lines of a card from commandContext
+      // Buff all allies in the lines of a card from context
       // Used by Centurion's multi-step ability
+      console.log('[executeInstantAutoStep] BUFF_LINES_FROM_CONTEXT executing')
       const amount = step.details?.amount || 1
-      const buffOriginCoords = commandContext?.lastMovedCardCoords
+      const buffOriginCoords = context?.lastMovedCardCoords
 
       if (!buffOriginCoords) {
-        console.warn('[executeInstantAutoStep] BUFF_LINES_FROM_CONTEXT: No coordinates in commandContext')
+        console.warn('[executeInstantAutoStep] BUFF_LINES_FROM_CONTEXT: No coordinates in context')
         return { success: false, shouldAdvance: true }
       }
 
-      const targetOwnerId = parseInt(commandContext?.lastMovedCardId || '0')
+      // Use sourceOwnerId (Centurion's owner) - this determines whose allies get buffed
+      // If not set, fall back to lastMovedCardId (sacrificed card's owner)
+      const buffOwnerId = context?.sourceOwnerId ?? parseInt(context?.lastMovedCardId || '0')
       const gridSize = gameState.board.length
       const { row: r1, col: c1 } = buffOriginCoords
       let buffedCount = 0
+
+      console.log('[executeInstantAutoStep] BUFF_LINES_FROM_CONTEXT:', { buffOwnerId, origin: buffOriginCoords, amount })
 
       // Buff all cards in the same row
       for (let c = 0; c < gridSize; c++) {
         const cell = gameState.board[r1]?.[c]
         const targetCard = cell?.card
-        if (targetCard && targetCard.ownerId === targetOwnerId) {
+        if (targetCard && targetCard.ownerId === buffOwnerId) {
+          console.log('[executeInstantAutoStep] Buffing row card:', targetCard.baseId, 'at', { row: r1, col: c })
           modifyBoardCardPower({ row: r1, col: c }, amount)
           buffedCount++
         }
@@ -112,13 +132,14 @@ export function executeInstantAutoStep(
         if (r === r1) continue
         const cell = gameState.board[r]?.[c1]
         const targetCard = cell?.card
-        if (targetCard && targetCard.ownerId === targetOwnerId) {
+        if (targetCard && targetCard.ownerId === buffOwnerId) {
+          console.log('[executeInstantAutoStep] Buffing col card:', targetCard.baseId, 'at', { row: r, col: c1 })
           modifyBoardCardPower({ row: r, col: c1 }, amount)
           buffedCount++
         }
       }
 
-      console.log('[executeInstantAutoStep] BUFF_LINES_FROM_CONTEXT: Buffed', buffedCount, 'cards')
+      console.log('[executeInstantAutoStep] BUFF_LINES_FROM_CONTEXT complete, buffed', buffedCount, 'cards')
       return { success: true, shouldAdvance: true }
     }
 
@@ -127,6 +148,23 @@ export function executeInstantAutoStep(
       // Unknown actions still advance to avoid getting stuck
       return { success: false, shouldAdvance: true, message: 'Unknown action: ' + step.action }
   }
+}
+
+/**
+ * Minimal props for AUTO_STEPS continuation (used by CONTINUE_AUTO_STEPS action)
+ * Only includes the props actually used by advanceToNextStepWithCoords
+ */
+export interface ContinueAutoStepsProps {
+  abilityMode: AbilityAction | null
+  setAbilityMode: React.Dispatch<React.SetStateAction<AbilityAction | null>>
+  markAbilityUsed: (coords: { row: number; col: number }, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void
+  gameState: GameState
+  commandContext: CommandContext
+  setTargetingMode: (action: AbilityAction, playerId: number, sourceCoords?: { row: number; col: number }, preCalculatedTargets?: {row: number, col: number}[], commandContext?: CommandContext, preCalculatedHandTargets?: {playerId: number, cardIndex: number}[]) => void
+  calculateValidTargets?: (action: AbilityAction, gameState: GameState, ownerId: number, commandContext?: CommandContext) => {row: number, col: number}[]
+  localPlayerId: number | null
+  addBoardCardStatus: (coords: {row: number, col: number}, status: string, pid: number) => void
+  modifyBoardCardPower: (coords: {row: number, col: number}, delta: number) => void
 }
 
 export interface ModeHandlersProps {
@@ -171,6 +209,7 @@ export interface ModeHandlersProps {
   handleLineSelection: (coords: {row: number; col: number }) => void
   setTargetingMode: (action: AbilityAction, playerId: number, sourceCoords?: { row: number; col: number }, preCalculatedTargets?: {row: number, col: number}[], commandContext?: CommandContext, preCalculatedHandTargets?: {playerId: number, cardIndex: number}[]) => void
   clearTargetingMode: () => void
+  calculateValidTargets?: (action: AbilityAction, gameState: GameState, ownerId: number, commandContext?: CommandContext) => {row: number, col: number}[]
   updateState?: (stateOrFn: any) => void
   nextPhase?: (forceTurnPass?: boolean) => void
   scoreLine?: (r1: number, c1: number, r2: number, c2: number, pid: number) => void
@@ -188,21 +227,22 @@ export function handleModeCardClick(
   props: ModeHandlersProps
 ): boolean {
   const {
-    gameState: _gameState,
+    gameState,
     localPlayerId: _localPlayerId,
     abilityMode,
     interactionLock,
     handleLineSelection: _handleLineSelection,
   } = props
 
-  console.log('[handleModeCardClick] Called with card:', card.name, 'abilityMode:', abilityMode?.mode)
+  console.log('[handleModeCardClick] Called for', card.baseId, 'mode:', abilityMode?.mode, 'type:', abilityMode?.type)
 
   if (!abilityMode || abilityMode.type !== 'ENTER_MODE') {
-    console.log('[handleModeCardClick] No abilityMode or wrong type:', abilityMode?.type)
+    console.log('[handleModeCardClick] Returning false - no ENTER_MODE')
     return false
   }
 
   if (interactionLock.current) {
+    console.log('[handleModeCardClick] Returning false - interaction locked')
     return false
   }
 
@@ -404,7 +444,37 @@ export function handleModeCardClick(
 
   // AUTO_STEPS (Generic multi-step ability system)
   if (mode === 'AUTO_STEPS') {
-    return handleAutoSteps(card, boardCoords, props)
+    // Check if this ability is transitioning to a new mode
+    const transitionKey = `${abilityMode?.sourceCard?.id}-${abilityMode?.sourceCoords?.row}-${abilityMode?.sourceCoords?.col}`
+    if (transitioningCards.has(transitionKey)) {
+      // Skip AUTO_STEPS processing, but check if there's a targeting mode to use instead
+      const targetingMode = gameState.targetingMode
+      if (targetingMode && targetingMode.action.mode !== 'AUTO_STEPS') {
+        // Use the targeting mode action to process this click
+        const mode = targetingMode.action.mode
+        const payload = targetingMode.action.payload
+
+        // CRITICAL: Create a modified props with the targeting mode's action
+        // The handlers expect abilityMode to match the current mode, not AUTO_STEPS
+        const modifiedProps = {
+          ...props,
+          abilityMode: targetingMode.action
+        }
+
+        // Handle SELECT_TARGET with tokenType
+        if (mode === 'SELECT_TARGET' && payload.tokenType) {
+          return handleSelectTargetWithToken(card, boardCoords, modifiedProps)
+        }
+        // Handle other SELECT_TARGET actionTypes
+        if (mode === 'SELECT_TARGET') {
+          return handleSelectTargetActionType(card, boardCoords, modifiedProps)
+        }
+      }
+      // If no targeting mode or can't handle, return false
+      return false
+    } else {
+      return handleAutoSteps(card, boardCoords, props)
+    }
   }
 
   return false
@@ -476,13 +546,15 @@ function handleSelectTargetWithToken(
 
 /**
  * Continue AUTO_STEPS after a mode completes
+ * @param stepContext - Optional context data from previous step (e.g., lastMovedCardCoords, sourceOwnerId)
  */
-function advanceToNextStepWithCoords(
+export function advanceToNextStepWithCoords(
   props: ModeHandlersProps,
   completedCoords: { row: number; col: number },
-  nextStepIndex: number
+  nextStepIndex: number,
+  stepContext?: { lastMovedCardCoords?: { row: number; col: number }; sourceOwnerId?: number }
 ): void {
-  const { abilityMode, setAbilityMode, markAbilityUsed } = props
+  const { abilityMode, setAbilityMode, markAbilityUsed, gameState, commandContext, setTargetingMode, calculateValidTargets } = props
 
   if (!abilityMode) return
 
@@ -492,54 +564,125 @@ function advanceToNextStepWithCoords(
   const autoStepsContext = payload._autoStepsContext
   const steps = autoStepsContext.steps
   const sourceCard = abilityMode.sourceCard
-  const sourceCoords = completedCoords || abilityMode.sourceCoords
+  // CRITICAL: Always use abilityMode.sourceCoords (original card position), NOT completedCoords
+  // completedCoords is where the action completed (e.g., destroyed card location), not the source card
+  const sourceCoords = abilityMode.sourceCoords
+
+  // Use readyStatusToRemove from autoStepsContext if not set at action level
+  const readyStatusToRemove = abilityMode.readyStatusToRemove ?? autoStepsContext.readyStatusToRemove
+
+  // Debug logging
+  console.log('[advanceToNextStepWithCoords] Entry:', {
+    nextStepIndex,
+    stepsLength: steps?.length,
+    steps: steps?.map((s: AutoStep) => ({ action: s.action, mode: s.mode })),
+    abilityModeReadyStatus: abilityMode.readyStatusToRemove,
+    autoStepsContextReadyStatus: autoStepsContext.readyStatusToRemove,
+    finalReadyStatus: readyStatusToRemove,
+    sourceCoords
+  })
+
+  // Debug logging for Centurion Commit
+  if (autoStepsContext.originalType === 'commit') {
+    console.log('[advanceToNextStepWithCoords] COMMIT ability:', {
+      stepIndex: nextStepIndex,
+      totalSteps: steps.length,
+      readyStatusToRemove,
+      abilityModeReadyStatus: abilityMode.readyStatusToRemove,
+      autoStepsContextReadyStatus: autoStepsContext.readyStatusToRemove,
+      sourceCoords: completedCoords || abilityMode.sourceCoords
+    })
+  }
 
   // Check if there are more steps
   if (nextStepIndex >= steps.length) {
     // All steps complete!
-    console.log('[AUTO_STEPS] All steps complete, marking ability as used')
-    markAbilityUsed(sourceCoords || { row: 0, col: 0 }, abilityMode.isDeployAbility, false, abilityMode.readyStatusToRemove)
+    console.log('[advanceToNextStepWithCoords] All steps complete, calling markAbilityUsed with readyStatusToRemove:', readyStatusToRemove)
+    markAbilityUsed(sourceCoords || { row: 0, col: 0 }, abilityMode.isDeployAbility, false, readyStatusToRemove)
     setAbilityMode(null)
     return
   }
 
   const nextStep = steps[nextStepIndex]
-  console.log('[AUTO_STEPS] Advancing to step', nextStepIndex, ':', nextStep.action, nextStep.mode)
 
   // If next step has no mode, execute instantly
   if (!nextStep.mode) {
-    // Execute instant step and continue
-    setTimeout(() => {
-      // Re-enter AUTO_STEPS with incremented index
-      setAbilityMode({
-        type: 'ENTER_MODE',
-        mode: 'AUTO_STEPS',
-        sourceCard,
-        sourceCoords,
-        isDeployAbility: abilityMode.isDeployAbility,
-        readyStatusToRemove: abilityMode.readyStatusToRemove,
-        payload: {
-          steps: steps,
-          currentStepIndex: nextStepIndex,
-          originalType: autoStepsContext.originalType,
-          supportRequired: autoStepsContext.supportRequired
-        }
-      })
-      // Trigger instant step execution
-      setTimeout(() => {
-        if (sourceCard && sourceCoords) {
-          // This will be handled by the handleModeCardClick which will call handleAutoSteps
-          // We trigger a click on the source card to continue
-        }
-      }, 10)
-    }, 10)
+    console.log('[advanceToNextStepWithCoords] Executing instant step:', nextStep.action, 'index:', nextStepIndex)
+
+    // Execute instant step directly
+    const ownerId = sourceCard?.ownerId ?? gameState.activePlayerId ?? props.localPlayerId ?? 0
+    const result = executeInstantAutoStep(
+      nextStep,
+      sourceCoords,
+      ownerId,
+      {
+        gameState,
+        localPlayerId: props.localPlayerId,
+        commandContext: props.commandContext,
+        addBoardCardStatus: props.addBoardCardStatus,
+        modifyBoardCardPower: props.modifyBoardCardPower,
+      },
+      stepContext  // Pass stepContext to instant step (for BUFF_LINES_FROM_CONTEXT)
+    )
+
+    if (!result.success) {
+      console.warn('[advanceToNextStepWithCoords] Instant step failed:', result.message)
+    }
+
+    // Check if there are more steps after this instant step
+    const followingStepIndex = nextStepIndex + 1
+    console.log('[advanceToNextStepWithCoords] After instant step:', {
+      followingStepIndex,
+      stepsLength: steps.length,
+      isComplete: followingStepIndex >= steps.length,
+      readyStatusToRemove
+    })
+    if (followingStepIndex >= steps.length) {
+      // All steps complete!
+      console.log('[advanceToNextStepWithCoords] All steps complete! Calling markAbilityUsed:', readyStatusToRemove)
+      markAbilityUsed(sourceCoords || { row: 0, col: 0 }, abilityMode.isDeployAbility, false, readyStatusToRemove)
+      setAbilityMode(null)
+      return
+    }
+
+    // Continue to the step after this instant step
+    console.log('[advanceToNextStepWithCoords] Continuing to following step:', followingStepIndex)
+    advanceToNextStepWithCoords(props, sourceCoords || { row: 0, col: 0 }, followingStepIndex)
+    return
   } else {
     // Enter next interactive mode
-    // const ownerId = sourceCard?.ownerId ?? gameState.activePlayerId  // Not used yet
+    const ownerId = sourceCard?.ownerId ?? gameState.activePlayerId ?? props.localPlayerId ?? 0
 
     // Handle special action types
     let stepAction: AbilityAction
-    if (nextStep.action === "CREATE_TOKEN") {
+
+    // Handle CREATE_STACK - keep as CREATE_STACK to trigger handleCreateStack (cursor stack)
+    if (nextStep.action === "CREATE_STACK") {
+      const details = nextStep.details || {}
+      stepAction = {
+        type: "CREATE_STACK",
+        mode: "SELECT_TARGET",
+        sourceCard,
+        sourceCoords,
+        isDeployAbility: abilityMode.isDeployAbility,
+        readyStatusToRemove: readyStatusToRemove,
+        tokenType: details.tokenType,
+        count: details.count || 1,
+        targetOwnerId: sourceCard?.ownerId,
+        mustBeInLineWithSource: nextStep.mode === "LINE_TARGET" ? true : undefined,
+        mustBeAdjacentToSource: nextStep.mode === "ADJACENT_TARGET" ? true : undefined,
+        payload: {
+          ...nextStep.details,
+          _autoStepsContext: {
+            steps: steps,
+            currentStepIndex: nextStepIndex + 1,
+            originalType: autoStepsContext.originalType,
+            supportRequired: autoStepsContext.supportRequired,
+            readyStatusToRemove: readyStatusToRemove
+          }
+        }
+      }
+    } else if (nextStep.action === "CREATE_TOKEN") {
       // CREATE_TOKEN needs to be converted to OPEN_MODAL with PLACE_TOKEN mode
       stepAction = {
         type: "OPEN_MODAL",
@@ -547,7 +690,7 @@ function advanceToNextStepWithCoords(
         sourceCard,
         sourceCoords,
         isDeployAbility: abilityMode.isDeployAbility,
-        readyStatusToRemove: abilityMode.readyStatusToRemove,
+        readyStatusToRemove: readyStatusToRemove,
         payload: {
           ...nextStep.details,
           tokenId: nextStep.details?.tokenId,
@@ -556,19 +699,26 @@ function advanceToNextStepWithCoords(
             steps: steps,
             currentStepIndex: nextStepIndex + 1,
             originalType: autoStepsContext.originalType,
-            supportRequired: autoStepsContext.supportRequired
+            supportRequired: autoStepsContext.supportRequired,
+            readyStatusToRemove: readyStatusToRemove
           }
         }
       }
     } else {
-      // Default interactive step handling
+      // Default interactive step handling (SACRIFICE_TARGET, etc.)
+      // CRITICAL: Normalize LINE_TARGET and ADJACENT_TARGET to SELECT_TARGET
+      // These are targeting constraints, not separate modes. The constraint is stored in payload.
+      const normalizedMode = (nextStep.mode === "LINE_TARGET" || nextStep.mode === "ADJACENT_TARGET")
+        ? "SELECT_TARGET"
+        : (nextStep.mode || "SELECT_TARGET")
+
       stepAction = {
         type: 'ENTER_MODE',
-        mode: nextStep.mode || 'SELECT_TARGET',
+        mode: normalizedMode,
         sourceCard,
         sourceCoords,
         isDeployAbility: abilityMode.isDeployAbility,
-        readyStatusToRemove: abilityMode.readyStatusToRemove,
+        readyStatusToRemove: readyStatusToRemove,
         payload: {
           ...nextStep.details,
           tokenType: nextStep.details?.tokenType,
@@ -579,13 +729,27 @@ function advanceToNextStepWithCoords(
             steps: steps,
             currentStepIndex: nextStepIndex + 1,
             originalType: autoStepsContext.originalType,
-            supportRequired: autoStepsContext.supportRequired
+            supportRequired: autoStepsContext.supportRequired,
+            readyStatusToRemove: readyStatusToRemove
           }
         }
       }
     }
 
     setAbilityMode(stepAction)
+
+    // Mark source card as transitioning to prevent infinite re-processing
+    if (sourceCard && sourceCoords) {
+      const transitionKey = `${sourceCard.id}-${sourceCoords.row}-${sourceCoords.col}`
+      transitioningCards.add(transitionKey)
+      clearTransitioning(transitionKey, 200)
+    }
+
+    // Update targeting mode to show valid targets for the new mode
+    if (setTargetingMode && calculateValidTargets) {
+      const validTargets = calculateValidTargets(stepAction, gameState, ownerId, commandContext)
+      setTargetingMode(stepAction, ownerId, sourceCoords, validTargets, commandContext)
+    }
   }
 }
 
@@ -599,6 +763,8 @@ function handleSelectTargetActionType(
 ): boolean {
   const { abilityMode, markAbilityUsed, setAbilityMode, moveItem, modifyBoardCardPower, addBoardCardStatus, removeBoardCardStatus, removeBoardCardStatusByOwner, removeStatusByType, resetDeployStatus, setCounterSelectionData, handleActionExecution, gameState, destroyCard, setCommandContext } = props
   const { payload, sourceCoords, isDeployAbility, readyStatusToRemove } = abilityMode!
+
+  console.log('[handleSelectTargetActionType] Called with actionType:', payload?.actionType, 'card:', card.baseId, 'coords:', boardCoords)
 
   const actorId = abilityMode!.sourceCard?.ownerId ?? (gameState.players.find(p => p.id === gameState.activePlayerId)?.isDummy ? gameState.activePlayerId : props.localPlayerId || gameState.activePlayerId)
 
@@ -618,43 +784,54 @@ function handleSelectTargetActionType(
   // SACRIFICE_TARGET (Step 1 of Centurion's multi-step ability)
   // Sacrifices a card and stores its coordinates for the next step
   if (payload.actionType === 'SACRIFICE_TARGET') {
-    console.log('[SACRIFICE_TARGET] Starting execution')
-    console.log('[SACRIFICE_TARGET] Selected card:', card.name, 'at', boardCoords)
+    console.log('[handleSelectTargetActionType] SACRIFICE_TARGET processing for', card.baseId)
 
     // CRITICAL: payload.filter may be a string (e.g., "isOwner") instead of a function
     // Skip local filter check if filter is not a function - calculateValidTargets will handle it
     if (payload.filter && typeof payload.filter === 'function' && !payload.filter(card, boardCoords.row, boardCoords.col)) {
-      console.log('[SACRIFICE_TARGET] Filter failed')
+      console.log('[handleSelectTargetActionType] Filter failed for', card.baseId)
       return false
     }
 
     // Get the owner of the card being sacrificed
     const sacrificedOwnerId = card.ownerId
-    console.log('[SACRIFICE_TARGET] Sacrificed card owner ID:', sacrificedOwnerId)
+    // Get the source card owner (Centurion's owner) - this is whose allies get buffed
+    const sourceOwnerId = abilityMode!.sourceCard?.ownerId ?? actorId ?? 0
 
-    // Sacrifice - send selected card to its owner's discard
-    console.log('[SACRIFICE_TARGET] Moving card to discard')
-    moveItem({
-      card,
-      source: 'board',
-      boardCoords,
-      bypassOwnershipCheck: true,
-      playerId: sacrificedOwnerId,
-    }, {
-      target: 'discard',
-      playerId: sacrificedOwnerId,
+    console.log('[handleSelectTargetActionType] Sacrificing', card.baseId, 'owner:', sacrificedOwnerId, 'sourceOwnerId:', sourceOwnerId)
+
+    // Check for Shield - protect from sacrifice
+    const hasShield = card.statuses?.some(s => s.type === 'Shield')
+    if (hasShield) {
+      console.log('[handleSelectTargetActionType] Card has Shield, removing instead')
+      // Remove Shield and stop - card is not sacrificed
+      removeBoardCardStatus(boardCoords, 'Shield')
+      // Mark ability as used since we consumed it
+      markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
+      setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+      return true
+    }
+
+    // Store the sacrificed card's coordinates AND the source owner BEFORE destroying
+    // This will be used to buff lines in the BUFF_LINES_FROM_CONTEXT step
+    const stepContext = {
+      lastMovedCardCoords: boardCoords,
+      sourceOwnerId: sourceOwnerId  // Owner of Centurion (whose allies get buffed)
+    }
+    setCommandContext({
+      lastMovedCardCoords: boardCoords,
+      lastMovedCardId: (sacrificedOwnerId ?? 0).toString(),
+      sourceOwnerId: sourceOwnerId ?? undefined
     })
 
-    // Store the sacrificed card's coordinates for the next step
-    // This will be used to buff lines in the BUFF_LINES_FROM_CONTEXT step
-    console.log('[SACRIFICE_TARGET] Storing sacrificed card coordinates:', boardCoords)
-    setCommandContext({ lastMovedCardCoords: boardCoords, lastMovedCardId: (sacrificedOwnerId ?? 0).toString() })
+    // Destroy the card - sends to owner's discard and handles cleanup
+    destroyCard(card, boardCoords)
 
     // Continue to next step in AUTO_STEPS
     const autoStepsContext = payload._autoStepsContext
     if (autoStepsContext && autoStepsContext.steps) {
-      console.log('[SACRIFICE_TARGET] Continuing to next step')
-      advanceToNextStepWithCoords(props, boardCoords, autoStepsContext.currentStepIndex)
+      console.log('[handleSelectTargetActionType] Continuing to next step, index:', autoStepsContext.currentStepIndex)
+      advanceToNextStepWithCoords(props, boardCoords, autoStepsContext.currentStepIndex, stepContext)
       return true
     }
 
@@ -666,23 +843,16 @@ function handleSelectTargetActionType(
 
   // SACRIFICE_AND_BUFF_LINES (Centurion) - Legacy single-step version
   if (payload.actionType === 'SACRIFICE_AND_BUFF_LINES') {
-    console.log('[SACRIFICE_AND_BUFF_LINES] Starting execution')
-    console.log('[SACRIFICE_AND_BUFF_LINES] Selected card:', card.name, 'at', boardCoords)
-    console.log('[SACRIFICE_AND_BUFF_LINES] Source coords:', sourceCoords)
-    console.log('[SACRIFICE_AND_BUFF_LINES] Source card:', abilityMode!.sourceCard?.name)
 
     if (payload.filter && !payload.filter(card, boardCoords.row, boardCoords.col)) {
-      console.log('[SACRIFICE_AND_BUFF_LINES] Filter failed')
       return false
     }
 
     // Get the owner of Centurion (the card performing the ability)
     const centurionOwnerId = abilityMode!.sourceCard?.ownerId ?? actorId
-    console.log('[SACRIFICE_AND_BUFF_LINES] Centurion owner ID:', centurionOwnerId)
 
     // Sacrifice - send selected card to its owner's discard
     // IMPORTANT: playerId must be in item (first param) for MOVE_CARD_TO_DISCARD action
-    console.log('[SACRIFICE_AND_BUFF_LINES] Moving card to discard')
     moveItem({
       card,
       source: 'board',
@@ -699,20 +869,15 @@ function handleSelectTargetActionType(
     const gridSize = gameState.board.length
     // Use Centurion's coordinates (sourceCoords), not the sacrificed card's coordinates
     const { row: r1, col: c1 } = sourceCoords || boardCoords
-    console.log('[SACRIFICE_AND_BUFF_LINES] Buff origin coords:', { r1, c1 })
-    console.log('[SACRIFICE_AND_BUFF_LINES] Grid size:', gridSize)
 
     let buffedCount = 0
 
     // Buff all cards in the same row (except Centurion itself)
-    console.log('[SACRIFICE_AND_BUFF_LINES] Checking row', r1, 'for allies')
     for (let c = 0; c < gridSize; c++) {
       const cell = gameState.board[r1][c]
       const targetCard = cell.card
       if (targetCard) {
-        console.log('[SACRIFICE_AND_BUFF_LINES] Cell at', { r: r1, c }, 'has card:', targetCard.name, 'ownerId:', targetCard.ownerId, 'centurionOwnerId:', centurionOwnerId)
         if (targetCard.ownerId === centurionOwnerId) {
-          console.log('[SACRIFICE_AND_BUFF_LINES] Buffing card at', { row: r1, col: c })
           modifyBoardCardPower({ row: r1, col: c }, 1)
           buffedCount++
         }
@@ -720,22 +885,18 @@ function handleSelectTargetActionType(
     }
 
     // Buff all cards in the same column (except Centurion itself which was already buffed)
-    console.log('[SACRIFICE_AND_BUFF_LINES] Checking column', c1, 'for allies')
     for (let r = 0; r < gridSize; r++) {
       if (r === r1) {continue} // Skip the row we already processed
       const cell = gameState.board[r][c1]
       const targetCard = cell.card
       if (targetCard) {
-        console.log('[SACRIFICE_AND_BUFF_LINES] Cell at', { r, c: c1 }, 'has card:', targetCard.name, 'ownerId:', targetCard.ownerId, 'centurionOwnerId:', centurionOwnerId)
         if (targetCard.ownerId === centurionOwnerId) {
-          console.log('[SACRIFICE_AND_BUFF_LINES] Buffing card at', { row: r, col: c1 })
           modifyBoardCardPower({ row: r, col: c1 }, 1)
           buffedCount++
         }
       }
     }
 
-    console.log('[SACRIFICE_AND_BUFF_LINES] Total cards buffed:', buffedCount)
 
     markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
     setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
@@ -765,22 +926,49 @@ function handleSelectTargetActionType(
 
   // DESTROY
   if (payload.actionType === 'DESTROY') {
-    if (payload.filter && !payload.filter(card, boardCoords.row, boardCoords.col)) {
+    // Check filter - may be a string (e.g., "isOwner") or function
+    if (payload.filter && typeof payload.filter === 'function' && !payload.filter(card, boardCoords.row, boardCoords.col)) {
       return false
     }
 
-    const hasShield = card.statuses?.some(s => s.type === 'Shield')
-    if (hasShield) {
-      // Shield protects the card - remove Shield and stop
-      removeBoardCardStatus(boardCoords, 'Shield')
-      markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
-      setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
-      return true
+    // Check for Shield - unless ignored by ability (e.g., Centurion Commit)
+    if (!payload.ignoreShield) {
+      const hasShield = card.statuses?.some(s => s.type === 'Shield')
+      if (hasShield) {
+        // Shield protects the card - remove Shield and stop
+        removeBoardCardStatus(boardCoords, 'Shield')
+        markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
+        setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+        return true
+      }
+    }
+
+    // Store coordinates for potential AUTO_STEPS continuation (Centurion Commit)
+    let stepContext: { lastMovedCardCoords: { row: number; col: number }; sourceOwnerId: number } | undefined
+    if (payload.recordContext) {
+      const sourceOwnerId = abilityMode!.sourceCard?.ownerId ?? actorId ?? 0
+      stepContext = {
+        lastMovedCardCoords: boardCoords,
+        sourceOwnerId: sourceOwnerId
+      }
+      setCommandContext({
+        lastMovedCardCoords: boardCoords,
+        lastMovedCardId: (card.ownerId ?? 0).toString(),
+        sourceOwnerId: sourceOwnerId ?? undefined
+      })
     }
 
     // No Shield - destroy the card (send to discard)
     // destroyCard removes Aim token (consumed by ability) and sends card to owner's discard in one atomic operation
     destroyCard(card, boardCoords)
+
+    // Check for AUTO_STEPS continuation
+    const autoStepsContext = payload._autoStepsContext
+    if (autoStepsContext && autoStepsContext.steps) {
+      console.log('[handleSelectTargetActionType] DESTROY continuing to next step, index:', autoStepsContext.currentStepIndex)
+      advanceToNextStepWithCoords(props, boardCoords, autoStepsContext.currentStepIndex, stepContext)
+      return true
+    }
 
     markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
     setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
@@ -854,7 +1042,6 @@ function handleSelectTargetActionType(
     // with targetOwnerId set to the selected card's owner
     // IMPORTANT: Pass sourceCard to ensure correct token ownership
     if (abilityMode?.chainedAction) {
-      console.log('[REVEAL_ENEMY_CHAINED] abilityMode.chainedAction:', abilityMode.chainedAction)
       const chainedAction: AbilityAction = {
         type: abilityMode.chainedAction.type || 'CREATE_STACK',
         tokenType: abilityMode.chainedAction.tokenType || 'Revealed',
@@ -863,9 +1050,8 @@ function handleSelectTargetActionType(
         sourceCoords: sourceCoords || boardCoords,
         sourceCard: abilityMode.sourceCard, // Pass the source card (Recon Drone) for token ownership
         isDeployAbility: abilityMode.isDeployAbility,
-        readyStatusToRemove: abilityMode.readyStatusToRemove,
+        readyStatusToRemove: readyStatusToRemove,
       }
-      console.log('[REVEAL_ENEMY_CHAINED] Executing chained action:', chainedAction)
       handleActionExecution(chainedAction, boardCoords)
       // Chained action will set up the token placement mode and handle completion
       // Don't clear mode here - let the chained action's flow complete
@@ -1423,43 +1609,36 @@ function handleSwapAdjacent(
 ): boolean {
   const { abilityMode, gameState, swapCards, setAbilityMode } = props
 
-  console.log('[handleSwapAdjacent] Called with card:', card.name, 'boardCoords:', boardCoords)
 
   if (!abilityMode || abilityMode.mode !== 'SWAP_ADJACENT') {
-    console.log('[handleSwapAdjacent] Wrong mode:', abilityMode?.mode)
     return false
   }
 
   const { sourceCoords, sourceCard } = abilityMode
 
   if (!sourceCoords || sourceCoords.row < 0) {
-    console.log('[handleSwapAdjacent] Invalid sourceCoords:', sourceCoords)
     return false
   }
 
   const actualSourceCard = gameState.board[sourceCoords.row][sourceCoords.col].card
   if (!actualSourceCard || actualSourceCard.id !== sourceCard?.id) {
-    console.log('[handleSwapAdjacent] Source card mismatch')
     setAbilityMode(null)
     return false
   }
 
   // Don't swap with self
   if (sourceCard && sourceCard.id === card.id) {
-    console.log('[handleSwapAdjacent] Cannot swap with self')
     return false
   }
 
   // Check if target is adjacent
   const isAdj = Math.abs(boardCoords.row - sourceCoords.row) + Math.abs(boardCoords.col - sourceCoords.col) === 1
   if (!isAdj) {
-    console.log('[handleSwapAdjacent] Not adjacent')
     return false
   }
 
   // Check if target is valid (has a card)
   if (!card || !gameState.board[boardCoords.row][boardCoords.col].card) {
-    console.log('[handleSwapAdjacent] No card at target')
     return false
   }
 
@@ -1468,12 +1647,10 @@ function handleSwapAdjacent(
   if (targetingModeTargets && targetingModeTargets.length > 0) {
     const isValidTarget = targetingModeTargets.some(t => t.row === boardCoords.row && t.col === boardCoords.col)
     if (!isValidTarget) {
-      console.log('[handleSwapAdjacent] Not in targetingMode.boardTargets', { targetingModeTargets, boardCoords })
       return false
     }
   }
 
-  console.log('[handleSwapAdjacent] Calling swapCards with', sourceCoords, boardCoords)
 
   // Swap positions
   swapCards(sourceCoords, boardCoords)
@@ -2396,7 +2573,7 @@ function handleAutoSteps(
   _boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, gameState, addBoardCardStatus, setAbilityMode, commandContext, modifyBoardCardPower } = props
+  const { abilityMode, gameState, addBoardCardStatus, setAbilityMode, commandContext, modifyBoardCardPower, setTargetingMode, calculateValidTargets } = props
 
   if (!abilityMode || abilityMode.mode !== "AUTO_STEPS") {
     return false
@@ -2411,16 +2588,13 @@ function handleAutoSteps(
   const currentStepIndex = payload.currentStepIndex || 0
   const currentStep = payload.steps[currentStepIndex]
 
-  console.log("[AUTO_STEPS] Processing step", currentStepIndex + 1, "of", payload.steps.length, ":", currentStep)
 
   // Get the owner ID for this ability
   const ownerId = sourceCard?.ownerId ?? gameState.activePlayerId ?? props.localPlayerId ?? 0
 
-  console.log("[AUTO_STEPS] sourceCoords:", sourceCoords, "sourceCard:", sourceCard, "ownerId:", ownerId)
 
   // INSTANT STEPS (no mode) - execute automatically and move to next step
   if (!currentStep.mode) {
-    console.log("[AUTO_STEPS] Executing instant step:", currentStep.action)
 
     // Use the universal instant step handler
     const instantStepProps: InstantStepProps = {
@@ -2440,9 +2614,15 @@ function handleAutoSteps(
   }
 
   // INTERACTIVE STEPS (with mode) - enter the mode and wait for player input
+  // CRITICAL: Normalize LINE_TARGET and ADJACENT_TARGET to SELECT_TARGET
+  // These are targeting constraints, not separate modes. The constraint is stored in payload.
+  const normalizedMode = (currentStep.mode === "LINE_TARGET" || currentStep.mode === "ADJACENT_TARGET")
+    ? "SELECT_TARGET"
+    : (currentStep.mode || "SELECT_TARGET")
+
   const stepAction: AbilityAction = {
     type: "ENTER_MODE",
-    mode: currentStep.mode || "SELECT_TARGET",
+    mode: normalizedMode,
     sourceCard,
     sourceCoords,
     isDeployAbility,
@@ -2453,24 +2633,32 @@ function handleAutoSteps(
         steps: payload.steps,
         currentStepIndex: currentStepIndex + 1,
         originalType: abilityMode.payload?.originalType,
-        supportRequired: abilityMode.payload?.supportRequired
+        supportRequired: abilityMode.payload?.supportRequired,
+        readyStatusToRemove: readyStatusToRemove
       }
     }
   }
 
-  // Handle special action types
+  // Handle CREATE_STACK - keep as CREATE_STACK, add targeting constraints
+  // This will trigger handleCreateStack which creates the cursor stack
   if (currentStep.action === "CREATE_STACK" && currentStep.mode) {
-    const mode = currentStep.mode
     const details = currentStep.details || {}
-    if (mode === "LINE_TARGET") {
-      stepAction.payload.mustBeInLineWithSource = true
-    } else if (mode === "ADJACENT_TARGET") {
-      stepAction.payload.mustBeAdjacentToSource = true
+    // Change type to CREATE_STACK (not OPEN_MODAL) so handleCreateStack is called
+    stepAction.type = "CREATE_STACK"
+    stepAction.count = details.count || 1  // handleCreateStack reads action.count
+    stepAction.tokenType = details.tokenType  // handleCreateStack reads action.tokenType
+    stepAction.sourceCard = sourceCard  // handleCreateStack needs this
+    stepAction.sourceCoords = sourceCoords  // handleCreateStack needs this
+    stepAction.isDeployAbility = isDeployAbility
+    stepAction.readyStatusToRemove = readyStatusToRemove
+    if (currentStep.mode === "LINE_TARGET") {
+      stepAction.mustBeInLineWithSource = true
+    } else if (currentStep.mode === "ADJACENT_TARGET") {
+      stepAction.mustBeAdjacentToSource = true
     }
-    stepAction.payload.tokenType = details.tokenType
-    stepAction.payload.count = details.count || 1
   }
 
+  // Handle CREATE_TOKEN - also transform to OPEN_MODAL/PLACE_TOKEN
   if (currentStep.action === "CREATE_TOKEN") {
     stepAction.type = "OPEN_MODAL"
     stepAction.mode = "PLACE_TOKEN"
@@ -2483,14 +2671,32 @@ function handleAutoSteps(
         steps: payload.steps,
         currentStepIndex: currentStepIndex + 1,
         originalType: abilityMode.payload?.originalType,
-        supportRequired: abilityMode.payload?.supportRequired
+        supportRequired: abilityMode.payload?.supportRequired,
+        readyStatusToRemove: readyStatusToRemove
       }
     }
   }
 
   setAbilityMode(stepAction)
-  console.log("[AUTO_STEPS] Entering mode for step", currentStepIndex, ":", currentStep.mode)
-  return true
+
+  // Mark source card as transitioning to prevent infinite re-processing
+  // CRITICAL: Add this BEFORE setTargetingMode so it's active immediately
+  if (sourceCard && sourceCoords) {
+    const transitionKey = `${sourceCard.id}-${sourceCoords.row}-${sourceCoords.col}`
+    transitioningCards.add(transitionKey)
+    clearTransitioning(transitionKey, 200)
+  }
+
+  // Update targeting mode to show valid targets for the new mode
+  if (setTargetingMode && calculateValidTargets) {
+    const validTargets = calculateValidTargets(stepAction, gameState, ownerId, commandContext)
+    setTargetingMode(stepAction, ownerId, sourceCoords, validTargets, commandContext)
+  }
+
+  // CRITICAL: Return false for interactive steps!
+  // This allows the click to be processed by the actual mode handler (e.g., handleSelectTargetActionType)
+  // The targeting mode and abilityMode will be updated by the next click
+  return false
 }
 
 /**
@@ -2500,7 +2706,7 @@ function advanceToNextStep(
   props: ModeHandlersProps,
   completedStepIndex: number
 ): void {
-  const { abilityMode, setAbilityMode, markAbilityUsed } = props
+  const { abilityMode, setAbilityMode, markAbilityUsed, gameState, commandContext, setTargetingMode, calculateValidTargets } = props
 
   if (!abilityMode || abilityMode.mode !== "AUTO_STEPS") {
     return
@@ -2511,12 +2717,14 @@ function advanceToNextStep(
     return
   }
 
+  // Use readyStatusToRemove from _autoStepsContext if not set at action level
+  const readyStatusToRemove = abilityMode.readyStatusToRemove ?? payload._autoStepsContext?.readyStatusToRemove
+
   const nextStepIndex = completedStepIndex + 1
 
   if (nextStepIndex >= payload.steps.length) {
     // All steps complete!
-    console.log("[AUTO_STEPS] All steps complete, marking ability as used")
-    const { sourceCoords, isDeployAbility, readyStatusToRemove } = abilityMode
+    const { sourceCoords, isDeployAbility } = abilityMode
     markAbilityUsed(sourceCoords || { row: 0, col: 0 }, isDeployAbility, false, readyStatusToRemove)
     setAbilityMode(null)
     return
@@ -2526,28 +2734,59 @@ function advanceToNextStep(
 
   // If next step has no mode, execute it instantly
   if (!nextStep.mode) {
-    console.log("[AUTO_STEPS] Next step has no mode, executing instantly:", nextStep.action)
-    setAbilityMode({
-      ...abilityMode,
-      payload: {
-        ...payload,
-        currentStepIndex: nextStepIndex
-      }
-    })
+    // Execute instant step immediately without setTimeout
+    const sourceCard = abilityMode.sourceCard
+    const sourceCoords = abilityMode.sourceCoords
+    const ownerId = sourceCard?.ownerId ?? gameState.activePlayerId ?? props.localPlayerId ?? 0
 
-    setTimeout(() => {
-      const sourceCard = abilityMode.sourceCard
-      if (sourceCard && abilityMode.sourceCoords) {
-        handleAutoSteps(sourceCard, abilityMode.sourceCoords, props)
-      }
-    }, 0)
+    const instantStepProps = {
+      gameState,
+      localPlayerId: props.localPlayerId,
+      commandContext,
+      addBoardCardStatus: props.addBoardCardStatus,
+      modifyBoardCardPower: props.modifyBoardCardPower,
+    }
+
+    const result = executeInstantAutoStep(nextStep, sourceCoords, ownerId, instantStepProps)
+
+    if (result.shouldAdvance) {
+      // Recursively advance to next step (might be another instant step or an interactive step)
+      advanceToNextStep(props, nextStepIndex)
+    }
+    return
   } else {
     // Next step requires player interaction
-    console.log("[AUTO_STEPS] Advancing to interactive step", nextStepIndex, ":", nextStep.action, nextStep.mode)
 
     // Handle special action types
     let stepAction: AbilityAction
-    if (nextStep.action === "CREATE_TOKEN") {
+
+    // Handle CREATE_STACK - keep as CREATE_STACK to trigger handleCreateStack (cursor stack)
+    if (nextStep.action === "CREATE_STACK") {
+      const details = nextStep.details || {}
+      stepAction = {
+        type: "CREATE_STACK",
+        mode: "SELECT_TARGET",
+        sourceCard: abilityMode.sourceCard,
+        sourceCoords: abilityMode.sourceCoords,
+        isDeployAbility: abilityMode.isDeployAbility,
+        readyStatusToRemove: readyStatusToRemove,
+        tokenType: details.tokenType,
+        count: details.count || 1,
+        targetOwnerId: abilityMode.sourceCard?.ownerId,
+        mustBeInLineWithSource: nextStep.mode === "LINE_TARGET" ? true : undefined,
+        mustBeAdjacentToSource: nextStep.mode === "ADJACENT_TARGET" ? true : undefined,
+        payload: {
+          ...nextStep.details,
+          _autoStepsContext: {
+            steps: payload.steps,
+            currentStepIndex: nextStepIndex + 1,
+            originalType: payload.originalType,
+            supportRequired: payload.supportRequired,
+            readyStatusToRemove: readyStatusToRemove
+          }
+        }
+      }
+    } else if (nextStep.action === "CREATE_TOKEN") {
       // CREATE_TOKEN needs to be converted to OPEN_MODAL with PLACE_TOKEN mode
       stepAction = {
         type: "OPEN_MODAL",
@@ -2555,7 +2794,7 @@ function advanceToNextStep(
         sourceCard: abilityMode.sourceCard,
         sourceCoords: abilityMode.sourceCoords,
         isDeployAbility: abilityMode.isDeployAbility,
-        readyStatusToRemove: abilityMode.readyStatusToRemove,
+        readyStatusToRemove: readyStatusToRemove,
         payload: {
           ...nextStep.details,
           tokenId: nextStep.details?.tokenId,
@@ -2576,7 +2815,7 @@ function advanceToNextStep(
         sourceCard: abilityMode.sourceCard,
         sourceCoords: abilityMode.sourceCoords,
         isDeployAbility: abilityMode.isDeployAbility,
-        readyStatusToRemove: abilityMode.readyStatusToRemove,
+        readyStatusToRemove: readyStatusToRemove,
         payload: {
           ...nextStep.details,
           tokenType: nextStep.details?.tokenType,
@@ -2594,6 +2833,20 @@ function advanceToNextStep(
     }
 
     setAbilityMode(stepAction)
+
+    // Mark source card as transitioning to prevent infinite re-processing
+    if (abilityMode.sourceCard && abilityMode.sourceCoords) {
+      const transitionKey = `${abilityMode.sourceCard.id}-${abilityMode.sourceCoords.row}-${abilityMode.sourceCoords.col}`
+      transitioningCards.add(transitionKey)
+      clearTransitioning(transitionKey, 200)
+    }
+
+    // Update targeting mode to show valid targets for the new mode
+    const ownerId = abilityMode.sourceCard?.ownerId ?? gameState.activePlayerId ?? props.localPlayerId ?? 0
+    if (setTargetingMode && calculateValidTargets) {
+      const validTargets = calculateValidTargets(stepAction, gameState, ownerId, commandContext)
+      setTargetingMode(stepAction, ownerId, abilityMode.sourceCoords, validTargets, commandContext)
+    }
   }
 }
 

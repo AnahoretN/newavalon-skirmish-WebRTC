@@ -15,7 +15,7 @@ interface ClickWaveProps {
   onComplete?: () => void
 }
 
-export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp, playerColor, onComplete }) => {
+export const ClickWave: React.FC<ClickWaveProps> = ({ timestamp: _timestamp, playerColor, onComplete: _onComplete }) => {
   const colorRgb = PLAYER_COLOR_RGB[playerColor] || { r: 255, g: 255, b: 255 }
   const borderColorAlpha = `rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}`
 

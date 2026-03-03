@@ -15,7 +15,7 @@ import { DeckType } from '../types'
 import type { ActionType } from './SimpleP2PTypes'
 import { shuffleDeck } from '../../shared/utils/array'
 import { recalculateBoardStatuses } from '../../shared/utils/boardUtils'
-import { initializeReadyStatuses, recalculateAllReadyStatuses, getCardAbilityInfo, recheckReadyStatuses } from '../utils/autoAbilities'
+import { recalculateAllReadyStatuses, getCardAbilityInfo, recheckReadyStatuses } from '../utils/autoAbilities'
 import { READY_STATUS } from '@shared/abilities/index.js'
 import { createDeck } from '../hooks/core/gameCreators'
 import { logger } from '../utils/logger'
@@ -46,14 +46,18 @@ function isToken(card: Card): boolean {
 /**
  * Clear all card statuses except Revealed
  * Called when moving card from battlefield
+ * Also resets power modifiers to base value
  */
 function clearAllStatusesExceptRevealed(card: Card): void {
   if (!card.statuses) {
     card.statuses = []
-    return
   }
   // Keep only Revealed statuses, remove all others
   card.statuses = card.statuses.filter(s => s.type === 'Revealed')
+
+  // Reset power modifiers to base value when card leaves battlefield
+  card.powerModifier = 0
+  card.bonusPower = 0
 }
 
 /**
@@ -505,8 +509,8 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
 
     // Debug: log all player's cards on board
     const playerCardsOnBoard: any[] = []
-    state.board.forEach((row, r) => {
-      row.forEach((cell, c) => {
+    state.board.forEach((row, _r) => {
+      row.forEach((cell, _c) => {
         if (cell.card?.ownerId === activePlayerId) {
           playerCardsOnBoard.push({
             id: cell.card.id,
@@ -974,6 +978,8 @@ function handleReturnCardToHand(state: GameState, playerId: number, data: any): 
         if (foundCard) {
           cardToReturn = foundCard
           sourceCoords = { row: r, col: c }
+          // Clear all statuses except Revealed and reset power when card leaves battlefield
+          clearAllStatusesExceptRevealed(foundCard)
         }
         return { card: null }
       }
@@ -1700,7 +1706,7 @@ function handleDestroyCard(state: GameState, _playerId: number, data: any): Game
 /**
  * SWAP_CARDS - swap positions of two cards on board
  */
-function handleSwapCards(state: GameState, playerId: number, data?: any): GameState {
+function handleSwapCards(state: GameState, _playerId: number, data?: any): GameState {
   const { coords1, coords2 } = data || {}
 
   if (!coords1 || !coords2) { return state }
@@ -1745,7 +1751,7 @@ function handleSwapCards(state: GameState, playerId: number, data?: any): GameSt
  * SPAWN_TOKEN - spawn a token card on the board
  * Special case: Resurrection is added as a status to existing card (Immunis Deploy)
  */
-function handleSpawnToken(state: GameState, playerId: number, data?: any): GameState {
+function handleSpawnToken(state: GameState, _playerId: number, data?: any): GameState {
   const { coords, tokenName, ownerId } = data || {}
 
   if (!coords || !tokenName || ownerId === undefined) { return state }
@@ -1871,7 +1877,7 @@ function handleSpawnToken(state: GameState, playerId: number, data?: any): GameS
  * Takes a card from discard and places it on the board at specified coordinates.
  * The card will then receive a token via SPAWN_TOKEN.
  */
-function handleResurrectDiscarded(state: GameState, playerId: number, data?: any): GameState {
+function handleResurrectDiscarded(state: GameState, _playerId: number, data?: any): GameState {
   const { cardOwnerId, cardIndex, boardCoords } = data || {}
 
   if (cardOwnerId === undefined || cardIndex === undefined || !boardCoords) {
@@ -2075,7 +2081,8 @@ function handleMarkAbilityUsed(state: GameState, data: any): GameState {
   const { row, col } = coords
   if (row === undefined || col === undefined) return state
 
-  console.log('[handleMarkAbilityUsed] coords:', coords, 'isDeploy:', isDeploy, 'readyStatusToRemove:', readyStatusToRemove)
+  const cardBaseId = state.board[row]?.[col]?.card?.baseId
+  console.log('[handleMarkAbilityUsed] Processing:', { coords, isDeploy, readyStatusToRemove, cardBaseId })
 
   const newBoard = state.board.map((r, rIdx) =>
     r.map((cell, cIdx) => {
@@ -2083,9 +2090,13 @@ function handleMarkAbilityUsed(state: GameState, data: any): GameState {
         const newCard = { ...cell.card }
         if (!newCard.statuses) newCard.statuses = []
 
+        console.log('[handleMarkAbilityUsed] Current statuses before:', newCard.statuses.map(s => s.type))
+
         // Remove the ready status
         if (readyStatusToRemove) {
+          const beforeCount = newCard.statuses.length
           newCard.statuses = newCard.statuses.filter(s => s.type !== readyStatusToRemove)
+          console.log('[handleMarkAbilityUsed] Removed', readyStatusToRemove, 'status count:', beforeCount, '->', newCard.statuses.length)
         }
 
         // Mark ability as used based on type
@@ -2124,9 +2135,12 @@ function handleMarkAbilityUsed(state: GameState, data: any): GameState {
           if (!newCard.statuses.some(s => s.type === commitUsedStatus)) {
             newCard.statuses.push({ type: commitUsedStatus, addedByPlayerId: newCard.ownerId || 0 })
             console.log('[handleMarkAbilityUsed] Added commitUsedThisTurn to card:', newCard.baseId)
+          } else {
+            console.log('[handleMarkAbilityUsed] commitUsedThisTurn already exists on card:', newCard.baseId)
           }
         }
 
+        console.log('[handleMarkAbilityUsed] Final statuses:', newCard.statuses.map(s => s.type))
         return { ...cell, card: newCard }
       }
       return cell

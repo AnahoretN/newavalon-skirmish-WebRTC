@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { Card, GameState, AbilityAction, CommandContext, DragItem, Player, CounterSelectionData, CursorStackState, FloatingTextData } from '@/types'
-import { validateTarget } from '@shared/utils/targeting'
+import { validateTarget, calculateValidTargets } from '@shared/utils/targeting'
 import { hasReadyAbilityInCurrentPhase } from '@/utils/autoAbilities'
 import { getWebRTCEnabled } from './useWebRTCEnabled'
 import { logger } from '@/utils/logger'
@@ -408,6 +408,7 @@ export const useAppAbilities = ({
         handleLineSelection,
         setTargetingMode,
         clearTargetingMode,
+        calculateValidTargets,
         updateState,
         nextPhase,
         scoreLine,

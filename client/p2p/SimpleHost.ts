@@ -548,7 +548,7 @@ export class SimpleHost {
    * @param lineIndex - Index of line scored (from active player's perspective)
    * @param oldState - State before scoring (to find which cards contributed)
    */
-  private broadcastFloatingTextForScoring(newState: GameState, playerId: number, lineType: string, lineIndex?: number, oldState?: any): void {
+  private broadcastFloatingTextForScoring(newState: GameState, playerId: number, lineType: string, lineIndex?: number, _oldState?: any): void {
     const gridSize = newState.activeGridSize
     const scoreEvents: { row: number; col: number; text: string; playerId: number }[] = []
 

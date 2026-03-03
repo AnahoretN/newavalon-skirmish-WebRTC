@@ -65,7 +65,6 @@ import { PLAYER_COLORS, GAME_ICONS } from '@/constants'
 import { deckFiles } from '@/content'
 import { Card as CardComponent } from './Card'
 import { CardTooltipContent } from './Tooltip'
-import { ClickWave as ClickWaveComponent } from './ClickWave'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { parseTextDeckFormat } from '@/utils/textDeckFormat'
 import { calculateGlowColor, rgba, getPlayerColorRgbOrDefault, TIMING } from '@/utils/common'
@@ -415,7 +414,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
 
   // Helper: Get effective deck size
   // Use deckSize metadata for WebRTC optimized states where deck array may not be populated
-  const getDeckSize = (): number => {
+  const getDeckSize = useCallback((): number => {
     // If deck array exists and is populated (has cards), use its length (source of truth for local player)
     if (player.deck && player.deck.length > 0) {
       return player.deck.length
@@ -425,11 +424,11 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
       return player.deckSize
     }
     return 0
-  }
+  }, [player.deck, player.deckSize])
 
   // Helper: Get effective discard size
   // Use discardSize metadata for WebRTC optimized states where discard array may not be populated
-  const getDiscardSize = (): number => {
+  const getDiscardSize = useCallback((): number => {
     // If discard array exists and is populated (has cards), use its length (source of truth for local player)
     if (player.discard && player.discard.length > 0) {
       return player.discard.length
@@ -439,7 +438,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
       return player.discardSize
     }
     return 0
-  }
+  }, [player.discard, player.discardSize])
 
   const prevDeckLengthRef = useRef<number>(getDeckSize())
 
@@ -453,9 +452,11 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
 
   const isPlayerActive = activePlayerId === player.id
   // FIX: Check localPlayerTeamId is not null (not just !== undefined) to avoid treating null teams as teammates
-  const isTeammate = localPlayerTeamId != null && player.teamId === localPlayerTeamId && !isLocalPlayer
+  const isTeammate = localPlayerTeamId !== null && player.teamId === localPlayerTeamId && !isLocalPlayer
   const isDisconnected = !!player.isDisconnected
 
+  // deckFiles dependency is intentional - re-renders when deck database loads
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const selectableDecks = useMemo(() => deckFiles.filter(df => df.isSelectable), [deckFiles])
   const selectedColors = useMemo(() => new Set(allPlayers.map(p => p.color)), [allPlayers])
 
@@ -728,12 +729,21 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   <div
                     className="w-full h-full p-1 cursor-pointer"
                     draggable={canDrag}
-                    onDragStart={() => canDrag && setDraggedItem({
-                      card: player.announcedCard!,
-                      source: 'announced',
-                      playerId: player.id,
-                      isManual: true
-                    })}
+                    onDragStart={(e) => {
+                      if (canDrag) {
+                        setDraggedItem({
+                          card: player.announcedCard!,
+                          source: 'announced',
+                          playerId: player.id,
+                          isManual: true
+                        })
+                        // Set custom drag image to only include the card, not tooltip
+                        const cardElement = e.currentTarget.querySelector('[data-card-image]')
+                        if (cardElement) {
+                          e.dataTransfer.setDragImage(cardElement as Element, 20, 20)
+                        }
+                      }
+                    }}
                     onDragEnd={() => { setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK) }}
                     onContextMenu={(e) => canPerformActions && player.announcedCard && handleContextMenuWithCancel(e, 'announcedCard', {
                       card: player.announcedCard,
@@ -741,7 +751,8 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     })}
                     onDoubleClick={() => onAnnouncedCardDoubleClick?.(player, player.announcedCard!)}
                   >
-                    <CardComponent
+                    <div data-card-image="true">
+                      <CardComponent
                       card={player.announcedCard}
                       isFaceUp={true}
                       playerColorMap={playerColorMap}
@@ -754,6 +765,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       preserveDeployAbilities={preserveDeployAbilities}
                       disableImageTransition={true}
                     />
+                    </div>
                   </div>
                 ) : <span className="text-[10px] sm:text-xs font-bold text-gray-500 select-none uppercase tracking-tight">{t('showcase')}</span>}
               </div>
@@ -836,7 +848,8 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   )
 
                   // OPTIMIZATION: Use Map lookup instead of filtering - O(1) instead of O(n)
-                  const cardClickWaves = clickWavesMap.get(`${player.id}-${index}`) || []
+                  // NOTE: cardClickWaves is currently unused (React wave disabled, using instant direct DOM approach only)
+                  // const cardClickWaves = clickWavesMap.get(`${player.id}-${index}`) || []
 
                   // Card container style with highlight if target
                   const cardContainerStyle = isTarget ? {
@@ -895,13 +908,22 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         className={`flex items-center bg-gray-900 border rounded p-2 min-w-0 ${isTarget ? 'border-transparent' : 'border-gray-700'}`}
                         style={cardContainerStyle}
                         draggable={canDrag && !isPlaceholder}
-                        onDragStart={() => (canDrag && !isPlaceholder) && setDraggedItem({
-                          card,
-                          source: 'hand',
-                          playerId: player.id,
-                          cardIndex: index,
-                          isManual: true
-                        })}
+                        onDragStart={(e) => {
+                          if (canDrag && !isPlaceholder) {
+                            setDraggedItem({
+                              card,
+                              source: 'hand',
+                              playerId: player.id,
+                              cardIndex: index,
+                              isManual: true
+                            })
+                            // Set custom drag image to only include the card, not tooltip
+                            const cardElement = e.currentTarget.querySelector('[data-card-image]')
+                            if (cardElement) {
+                              e.dataTransfer.setDragImage(cardElement as Element, 20, 20)
+                            }
+                          }
+                        }}
                         onDragEnd={() => { setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK) }}
                         onContextMenu={(e) => canPerformActions && !isPlaceholder && handleContextMenuWithCancel(e, 'handCard', {
                           card,
@@ -922,10 +944,11 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         data-interactive="true"
                       >
                         <div className="aspect-square flex-shrink-0 mr-3 w-[28.75%] max-w-[230px] min-w-[40px] overflow-hidden rounded">
-                          {isPlaceholder ? (
-                            // Show card back for placeholder cards (remote players in WebRTC)
-                            // Use isVisible to determine if card should be face-up (e.g. with Revealed status)
-                            <CardComponent
+                          <div data-card-image="true" className="w-full h-full">
+                            {isPlaceholder ? (
+                              // Show card back for placeholder cards (remote players in WebRTC)
+                              // Use isVisible to determine if card should be face-up (e.g. with Revealed status)
+                              <CardComponent
                               card={{
                                 ...card,
                                 id: card.id,
@@ -963,6 +986,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                               playerColor={player.color}
                             />
                           )}
+                          </div>
                         </div>
                         <div className="flex-grow min-w-0">
                           {!isPlaceholder && (
@@ -1184,12 +1208,21 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     <div
                       className="w-full h-full"
                       draggable={canDrag}
-                      onDragStart={() => canDrag && setDraggedItem({
-                        card: player.announcedCard!,
-                        source: 'announced',
-                        playerId: player.id,
-                        isManual: true
-                      })}
+                      onDragStart={(e) => {
+                        if (canDrag) {
+                          setDraggedItem({
+                            card: player.announcedCard!,
+                            source: 'announced',
+                            playerId: player.id,
+                            isManual: true
+                          })
+                          // Set custom drag image to only include the card, not tooltip
+                          const cardElement = e.currentTarget.querySelector('[data-card-image]')
+                          if (cardElement) {
+                            e.dataTransfer.setDragImage(cardElement as Element, 20, 20)
+                          }
+                        }
+                      }}
                       onDragEnd={() => { setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK) }}
                       onContextMenu={(e) => player.announcedCard && handleContextMenuWithCancel(e, 'announcedCard', {
                         card: player.announcedCard,
@@ -1197,7 +1230,8 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       })}
                       onDoubleClick={() => onAnnouncedCardDoubleClick?.(player, player.announcedCard!)}
                     >
-                      <CardComponent
+                      <div data-card-image="true" className="w-full h-full">
+                        <CardComponent
                         card={player.announcedCard}
                         isFaceUp={true}
                         playerColorMap={playerColorMap}
@@ -1209,6 +1243,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         disableImageTransition={true}
                         playerColor={player.color}
                       />
+                      </div>
                     </div>
                   ) : <span className="text-[9px] font-bold text-gray-500 select-none uppercase">SHOW</span>}
                 </div>
@@ -1293,7 +1328,8 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                 )
 
                 // OPTIMIZATION: Use Map lookup instead of filtering - O(1) instead of O(n)
-                const cardClickWaves = clickWavesMap.get(`${player.id}-${index}`) || []
+                // NOTE: cardClickWaves is currently unused (React wave disabled, using instant direct DOM approach only)
+                // const cardClickWaves = clickWavesMap.get(`${player.id}-${index}`) || []
 
                 // Card container style with highlight if target
                 const cardHighlightStyle = isTarget ? {
@@ -1334,7 +1370,16 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     className="aspect-square relative"
                     data-hand-card={`${player.id},${index}`}
                     draggable={canDrag && !isPlaceholder}
-                    onDragStart={() => (canDrag && !isPlaceholder) && setDraggedItem({ card, source: 'hand', playerId: player.id, cardIndex: index, isManual: true })}
+                    onDragStart={(e) => {
+                      if (canDrag && !isPlaceholder) {
+                        setDraggedItem({ card, source: 'hand', playerId: player.id, cardIndex: index, isManual: true })
+                        // Set custom drag image to only include the card, not tooltip
+                        const cardElement = e.currentTarget.querySelector('[data-card-image]')
+                        if (cardElement) {
+                          e.dataTransfer.setDragImage(cardElement as Element, 20, 20)
+                        }
+                      }
+                    }}
                     onDragEnd={() => { setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK) }}
                     onContextMenu={(e) => {
                       if (!isPlaceholder) {
@@ -1395,49 +1440,51 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       />
                     )}
                     <div className="w-full h-full rounded" style={cardHighlightStyle}>
-                      {isPlaceholder ? (
-                        // Show card back for placeholder cards (remote players in WebRTC)
-                        // Use isVisible to determine if card should be face-up (e.g. with Revealed status)
-                        <CardComponent
-                          card={{
-                            ...card,
-                            id: card.id,
-                            baseId: card.baseId,
-                            name: card.name || '',
-                            ownerId: player.id,
-                            ownerName: player.name,
-                            deck: card.deck || (DeckTypeEnum.Random as const),
-                            imageUrl: card.imageUrl || '',
-                            abilityText: card.abilityText || '',
-                          }}
-                          isFaceUp={isVisible}
-                          playerColorMap={playerColorMap}
-                          playerColor={player.color}
-                          localPlayerId={localPlayerId}
-                          imageRefreshVersion={imageRefreshVersion}
-                          loadPriority="low"
-                          disableTooltip={true}
-                          disableActiveHighlights={true}
-                          smallStatusIcons={false}
-                          preserveDeployAbilities={false}
-                          disableImageTransition={true}
-                        />
-                      ) : (
-                        <CardComponent
-                          card={card}
-                          isFaceUp={isVisible}
-                          playerColorMap={playerColorMap}
-                          localPlayerId={localPlayerId}
-                          imageRefreshVersion={imageRefreshVersion}
-                          loadPriority={isLocalPlayer ? 'high' : 'low'}
-                          disableTooltip={!isVisible}
-                          disableActiveHighlights={disableActiveHighlights}
-                          smallStatusIcons={true}
-                          preserveDeployAbilities={preserveDeployAbilities}
-                          disableImageTransition={true}
-                          playerColor={player.color}
-                        />
-                      )}
+                      <div data-card-image="true" className="w-full h-full">
+                        {isPlaceholder ? (
+                          // Show card back for placeholder cards (remote players in WebRTC)
+                          // Use isVisible to determine if card should be face-up (e.g. with Revealed status)
+                          <CardComponent
+                            card={{
+                              ...card,
+                              id: card.id,
+                              baseId: card.baseId,
+                              name: card.name || '',
+                              ownerId: player.id,
+                              ownerName: player.name,
+                              deck: card.deck || (DeckTypeEnum.Random as const),
+                              imageUrl: card.imageUrl || '',
+                              abilityText: card.abilityText || '',
+                            }}
+                            isFaceUp={isVisible}
+                            playerColorMap={playerColorMap}
+                            playerColor={player.color}
+                            localPlayerId={localPlayerId}
+                            imageRefreshVersion={imageRefreshVersion}
+                            loadPriority="low"
+                            disableTooltip={true}
+                            disableActiveHighlights={true}
+                            smallStatusIcons={false}
+                            preserveDeployAbilities={false}
+                            disableImageTransition={true}
+                          />
+                        ) : (
+                          <CardComponent
+                            card={card}
+                            isFaceUp={isVisible}
+                            playerColorMap={playerColorMap}
+                            localPlayerId={localPlayerId}
+                            imageRefreshVersion={imageRefreshVersion}
+                            loadPriority={isLocalPlayer ? 'high' : 'low'}
+                            disableTooltip={!isVisible}
+                            disableActiveHighlights={disableActiveHighlights}
+                            smallStatusIcons={true}
+                            preserveDeployAbilities={preserveDeployAbilities}
+                            disableImageTransition={true}
+                            playerColor={player.color}
+                          />
+                        )}
+                      </div>
                     </div>
                     {/* React wave disabled - using instant direct DOM approach only */}
                     {/* {cardClickWaves.map(wave => (

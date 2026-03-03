@@ -75,7 +75,6 @@ export function activateAbility(
       // Show "No Target" effect to indicate missing Support
       const { triggerNoTarget } = props as any
       triggerNoTarget?.(boardCoords)
-      console.log('[activateAbility] Deploy ability requires Support but missing for', card.baseId)
     }
     return null
   }
@@ -100,8 +99,8 @@ export function activateAbility(
           filter: action.payload.filter
         }
       }
-      // Remove ready status
-      if (action.readyStatusToRemove) {
+      // Remove ready status (but not for AUTO_STEPS - they handle it themselves)
+      if (action.readyStatusToRemove && action.mode !== 'AUTO_STEPS') {
         markAbilityUsed(boardCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
       }
       // Execute the action via handleActionExecution - this will call handleEnterMode
@@ -112,7 +111,8 @@ export function activateAbility(
 
     // NEW FLOW: Remove ready status FIRST, then execute
     // This ensures the visual highlight disappears immediately on click
-    if (action.readyStatusToRemove) {
+    // EXCEPT for AUTO_STEPS - they will mark ability used when all steps complete
+    if (action.readyStatusToRemove && action.mode !== 'AUTO_STEPS') {
       markAbilityUsed(boardCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
     }
 

@@ -3,7 +3,6 @@
  * Bypasses React state updates for maximum speed
  */
 
-import { useEffect } from 'react'
 import type { PlayerColor } from '../types'
 import { PLAYER_COLOR_RGB } from '../constants'
 

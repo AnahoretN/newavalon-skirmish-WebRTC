@@ -534,14 +534,16 @@
         {
           "type": "commit",
           "supportRequired": false,
+          "ignoreShield": true,
           "steps": [
             {
-              "action": "SELECT_TARGET",
+              "action": "ENTER_MODE",
               "mode": "SELECT_TARGET",
               "details": {
-                "actionType": "SACRIFICE_TARGET",
+                "actionType": "DESTROY",
                 "filter": "isOwner",
-                "recordContext": true
+                "recordContext": true,
+                "ignoreShield": true
               }
             },
             {

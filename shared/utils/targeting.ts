@@ -246,6 +246,66 @@ export const calculateValidTargets = (
     return []
   }
 
+  // CRITICAL: Handle AUTO_STEPS by extracting the current step
+  // AUTO_STEPS is a container for multi-step abilities - we need to calculate targets
+  // based on the CURRENT step being processed, not the AUTO_STEPS mode itself
+  if (action.type === 'ENTER_MODE' && action.mode === 'AUTO_STEPS' && action.payload?.steps) {
+    const steps = action.payload.steps
+    const currentStepIndex = action.payload.currentStepIndex || 0
+    const currentStep = steps[currentStepIndex]
+
+    if (!currentStep) {
+      return []
+    }
+
+    // If current step has no mode (instant), return empty - no targeting needed
+    if (!currentStep.mode) {
+      return []
+    }
+
+    // CRITICAL: Normalize LINE_TARGET and ADJACENT_TARGET to SELECT_TARGET
+    // These are targeting constraints, not separate modes. The constraint is stored in payload.
+    const normalizedMode = (currentStep.mode === "LINE_TARGET" || currentStep.mode === "ADJACENT_TARGET")
+      ? "SELECT_TARGET"
+      : currentStep.mode
+
+    // Create a synthetic action for the current step with normalized mode
+    // CRITICAL: Preserve action-level properties like readyStatusToRemove and isDeployAbility
+    const stepAction: AbilityAction = {
+      type: 'ENTER_MODE',
+      mode: normalizedMode,
+      sourceCard: action.sourceCard,
+      sourceCoords: action.sourceCoords,
+      readyStatusToRemove: action.readyStatusToRemove,
+      isDeployAbility: action.isDeployAbility,
+      payload: {
+        ...currentStep.details,
+        _autoStepsContext: {
+          steps: steps,
+          currentStepIndex: currentStepIndex + 1,
+          originalType: action.payload?.originalType,
+          supportRequired: action.payload?.supportRequired,
+          readyStatusToRemove: action.readyStatusToRemove
+        }
+      }
+    }
+
+    // Handle LINE_TARGET and ADJACENT_TARGET special modes - add targeting constraints to payload
+    if (currentStep.action === 'CREATE_STACK' && currentStep.mode) {
+      const details = currentStep.details || {}
+      if (currentStep.mode === 'LINE_TARGET') {
+        stepAction.payload.mustBeInLineWithSource = true
+      } else if (currentStep.mode === 'ADJACENT_TARGET') {
+        stepAction.payload.mustBeAdjacentToSource = true
+      }
+      stepAction.payload.tokenType = details.tokenType
+      stepAction.payload.count = details.count || 1
+    }
+
+    // Recursively call calculateValidTargets with the step action
+    return calculateValidTargets(stepAction, currentGameState, actorId, commandContext)
+  }
+
   const targets: {row: number, col: number}[] = []
   const board = currentGameState.board
   const gridSize = board.length
@@ -434,12 +494,49 @@ export const calculateValidTargets = (
     return targets
   }
 
+  // SELECT_TARGET with tokenType (CREATE_STACK for tokens like Aim, Shield, etc.)
+  // Used by Princeps/ABR Gawain Deploy: "Place an Aim token on a card in its line"
+  if (mode === 'SELECT_TARGET' && payload.tokenType && !(payload.filter || payload.filterString)) {
+    const ownerId = action.sourceCard?.ownerId || actorId || 0
+
+    // Iterate over active grid bounds
+    for (let r = minBound; r <= maxBound; r++) {
+      for (let c = minBound; c <= maxBound; c++) {
+        // Skip source card (can't place token on self)
+        if (sourceCoords && r === sourceCoords.row && c === sourceCoords.col) {
+          continue
+        }
+
+        const cell = board[r][c]
+        if (cell.card) {
+          // Check constraints
+          const isValid = validateTarget(
+            { card: cell.card, ownerId: cell.card.ownerId, location: 'board', boardCoords: { row: r, col: c } },
+            {
+              targetOwnerId: action.targetOwnerId,
+              excludeOwnerId: action.excludeOwnerId,
+              mustBeInLineWithSource: payload.mustBeInLineWithSource,
+              mustBeAdjacentToSource: payload.mustBeAdjacentToSource,
+              sourceCoords: sourceCoords,
+            },
+            ownerId,
+            currentGameState.players,
+          )
+          if (isValid) {
+            targets.push({ row: r, col: c })
+          }
+        }
+      }
+    }
+    return targets
+  }
+
   // 1. Generic TARGET selection
   if ((mode === 'SELECT_TARGET' || mode === 'CENSOR_SWAP' || mode === 'ZEALOUS_WEAKEN' || mode === 'CENTURION_BUFF' || mode === 'SELECT_UNIT_FOR_MOVE') && (payload.filter || payload.filterString)) {
 
     // Build filter function if not present (for serialization support)
     let filterFn = payload.filter
-    console.log('[calculateValidTargets] Before filter build:', { mode, hasFilterFn: !!filterFn, hasFilterString: !!payload.filterString, filterString: payload.filterString, typeofFilterFn: typeof filterFn })
+    console.log('[calculateValidTargets] SELECT_TARGET with filter:', { mode, actionType: payload.actionType, hasFilterFn: !!filterFn, hasFilterString: !!payload.filterString, filterString: payload.filterString, typeofFilterFn: typeof filterFn, sourceCard: action.sourceCard?.baseId })
 
     // CRITICAL: Convert filter string to function if needed
     // JSON stores filter as string, need to convert to function
@@ -494,6 +591,8 @@ export const calculateValidTargets = (
         }
       }
     }
+
+    console.log('[calculateValidTargets] Found targets:', { mode, actionType: payload.actionType, targetCount: targets.length, targets })
   }
   // 1.1 Enhanced Interrogation Generic Targeting (Any Unit)
   else if (mode === 'SELECT_TARGET' && (payload.actionType === 'ENHANCED_INT_REVEAL' || payload.actionType === 'ENHANCED_INT_MOVE')) {

@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useCallback, useRef } from 'react'
+import React, { memo, useMemo, useCallback, useRef, useState } from 'react'
 import type { Board, GridSize, DragItem, DropTarget, Card as CardType, PlayerColor, HighlightData, FloatingTextData, TargetingModeData, ClickWave, CursorStackState, AbilityAction, VisualEffect, VisualEffectsState, FloatingTextEffect, ClickWaveEffect, ScoringLineData, Player } from '@/types'
 import { ClickWave as ClickWaveComponent } from './ClickWave'
 import { Card } from './Card'
@@ -96,6 +96,8 @@ const GridCell = memo<{
   onCancelAllModes?: () => void;
   triggerClickWave?: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void;
   players?: Player[]; // Players array for checking dummy status
+  hoveredCell: { row: number; col: number } | null; // State-based hover tracking for drag highlight
+  setHoveredCell: (cell: { row: number; col: number } | null) => void; // Setter for hover state
 }>((props) => {
   const {
       row, col, cell, isGameStarted, activeGridSize, handleDrop, draggedItem, setDraggedItem,
@@ -108,10 +110,18 @@ const GridCell = memo<{
       abilitySourceCoords, abilityCheckKey, abilityMode, scoringLines, activePlayerIdForScoring,
       setCursorStack: _setCursorStack, onCancelAllModes,
       triggerClickWave, players,
+      hoveredCell, setHoveredCell, // NEW: State-based hover tracking
   } = props
 
-  // PERFORMANCE: Use useRef instead of useState to prevent re-renders during drag
-  const isOverRef = useRef(false)
+  // Track previous card state to detect when card is removed during ability
+  const prevCardRef = useRef(cell.card)
+
+  // Clear drag highlight if card was removed from this cell (e.g., during sacrifice ability)
+  if (prevCardRef.current && !cell.card && hoveredCell?.row === row && hoveredCell?.col === col) {
+    setHoveredCell(null)
+  }
+  // Update prev card for next render
+  prevCardRef.current = cell.card
 
       // Scoring lines highlight - show cells that are part of scoring lines
       // MUST be declared before handleClick since handleClick uses it
@@ -143,11 +153,8 @@ const GridCell = memo<{
         if (draggedItem) {
           handleDrop(draggedItem, { target: 'board', boardCoords: { row, col } })
         }
-        isOverRef.current = false
-        // Remove drag-over class directly from DOM
-        const cellEl = e.currentTarget.closest('[data-board-coords]')
-        if (cellEl) cellEl.classList.remove('drag-over-active')
-      }, [draggedItem, handleDrop, row, col])
+        setHoveredCell(null)
+      }, [draggedItem, handleDrop, row, col, setHoveredCell])
 
       const handleClick = useCallback(() => {
         // Handle scoring line selection - clicking any cell in a scoring line selects it
@@ -181,8 +188,7 @@ const GridCell = memo<{
         }
       }, [showScoringHighlight, scoringLineInfo, onEmptyCellClick, playMode, cell.card, onCardClick, handleDrop, setPlayMode, row, col, triggerClickWave, localPlayerId, abilityMode])
 
-      // PERFORMANCE: Throttle drag events to prevent excessive re-renders
-      const rafRef = useRef<number | null>(null)
+      // Drag handlers - immediate update for responsive feedback
       const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault()
         const isCounter = draggedItem?.source === 'counter_panel'
@@ -190,41 +196,27 @@ const GridCell = memo<{
         const canDrop = cellIsEmpty || (cell.card && isCounter)
 
         if (canDrop) {
-          // Use requestAnimationFrame to throttle updates
-          if (rafRef.current === null) {
-            // CRITICAL: Find element NOW before RAF callback (e.currentTarget becomes null in RAF)
-            const cellEl = e.currentTarget.closest('[data-board-coords]')
-            rafRef.current = requestAnimationFrame(() => {
-              isOverRef.current = true
-              // Add drag-over class directly to DOM element
-              if (cellEl) cellEl.classList.add('drag-over-active')
-              rafRef.current = null
-            })
-          }
+          // Set immediately for instant visual feedback - using state to trigger re-render
+          setHoveredCell({ row, col })
           e.dataTransfer.dropEffect = 'move'
         } else {
-          // Cell is occupied - cancel any pending update and remove highlight
-          if (rafRef.current !== null) {
-            cancelAnimationFrame(rafRef.current)
-            rafRef.current = null
+          // Cell is occupied - remove highlight
+          if (hoveredCell?.row === row && hoveredCell?.col === col) {
+            setHoveredCell(null)
           }
-          isOverRef.current = false
-          const cellEl = e.currentTarget.closest('[data-board-coords]')
-          if (cellEl) cellEl.classList.remove('drag-over-active')
           e.dataTransfer.dropEffect = 'none'
         }
-      }, [draggedItem, cell.card])
+      }, [draggedItem, cell.card, row, col, hoveredCell, setHoveredCell])
 
-      const onDragLeave = useCallback(() => {
-        if (rafRef.current !== null) {
-          cancelAnimationFrame(rafRef.current)
-          rafRef.current = null
+      const onDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+        // Only clear if we're leaving this cell (not entering a child element)
+        const rect = e.currentTarget.getBoundingClientRect()
+        const x = e.clientX
+        const y = e.clientY
+        if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+          setHoveredCell(null)
         }
-        isOverRef.current = false
-        // Remove class on drag leave
-        const cellEl = document.querySelector(`[data-board-coords="${row},${col}"]`)
-        if (cellEl) cellEl.classList.remove('drag-over-active')
-      }, [row, col])
+      }, [setHoveredCell])
 
       const handleContextMenu = useCallback((e: React.MouseEvent) => {
         // Right-click cancels all targeting/ability modes for all players
@@ -242,9 +234,10 @@ const GridCell = memo<{
         }
       }, [cell.card, onEmptyCellDoubleClick, row, col])
 
-      const handleCardDragStart = useCallback(() => {
+      const handleCardDragStart = useCallback((e: React.DragEvent<HTMLDivElement>) => {
         // Block dragging when cursorStack is active (has a token)
         if (cursorStack) {
+          e.preventDefault()
           return
         }
         if (cell.card) {
@@ -255,6 +248,12 @@ const GridCell = memo<{
             isManual: true,
             bypassOwnershipCheck: true,
           })
+          // Set custom drag image to only include the card element, not the tooltip
+          // Find the card element within the dragged container
+          const cardElement = e.currentTarget.querySelector('[data-card-element]')
+          if (cardElement) {
+            e.dataTransfer.setDragImage(cardElement as Element, 20, 20)
+          }
         }
       }, [cell.card, setDraggedItem, row, col, cursorStack])
 
@@ -298,9 +297,10 @@ const GridCell = memo<{
 
       // Visual highlights:
       // 1. For drag: only highlight when cursor is over the cell
-      // PERFORMANCE: Use ref instead of state to prevent re-renders
-      // Actual highlight is applied via CSS class 'drag-over-active' to DOM element
-      const showDragHighlight = !isOccupied && isDraggingCard && isOverRef.current && localPlayerId !== null
+      // Using state-based tracking for reactivity
+      const showDragHighlight = !isOccupied && isDraggingCard &&
+                                hoveredCell?.row === row && hoveredCell?.col === col &&
+                                localPlayerId !== null
       // 2. For play mode: highlight all empty cells as valid targets
       const showPlayModeHighlight = !isOccupied && isInPlayMode && localPlayerId !== null
       // 3. Scoring lines highlight - show cells that are part of scoring lines (declared earlier before handleClick)
@@ -308,6 +308,7 @@ const GridCell = memo<{
 
       // Only add cursor pointer for interactive cells - visual highlight comes from shared highlights
       const targetClasses = isInteractive ? 'cursor-pointer z-10' : ''
+      // Always use board-cell-active background - drag highlight is just a border overlay
       const cellClasses = `bg-board-cell-active ${isInPlayMode && isOccupied ? 'cursor-not-allowed' : ''} ${targetClasses}`
 
       const isFaceUp: boolean = useMemo(() => {
@@ -380,23 +381,16 @@ const GridCell = memo<{
 
             return (
               <>
-                {/* Cell border with owner's color */}
+                {/* Cell border with owner's color - no background, just thick border */}
                 <div
                   className="absolute inset-0 rounded-md pointer-events-none"
                   style={{
                     zIndex: 40,
-                    border: '3px solid',
+                    border: '4px solid',
                     borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
+                    background: 'transparent',
                     boxSizing: 'border-box',
-                  }}
-                />
-                {/* Inner square (15% smaller) filled with owner's color, no border */}
-                <div
-                  className="absolute pointer-events-none rounded-sm"
-                  style={{
-                    zIndex: 40,
-                    inset: '7.5%',  // 15% smaller on each side
-                    backgroundColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.3)`,
+                    boxShadow: `0 0 8px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.5)`,
                   }}
                 />
               </>
@@ -514,33 +508,38 @@ const GridCell = memo<{
                 // Don't reset here - let the drop handler do it
                 // Fallback: clear after delay if no drop happened
                 setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK)
+                // Clear hover state
+                setHoveredCell(null)
               }}
               onContextMenu={handleCardContextMenu}
               onDoubleClick={handleCardDoubleClick}
               className={`w-full h-full ${isGameStarted && !cursorStack ? 'cursor-grab' : 'cursor-default'} relative ${hasActiveEffect ? 'z-40' : 'z-30'}`}
               data-interactive="true"
             >
-              <Card
-                card={cell.card}
-                isFaceUp={isFaceUp}
-                playerColorMap={playerColorMap}
-                localPlayerId={localPlayerId}
-                imageRefreshVersion={imageRefreshVersion}
-                loadPriority="high"
-                disableImageTransition={true}
-                activePhaseIndex={currentPhase}
-                activePlayerId={activePlayerId}
-                disableActiveHighlights={disableActiveHighlights}
-                preserveDeployAbilities={preserveDeployAbilities}
-                activeAbilitySourceCoords={abilitySourceCoords}
-                boardCoords={{ row: row, col: col }}
-                abilityCheckKey={abilityCheckKey}
-                onCardClick={onCardClick}
-                targetingMode={!!targetingModePlayerId}
-                triggerClickWave={triggerClickWave}
-                disableTooltip={shouldDisableTooltip}
-                players={players}
-              />
+              {/* Wrapper for custom drag image - prevents tooltip from being included in drag */}
+              <div data-card-element="true" className="w-full h-full">
+                <Card
+                  card={cell.card}
+                  isFaceUp={isFaceUp}
+                  playerColorMap={playerColorMap}
+                  localPlayerId={localPlayerId}
+                  imageRefreshVersion={imageRefreshVersion}
+                  loadPriority="high"
+                  disableImageTransition={true}
+                  activePhaseIndex={currentPhase}
+                  activePlayerId={activePlayerId}
+                  disableActiveHighlights={disableActiveHighlights}
+                  preserveDeployAbilities={preserveDeployAbilities}
+                  activeAbilitySourceCoords={abilitySourceCoords}
+                  boardCoords={{ row: row, col: col }}
+                  abilityCheckKey={abilityCheckKey}
+                  onCardClick={onCardClick}
+                  targetingMode={!!targetingModePlayerId}
+                  triggerClickWave={triggerClickWave}
+                  disableTooltip={shouldDisableTooltip}
+                  players={players}
+                />
+              </div>
             </div>
           )}
 
@@ -693,6 +692,9 @@ export const GameBoard = memo<GameBoardProps>(({
       .map(row => row.slice(offset, offset + activeGridSize))
   }, [board, activeGridSize])
 
+  // Track which cell is being hovered during drag - using state to trigger re-renders
+  const [hoveredCell, setHoveredCell] = useState<{ row: number; col: number } | null>(null)
+
   const HighlightContent = useMemo(() => {
     if (!highlight) {
       return null
@@ -762,7 +764,7 @@ export const GameBoard = memo<GameBoardProps>(({
     if (activeFloatingTexts) {
       for (const ft of activeFloatingTexts) {
         const key = `${ft.row}-${ft.col}`
-        if (!map.has(key)) map.set(key, [])
+        if (!map.has(key)) { map.set(key, []) }
         map.get(key)!.push(ft)
       }
     }
@@ -866,6 +868,8 @@ export const GameBoard = memo<GameBoardProps>(({
                 onCancelAllModes={onCancelAllModes}
                 triggerClickWave={triggerClickWave}
                 players={players}
+                hoveredCell={hoveredCell}
+                setHoveredCell={setHoveredCell}
               />
               {/* Legacy floating texts (for backward compatibility) */}
               {cellFloatingTexts.map(ft => (

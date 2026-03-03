@@ -8,6 +8,7 @@
 
 import { checkAdj } from './abilityUtils.js'
 import { hasStatus } from './index.js'
+import { READY_STATUS } from './readySystem.js'
 
 // Use 'any' for Card type to avoid conflicts between client/server Card types
 type Card = any
@@ -178,11 +179,24 @@ export function buildActionFromContentAbility(
   if (ability.steps && ability.steps.length > 0) {
     // NEW: Generic AUTO_STEPS system - processes steps dynamically from database
     // No more hardcoded pattern detection!
+
+    // Determine which ready status to remove based on ability type
+    let readyStatusToRemove: string | undefined
+    if (ability.type === 'deploy') {
+      readyStatusToRemove = READY_STATUS.DEPLOY
+    } else if (ability.type === 'setup') {
+      readyStatusToRemove = READY_STATUS.SETUP
+    } else if (ability.type === 'commit') {
+      readyStatusToRemove = READY_STATUS.COMMIT
+    }
+
     return {
       type: 'ENTER_MODE',
       mode: 'AUTO_STEPS',
       sourceCard: card,
       sourceCoords: coords,
+      readyStatusToRemove,
+      isDeployAbility: ability.type === 'deploy',
       payload: {
         steps: ability.steps,
         currentStepIndex: 0,
