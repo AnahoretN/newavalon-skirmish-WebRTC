@@ -2636,7 +2636,11 @@ function handleSelectLineForSupportTokens(
     // Horizontal line selected - find all cards with Support in this row
     for (let c = 0; c < gridSize; c++) {
       const cell = gameState.board[clickRow][c]
-      if (cell.card?.ownerId === ownerId && cell.card.statuses?.some((s: any) => s.type === 'Support')) {
+      // Check: card belongs to same player AND has Support status from that player
+      const hasSupportFromOwner = cell.card?.statuses?.some((s: any) =>
+        s.type === 'Support' && s.addedByPlayerId === ownerId
+      )
+      if (cell.card?.ownerId === ownerId && hasSupportFromOwner) {
         targets.push({ row: clickRow, col: c })
       }
     }
@@ -2644,7 +2648,11 @@ function handleSelectLineForSupportTokens(
     // Vertical line selected - find all cards with Support in this column
     for (let r = 0; r < gridSize; r++) {
       const cell = gameState.board[r][clickCol]
-      if (cell.card?.ownerId === ownerId && cell.card.statuses?.some((s: any) => s.type === 'Support')) {
+      // Check: card belongs to same player AND has Support status from that player
+      const hasSupportFromOwner = cell.card?.statuses?.some((s: any) =>
+        s.type === 'Support' && s.addedByPlayerId === ownerId
+      )
+      if (cell.card?.ownerId === ownerId && hasSupportFromOwner) {
         targets.push({ row: r, col: clickCol })
       }
     }
