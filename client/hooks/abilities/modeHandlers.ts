@@ -129,7 +129,7 @@ export function executeInstantAutoStep(
 
       // Buff all cards in the same column (excluding the already-processed row)
       for (let r = 0; r < gridSize; r++) {
-        if (r === r1) continue
+        if (r === r1) { continue }
         const cell = gameState.board[r]?.[c1]
         const targetCard = cell?.card
         if (targetCard && targetCard.ownerId === buffOwnerId) {
@@ -556,10 +556,10 @@ export function advanceToNextStepWithCoords(
 ): void {
   const { abilityMode, setAbilityMode, markAbilityUsed, gameState, commandContext, setTargetingMode, calculateValidTargets } = props
 
-  if (!abilityMode) return
+  if (!abilityMode) { return }
 
   const payload = abilityMode.payload
-  if (!payload || !payload._autoStepsContext) return
+  if (!payload || !payload._autoStepsContext) { return }
 
   const autoStepsContext = payload._autoStepsContext
   const steps = autoStepsContext.steps
@@ -2448,7 +2448,7 @@ function handleLinesWithSupport(
 
   // Check horizontal line (same row)
   for (let c = 0; c < gridSize; c++) {
-    if (c === col) continue // Skip source card itself
+    if (c === col) { continue } // Skip source card itself
     const cell = gameState.board[row][c]
     if (cell.card?.ownerId === ownerId && cell.card.statuses?.some((s: any) => s.type === 'Support')) {
       validTargets.push({ row, col: c })
@@ -2457,7 +2457,7 @@ function handleLinesWithSupport(
 
   // Check vertical line (same column)
   for (let r = 0; r < gridSize; r++) {
-    if (r === row) continue // Skip source card itself
+    if (r === row) { continue } // Skip source card itself
     const cell = gameState.board[r][col]
     if (cell.card?.ownerId === ownerId && cell.card.statuses?.some((s: any) => s.type === 'Support')) {
       validTargets.push({ row: r, col })
@@ -2519,7 +2519,7 @@ function handleLinesWithThreat(
 
   // Check horizontal line (same row)
   for (let c = 0; c < gridSize; c++) {
-    if (c === col) continue
+    if (c === col) { continue }
     const cell = gameState.board[row][c]
     if (cell.card?.ownerId === ownerId && cell.card?.statuses?.some((s: any) => s.type === 'Threat')) {
       validTargets.push({ row, col: c })
@@ -2528,7 +2528,7 @@ function handleLinesWithThreat(
 
   // Check vertical line (same column)
   for (let r = 0; r < gridSize; r++) {
-    if (r === row) continue
+    if (r === row) { continue }
     const cell = gameState.board[r][col]
     if (cell.card?.ownerId === ownerId && cell.card?.statuses?.some((s: any) => s.type === 'Threat')) {
       validTargets.push({ row: r, col })

@@ -634,7 +634,7 @@ const Header = memo<HeaderProps>(({
               // When clicking on a phase, jump directly to that phase (skip intermediate phases)
               // Scoring mode initialization is handled in handleSetPhase
               const handlePhaseClick = () => {
-                if (isDisabled) return
+                if (isDisabled) { return }
                 onSetPhase(visiblePhaseIndex)
               }
 

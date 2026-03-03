@@ -16,6 +16,26 @@ type GameState = any
 type AbilityAction = any
 
 /**
+ * Supported event types for TRIGGER_ON_EVENT abilities
+ */
+export type TriggerEventType =
+  | 'OPPONENT_PLAYS_REVEALED_CARD'
+  | 'OPPONENT_PLAYS_CARD_WITH_STATUS'
+  | 'CARD_ENTERS_BATTLEFIELD'
+  | 'CARD_DESTROYED'
+
+/**
+ * Effect types for trigger responses
+ */
+export interface TriggerEffect {
+  type: 'MODIFY_SCORE' | 'DRAW_CARD' | 'CREATE_TOKEN' | 'MODIFY_POWER'
+  points?: number
+  target?: 'self' | 'opponent' | 'all'
+  tokenType?: string
+  powerModifier?: number
+}
+
+/**
  * Raw ability structure from contentDatabase.json
  */
 export interface ContentAbility {
@@ -127,6 +147,7 @@ export function buildDetailsFromContent(
   const details: Record<string, any> = { ...ability.details }
 
   // Convert filter string to function if present
+  // eslint-disable-next-line no-unused-vars
   let mainFilter: ((card: Card, r?: number, c?: number) => boolean) | undefined = undefined
   if (details.filter && typeof details.filter === 'string') {
     const filterFn = buildFilterFromString(details.filter, ownerId, coords)
@@ -138,6 +159,7 @@ export function buildDetailsFromContent(
   }
 
   // Convert additionalFilter string to function if present
+  // eslint-disable-next-line no-unused-vars
   let additionalFilter: ((card: Card) => boolean) | undefined = undefined
   if (details.additionalFilter && typeof details.additionalFilter === 'string') {
     const filterFn = buildFilterFromString(details.additionalFilter, ownerId, coords)
@@ -214,7 +236,7 @@ export function buildActionFromContentAbility(
 
   // Build action based on type
   switch (actionType) {
-    case 'CREATE_STACK':
+    case 'CREATE_STACK': {
       // Convert mode to constraints
       // LINE_TARGET -> mustBeInLineWithSource
       // ADJACENT_TARGET -> mustBeAdjacentToSource
@@ -244,6 +266,7 @@ export function buildActionFromContentAbility(
         onlyFaceDown: details.onlyFaceDown,
         excludeOwnerId: details.excludeOwnerId,
       } as AbilityAction
+    }
 
     case 'CREATE_STACK_SELF':
       // CREATE_STACK_SELF is a special case - places tokens on self

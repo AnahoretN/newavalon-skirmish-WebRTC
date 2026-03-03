@@ -935,13 +935,13 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   const addHandCardStatus = useCallback(() => {}, [])
   const removeHandCardStatus = useCallback(() => {}, [])
   const flipBoardCard = useCallback((coords: any) => {
-    if (!coords) return
+    if (!coords) { return }
     sendAction('FLIP_CARD', { boardCoords: coords, faceDown: false })
     console.log('[useGameState] flipBoardCard: Flipping card face-up at', coords)
   }, [sendAction])
 
   const flipBoardCardFaceDown = useCallback((coords: any) => {
-    if (!coords) return
+    if (!coords) { return }
     sendAction('FLIP_CARD', { boardCoords: coords, faceDown: true })
     console.log('[useGameState] flipBoardCardFaceDown: Flipping card face-down at', coords)
   }, [sendAction])

@@ -16,10 +16,13 @@ import type { ActionType } from './SimpleP2PTypes'
 import { shuffleDeck } from '../../shared/utils/array'
 import { recalculateBoardStatuses } from '../../shared/utils/boardUtils'
 import { recalculateAllReadyStatuses, getCardAbilityInfo, recheckReadyStatuses } from '../utils/autoAbilities'
-import { READY_STATUS } from '@shared/abilities/index.js'
+import { READY_STATUS, checkTriggersOnCardPlaced, type CardPlacedEvent } from '@shared/abilities/index.js'
 import { createDeck } from '../hooks/core/gameCreators'
 import { logger } from '../utils/logger'
 import { getCardDefinition } from '@/content'
+import type { CardLookupFn } from '@shared/abilities/triggerSystem.js'
+// Import content database directly for trigger lookup
+import contentDatabase from '@shared/content/contentDatabase.json'
 
 // Import handlers from separate modules
 import * as ScoringHandlers from './handlers/scoringHandlers'
@@ -56,6 +59,23 @@ function clearAllStatusesExceptRevealed(card: Card): void {
   card.statuses = card.statuses.filter(s => s.type === 'Revealed')
 
   // Reset power modifiers to base value when card leaves battlefield
+  card.powerModifier = 0
+  card.bonusPower = 0
+}
+
+/**
+ * Clear all card statuses including Revealed
+ * Called when moving card to discard/deck
+ * Also resets power modifiers to base value
+ */
+function clearAllStatuses(card: Card): void {
+  if (!card.statuses) {
+    card.statuses = []
+  }
+  // Clear ALL statuses including Revealed when card goes to discard/deck
+  card.statuses = []
+
+  // Reset power modifiers to base value
   card.powerModifier = 0
   card.bonusPower = 0
 }
@@ -118,9 +138,9 @@ function restoreLastPlayedToPreviousCard(
           break
         }
       }
-      if (foundCardId) break
+      if (foundCardId) {break}
     }
-    if (foundCardId) break
+    if (foundCardId) {break}
   }
 
   if (!foundCardId) {
@@ -169,6 +189,75 @@ function restoreLastPlayedToPreviousCard(
   )
 
   return { ...state, board: newBoard, players: newPlayers }
+}
+
+/**
+ * Check and apply triggers when a card is placed on the battlefield
+ * Used for abilities like Vigilant Spotter: "When your opponent plays a revealed card, gain 2 points."
+ *
+ * @param state - Current game state
+ * @param placedCard - The card that was placed
+ * @param coords - Where the card was placed
+ * @param playerId - The player who placed the card
+ * @param source - Where the card came from ('hand', 'deck', 'discard', 'announced', 'board')
+ * @returns Updated game state with trigger effects applied
+ */
+function checkAndApplyTriggers(
+  state: GameState,
+  placedCard: Card,
+  coords: { row: number; col: number },
+  playerId: number,
+  source: 'hand' | 'deck' | 'discard' | 'announced' | 'board'
+): GameState {
+  console.log('[checkAndApplyTriggers] CALLED - placedCard:', placedCard.baseId, 'coords:', coords, 'playerId:', playerId, 'source:', source)
+  console.log('[checkAndApplyTriggers] Placed card statuses:', placedCard.statuses)
+
+  // Create the card lookup function - use contentDatabase directly
+  const cardLookup: CardLookupFn = (baseId: string) => {
+    // Try contentDatabase first (most reliable)
+    if ((contentDatabase.cardDatabase as any)[baseId]) {
+      const def = (contentDatabase.cardDatabase as any)[baseId]
+      console.log('[checkAndApplyTriggers] cardLookup for', baseId, 'found in contentDatabase, abilities:', def.ABILITIES?.length)
+      return def
+    }
+    // Fallback to getCardDefinition
+    const def = getCardDefinition(baseId) as { ABILITIES?: any[] } | null
+    console.log('[checkAndApplyTriggers] cardLookup for', baseId, 'via getCardDefinition:', def ? 'found' : 'NOT FOUND', 'abilities:', def?.ABILITIES?.length)
+    return def
+  }
+
+  // Create the card placed event
+  const event: CardPlacedEvent = {
+    card: placedCard,
+    coords,
+    playerId,
+    source
+  }
+
+  // Check for matching triggers
+  const triggerResults = checkTriggersOnCardPlaced(state, event, cardLookup)
+
+  console.log('[checkAndApplyTriggers] Trigger results:', triggerResults)
+
+  if (triggerResults.length === 0) {
+    return state
+  }
+
+  console.log('[checkAndApplyTriggers] Triggers fired:', triggerResults)
+
+  // Apply trigger effects (modify scores, etc.)
+  const newState = state
+  triggerResults.forEach(result => {
+    if (result.points && result.points > 0) {
+      const playerToUpdate = newState.players.find(p => p.id === result.triggerOwnerId)
+      if (playerToUpdate) {
+        playerToUpdate.score = (playerToUpdate.score || 0) + result.points
+        console.log('[checkAndApplyTriggers] Awarded', result.points, 'points to player', result.triggerOwnerId)
+      }
+    }
+  })
+
+  return newState
 }
 
 /**
@@ -527,7 +616,7 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
     // For real players, check if card belongs to them AND was added by them this turn
     const hasLastPlayedCards = state.board.some(row =>
       row.some(cell => {
-        if (cell.card?.ownerId !== activePlayerId) return false
+        if (cell.card?.ownerId !== activePlayerId) {return false}
 
         if (isDummyPlayer) {
           // Dummy player: check for any LastPlayed status (regardless of who added it)
@@ -618,8 +707,8 @@ function handlePassTurn(state: GameState, playerId: number, reason: string): Gam
       if (cell.card) {
         const newStatuses = cell.card.statuses?.filter((s: any) => {
           // Keep all statuses except setupUsedThisTurn and commitUsedThisTurn
-          if (s.type === 'setupUsedThisTurn') return false
-          if (s.type === 'commitUsedThisTurn') return false
+          if (s.type === 'setupUsedThisTurn') {return false}
+          if (s.type === 'commitUsedThisTurn') {return false}
           return true
         }) || []
 
@@ -668,7 +757,7 @@ function handlePassTurn(state: GameState, playerId: number, reason: string): Gam
  */
 function handleSetPhase(state: GameState, phaseNumber: number): GameState {
   const clamped = Math.max(0, Math.min(4, phaseNumber))
-  let newState = { ...state, currentPhase: clamped }
+  const newState = { ...state, currentPhase: clamped }
 
   // When entering Preparation phase (0), clear setup/commit usage markers
   // This allows abilities to be used again in the new turn
@@ -679,8 +768,8 @@ function handleSetPhase(state: GameState, phaseNumber: number): GameState {
           const newStatuses = cell.card.statuses?.filter((s: any) => {
             // Remove only setupUsedThisTurn and commitUsedThisTurn
             // Keep deployUsedThisTurn (only clears when card leaves battlefield)
-            if (s.type === 'setupUsedThisTurn') return false
-            if (s.type === 'commitUsedThisTurn') return false
+            if (s.type === 'setupUsedThisTurn') {return false}
+            if (s.type === 'commitUsedThisTurn') {return false}
             return true
           }) || []
 
@@ -884,7 +973,7 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
   )
 
   // Switch to Main phase (2) - this should happen before ready status recalculation
-  let newState: GameState = {
+  const newState: GameState = {
     ...state,
     board: newBoard,
     players: newPlayers,
@@ -1021,6 +1110,7 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
   let cardToMove: Card | null = null
   // Use data.playerId if provided, otherwise fall back to sender's playerId
   let targetPlayerId = dataPlayerId ?? playerId
+  let sourcePlayerId: number | undefined = undefined // Track source player separately
   let newBoard = state.board
   let newDiscard: Card[] | null = null
   let newDeck: Card[] | null = null
@@ -1039,6 +1129,7 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
             cardFromBoard = { ...foundCard, statuses: [...(foundCard.statuses || [])] }
             ownerIdFromBoard = foundCard.ownerId || playerId
             targetPlayerId = foundCard.ownerId || playerId
+            sourcePlayerId = foundCard.ownerId || playerId
             // Clear all statuses except Revealed when card leaves battlefield
             clearAllStatusesExceptRevealed(foundCard)
           }
@@ -1049,7 +1140,7 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
     )
   } else if (source === 'discard') {
     // Use data.playerId if provided, otherwise fall back to sender's playerId
-    const sourcePlayerId = dataPlayerId ?? playerId
+    sourcePlayerId = dataPlayerId ?? playerId
     const player = state.players.find(p => p.id === sourcePlayerId)
     if (!player) {return state}
     const idx = player.discard?.findIndex(c => c.id === cardId)
@@ -1058,9 +1149,11 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
     targetPlayerId = sourcePlayerId
     newDiscard = [...player.discard]
     newDiscard.splice(idx, 1)
+    // Clear ALL statuses including Revealed when card moves from discard to hand
+    clearAllStatuses(cardToMove)
   } else if (source === 'deck') {
     // Use data.playerId if provided, otherwise fall back to sender's playerId
-    const sourcePlayerId = dataPlayerId ?? playerId
+    sourcePlayerId = dataPlayerId ?? playerId
     const player = state.players.find(p => p.id === sourcePlayerId)
     if (!player || !player.deck) {return state}
     // For deck, use cardIndex if provided, otherwise find by cardId
@@ -1079,6 +1172,8 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
       p.id === sourcePlayerId ? { ...p, deck: newDeck!, deckSize: newDeck!.length } : p
     )
     newState = { ...newState, players: playersWithUpdatedDeck as Player[] }
+    // Clear ALL statuses including Revealed when card moves from deck to hand
+    clearAllStatuses(cardToMove)
   }
 
   if (!cardToMove) {return newState}
@@ -1088,8 +1183,8 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
     // Token is removed from source and not added to destination
     // Still restore LastPlayed if token had it
     let resultState = { ...newState, board: newBoard, players: newState.players.map(p => {
-      // Update discard for the source player (targetPlayerId, not sender's playerId)
-      if (p.id === targetPlayerId && newDiscard !== null) {
+      // Update discard for the source player
+      if (sourcePlayerId !== undefined && p.id === sourcePlayerId && newDiscard !== null) {
         return { ...p, discard: newDiscard, discardSize: newDiscard.length }
       }
       return p
@@ -1101,12 +1196,13 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
   }
 
   const newPlayers = newState.players.map(p => {
+    // Update hand for the target player
     if (p.id === targetPlayerId) {
       const newHand = [...p.hand, cardToMove]
       return { ...p, hand: newHand, handSize: newHand.length }
     }
-    // Update discard for the source player (targetPlayerId, not sender's playerId)
-    if (p.id === targetPlayerId && newDiscard !== null) {
+    // Update discard for the source player (different from target player)
+    if (sourcePlayerId !== undefined && p.id === sourcePlayerId && newDiscard !== null) {
       return { ...p, discard: newDiscard, discardSize: newDiscard.length }
     }
     return p
@@ -1165,6 +1261,8 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
     targetPlayerId = sourcePlayerId
     newHand = [...player.hand]
     newHand.splice(cardIndex, 1)
+    // Clear ALL statuses including Revealed when card goes to deck
+    clearAllStatuses(cardToMove)
   } else if (source === 'discard') {
     const player = state.players.find(p => p.id === sourcePlayerId)
     if (!player) {return state}
@@ -1174,6 +1272,8 @@ function handleMoveCardToDeck(state: GameState, playerId: number, data: any): Ga
     targetPlayerId = sourcePlayerId
     newDiscard = [...player.discard]
     newDiscard.splice(cardIndex, 1)
+    // Clear ALL statuses including Revealed when card goes to deck
+    clearAllStatuses(cardToMove)
   }
 
   if (!cardToMove) {return state}
@@ -1274,6 +1374,8 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
     targetPlayerId = sourcePlayerId
     newHand = [...player.hand]
     newHand.splice(cardIndex, 1)
+    // Clear ALL statuses including Revealed when card goes to discard
+    clearAllStatuses(cardToMove)
   } else if (source === 'deck') {
     const player = state.players.find(p => p.id === sourcePlayerId)
     if (!player) {return state}
@@ -1283,6 +1385,8 @@ function handleMoveCardToDiscard(state: GameState, playerId: number, data: any):
     targetPlayerId = sourcePlayerId
     newDeck = [...player.deck]
     newDeck.splice(cardIndex, 1)
+    // Clear ALL statuses including Revealed when card goes to discard
+    clearAllStatuses(cardToMove)
   }
 
   if (!cardToMove) {return state}
@@ -1640,7 +1744,14 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
     return p
   })
 
-  return { ...state, players: newPlayers }
+  let newState = { ...state, players: newPlayers }
+
+  // Check and apply triggers when a card is announced (played)
+  // This is where Vigilant Spotter trigger should fire - when opponent plays a revealed card
+  console.log('[handleAnnounceCard] Checking triggers for announced card:', announcedCard.baseId, 'statuses:', announcedCard.statuses)
+  newState = checkAndApplyTriggers(newState, announcedCard, { row: -1, col: -1 }, actualPlayerId, 'hand')
+
+  return newState
 }
 
 /**
@@ -2076,10 +2187,10 @@ function handleChangePlayerDeck(state: GameState, playerId: number, deckType: De
  */
 function handleMarkAbilityUsed(state: GameState, data: any): GameState {
   const { coords, isDeploy, readyStatusToRemove } = data || {}
-  if (!coords) return state
+  if (!coords) {return state}
 
   const { row, col } = coords
-  if (row === undefined || col === undefined) return state
+  if (row === undefined || col === undefined) {return state}
 
   const cardBaseId = state.board[row]?.[col]?.card?.baseId
   console.log('[handleMarkAbilityUsed] Processing:', { coords, isDeploy, readyStatusToRemove, cardBaseId })
@@ -2088,7 +2199,7 @@ function handleMarkAbilityUsed(state: GameState, data: any): GameState {
     r.map((cell, cIdx) => {
       if (rIdx === row && cIdx === col && cell.card) {
         const newCard = { ...cell.card }
-        if (!newCard.statuses) newCard.statuses = []
+        if (!newCard.statuses) {newCard.statuses = []}
 
         console.log('[handleMarkAbilityUsed] Current statuses before:', newCard.statuses.map(s => s.type))
 
@@ -2155,13 +2266,13 @@ function handleMarkAbilityUsed(state: GameState, data: any): GameState {
  */
 function handleRemoveAllCountersByType(state: GameState, data: any): GameState {
   const { coords, type } = data || {}
-  if (!coords || !type) return state
+  if (!coords || !type) {return state}
 
   const { row, col } = coords
-  if (row === undefined || col === undefined) return state
+  if (row === undefined || col === undefined) {return state}
 
   const cell = state.board[row][col]
-  if (!cell?.card) return state
+  if (!cell?.card) {return state}
 
   const targetCard = cell.card
   const hadSupport = targetCard.statuses?.some(s => s.type === 'Support') ?? false
@@ -2177,7 +2288,7 @@ function handleRemoveAllCountersByType(state: GameState, data: any): GameState {
     })
   )
 
-  let newState = { ...state, board: newBoard }
+  const newState = { ...state, board: newBoard }
 
   // If Support status was removed, recalculate ready statuses for this card
   if (type === 'Support' && hadSupport) {
@@ -2196,13 +2307,13 @@ function handleRemoveAllCountersByType(state: GameState, data: any): GameState {
  */
 function handleRemoveCounterByType(state: GameState, data: any): GameState {
   const { coords, type, ownerId } = data || {}
-  if (!coords || !type || ownerId === undefined) return state
+  if (!coords || !type || ownerId === undefined) {return state}
 
   const { row, col } = coords
-  if (row === undefined || col === undefined) return state
+  if (row === undefined || col === undefined) {return state}
 
   const cell = state.board[row][col]
-  if (!cell?.card) return state
+  if (!cell?.card) {return state}
 
   const targetCard = cell.card
   const hadSupport = targetCard.statuses?.some(s => s.type === 'Support') ?? false
@@ -2219,7 +2330,7 @@ function handleRemoveCounterByType(state: GameState, data: any): GameState {
     })
   )
 
-  let newState = { ...state, board: newBoard }
+  const newState = { ...state, board: newBoard }
 
   // If Support status was removed, recalculate ready statuses for this card
   if (type === 'Support' && hadSupport) {
@@ -2238,13 +2349,13 @@ function handleRemoveCounterByType(state: GameState, data: any): GameState {
  */
 function handleModifyCardPower(state: GameState, data: any): GameState {
   const { coords, delta } = data || {}
-  if (!coords || delta === undefined) return state
+  if (!coords || delta === undefined) {return state}
 
   const { row, col } = coords
-  if (row === undefined || col === undefined) return state
+  if (row === undefined || col === undefined) {return state}
 
   const cell = state.board[row][col]
-  if (!cell?.card) return state
+  if (!cell?.card) {return state}
 
   const newBoard = state.board.map((r, rIdx) =>
     r.map((c, cIdx) => {
@@ -2267,12 +2378,12 @@ function handlePlayCardFromDeck(state: GameState, playerId: number, data: any): 
   const { cardIndex, boardCoords, faceDown, playerId: targetPlayerId } = data || {}
   const actualPlayerId = targetPlayerId ?? playerId
   const player = state.players.find(p => p.id === actualPlayerId)
-  if (!player || !player.deck || player.deck.length === 0) return state
+  if (!player || !player.deck || player.deck.length === 0) {return state}
 
   // Get the card to play (top card from deck by default)
   const indexToPlay = cardIndex !== undefined ? cardIndex : 0
   const cardToPlay = player.deck[indexToPlay]
-  if (!cardToPlay) return state
+  if (!cardToPlay) {return state}
 
   // Remove card from deck
   const newDeck = [...player.deck]
@@ -2299,12 +2410,12 @@ function handlePlayCardFromDiscard(state: GameState, playerId: number, data: any
   const { cardIndex, boardCoords, faceDown, playerId: targetPlayerId } = data || {}
   const actualPlayerId = targetPlayerId ?? playerId
   const player = state.players.find(p => p.id === actualPlayerId)
-  if (!player || !player.discard || player.discard.length === 0) return state
+  if (!player || !player.discard || player.discard.length === 0) {return state}
 
   // Get the card to play (top card from discard by default)
   const indexToPlay = cardIndex !== undefined ? cardIndex : player.discard.length - 1
   const cardToPlay = player.discard[indexToPlay]
-  if (!cardToPlay) return state
+  if (!cardToPlay) {return state}
 
   // Remove card from discard
   const newDiscard = [...player.discard]

@@ -110,4 +110,17 @@ export {
   buildDetailsFromContent,
   buildActionFromContentAbility,
   type ContentAbility,
+  type TriggerEventType,
 } from './contentAbilities.js'
+
+// ============================================================================
+// Trigger System
+// ============================================================================
+
+export {
+  getActiveTriggers,
+  checkTriggersOnCardPlaced,
+  type ActiveTrigger,
+  type CardPlacedEvent,
+  type TriggerResult,
+} from './triggerSystem.js'

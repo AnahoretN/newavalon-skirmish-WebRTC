@@ -923,9 +923,9 @@ function handleEnterMode(
 
     // Check for adjacent Support
     const hasSupport = (r: number, c: number): boolean => {
-      if (r < 0 || r >= gridSize || c < 0 || c >= gridSize) return false
+      if (r < 0 || r >= gridSize || c < 0 || c >= gridSize) { return false }
       const cell = gameState.board[r]?.[c]
-      if (!cell?.card) return false
+      if (!cell?.card) { return false }
       return cell.card.statuses?.some((s: any) => s.type === 'Support' && s.addedByPlayerId === ownerId) ?? false
     }
 

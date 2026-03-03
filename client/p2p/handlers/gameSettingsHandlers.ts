@@ -74,7 +74,7 @@ export function handleSetDummyPlayerCount(state: GameState, count: number): Game
   }
 
   // Remove all existing dummy players
-  let newPlayers = [...realPlayers]
+  const newPlayers = [...realPlayers]
 
   // Add new dummy players
   let nextPlayerId = Math.max(...realPlayers.map(p => p.id), 0)

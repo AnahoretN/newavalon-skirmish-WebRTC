@@ -122,26 +122,26 @@ export function calculateLineScore(state: GameState, playerId: number, lineType:
   for (let r = 0; r < state.board.length; r++) {
     for (let c = 0; c < state.board[r]?.length; c++) {
       const cell = state.board[r][c]
-      if (!cell.card) continue
+      if (!cell.card) {continue}
 
       const card = cell.card
       // Check if card is owned by this player
-      if (card.ownerId !== playerId) continue
+      if (card.ownerId !== playerId) {continue}
 
       // Check if card has Support status added by this player
       const hasSupport = card.statuses?.some((s: any) =>
         s.type === 'Support' && s.addedByPlayerId === playerId
       )
-      if (!hasSupport) continue
+      if (!hasSupport) {continue}
 
       // Check if card has MODIFY_SCORING ability in its pass abilities
-      if (!card.baseId) continue
+      if (!card.baseId) {continue}
       const cardDef = getCardDefinition(card.baseId)
-      if (!cardDef) continue
+      if (!cardDef) {continue}
 
       // ABILITIES is stored as uppercase in contentDatabase
       const abilities = (cardDef as any).ABILITIES
-      if (!abilities) continue
+      if (!abilities) {continue}
 
       for (const ability of abilities) {
         if (ability.type === 'pass' && ability.action === 'MODIFY_SCORING') {
@@ -160,7 +160,7 @@ export function calculateLineScore(state: GameState, playerId: number, lineType:
   let score = 0
   for (const { row, col } of cellsToCheck) {
     const cell = state.board[row]?.[col]
-    if (!cell.card) continue
+    if (!cell.card) {continue}
 
     const card = cell.card
 

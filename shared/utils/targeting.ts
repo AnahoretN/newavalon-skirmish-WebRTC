@@ -157,6 +157,7 @@ function buildFilterFromString(
   filter: string,
   ownerId: number,
   _coords: { row: number; col: number }
+// eslint-disable-next-line no-unused-vars
 ): ((card: Card, r?: number, c?: number) => boolean) | undefined {
   // hasStatus_StatusName1_or_StatusName2 (must check BEFORE single status)
   if (filter.startsWith('hasStatus_') && filter.includes('_or_')) {
@@ -355,7 +356,7 @@ export const calculateValidTargets = (
           }
 
           const isValid = validateTarget(
-            { card: cell.card, ownerId: cell.card.ownerId, location: 'board', boardCoords: { row: r, col: c } },
+            { card: cell.card, ownerId: cell.card.ownerId || 0, location: 'board', boardCoords: { row: r, col: c } },
             constraints,
             actorId,
             currentGameState.players,
@@ -511,7 +512,7 @@ export const calculateValidTargets = (
         if (cell.card) {
           // Check constraints
           const isValid = validateTarget(
-            { card: cell.card, ownerId: cell.card.ownerId, location: 'board', boardCoords: { row: r, col: c } },
+            { card: cell.card, ownerId: cell.card.ownerId || 0, location: 'board', boardCoords: { row: r, col: c } },
             {
               targetOwnerId: action.targetOwnerId,
               excludeOwnerId: action.excludeOwnerId,

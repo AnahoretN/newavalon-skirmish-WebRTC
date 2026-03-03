@@ -302,12 +302,25 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365268/HOO_VIGILANT_SPOTTER_xo8ig7.webp",
       "fallbackImage": "/images/cards/HOO_VIGILANT_SPOTTER.png",
       "power": 1,
-      "abilityText": "Pass (requires Support): When a revealed card of the opponent enters the battlefield, gain 2 points.\nCommit: Place 1 reveal counter on your opponent's card.",
+      "abilityText": "Pass (requires Support): When your opponent plays a revealed card, gain 2 points.\nCommit: Place 1 reveal counter on your opponent's card.",
       "flavorText": "- \"Patience is a weapon. Vengeance is an art.\"",
       "types": ["Unit", "Hoods"],
       "faction": "Hoods",
       "allowedPanels": ["DECK_BUILDER"],
       "ABILITIES": [
+        {
+          "type": "pass",
+          "supportRequired": true,
+          "action": "TRIGGER_ON_EVENT",
+          "details": {
+            "eventType": "OPPONENT_PLAYS_REVEALED_CARD",
+            "effect": {
+              "type": "MODIFY_SCORE",
+              "points": 2,
+              "target": "self"
+            }
+          }
+        },
         {
           "type": "commit",
           "supportRequired": false,

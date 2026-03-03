@@ -574,7 +574,7 @@ export class SimpleHost {
           break
         }
       }
-      if (hasDataLiberatorWithSupport) break
+      if (hasDataLiberatorWithSupport) {break}
     }
 
     // CRITICAL: Calculate offset to convert active grid coordinates to full board coordinates
