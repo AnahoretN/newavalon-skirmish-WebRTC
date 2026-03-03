@@ -53,7 +53,6 @@ interface GameBoardProps {
 const isLineSelectionMode = (mode: string | undefined): boolean => {
   return mode === 'SCORE_LAST_PLAYED_LINE' ||
          mode === 'SELECT_LINE_END' ||
-         mode === 'INTEGRATOR_LINE_SELECT' ||
          mode === 'ZIUS_LINE_SELECT'
 }
 

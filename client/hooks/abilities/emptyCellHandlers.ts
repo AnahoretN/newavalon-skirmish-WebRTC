@@ -687,51 +687,6 @@ export function handleEmptyCellClick(
     return false
   }
 
-  // === ABILITY MODE - INTEGRATOR_LINE_SELECT ===
-  if (abilityMode && abilityMode.mode === 'INTEGRATOR_LINE_SELECT') {
-    const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
-
-    if (!sourceCoords || sourceCoords.row < 0) {return false}
-
-    const sameRow = boardCoords.row === sourceCoords.row
-    const sameCol = boardCoords.col === sourceCoords.col
-
-    if (!sameRow && !sameCol) {return false}
-
-    const ownerId = sourceCard?.ownerId || 0
-    let exploitCount = 0
-
-    if (sameRow) {
-      for (let c = 0; c < gridSize; c++) {
-        const card = gameState.board[boardCoords.row][c].card
-        if (card?.statuses) {
-          exploitCount += card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
-        }
-      }
-    } else {
-      for (let r = 0; r < gridSize; r++) {
-        const card = gameState.board[r][boardCoords.col].card
-        if (card?.statuses) {
-          exploitCount += card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
-        }
-      }
-    }
-
-    if (exploitCount > 0) {
-      updatePlayerScore(ownerId, exploitCount)
-      triggerFloatingText({
-        row: sourceCoords.row,
-        col: sourceCoords.col,
-        text: `+${exploitCount}`,
-        playerId: ownerId,
-      })
-    }
-
-    markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
-    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
-    return true
-  }
-
   // === ABILITY MODE - MOVE_SELF_ANY_EMPTY ===
   if (abilityMode && abilityMode.mode === 'MOVE_SELF_ANY_EMPTY') {
     const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode

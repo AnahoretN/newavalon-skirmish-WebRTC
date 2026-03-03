@@ -249,7 +249,6 @@ export function handleModeCardClick(
   // Prevent clicking self unless specific modes allow it
   if (abilityMode.sourceCard && abilityMode.sourceCard.id === card.id &&
       abilityMode.mode !== 'SELECT_LINE_START' &&
-      abilityMode.mode !== 'INTEGRATOR_LINE_SELECT' &&
       abilityMode.mode !== 'ZIUS_LINE_SELECT' &&
       abilityMode.mode !== 'IP_AGENT_THREAT_SCORING' &&
       abilityMode.mode !== 'SELECT_LINE_FOR_EXPLOIT_SCORING' &&
@@ -2102,65 +2101,6 @@ function handleReconDroneCommit(
   // Step 2: Target should be hand card (handled elsewhere via handCardHandlers)
   // This handler is only for board card selection (step 1)
   return false
-}
-
-/**
- * Handle INTEGRATOR_LINE_SELECT (Unwavering Integrator Setup)
- */
-function handleIntegratorLineSelect(
-  _card: Card,
-  boardCoords: { row: number; col: number },
-  props: ModeHandlersProps
-): boolean {
-  const { abilityMode, gameState, markAbilityUsed, updatePlayerScore, triggerFloatingText, setAbilityMode } = props
-
-  if (!abilityMode || abilityMode.mode !== 'INTEGRATOR_LINE_SELECT') {
-    return false
-  }
-
-  const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
-  const ownerId = sourceCard?.ownerId || 0
-
-  // Check if selected same row or column as source
-  const sameRow = sourceCoords !== undefined && boardCoords.row === sourceCoords.row
-  const sameCol = sourceCoords !== undefined && boardCoords.col === sourceCoords.col
-
-  if (!sameRow && !sameCol) {
-    return false
-  }
-
-  // Count Exploit in selected line
-  let exploitCount = 0
-
-  if (sameRow && sourceCoords) {
-    for (let c = 0; c < gameState.board.length; c++) {
-      const card = gameState.board[boardCoords.row][c].card
-      if (card?.statuses) {
-        exploitCount += card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
-      }
-    }
-  } else if (sourceCoords) {
-    for (let r = 0; r < gameState.board.length; r++) {
-      const card = gameState.board[r][boardCoords.col].card
-      if (card?.statuses) {
-        exploitCount += card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
-      }
-    }
-  }
-
-  if (exploitCount > 0) {
-    updatePlayerScore(ownerId, exploitCount)
-    triggerFloatingText({
-      row: sourceCoords.row,
-      col: sourceCoords.col,
-      text: `+${exploitCount}`,
-      playerId: ownerId,
-    })
-  }
-
-  markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
-  setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
-  return true
 }
 
 /**

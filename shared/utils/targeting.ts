@@ -897,20 +897,7 @@ export const calculateValidTargets = (
       targets.push({ row: r, col: firstCol })
     }
   }
-  // 11. Integrator Line Select (Cells in same row/col as source)
-  else if (mode === 'INTEGRATOR_LINE_SELECT' && sourceCoords) {
-    const { row: sourceRow, col: sourceCol } = sourceCoords
-
-    // Add all cells in same row (within active bounds)
-    for (let c = minBound; c <= maxBound; c++) {
-      targets.push({ row: sourceRow, col: c })
-    }
-    // Add all cells in same col (within active bounds)
-    for (let r = minBound; r <= maxBound; r++) {
-      targets.push({ row: r, col: sourceCol })
-    }
-  }
-  // 11.5. Zius Line Select (same as Integrator, but uses different coords)
+  // 11. Zius Line Select (Cells in same row/col as source)
   else if (mode === 'ZIUS_LINE_SELECT' && sourceCoords) {
     const { row: sourceRow, col: sourceCol } = sourceCoords
 

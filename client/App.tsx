@@ -1221,7 +1221,7 @@ const AppInner = function AppInner() {
       }
     }
     // Line selection modes - only active when cursorStack is NOT active
-    if (abilityMode && !cursorStack && (abilityMode.mode === 'SCORE_LAST_PLAYED_LINE' || abilityMode.mode === 'SELECT_LINE_END' || abilityMode.mode === 'INTEGRATOR_LINE_SELECT' || abilityMode.mode === 'ZIUS_LINE_SELECT')) {
+    if (abilityMode && !cursorStack && (abilityMode.mode === 'SCORE_LAST_PLAYED_LINE' || abilityMode.mode === 'SELECT_LINE_END' || abilityMode.mode === 'ZIUS_LINE_SELECT')) {
       const gridSize = boardSize
       if (abilityMode.sourceCoords) {
         // Highlight horizontal line (same row)
@@ -1245,7 +1245,7 @@ const AppInner = function AppInner() {
     setValidHandTargets(handTargets)
 
     // Debug: log valid targets for line selection modes
-    if (abilityMode && (abilityMode.mode === 'SCORE_LAST_PLAYED_LINE' || abilityMode.mode === 'SELECT_LINE_END' || abilityMode.mode === 'INTEGRATOR_LINE_SELECT' || abilityMode.mode === 'ZIUS_LINE_SELECT')) {
+    if (abilityMode && (abilityMode.mode === 'SCORE_LAST_PLAYED_LINE' || abilityMode.mode === 'SELECT_LINE_END' || abilityMode.mode === 'ZIUS_LINE_SELECT')) {
       logger.info(`[App.tsx] Line selection mode (${abilityMode.mode}) - set ${boardTargets.length} validTargets`, {
         boardTargets: boardTargets.slice(0, 5), // Log first 5 for brevity
         sourceCoords: abilityMode.sourceCoords,
@@ -1307,7 +1307,6 @@ const AppInner = function AppInner() {
         // This prevents immediate processing when guest clicks on a line
         const isLineSelectionMode = targetingAction.mode === 'SCORE_LAST_PLAYED_LINE' ||
                                    targetingAction.mode === 'SELECT_LINE_END' ||
-                                   targetingAction.mode === 'INTEGRATOR_LINE_SELECT' ||
                                    targetingAction.mode === 'ZIUS_LINE_SELECT'
 
         if (!isLineSelectionMode) {

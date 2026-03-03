@@ -302,9 +302,9 @@ export const resetPhaseReadyStatuses = (_card: Card, _ownerId: number): void => 
  * Client-side version of getCardAbilityAction for WebRTC P2P mode.
  *
  * Determines which ability to activate based on:
- * 1. Setup abilities - ONLY in Setup phase (phase 1)
- * 2. Commit abilities - ONLY in Commit phase (phase 3)
- * 3. Deploy abilities - in ANY phase (when no phase-specific ability is active)
+ * 1. Deploy abilities - ALWAYS FIRST PRIORITY (in ANY phase)
+ * 2. Setup abilities - ONLY in Setup phase (phase 1) if Deploy not available
+ * 3. Commit abilities - ONLY in Commit phase (phase 3) if Deploy not available
  */
 export const getCardAbilityAction = (
   card: Card,
@@ -329,7 +329,24 @@ export const getCardAbilityAction = (
   const phaseIndex = gameState.currentPhase
   const actorId = card.ownerId ?? localPlayerId ?? 0
 
-  // Priority 1: Setup ability (ONLY in Setup phase / phase 1)
+  // Priority 1: Deploy ability (ALWAYS FIRST - in ANY phase)
+  const deployAbility = abilities.find(a => a.activationType === 'deploy')
+  if (deployAbility && hasReadyStatus(card, READY_STATUS.DEPLOY)) {
+    if (deployAbility.supportRequired && !hasStatus(card, 'Support', actorId)) {
+      return null
+    }
+    const action = deployAbility.getAction(card as any, gameState as any, actorId, coords)
+    if (action) {
+      return {
+        ...action,
+        isDeployAbility: true,
+        readyStatusToRemove: READY_STATUS.DEPLOY,
+        supportRequired: deployAbility.supportRequired
+      }
+    }
+  }
+
+  // Priority 2: Setup ability (ONLY in Setup phase / phase 1)
   if (phaseIndex === 1) {
     const setupAbility = abilities.find(a => a.activationType === 'setup')
     if (setupAbility && hasReadyStatus(card, READY_STATUS.SETUP)) {
@@ -343,7 +360,7 @@ export const getCardAbilityAction = (
     }
   }
 
-  // Priority 2: Commit ability (ONLY in Commit phase / phase 3)
+  // Priority 3: Commit ability (ONLY in Commit phase / phase 3)
   if (phaseIndex === 3) {
     const commitAbility = abilities.find(a => a.activationType === 'commit')
     if (commitAbility && hasReadyStatus(card, READY_STATUS.COMMIT)) {
@@ -353,30 +370,6 @@ export const getCardAbilityAction = (
       const action = commitAbility.getAction(card as any, gameState as any, actorId, coords)
       if (action) {
         return { ...action, readyStatusToRemove: READY_STATUS.COMMIT, supportRequired: commitAbility.supportRequired }
-      }
-    }
-  }
-
-  // Priority 3: Deploy ability (works in ANY phase when card has readyDeploy)
-  // Deploy takes priority UNLESS the card has the phase-specific status for current phase
-  const hasPhaseSpecificStatus =
-    (phaseIndex === 1 && hasReadyStatus(card, READY_STATUS.SETUP)) ||
-    (phaseIndex === 3 && hasReadyStatus(card, READY_STATUS.COMMIT))
-
-  if (!hasPhaseSpecificStatus) {
-    const deployAbility = abilities.find(a => a.activationType === 'deploy')
-    if (deployAbility && hasReadyStatus(card, READY_STATUS.DEPLOY)) {
-      if (deployAbility.supportRequired && !hasStatus(card, 'Support', actorId)) {
-        return null
-      }
-      const action = deployAbility.getAction(card as any, gameState as any, actorId, coords)
-      if (action) {
-        return {
-          ...action,
-          isDeployAbility: true,
-          readyStatusToRemove: READY_STATUS.DEPLOY,
-          supportRequired: deployAbility.supportRequired
-        }
       }
     }
   }
@@ -397,7 +390,7 @@ export const getCardAbilityAction = (
  * 3. Has ready status for current phase
  * 4. Has Support if required
  *
- * Priority: Setup (phase 1) > Commit (phase 3) > Deploy (any phase)
+ * Priority: Deploy (any phase) > Setup (phase 1) > Commit (phase 3)
  */
 export const canActivateAbility = (
   card: Card,
