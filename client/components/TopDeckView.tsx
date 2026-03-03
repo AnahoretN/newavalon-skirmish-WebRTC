@@ -153,7 +153,10 @@ const TopDeckView: React.FC<TopDeckViewProps> = memo(({
   }, [isOpen, initialCount])
 
   // Update local visible cards when player deck or view count changes
+  // Show TOP cards from deck (beginning of array), in the same order
+  // deck[0] = top card (drawn first), deck[length-1] = bottom card
   useEffect(() => {
+    // Take first N cards from deck (the top of deck)
     const cards = player.deck.slice(0, Math.min(viewCount, player.deck.length))
     setLocalVisibleCards(cards)
   }, [player.deck, viewCount])
@@ -281,16 +284,13 @@ const TopDeckView: React.FC<TopDeckViewProps> = memo(({
       } },
       { label: t('moveToBottom'), onClick: () => {
         onMoveToBottom(contextMenu.cardIndex)
-        setViewCount(prev => Math.max(0, prev - 1))
       } },
       { isDivider: true },
       { label: t('toHand'), disabled: isLocked, onClick: () => {
         onMoveToHand(contextMenu.cardIndex)
-        setViewCount(prev => Math.max(0, prev - 1))
       } },
       { label: t('toDiscard'), disabled: isLocked, onClick: () => {
         onMoveToDiscard(contextMenu.cardIndex)
-        setViewCount(prev => Math.max(0, prev - 1))
       } },
     ]
   }, [displayCards, isLocked, onViewCard, onPlayCard, onMoveToBottom, onMoveToHand, onMoveToDiscard, contextMenu, t])
@@ -337,8 +337,10 @@ const TopDeckView: React.FC<TopDeckViewProps> = memo(({
             <p className="text-gray-500 italic">{t('deckEmpty')}</p>
           ) : (
             displayCards.map((card, index) => {
-              // Find original index in localVisibleCards
+              // Find original index in localVisibleCards (for drag-drop)
               const originalIndex = localVisibleCards.findIndex(c => c.id === card.id)
+              // Find actual index in player.deck (for context menu actions)
+              const deckIndex = player.deck.findIndex(c => c.id === card.id)
               const isDragTarget = dragOverIndex === index && draggedIndex !== index
               const isDragging = draggedCardId === card.id
 
@@ -350,7 +352,7 @@ const TopDeckView: React.FC<TopDeckViewProps> = memo(({
                   onDragOver={(e) => handleDragOver(e, index)}
                   onDragEnd={handleDragEnd}
                   onDrop={(e) => handleDrop(e, index)}
-                  onContextMenu={(e) => handleContextMenu(e, originalIndex)}
+                  onContextMenu={(e) => handleContextMenu(e, deckIndex)}
                   className="w-32 h-32 relative rounded-lg flex items-center justify-center cursor-grab active:cursor-grabbing hover:scale-105 transition-transform"
                   style={{
                     opacity: isDragging ? 0.5 : 1,

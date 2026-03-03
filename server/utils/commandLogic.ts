@@ -308,7 +308,7 @@ export const getCommandAction = (
         type: 'OPEN_MODAL',
         mode: 'SEARCH_DECK',
         sourceCard: card,
-        payload: { filterType: 'Unit' },
+        payload: { filterType: 'Unit', shuffleOnClose: true },
       })
     }
   }

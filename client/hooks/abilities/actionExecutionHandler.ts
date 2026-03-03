@@ -116,8 +116,8 @@ export function handleActionExecution(
   }
 
   // 2. Check Valid Targets (before CREATE_STACK)
-  // Skip check for SELECT_LINE_FOR_SUPPORT_TOKENS - it always has valid targets (the lines through source card)
-  const shouldSkipTargetCheck = action.type === 'ENTER_MODE' && action.mode === 'SELECT_LINE_FOR_SUPPORT_TOKENS'
+  // Skip check for SELECT_LINE_FOR_SUPPORT_COUNTERS and SELECT_LINE_FOR_THREAT_COUNTERS - they always have valid targets (the lines through source card)
+  const shouldSkipTargetCheck = action.type === 'ENTER_MODE' && (action.mode === 'SELECT_LINE_FOR_SUPPORT_COUNTERS' || action.mode === 'SELECT_LINE_FOR_THREAT_COUNTERS')
 
   if (!shouldSkipTargetCheck) {
     const hasTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
@@ -216,19 +216,14 @@ function handleContinueAutoSteps(
   const currentStepIndex = autoStepsContext.currentStepIndex
   const stepContext = action.payload?.stepContext
 
-  console.log('[handleContinueAutoSteps] Continuing AUTO_STEPS from index:', currentStepIndex, 'of', steps.length, 'steps')
 
   // Check if there are more steps
   if (currentStepIndex >= steps.length) {
     // All steps complete!
-    console.log('[handleContinueAutoSteps] All steps complete, calling markAbilityUsed')
     markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
     setAbilityMode(null)
     return
   }
-
-  const nextStep = steps[currentStepIndex]
-  console.log('[handleContinueAutoSteps] Processing next step:', nextStep.action, nextStep.mode)
 
   // Create a temporary abilityMode for advanceToNextStepWithCoords
   const tempAbilityMode: AbilityAction = {
@@ -648,8 +643,13 @@ function handleOpenModal(
           action: 'recover',
           isDeck: true,
         },
+        // Pass ability-related fields for modal close handling
+        sourceCard: action.sourceCard,
+        isDeployAbility: action.isDeployAbility,
+        sourceCoords,
+        shuffleOnClose: action.payload?.shuffleOnClose,
       })
-      markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+      // Don't mark ability used here - it will be marked when modal closes
     }
   } else if (action.mode === 'RETURN_FROM_DISCARD_TO_HAND') {
     // Return card from discard to hand (e.g., Finn EG Setup)
@@ -667,7 +667,6 @@ function handleOpenModal(
           }
         } else if (typeof filterString === 'function') {
           // Filter is a function - can't extract type, use default
-          console.log('[handleOpenModal] Filter is a function, using default Unit type')
         }
       }
 
@@ -693,7 +692,6 @@ function handleOpenModal(
           }
         } else if (typeof filterString === 'function') {
           // Filter is a function - can't extract type, use default
-          console.log('[handleOpenModal] Filter is a function, using default Unit type')
         }
       }
 
@@ -1020,7 +1018,6 @@ function handleEnterMode(
   // AUTO_STEPS (Generic multi-step ability system)
   // Handles Edith Byron Deploy, Centurion Commit, Princeps Deploy, and other multi-step abilities
   if (mode === 'AUTO_STEPS') {
-    console.log('[handleEnterMode] AUTO_STEPS activation for', action.sourceCard?.baseId)
 
     const steps = action.payload?.steps as AutoStep[] | undefined
     if (steps && steps.length > 0) {
@@ -1044,7 +1041,6 @@ function handleEnterMode(
         )
 
         if (!result.success) {
-          console.warn('[handleEnterMode] Instant step failed:', firstStep.action, result.message)
         }
 
         // Now process the next step
@@ -1057,7 +1053,6 @@ function handleEnterMode(
         }
 
         const nextStep = steps[nextStepIndex]
-        console.log('[handleEnterMode] Processing next step:', nextStep.action, nextStep.mode)
 
         // If next step is also instant, execute it recursively
         if (!nextStep.mode) {
@@ -1253,15 +1248,14 @@ function handleEnterMode(
         setTargetingMode(stepAction, getSafePlayerId(action, localPlayerId), sourceCoords, targets, commandContext)
       }
     } else {
-      console.warn('[handleEnterMode] AUTO_STEPS has no steps defined')
       setAbilityMode(action)
     }
     return
   }
 
-  // SELECT_LINE_FOR_SUPPORT_TOKENS (Signal Prophet Deploy)
+  // SELECT_LINE_FOR_SUPPORT_COUNTERS (Signal Prophet Deploy)
   // Show horizontal and vertical lines through source card for selection
-  if (mode === 'SELECT_LINE_FOR_SUPPORT_TOKENS') {
+  if (mode === 'SELECT_LINE_FOR_SUPPORT_COUNTERS') {
     const { row, col } = sourceCoords
     const gridSize = gameState.board.length
     const boardTargets: { row: number; col: number }[] = []
@@ -1276,7 +1270,51 @@ function handleEnterMode(
       boardTargets.push({ row: r, col })
     }
 
-    console.log('[handleEnterMode] SELECT_LINE_FOR_SUPPORT_TOKENS', { sourceCoords, targetCount: boardTargets.length })
+
+    setAbilityMode(action)
+    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, boardTargets, commandContext)
+    return
+  }
+
+  // SELECT_LINE_FOR_THREAT_COUNTERS (Code Keeper Deploy)
+  // Show horizontal and vertical lines through source card for selection
+  if (mode === 'SELECT_LINE_FOR_THREAT_COUNTERS') {
+    const { row, col } = sourceCoords
+    const gridSize = gameState.board.length
+    const boardTargets: { row: number; col: number }[] = []
+
+    // Add all cells in horizontal line (same row)
+    for (let c = 0; c < gridSize; c++) {
+      boardTargets.push({ row, col: c })
+    }
+
+    // Add all cells in vertical line (same column)
+    for (let r = 0; r < gridSize; r++) {
+      boardTargets.push({ row: r, col })
+    }
+
+
+    setAbilityMode(action)
+    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, boardTargets, commandContext)
+    return
+  }
+
+  // SELECT_LINE_FOR_EXPLOIT_SCORING
+  // Show horizontal and vertical lines through source card for selection
+  if (mode === 'SELECT_LINE_FOR_EXPLOIT_SCORING') {
+    const { row, col } = sourceCoords
+    const gridSize = gameState.board.length
+    const boardTargets: { row: number; col: number }[] = []
+
+    // Add all cells in horizontal line (same row)
+    for (let c = 0; c < gridSize; c++) {
+      boardTargets.push({ row, col: c })
+    }
+
+    // Add all cells in vertical line (same column)
+    for (let r = 0; r < gridSize; r++) {
+      boardTargets.push({ row: r, col })
+    }
 
     setAbilityMode(action)
     setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, boardTargets, commandContext)
@@ -1286,7 +1324,6 @@ function handleEnterMode(
   // Default mode activation
   // Calculate valid targets if mode supports targeting
   const defaultTargets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
-  console.log('[handleEnterMode] Default mode activation', { mode: action.mode, targetCount: defaultTargets.length, sourceCard: action.sourceCard?.baseId })
   setAbilityMode(action)
   setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, defaultTargets, commandContext)
 }

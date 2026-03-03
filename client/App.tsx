@@ -179,6 +179,7 @@ const AppInner = function AppInner() {
     sourceCard?: Card;
     isDeployAbility?: boolean;
     sourceCoords?: {row: number, col: number};
+    shuffleOnClose?: boolean;  // If true, shuffle deck after closing (for search abilities)
   } | null>(null)
 
   const [modalAnchors, setModalAnchors] = useState({
@@ -195,6 +196,11 @@ const AppInner = function AppInner() {
       targetCoords?: {row: number, col: number};
       isDeck?: boolean
     }
+    // Fields for ability-triggered deck view
+    sourceCard?: Card;
+    isDeployAbility?: boolean;
+    sourceCoords?: {row: number, col: number};
+    shuffleOnClose?: boolean;
   } | null>(null)
 
   const [viewingCard, setViewingCard] = useState<{ card: Card; player?: Player } | null>(null)
@@ -688,6 +694,7 @@ const AppInner = function AppInner() {
         ...(sourceCard && { sourceCard }),
         ...(isDeployAbility !== undefined && { isDeployAbility }),
         ...(sourceCoords && { sourceCoords }),
+        ...(abilityMode?.payload?.shuffleOnClose && { shuffleOnClose: true }),
       })
 
       // Clear modes
@@ -822,11 +829,16 @@ const AppInner = function AppInner() {
 
   const handleTopDeckClose = useCallback(() => {
     if (topDeckViewState) {
+      const playerId = topDeckViewState.targetPlayerId
+
+      // Shuffle deck if required by the search ability
+      if (topDeckViewState.shuffleOnClose) {
+        shufflePlayerDeck(playerId)
+      }
+
       if (topDeckViewState.isLocked && topDeckViewState.sourceCard) {
         if (topDeckViewState.sourceCard.ownerId !== undefined) {
           drawCard(topDeckViewState.sourceCard.ownerId)
-          // Note: Deck shuffling should only happen for specific search abilities (Mr. Pearl, Lucius, Quick Response Team, Michael Falk)
-          // Secret Informant and similar view-top abilities do NOT shuffle
         }
         if (topDeckViewState.sourceCoords) {
           markAbilityUsed(topDeckViewState.sourceCoords, topDeckViewState.isDeployAbility)
@@ -834,7 +846,7 @@ const AppInner = function AppInner() {
       }
     }
     setTopDeckViewState(null)
-  }, [topDeckViewState, drawCard, markAbilityUsed])
+  }, [topDeckViewState, drawCard, markAbilityUsed, shufflePlayerDeck])
 
   const topDeckPlayer = useMemo(() => {
     if (!topDeckViewState) {
@@ -2053,6 +2065,29 @@ const AppInner = function AppInner() {
     return undefined
   }, [viewingDiscard?.pickConfig?.filterType])
 
+  // Shared handler for closing deck/discard view with shuffle support
+  const handleDeckViewClose = useCallback(() => {
+    if (!viewingDiscard) return
+
+    // Shuffle deck if required by the search ability
+    if (viewingDiscard.shuffleOnClose) {
+      shufflePlayerDeck(viewingDiscard.player.id)
+    }
+
+    // Draw card and mark ability used if triggered by deploy/setup ability
+    if (viewingDiscard.isDeployAbility !== undefined && viewingDiscard.sourceCard) {
+      if (viewingDiscard.sourceCard.ownerId !== undefined) {
+        drawCard(viewingDiscard.sourceCard.ownerId)
+      }
+      if (viewingDiscard.sourceCoords) {
+        markAbilityUsed(viewingDiscard.sourceCoords, viewingDiscard.isDeployAbility)
+      }
+    }
+
+    setViewingDiscard(null)
+    setAbilityMode(null)
+  }, [viewingDiscard, shufflePlayerDeck, drawCard, markAbilityUsed, setAbilityMode])
+
   const handleDiscardCardClick = (cardIndex: number) => {
     if (!viewingDiscard || !viewingDiscardPlayer) {
       return
@@ -2080,28 +2115,11 @@ const AppInner = function AppInner() {
           target: 'hand',
           playerId: viewingDiscardPlayer.id,
         })
-
-        // Shuffle deck after search for specific abilities that mention "shuffle" in their text
-        // These abilities: Mr. Pearl, Lucius Setup, Quick Response Team, Michael Falk
-        const shouldShuffle = abilityMode?.sourceCard && (
-          abilityMode.sourceCard.name.includes('Mr. Pearl') ||
-          abilityMode.sourceCard.name.includes('Lucius') ||
-          abilityMode.sourceCard.name.includes('Quick Response') ||
-          abilityMode.sourceCard.name.includes('Michael Falk')
-        )
-        if (shouldShuffle) {
-          updateState((currentState: any) => {
-            const player = currentState.players.find((p: any) => p.id === viewingDiscardPlayer.id)
-            if (player) {
-              player.deck = shuffleDeck(player.deck)
-            }
-            return currentState
-          })
-        }
       } else {
         recoverDiscardedCard(viewingDiscardPlayer.id, cardIndex)
       }
-      setViewingDiscard(null)
+      // Use shared close handler (handles shuffle if required)
+      handleDeckViewClose()
     } else if (action === 'resurrect') {
       // For Immunis: Select card, then close modal to allow cell selection
       if (abilityMode?.mode === 'IMMUNIS_RETRIEVE') {
@@ -2662,9 +2680,7 @@ const AppInner = function AppInner() {
       {viewingDiscard && viewingDiscardPlayer && (
         <DeckViewModal
           isOpen={!!viewingDiscard}
-          onClose={() => {
-            setViewingDiscard(null); setAbilityMode(null)
-          }}
+          onClose={handleDeckViewClose}
           title={viewingDiscard.isDeckView || viewingDiscard.pickConfig?.isDeck ? (viewingDiscard.pickConfig ? t('selectCardFromDeck') : t('deckView')) : (viewingDiscard.pickConfig ? t('selectCardFromDiscard') : t('discardView'))}
           player={viewingDiscardPlayer}
           cards={viewingDiscard.isDeckView || viewingDiscard.pickConfig?.isDeck ? viewingDiscardPlayer.deck : viewingDiscardPlayer.discard}

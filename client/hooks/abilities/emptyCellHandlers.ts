@@ -32,6 +32,7 @@ export interface EmptyCellClickProps {
   updatePlayerScore: (playerId: number, delta: number) => void
   triggerFloatingText: (data: any) => void
   handleLineSelection: (coords: {row: number, col: number}) => void
+  addBoardCardStatus: (coords: { row: number; col: number }, status: string, playerId: number) => void
   updateState?: (stateOrFn: any) => void
   nextPhase?: (forceTurnPass?: boolean) => void
   modifyBoardCardPower?: (coords: any, delta: number) => void
@@ -70,6 +71,7 @@ export function handleEmptyCellClick(
     updatePlayerScore,
     triggerFloatingText,
     handleLineSelection: _handleLineSelection,
+    addBoardCardStatus,
     nextPhase,
     modifyBoardCardPower,
     scoreLine,
@@ -459,17 +461,22 @@ export function handleEmptyCellClick(
     return false
   }
 
-  // === ABILITY MODE - SELECT_LINE_FOR_SUPPORT_TOKENS ===
-  if (abilityMode && abilityMode.mode === 'SELECT_LINE_FOR_SUPPORT_TOKENS') {
+  // === ABILITY MODE - SELECT_LINE_FOR_SUPPORT_COUNTERS ===
+  if (abilityMode && abilityMode.mode === 'SELECT_LINE_FOR_SUPPORT_COUNTERS') {
     const { sourceCoords, payload, isDeployAbility, readyStatusToRemove, sourceCard } = abilityMode
-    const { updateState } = props
 
     if (!sourceCoords) {return false}
-    if (!updateState) {return false}
 
     const ownerId = sourceCard?.ownerId ?? 0
     const { row: sourceRow, col: sourceCol } = sourceCoords
     const { row: clickRow, col: clickCol } = boardCoords
+
+    console.log('[SELECT_LINE_FOR_SUPPORT_COUNTERS] Empty cell click', {
+      sourceCard: sourceCard?.baseId,
+      ownerId,
+      sourceCoords,
+      boardCoords
+    })
 
     // Check if clicked cell is in same row or column as source
     const sameRow = clickRow === sourceRow
@@ -477,52 +484,175 @@ export function handleEmptyCellClick(
 
     if (!sameRow && !sameCol) {
       // Clicked outside valid lines - cancel ability
+      console.log('[SELECT_LINE_FOR_SUPPORT_COUNTERS] Clicked outside valid lines, cancelling')
       clearTargetingMode()
       markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
       setAbilityMode(null)
       return true
     }
 
-    // Find all ally cards with Support in the selected line
+    // Find all ally cards in the selected line, then check which have Support
     let targets: { row: number; col: number }[] = []
     const gridSize = gameState.board.length
+    const lineType = sameRow ? 'horizontal' : 'vertical'
+
+    console.log('[SELECT_LINE_FOR_SUPPORT_COUNTERS] Scanning line (empty cell)', { lineType, ownerId, gridSize })
 
     if (sameRow) {
-      // Horizontal line selected
+      // Horizontal line selected - find all ally cards, then check for Support
       for (let c = 0; c < gridSize; c++) {
         const cell = gameState.board[clickRow][c]
-        // Check: card belongs to same player AND has Support status from that player
-        const hasSupportFromOwner = cell.card?.statuses?.some((s: any) =>
-          s.type === 'Support' && s.addedByPlayerId === ownerId
-        )
-        if (cell.card?.ownerId === ownerId && hasSupportFromOwner) {
-          targets.push({ row: clickRow, col: c })
+        if (cell.card?.ownerId === ownerId) {
+          // Card belongs to same player - check if it has Support from any player
+          const hasSupport = cell.card.statuses?.some((s: any) => s.type === 'Support')
+          console.log('[SELECT_LINE_FOR_SUPPORT_COUNTERS] Card at row', clickRow, 'col', c, {
+            card: cell.card?.baseId,
+            hasSupport,
+            statuses: cell.card?.statuses
+          })
+          if (hasSupport) {
+            targets.push({ row: clickRow, col: c })
+          }
         }
       }
     } else {
-      // Vertical line selected
+      // Vertical line selected - find all ally cards, then check for Support
       for (let r = 0; r < gridSize; r++) {
         const cell = gameState.board[r][clickCol]
-        // Check: card belongs to same player AND has Support status from that player
-        const hasSupportFromOwner = cell.card?.statuses?.some((s: any) =>
-          s.type === 'Support' && s.addedByPlayerId === ownerId
-        )
-        if (cell.card?.ownerId === ownerId && hasSupportFromOwner) {
-          targets.push({ row: r, col: clickCol })
+        if (cell.card?.ownerId === ownerId) {
+          // Card belongs to same player - check if it has Support from any player
+          const hasSupport = cell.card.statuses?.some((s: any) => s.type === 'Support')
+          console.log('[SELECT_LINE_FOR_SUPPORT_COUNTERS] Card at row', r, 'col', clickCol, {
+            card: cell.card?.baseId,
+            hasSupport,
+            statuses: cell.card?.statuses
+          })
+          if (hasSupport) {
+            targets.push({ row: r, col: clickCol })
+          }
         }
       }
     }
 
-    // Apply Exploit token to all targets using ADD_BOARD_STATUS
-    const tokenType = payload?.tokenType || 'Exploit'
+    console.log('[SELECT_LINE_FOR_SUPPORT_COUNTERS] Found targets (empty cell)', {
+      count: targets.length,
+      targets
+    })
+
+    // Apply Exploit counter to all targets using addBoardCardStatus
+    const counterType = payload?.tokenType || 'Exploit'
 
     for (const target of targets) {
-      updateState({
-        type: 'ADD_BOARD_STATUS',
-        coords: target,
-        status: tokenType,
+      console.log('[SELECT_LINE_FOR_SUPPORT_COUNTERS] Adding counter via addBoardCardStatus', {
+        target,
+        counterType,
         playerId: ownerId
       })
+      addBoardCardStatus(target, counterType, ownerId)
+    }
+
+    clearTargetingMode()
+    markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+    return true
+  }
+
+  // === ABILITY MODE - SELECT_LINE_FOR_THREAT_COUNTERS ===
+  if (abilityMode && abilityMode.mode === 'SELECT_LINE_FOR_THREAT_COUNTERS') {
+    const { sourceCoords, payload, isDeployAbility, readyStatusToRemove, sourceCard } = abilityMode
+
+    if (!sourceCoords) {return false}
+
+    const ownerId = sourceCard?.ownerId ?? 0
+    const { row: sourceRow, col: sourceCol } = sourceCoords
+    const { row: clickRow, col: clickCol } = boardCoords
+
+    console.log('[SELECT_LINE_FOR_THREAT_COUNTERS] Empty cell click', {
+      sourceCard: sourceCard?.baseId,
+      ownerId,
+      sourceCoords,
+      boardCoords
+    })
+
+    // Check if clicked cell is in same row or column as source
+    const sameRow = clickRow === sourceRow
+    const sameCol = clickCol === sourceCol
+
+    if (!sameRow && !sameCol) {
+      // Clicked outside valid lines - cancel ability
+      console.log('[SELECT_LINE_FOR_THREAT_COUNTERS] Clicked outside valid lines, cancelling')
+      clearTargetingMode()
+      markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+      setAbilityMode(null)
+      return true
+    }
+
+    // Find all opponent cards in the selected line, then check which have Threat from owner
+    let targets: { row: number; col: number }[] = []
+    const gridSize = gameState.board.length
+    const lineType = sameRow ? 'horizontal' : 'vertical'
+
+    console.log('[SELECT_LINE_FOR_THREAT_COUNTERS] Scanning line (empty cell)', { lineType, ownerId, gridSize })
+
+    if (sameRow) {
+      // Horizontal line selected - find all opponent cards, then check for Threat from owner
+      for (let c = 0; c < gridSize; c++) {
+        const cell = gameState.board[clickRow][c]
+        // Card belongs to opponent (not same player)
+        if (cell.card && cell.card.ownerId !== ownerId) {
+          // Check if it has Threat from the ability owner
+          const hasThreatFromOwner = cell.card.statuses?.some((s: any) =>
+            s.type === 'Threat' && s.addedByPlayerId === ownerId
+          )
+          console.log('[SELECT_LINE_FOR_THREAT_COUNTERS] Card at row', clickRow, 'col', c, {
+            card: cell.card?.baseId,
+            cardOwnerId: cell.card?.ownerId,
+            hasThreatFromOwner,
+            statuses: cell.card?.statuses
+          })
+          if (hasThreatFromOwner) {
+            targets.push({ row: clickRow, col: c })
+          }
+        }
+      }
+    } else {
+      // Vertical line selected - find all opponent cards, then check for Threat from owner
+      for (let r = 0; r < gridSize; r++) {
+        const cell = gameState.board[r][clickCol]
+        // Card belongs to opponent (not same player)
+        if (cell.card && cell.card.ownerId !== ownerId) {
+          // Check if it has Threat from the ability owner
+          const hasThreatFromOwner = cell.card.statuses?.some((s: any) =>
+            s.type === 'Threat' && s.addedByPlayerId === ownerId
+          )
+          console.log('[SELECT_LINE_FOR_THREAT_COUNTERS] Card at row', r, 'col', clickCol, {
+            card: cell.card?.baseId,
+            cardOwnerId: cell.card?.ownerId,
+            hasThreatFromOwner,
+            statuses: cell.card?.statuses
+          })
+          if (hasThreatFromOwner) {
+            targets.push({ row: r, col: clickCol })
+          }
+        }
+      }
+    }
+
+    console.log('[SELECT_LINE_FOR_THREAT_COUNTERS] Found targets (empty cell)', {
+      count: targets.length,
+      targets
+    })
+
+    // Apply Exploit counter to all targets using addBoardCardStatus
+    const counterType = payload?.tokenType || 'Exploit'
+
+    for (const target of targets) {
+      console.log('[SELECT_LINE_FOR_THREAT_COUNTERS] Adding counter via addBoardCardStatus', {
+        target,
+        counterType,
+        playerId: ownerId
+      })
+      addBoardCardStatus(target, counterType, ownerId)
     }
 
     clearTargetingMode()
@@ -658,6 +788,53 @@ export function handleEmptyCellClick(
     const points = threatCount * 2
     if (points > 0) {
       updatePlayerScore(ownerId, points)
+      triggerFloatingText({
+        row: sourceCoords.row,
+        col: sourceCoords.col,
+        text: `+${points}`,
+        playerId: ownerId,
+      })
+    }
+
+    markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+    return true
+  }
+
+  // === ABILITY MODE - SELECT_LINE_FOR_EXPLOIT_SCORING ===
+  if (abilityMode && abilityMode.mode === 'SELECT_LINE_FOR_EXPLOIT_SCORING') {
+    const { sourceCoords, sourceCard, isDeployAbility, readyStatusToRemove } = abilityMode
+
+    if (!sourceCoords) {return false}
+
+    const sameRow = boardCoords.row === sourceCoords.row
+    const sameCol = boardCoords.col === sourceCoords.col
+
+    if (!sameRow && !sameCol) {return false}
+
+    const ownerId = sourceCard?.ownerId || 0
+    let exploitCount = 0
+
+    if (sameRow) {
+      for (let c = 0; c < gridSize; c++) {
+        const card = gameState.board[boardCoords.row][c].card
+        if (card?.statuses) {
+          exploitCount += card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
+        }
+      }
+    } else {
+      for (let r = 0; r < gridSize; r++) {
+        const card = gameState.board[r][boardCoords.col].card
+        if (r === sourceCoords.row) {continue}
+        if (card?.statuses) {
+          exploitCount += card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
+        }
+      }
+    }
+
+    const points = exploitCount  // 1 point per Exploit counter
+    if (points > 0) {
+      updatePlayerScore!(ownerId, points)
       triggerFloatingText({
         row: sourceCoords.row,
         col: sourceCoords.col,

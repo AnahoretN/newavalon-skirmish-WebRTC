@@ -494,6 +494,7 @@ export const useAppAbilities = ({
       updatePlayerScore,
       triggerFloatingText,
       handleLineSelection,
+      addBoardCardStatus,
       updateState,
       nextPhase,
       modifyBoardCardPower,

@@ -288,7 +288,21 @@ export function buildActionFromContentAbility(
       if (mode === 'LINES_WITH_SUPPORT') {
         return {
           type: 'ENTER_MODE',
-          mode: 'SELECT_LINE_FOR_SUPPORT_TOKENS',
+          mode: 'SELECT_LINE_FOR_SUPPORT_COUNTERS',
+          sourceCard: card,
+          sourceCoords: coords,
+          payload: {
+            ...details,
+            actionType: 'CREATE_STACK_MULTI'
+          }
+        } as AbilityAction
+      }
+
+      // LINES_WITH_THREAT: Select a line, then place tokens on all opponent Threat cards in that line
+      if (mode === 'LINES_WITH_THREAT') {
+        return {
+          type: 'ENTER_MODE',
+          mode: 'SELECT_LINE_FOR_THREAT_COUNTERS',
           sourceCard: card,
           sourceCoords: coords,
           payload: {
@@ -510,6 +524,20 @@ export function buildActionFromContentAbility(
           },
           sourceCard: card,
           sourceCoords: coords
+        } as AbilityAction
+      }
+
+      if (per === 'exploitInLine') {
+        // Select a line, gain 1 point for each of your Exploit counters in that line
+        return {
+          type: 'ENTER_MODE',
+          mode: 'SELECT_LINE_FOR_EXPLOIT_SCORING',
+          sourceCard: card,
+          sourceCoords: coords,
+          payload: {
+            ...details,
+            actionType: 'SCORE_POINTS'
+          }
         } as AbilityAction
       }
 
