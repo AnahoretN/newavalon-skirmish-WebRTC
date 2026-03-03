@@ -164,13 +164,6 @@ export function handleTargetingModeCardClick(
     return false
   }
 
-  // Debug: Log what actionType we're handling
-  console.log('[handleTargetingModeCardClick] SELECT_TARGET mode', {
-    actionType: payload?.actionType,
-    cardId: card.baseId,
-    hasFilterFn: !!filterFn,
-  })
-
   // Handle SELECT_HAND_FOR_DISCARD_THEN_SPAWN (Faber)
   if (payload.actionType === 'SELECT_HAND_FOR_DISCARD_THEN_SPAWN') {
     // Only allow selecting own cards
@@ -234,9 +227,9 @@ export function handleTargetingModeCardClick(
     return true
   }
 
+  // Note: DOUBLE_TOKEN (Reverend of The Choir Deploy) is handled in modeHandlers.ts
   // Note: SACRIFICE_AND_BUFF_LINES (Centurion Commit) and CENSOR_SWAP (Censor Commit)
   // are handled in modeHandlers.ts, not here
 
-  console.log('[handleTargetingModeCardClick] No handler matched for actionType:', payload?.actionType)
   return false
 }

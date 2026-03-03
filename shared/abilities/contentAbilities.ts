@@ -541,6 +541,15 @@ export function buildActionFromContentAbility(
         } as AbilityAction
       }
 
+      if (per === 'exploitOnBattlefield') {
+        // Reverend of The Choir Setup: Gain 1 point for each of your Exploit counters on the battlefield
+        return {
+          type: 'REVEREND_SETUP_SCORE',
+          sourceCard: card,
+          sourceCoords: coords
+        } as AbilityAction
+      }
+
       // For other SCORE_POINTS variations, can add more cases here
       console.warn(`[buildActionFromContentAbility] SCORE_POINTS with per=${per} not yet implemented`)
       return null
@@ -601,6 +610,8 @@ export function buildActionFromContentAbility(
       // DOUBLE_TOKEN doubles the number of tokens on a selected card
       // Used by Reverend of The Choir Deploy: Double Exploit tokens on any one card
       const processedDetails = buildDetailsFromContent(ability, ownerId, coords)
+      const tokenType = details.tokenType || 'Exploit'
+
       return {
         type: 'ENTER_MODE',
         mode: 'SELECT_TARGET',
@@ -608,7 +619,13 @@ export function buildActionFromContentAbility(
         sourceCoords: coords,
         payload: {
           ...processedDetails,
-          actionType: 'DOUBLE_TOKEN'
+          actionType: 'DOUBLE_TOKEN',
+          tokenType,
+          // Filter for cards that have at least one token from the source owner
+          filter: (c: Card) => c.statuses?.some((s: any) =>
+            s.type === tokenType && s.addedByPlayerId === ownerId
+          ) || false,
+          filterString: `hasCounterOwner_${tokenType}`
         }
       } as AbilityAction
     }

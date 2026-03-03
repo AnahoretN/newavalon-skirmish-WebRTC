@@ -388,11 +388,6 @@ export function handleModeCardClick(
     return handleImmunisRetrieve(card, boardCoords, props)
   }
 
-  // INTEGRATOR_LINE_SELECT
-  if (mode === 'INTEGRATOR_LINE_SELECT') {
-    return handleIntegratorLineSelect(card, boardCoords, props)
-  }
-
   // IP_AGENT_THREAT_SCORING
   if (mode === 'IP_AGENT_THREAT_SCORING') {
     return handleIpAgentThreatScoring(card, boardCoords, props)
@@ -504,13 +499,58 @@ function handleSelectTargetWithToken(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, triggerClickWave, moveItem, markAbilityUsed, setAbilityMode, setCommandContext, handleActionExecution, clearValidTargets } = props
-  const { payload, sourceCoords, isDeployAbility, readyStatusToRemove } = abilityMode!
+  const { abilityMode, triggerClickWave, moveItem, markAbilityUsed, setAbilityMode, setCommandContext, handleActionExecution, clearValidTargets, addBoardCardStatus } = props
+  const { payload, sourceCoords, isDeployAbility, readyStatusToRemove, sourceCard } = abilityMode!
 
   if (payload.filter && !payload.filter(card, boardCoords.row, boardCoords.col)) {
     return false
   }
 
+  // Handle DOUBLE_TOKEN (Reverend of The Choir Deploy) - double existing tokens
+  if (payload.actionType === 'DOUBLE_TOKEN') {
+    console.log('[DOUBLE_TOKEN] In handleSelectTargetWithToken', {
+      tokenType: payload.tokenType,
+      cardId: card.baseId,
+      cardOwnerId: card.ownerId,
+      sourceOwnerId: sourceCard?.ownerId
+    })
+
+    const tokenType = payload.tokenType || 'Exploit'
+    const ownerId = sourceCard?.ownerId || 0
+
+    // Count existing tokens from the owner on target card
+    const currentCount = card.statuses?.filter((s: any) =>
+      s.type === tokenType && s.addedByPlayerId === ownerId
+    ).length || 0
+
+    console.log('[DOUBLE_TOKEN] Token count on target card:', {
+      currentCount,
+      allStatuses: card.statuses?.map((s: any) => ({ type: s.type, addedBy: s.addedByPlayerId }))
+    })
+
+    if (currentCount > 0) {
+      // Double by adding same number of tokens
+      console.log('[DOUBLE_TOKEN] Adding tokens:', { count: currentCount, tokenType, ownerId, boardCoords })
+      for (let i = 0; i < currentCount; i++) {
+        addBoardCardStatus(boardCoords, tokenType, ownerId)
+      }
+
+      // Mark ability as used
+      markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
+      console.log('[DOUBLE_TOKEN] Ability marked as used')
+    } else {
+      console.log('[DOUBLE_TOKEN] No tokens to double - currentCount is 0')
+    }
+
+    setTimeout(() => {
+      setAbilityMode(null)
+      clearValidTargets()
+    }, TIMING.MODE_CLEAR_DELAY)
+
+    return true
+  }
+
+  // Normal CREATE_STACK handling
   moveItem({
     card: { id: 'dummy', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, abilityText: '', types: [] },
     source: 'counter_panel',
