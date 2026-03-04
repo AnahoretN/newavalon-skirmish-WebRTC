@@ -6,7 +6,7 @@
  */
 
 import { logger } from '../utils/logger.js';
-import { getGameState } from '../services/gameState.js';
+import { getGameState, updateGameState } from '../services/gameState.js';
 import { broadcastToGame } from '../services/websocket.js';
 
 // Export empty/placeholder functions for API compatibility
@@ -84,10 +84,72 @@ export function handleToggleAutoDraw(ws, data) {
 
 /**
  * Handle START_NEXT_ROUND message
+ * - Increments round number
+ * - Resets all players' scores to 0
+ * - Closes round end modal
+ * - Clears game winner
+ * - Starts Preparation phase for active player (auto-draw if enabled)
+ * - Transitions to Setup phase
  */
 export function handleStartNextRound(ws, data) {
-  // No-op - round management logic removed
-  logger.info('[handleStartNextRound] No-op - round management removed');
+  try {
+    const { gameId } = data;
+    const gameState = getGameState(gameId);
+
+    if (!gameState) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Game not found'
+      }));
+      return;
+    }
+
+    const newRound = (gameState.currentRound || 1) + 1;
+
+    // Reset all players' scores
+    const newPlayers = gameState.players.map(p => ({
+      ...p,
+      score: 0
+    }));
+
+    // Update game state with new round, reset scores, and Preparation phase
+    const updatedState = {
+      ...gameState,
+      currentRound: newRound,
+      players: newPlayers,
+      isRoundEndModalOpen: false,
+      gameWinner: null,
+      currentPhase: 0  // Preparation phase
+    };
+
+    // Execute Preparation phase for active player (auto-draw if enabled)
+    const activePlayerId = updatedState.activePlayerId;
+    if (activePlayerId) {
+      const player = updatedState.players.find((p: any) => p.id === activePlayerId);
+      if (player && updatedState.autoDrawEnabled && player.deck && player.deck.length > 0) {
+        const drawnCard = player.deck.shift();
+        if (drawnCard) {
+          player.hand.push(drawnCard);
+          player.handSize = player.hand.length;
+          player.deckSize = player.deck.length;
+          logger.info(`[handleStartNextRound] Player ${activePlayerId} drew card, hand: ${player.hand.length}`);
+        }
+      }
+
+      // Transition to Setup phase
+      updatedState.currentPhase = 1;
+      logger.info(`[handleStartNextRound] Transition to Setup phase for player ${activePlayerId}`);
+    }
+
+    // Update the game state
+    updateGameState(gameId, updatedState);
+    // Broadcast to all players
+    broadcastToGame(gameId, updatedState);
+
+    logger.info(`[handleStartNextRound] Game ${gameId}: Round ${newRound} started, scores reset`);
+  } catch (err) {
+    logger.error('[handleStartNextRound] Error:', err);
+  }
 }
 
 /**

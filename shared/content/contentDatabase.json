@@ -715,7 +715,7 @@
           "type": "setup",
           "supportRequired": true,
           "action": "SCORE_POINTS",
-          "mode": "LINE_TARGET",
+          "mode": null,
           "details": {
             "amount": 1,
             "per": "exploitInLine",
@@ -1113,16 +1113,25 @@
         {
           "type": "setup",
           "supportRequired": true,
-          "action": "PLACE_AND_SCORE",
-          "mode": "SELECT_TARGET",
-          "details": {
-            "tokenType": "Exploit",
-            "thenScore": {
-              "amount": 1,
-              "per": "exploitInLine",
-              "requireTokenFromSourceOwner": true
+          "steps": [
+            {
+              "action": "CREATE_STACK",
+              "mode": "SELECT_TARGET",
+              "details": {
+                "tokenType": "Exploit",
+                "count": 1,
+                "recordContext": true
+              }
+            },
+            {
+              "action": "SCORE_POINTS",
+              "mode": "SELECT_LINE_FOR_EXPLOIT_SCORING",
+              "details": {
+                "amount": 1,
+                "per": "exploitInLine"
+              }
             }
-          }
+          ]
         }
       ]
     },

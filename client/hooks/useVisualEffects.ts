@@ -85,8 +85,11 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     const timestamp = Date.now()
     const batch = items.map((item, i) => ({ ...item, timestamp: timestamp + i })) as FloatingTextData[]
 
-    // Immediately update local state
-    setLatestFloatingTexts(batch)
+    // CRITICAL: Use flushSync to ensure state update is processed immediately
+    // This ensures useEffect in App.tsx fires synchronously
+    flushSync(() => {
+      setLatestFloatingTexts(batch)
+    })
 
     // Broadcast via SimpleHost if available (P2P mode)
     if (simpleHost) {

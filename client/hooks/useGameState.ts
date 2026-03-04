@@ -890,7 +890,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   }, [sendAction])
 
   const closeRoundEndModal = useCallback(() => {
-    sendAction('COMPLETE_ROUND')
+    sendAction('START_NEXT_ROUND')
   }, [sendAction])
 
   const closeRoundEndModalOnly = useCallback(() => {

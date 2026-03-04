@@ -4,7 +4,7 @@ import { ClickWave as ClickWaveComponent } from './ClickWave'
 import { Card } from './Card'
 import { PLAYER_COLORS, FLOATING_TEXT_COLORS, PLAYER_COLOR_RGB } from '@/constants'
 import { hasReadyAbilityInCurrentPhase } from '@/utils/autoAbilities'
-import { calculateGlowColor, rgba, TIMING } from '@/utils/common'
+import { rgba, TIMING } from '@/utils/common'
 
 interface GameBoardProps {
   board: Board;
@@ -53,7 +53,11 @@ interface GameBoardProps {
 const isLineSelectionMode = (mode: string | undefined): boolean => {
   return mode === 'SCORE_LAST_PLAYED_LINE' ||
          mode === 'SELECT_LINE_END' ||
-         mode === 'ZIUS_LINE_SELECT'
+         mode === 'ZIUS_LINE_SELECT' ||
+         mode === 'SELECT_LINE_FOR_EXPLOIT_SCORING' ||
+         mode === 'SELECT_LINE_FOR_SUPPORT_COUNTERS' ||
+         mode === 'SELECT_LINE_FOR_THREAT_COUNTERS' ||
+         mode === 'SELECT_DIAGONAL'
 }
 
 const GridCell = memo<{
@@ -424,16 +428,15 @@ const GridCell = memo<{
             const rgb = playerColor && PLAYER_COLOR_RGB[playerColor]
               ? PLAYER_COLOR_RGB[playerColor]
               : { r: 255, g: 215, b: 0 }  // Gold color for scoring
-            const glowRgb = calculateGlowColor(rgb)
             return (
               <div
                 className="absolute inset-0 rounded-md pointer-events-none animate-glow-pulse"
                 style={{
                   zIndex: 45,
-                  boxShadow: `0 0 12px 2px ${rgba(glowRgb, 0.5)}`,
-                  border: '4px dashed',
-                  borderColor: `rgb(255, 255, 255)`,
-                  background: `radial-gradient(circle at center, transparent 25%, ${rgba(rgb, 0.75)} 100%)`,
+                  boxShadow: `0 0 10px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75)`,
+                  border: '4px solid',
+                  borderColor: 'white',
+                  background: `radial-gradient(circle at center, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 0%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 100%)`,
                 }}
               >
                 {/* Score badge removed - only showing highlight now */}
@@ -452,7 +455,7 @@ const GridCell = memo<{
           )}
 
           {/* Targeting mode highlight - shows valid targets from another player's targeting mode */}
-          {/* NOT shown for line selection modes - they use dashed border instead */}
+          {/* NOT shown for line selection modes - they have their own highlight below */}
           {isTargetingModeValidTarget && (targetingModePlayerId || targetingModeOriginalOwnerId) && !isLineSelectionMode(targetingModeActionMode) && (() => {
             // Prefer originalOwnerId (command card owner) for highlight color, fallback to playerId
             const highlightOwnerId = targetingModeOriginalOwnerId ?? targetingModePlayerId
@@ -475,8 +478,8 @@ const GridCell = memo<{
             )
           })()}
 
-          {/* Line selection modes highlight - dashed border for SCORE_LAST_PLAYED_LINE, etc. */}
-          {/* Check if this is a line selection mode (dashed border, lower priority than regular targeting) */}
+          {/* Line selection modes highlight - solid border for all line selection systems */}
+          {/* Shows highlight for: SELECT_LINE_FOR_EXPLOIT_SCORING, SELECT_LINE_FOR_SUPPORT_COUNTERS, SELECT_LINE_FOR_THREAT_COUNTERS, SELECT_DIAGONAL, etc. */}
           {(isLineSelectionMode(abilityMode?.mode) || isLineSelectionMode(targetingModeActionMode)) && isValidTarget && (() => {
             const highlightOwnerId = activePlayerId ?? localPlayerId ?? targetingModePlayerId
             const targetingPlayerColor = highlightOwnerId !== undefined ? playerColorMap.get(highlightOwnerId) : undefined
@@ -490,7 +493,7 @@ const GridCell = memo<{
                 style={{
                   zIndex: 45,
                   boxShadow: `0 0 10px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75)`,
-                  border: '4px dashed',
+                  border: '4px solid',
                   borderColor: 'white',
                   background: `radial-gradient(circle at center, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 0%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 100%)`,
                 }}
@@ -760,6 +763,7 @@ export const GameBoard = memo<GameBoardProps>(({
   // PERFORMANCE: Pre-compute visual effects maps separately
   const floatingTextsMap = useMemo(() => {
     const map = new Map<string, any[]>()
+
     if (activeFloatingTexts) {
       for (const ft of activeFloatingTexts) {
         const key = `${ft.row}-${ft.col}`
@@ -767,6 +771,7 @@ export const GameBoard = memo<GameBoardProps>(({
         map.get(key)!.push(ft)
       }
     }
+
     return map
   }, [activeFloatingTexts])
 
@@ -778,9 +783,81 @@ export const GameBoard = memo<GameBoardProps>(({
     const totalSize = board.length
     const offset = Math.floor((totalSize - activeGridSize) / 2)
 
-    // A cell is valid if it's in either local targets OR targeting mode targets
+    // Helper to check if ability mode is a line selection mode
+    const isLineSelectionModeAbility = abilityMode?.mode && (
+      abilityMode.mode === 'SELECT_LINE_FOR_EXPLOIT_SCORING' ||
+      abilityMode.mode === 'SELECT_LINE_FOR_SUPPORT_COUNTERS' ||
+      abilityMode.mode === 'SELECT_LINE_FOR_THREAT_COUNTERS' ||
+      abilityMode.mode === 'SELECT_LINE_START' ||
+      abilityMode.mode === 'SELECT_LINE_END' ||
+      abilityMode.mode === 'SELECT_DIAGONAL' ||
+      abilityMode.mode === 'ZIUS_LINE_SELECT' ||
+      abilityMode.mode === 'SCORE_LAST_PLAYED_LINE'
+    )
+
+    // Get target coords from ability mode for line selection
+    const lineSelectionTargetCoords = isLineSelectionModeAbility ? (abilityMode?.payload?.targetCoords || abilityMode?.payload?.firstCoords) : null
+
+    // A cell is valid if it's in either local targets OR targeting mode targets OR line selection mode
     const isValidTargetCell = (row: number, col: number) => {
-      return validTargetsSet.has(`${row}-${col}`) || targetingModeTargetsSet.has(`${row}-${col}`)
+      // Check regular valid targets
+      if (validTargetsSet.has(`${row}-${col}`) || targetingModeTargetsSet.has(`${row}-${col}`)) {
+        return true
+      }
+
+      // For line selection modes, check if cell is in the same row or column as target coords
+      if (isLineSelectionModeAbility) {
+        // SELECT_LINE_FOR_EXPLOIT_SCORING without targetCoords (Unwavering Integrator)
+        // Highlight row and column through source coords
+        if (abilityMode?.mode === 'SELECT_LINE_FOR_EXPLOIT_SCORING' && !lineSelectionTargetCoords && abilityMode?.sourceCoords) {
+          return row === abilityMode.sourceCoords.row || col === abilityMode.sourceCoords.col
+        }
+
+        // SELECT_LINE_FOR_SUPPORT_COUNTERS without targetCoords (Signal Prophet Deploy)
+        // Highlight row and column through source coords
+        if (abilityMode?.mode === 'SELECT_LINE_FOR_SUPPORT_COUNTERS' && !lineSelectionTargetCoords && abilityMode?.sourceCoords) {
+          return row === abilityMode.sourceCoords.row || col === abilityMode.sourceCoords.col
+        }
+
+        // SELECT_LINE_FOR_THREAT_COUNTERS without targetCoords (Code Keeper Deploy)
+        // Highlight row and column through source coords
+        if (abilityMode?.mode === 'SELECT_LINE_FOR_THREAT_COUNTERS' && !lineSelectionTargetCoords && abilityMode?.sourceCoords) {
+          return row === abilityMode.sourceCoords.row || col === abilityMode.sourceCoords.col
+        }
+
+        // Other line selection modes need targetCoords
+        if (!lineSelectionTargetCoords) {
+          return false
+        }
+
+        const isSameRow = row === lineSelectionTargetCoords.row
+        const isSameCol = col === lineSelectionTargetCoords.col
+
+        // SELECT_LINE_END requires checking against firstCoords
+        if (abilityMode?.mode === 'SELECT_LINE_END' && abilityMode?.payload?.firstCoords) {
+          const firstCoords = abilityMode.payload.firstCoords
+          return (row === firstCoords.row && col === lineSelectionTargetCoords.col) ||
+                 (col === firstCoords.col && row === lineSelectionTargetCoords.row)
+        }
+
+        // For SELECT_LINE_START and similar, highlight row and column through source coords
+        if (abilityMode?.mode === 'SELECT_LINE_START' && abilityMode?.sourceCoords) {
+          return row === abilityMode.sourceCoords.row || col === abilityMode.sourceCoords.col
+        }
+
+        // For SELECT_DIAGONAL, check if on diagonal through source coords
+        if (abilityMode?.mode === 'SELECT_DIAGONAL' && abilityMode?.sourceCoords) {
+          const sourceCoords = abilityMode.sourceCoords
+          const onMainDiagonal = (row - sourceCoords.row) === (col - sourceCoords.col)
+          const onAntiDiagonal = (row + col) === (sourceCoords.row + sourceCoords.col)
+          return onMainDiagonal || onAntiDiagonal
+        }
+
+        // Default line selection: same row or column as target coords
+        return isSameRow || isSameCol
+      }
+
+      return false
     }
 
     return activeBoard.map((rowItems, rowIndex) =>
@@ -816,7 +893,7 @@ export const GameBoard = memo<GameBoardProps>(({
         }
       }),
     )
-  }, [activeBoard, board.length, activeGridSize, validTargetsSet, targetingModeTargetsSet, targetingMode?.action?.mode, noTargetOverlay, floatingTextsMap, visualEffectsArray])
+  }, [activeBoard, board.length, activeGridSize, validTargetsSet, targetingModeTargetsSet, targetingMode?.action?.mode, noTargetOverlay, floatingTextsMap, visualEffectsArray, abilityMode])
 
   return (
     <div className="relative p-2 bg-board-bg rounded-xl h-full aspect-square transition-all duration-300">

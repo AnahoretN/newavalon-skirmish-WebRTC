@@ -46,7 +46,6 @@ import { createTargetingActionFromCursorStack, createTargetingActionFromAbilityM
 import { getTokenTargetingRules } from './utils/tokenTargeting'
 import { useLanguage } from './contexts/LanguageContext'
 import { TIMING, deepCloneState } from './utils/common'
-import { shuffleDeck } from '@shared/utils/array'
 import { getWebRTCEnabled } from './hooks/useWebRTCEnabled'
 import { getCardAbilityTypes } from '@server/utils/autoAbilities'
 
@@ -2066,7 +2065,9 @@ const AppInner = function AppInner() {
 
   // Shared handler for closing deck/discard view with shuffle support
   const handleDeckViewClose = useCallback(() => {
-    if (!viewingDiscard) return
+    if (!viewingDiscard) {
+      return
+    }
 
     // Shuffle deck if required by the search ability
     if (viewingDiscard.shuffleOnClose) {

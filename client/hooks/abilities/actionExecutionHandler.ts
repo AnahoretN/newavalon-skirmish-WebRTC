@@ -54,6 +54,7 @@ export interface ActionHandlerProps {
   applyGlobalEffect: (source: any, targets: any[], type: string, pid: number, isDeploy: boolean) => void
   drawCardsBatch: (playerId: number, count: number) => void
   setTargetingMode: (action: AbilityAction, playerId: number, sourceCoords?: { row: number; col: number }, preCalculatedTargets?: {row: number, col: number}[], commandContext?: CommandContext, preCalculatedHandTargets?: {playerId: number, cardIndex: number}[]) => void
+  clearTargetingMode?: () => void
 }
 
 /**
@@ -773,6 +774,26 @@ function handleEnterMode(
     return
   }
 
+  // PUSH (Reclaimed Gawain Deploy - step 2 of AUTO_STEPS)
+  // Sets targeting mode for pushing adjacent opponent card
+  if (mode === 'PUSH') {
+    const actorId = getSafePlayerId(action, localPlayerId)
+    const targets = calculateValidTargets(action, gameState, actorId, commandContext)
+
+    // If no valid targets, complete the ability
+    if (targets.length === 0) {
+      logger.info('[handleEnterMode] PUSH mode: No valid targets - completing ability')
+      triggerNoTarget(sourceCoords)
+      markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+      setAbilityMode(null)
+      return
+    }
+
+    setAbilityMode(action)
+    setTargetingMode(action, actorId, sourceCoords, targets, commandContext)
+    return
+  }
+
   // PRINCEPS_SHIELD_THEN_AIM
   if (mode === 'PRINCEPS_SHIELD_THEN_AIM') {
     const actorId = getSafePlayerId(action, localPlayerId)
@@ -1150,6 +1171,7 @@ function handleEnterMode(
             readyStatusToRemove: action.readyStatusToRemove,
             payload: {
               ...nextStep.details,
+              actionType: nextStep.action,  // Set actionType so handlers know how to process this
               tokenType: nextStep.details?.tokenType,
               count: nextStep.details?.count || 1,
               mustBeInLineWithSource,
@@ -1165,12 +1187,26 @@ function handleEnterMode(
             }
           }
           const targets = calculateValidTargets(selectTargetAction, gameState, ownerId, commandContext)
+
+          // If no valid targets for CREATE_STACK, skip this step
+          if (targets.length === 0) {
+            logger.info('[handleEnterMode] AUTO_STEPS: No valid targets for CREATE_STACK step - skipping')
+            props.clearTargetingMode?.()
+            // If this was the last step, mark ability as used and clear ability mode
+            if (nextStepIndex + 1 >= steps.length) {
+              markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+              setAbilityMode(null)  // CRITICAL: Clear ability mode
+            }
+            return
+          }
+
           setTargetingMode(selectTargetAction, ownerId, sourceCoords, targets, commandContext)
           return
         }
 
         // PUSH action
         if (nextStep.action === 'PUSH') {
+          // Create PUSH mode action to check for valid targets
           const pushAction: AbilityAction = {
             type: 'ENTER_MODE',
             mode: 'PUSH',
@@ -1189,20 +1225,43 @@ function handleEnterMode(
               }
             }
           }
-          handleEnterMode(pushAction, sourceCoords, props)
+
+          // Calculate valid targets for PUSH
+          const targets = calculateValidTargets(pushAction, gameState, ownerId, commandContext)
+
+          // If no valid targets, skip this step and complete the ability
+          if (targets.length === 0) {
+            logger.info('[handleEnterMode] AUTO_STEPS: No valid targets for PUSH step - skipping and completing ability')
+            props.clearTargetingMode?.()
+            // This was the last step, mark ability as used and clear ability mode
+            markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+            setAbilityMode(null)  // CRITICAL: Clear ability mode so App.tsx doesn't try to calculate targets
+            return
+          }
+
+          // Set ability mode and targeting mode for PUSH
+          setAbilityMode(pushAction)
+          setTargetingMode(pushAction, ownerId, sourceCoords, targets, commandContext)
           return
         }
 
         // Default interactive step handling
+        // CRITICAL: Normalize LINE_TARGET and ADJACENT_TARGET to SELECT_TARGET
+        // These are targeting constraints, not separate modes. The constraint is stored in payload.
+        const normalizedMode = (nextStep.mode === "LINE_TARGET" || nextStep.mode === "ADJACENT_TARGET")
+          ? "SELECT_TARGET"
+          : (nextStep.mode || "SELECT_TARGET")
+
         const stepAction: AbilityAction = {
           type: 'ENTER_MODE',
-          mode: nextStep.mode || 'SELECT_TARGET',
+          mode: normalizedMode,
           sourceCard: action.sourceCard,
           sourceCoords: action.sourceCoords,
           isDeployAbility: action.isDeployAbility,
           readyStatusToRemove: action.readyStatusToRemove,
           payload: {
             ...nextStep.details,
+            actionType: nextStep.action,  // Set actionType so handlers know how to process this
             tokenType: nextStep.details?.tokenType,
             count: nextStep.details?.count,
             mustBeInLineWithSource: nextStep.mode === 'LINE_TARGET' ? true : undefined,
@@ -1219,19 +1278,131 @@ function handleEnterMode(
 
         // Calculate targets for the interactive mode
         const targets = calculateValidTargets(stepAction, gameState, ownerId, commandContext)
+
+        // If no valid targets, skip this step and continue to the next one
+        if (targets.length === 0) {
+          logger.info('[handleEnterMode] AUTO_STEPS: No valid targets for step', nextStep.action, '- skipping and continuing')
+          // Clear targeting mode if set
+          props.clearTargetingMode?.()
+
+          // Check if there are more steps after this one
+          const followingStepIndex = nextStepIndex + 1
+          if (followingStepIndex >= steps.length) {
+            // No more steps - mark ability as used and clear ability mode
+            markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+            setAbilityMode(null)  // CRITICAL: Clear ability mode so App.tsx doesn't try to calculate targets
+            return
+          }
+
+          // Continue to the following step
+          const updatedAction = {
+            ...action,
+            payload: {
+              ...action.payload,
+              currentStepIndex: followingStepIndex
+            }
+          }
+          setTimeout(() => {
+            handleEnterMode(updatedAction, sourceCoords, props)
+          }, 50)
+          return
+        }
+
         setTargetingMode(stepAction, ownerId, sourceCoords, targets, commandContext)
         return
       } else {
         // First step is interactive - create proper action with the step's mode
+        const ownerId = getSafePlayerId(action, localPlayerId)
+
+        // Special handling for CREATE_STACK as first step
+        if (firstStep.action === 'CREATE_STACK' && firstStep.mode) {
+          const mustBeInLineWithSource = firstStep.mode === 'LINE_TARGET' ? true : undefined
+          const mustBeAdjacentToSource = firstStep.mode === 'ADJACENT_TARGET' ? true : undefined
+
+          const stackAction: AbilityAction = {
+            type: 'CREATE_STACK',
+            tokenType: firstStep.details?.tokenType,
+            count: firstStep.details?.count || 1,
+            mustBeInLineWithSource,
+            mustBeAdjacentToSource,
+            sourceCard: action.sourceCard,
+            sourceCoords: action.sourceCoords,
+            isDeployAbility: action.isDeployAbility,
+            readyStatusToRemove: action.readyStatusToRemove,
+            payload: {
+              ...firstStep.details,
+              _autoStepsContext: {
+                steps: steps,
+                currentStepIndex: 1,
+                originalType: action.payload?.originalType,
+                supportRequired: action.payload?.supportRequired,
+                readyStatusToRemove: action.readyStatusToRemove
+              }
+            }
+          }
+
+          // Call handleCreateStack to create cursor stack
+          handleCreateStack(stackAction, sourceCoords, props)
+
+          // Also set abilityMode to SELECT_TARGET for AUTO_STEPS continuation
+          const selectTargetAction: AbilityAction = {
+            type: 'ENTER_MODE',
+            mode: 'SELECT_TARGET',
+            sourceCard: action.sourceCard,
+            sourceCoords: action.sourceCoords,
+            isDeployAbility: action.isDeployAbility,
+            readyStatusToRemove: action.readyStatusToRemove,
+            payload: {
+              ...firstStep.details,
+              actionType: firstStep.action,  // Set actionType so handlers know how to process this
+              tokenType: firstStep.details?.tokenType,
+              count: firstStep.details?.count || 1,
+              mustBeInLineWithSource,
+              mustBeAdjacentToSource,
+              filter: firstStep.details?.filter,
+              _autoStepsContext: {
+                steps: steps,
+                currentStepIndex: 1,
+                originalType: action.payload?.originalType,
+                supportRequired: action.payload?.supportRequired,
+                readyStatusToRemove: action.readyStatusToRemove
+              }
+            }
+          }
+          const targets = calculateValidTargets(selectTargetAction, gameState, ownerId, commandContext)
+
+          // If no valid targets for CREATE_STACK, skip this step
+          if (targets.length === 0) {
+            logger.info('[handleEnterMode] AUTO_STEPS: No valid targets for CREATE_STACK step - skipping')
+            props.clearTargetingMode?.()
+            // If this was the only step, mark ability as used and clear ability mode
+            if (steps.length === 1) {
+              markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+              setAbilityMode(null)  // CRITICAL: Clear ability mode
+            }
+            return
+          }
+
+          setTargetingMode(selectTargetAction, ownerId, sourceCoords, targets, commandContext)
+          return
+        }
+
+        // Default handling for other interactive first steps
+        // CRITICAL: Normalize LINE_TARGET and ADJACENT_TARGET to SELECT_TARGET
+        const normalizedMode = (firstStep.mode === "LINE_TARGET" || firstStep.mode === "ADJACENT_TARGET")
+          ? "SELECT_TARGET"
+          : (firstStep.mode || "SELECT_TARGET")
+
         const stepAction: AbilityAction = {
           type: 'ENTER_MODE',
-          mode: firstStep.mode || 'SELECT_TARGET',
+          mode: normalizedMode,
           sourceCard: action.sourceCard,
           sourceCoords: action.sourceCoords,
           isDeployAbility: action.isDeployAbility,
           readyStatusToRemove: action.readyStatusToRemove,
           payload: {
             ...firstStep.details,
+            actionType: firstStep.action,  // Set actionType so handlers know how to process this
             tokenType: firstStep.details?.tokenType,
             count: firstStep.details?.count,
             mustBeInLineWithSource: firstStep.mode === 'LINE_TARGET' ? true : undefined,
@@ -1248,8 +1419,21 @@ function handleEnterMode(
         setAbilityMode(stepAction)
 
         // Calculate targets for the interactive mode
-        const targets = calculateValidTargets(stepAction, gameState, getSafePlayerId(action, localPlayerId), commandContext)
-        setTargetingMode(stepAction, getSafePlayerId(action, localPlayerId), sourceCoords, targets, commandContext)
+        const targets = calculateValidTargets(stepAction, gameState, ownerId, commandContext)
+
+        // If no valid targets, skip this step and check if there are more steps
+        if (targets.length === 0) {
+          logger.info('[handleEnterMode] AUTO_STEPS: No valid targets for first step - skipping')
+          props.clearTargetingMode?.()
+          // If this was the only step, mark ability as used and clear ability mode
+          if (steps.length === 1) {
+            markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+            setAbilityMode(null)  // CRITICAL: Clear ability mode
+          }
+          return
+        }
+
+        setTargetingMode(stepAction, ownerId, sourceCoords, targets, commandContext)
       }
     } else {
       setAbilityMode(action)
@@ -1258,70 +1442,26 @@ function handleEnterMode(
   }
 
   // SELECT_LINE_FOR_SUPPORT_COUNTERS (Signal Prophet Deploy)
-  // Show horizontal and vertical lines through source card for selection
+  // CRITICAL: Do NOT call setTargetingMode - line selection modes use abilityMode only!
   if (mode === 'SELECT_LINE_FOR_SUPPORT_COUNTERS') {
-    const { row, col } = sourceCoords
-    const gridSize = gameState.board.length
-    const boardTargets: { row: number; col: number }[] = []
-
-    // Add all cells in horizontal line (same row)
-    for (let c = 0; c < gridSize; c++) {
-      boardTargets.push({ row, col: c })
-    }
-
-    // Add all cells in vertical line (same column)
-    for (let r = 0; r < gridSize; r++) {
-      boardTargets.push({ row: r, col })
-    }
-
-
+    console.log('[handleEnterMode] SELECT_LINE_FOR_SUPPORT_COUNTERS: Setting abilityMode only (no targetingMode)')
     setAbilityMode(action)
-    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, boardTargets, commandContext)
     return
   }
 
   // SELECT_LINE_FOR_THREAT_COUNTERS (Code Keeper Deploy)
-  // Show horizontal and vertical lines through source card for selection
+  // CRITICAL: Do NOT call setTargetingMode - line selection modes use abilityMode only!
   if (mode === 'SELECT_LINE_FOR_THREAT_COUNTERS') {
-    const { row, col } = sourceCoords
-    const gridSize = gameState.board.length
-    const boardTargets: { row: number; col: number }[] = []
-
-    // Add all cells in horizontal line (same row)
-    for (let c = 0; c < gridSize; c++) {
-      boardTargets.push({ row, col: c })
-    }
-
-    // Add all cells in vertical line (same column)
-    for (let r = 0; r < gridSize; r++) {
-      boardTargets.push({ row: r, col })
-    }
-
-
+    console.log('[handleEnterMode] SELECT_LINE_FOR_THREAT_COUNTERS: Setting abilityMode only (no targetingMode)')
     setAbilityMode(action)
-    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, boardTargets, commandContext)
     return
   }
 
-  // SELECT_LINE_FOR_EXPLOIT_SCORING
-  // Show horizontal and vertical lines through source card for selection
+  // SELECT_LINE_FOR_EXPLOIT_SCORING (Zius Setup, Unwavering Integrator Setup)
+  // CRITICAL: Do NOT call setTargetingMode - line selection modes use abilityMode only!
   if (mode === 'SELECT_LINE_FOR_EXPLOIT_SCORING') {
-    const { row, col } = sourceCoords
-    const gridSize = gameState.board.length
-    const boardTargets: { row: number; col: number }[] = []
-
-    // Add all cells in horizontal line (same row)
-    for (let c = 0; c < gridSize; c++) {
-      boardTargets.push({ row, col: c })
-    }
-
-    // Add all cells in vertical line (same column)
-    for (let r = 0; r < gridSize; r++) {
-      boardTargets.push({ row: r, col })
-    }
-
+    console.log('[handleEnterMode] SELECT_LINE_FOR_EXPLOIT_SCORING: Setting abilityMode only (no targetingMode)')
     setAbilityMode(action)
-    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, boardTargets, commandContext)
     return
   }
 

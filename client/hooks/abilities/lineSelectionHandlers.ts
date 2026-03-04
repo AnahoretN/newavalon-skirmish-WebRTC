@@ -465,5 +465,176 @@ export function handleLineSelection(
     }
   }
 
+  // SELECT_LINE_FOR_EXPLOIT_SCORING (Zius Setup second step, Unwavering Integrator Setup)
+  // Single-click line selection: player clicks any cell in the line they want to score
+  // - Zius Setup: The line must pass through the target card (where Exploit was placed in step 1)
+  // - Unwavering Integrator: Can select ANY row or column (first click determines the line)
+  if (mode === 'SELECT_LINE_FOR_EXPLOIT_SCORING') {
+    console.log('[lineSelectionHandlers] SELECT_LINE_FOR_EXPLOIT_SCORING: Click detected', {
+      coords,
+      hasPayload: !!payload,
+      payloadTargetCoords: payload?.targetCoords,
+      commandContextCoords: commandContext.lastMovedCardCoords
+    })
+
+    // Prevent multiple clicks
+    if (interactionLock.current) {
+      console.log('[lineSelectionHandlers] SELECT_LINE_FOR_EXPLOIT_SCORING: Interaction locked, ignoring click')
+      return true
+    }
+
+    // Use payload.targetCoords (synchronous) as priority, fallback to commandContext.lastMovedCardCoords (async)
+    // For Unwavering Integrator, targetCoords will be undefined - player can select any row/column
+    const targetCoords = payload?.targetCoords || commandContext.lastMovedCardCoords
+
+    const { row: clickedRow, col: clickedCol } = coords
+    let isSameRow = false
+    let isSameCol = false
+    let selectedRow = clickedRow
+    let selectedCol = clickedCol
+
+    if (targetCoords) {
+      // Zius Setup: Must select line through the target card
+      const { row: targetRow, col: targetCol } = targetCoords
+      isSameRow = clickedRow === targetRow
+      isSameCol = clickedCol === targetCol
+
+      console.log('[lineSelectionHandlers] SELECT_LINE_FOR_EXPLOIT_SCORING: Line selection (Zius)', {
+        clickedCoords: { row: clickedRow, col: clickedCol },
+        targetCoords: { row: targetRow, col: targetCol },
+        isSameRow,
+        isSameCol,
+        isValid: isSameRow || isSameCol
+      })
+
+      if (!isSameRow && !isSameCol) {
+        // Clicked cell is not in the same row or column as target - invalid
+        console.log('[lineSelectionHandlers] SELECT_LINE_FOR_EXPLOIT_SCORING: Invalid click - not in same row or column')
+        return true
+      }
+    } else {
+      // Unwavering Integrator: Can select any row or column
+      // The clicked cell determines which line to score
+      // Use sourceCoords (Unwavering Integrator) as reference
+      const { row: sourceRow, col: sourceCol } = sourceCoords || { row: clickedRow, col: clickedCol }
+      isSameRow = clickedRow === sourceRow
+      isSameCol = clickedCol === sourceCol
+
+      // If clicked on sourceCoords itself, default to row
+      if (isSameRow && isSameCol) {
+        // Clicked on Unwavering Integrator itself - default to row
+        isSameRow = true
+        isSameCol = false
+      }
+
+      // Use the clicked row/col as the selected line
+      selectedRow = clickedRow
+      selectedCol = clickedCol
+
+      console.log('[lineSelectionHandlers] SELECT_LINE_FOR_EXPLOIT_SCORING: Line selection (Unwavering Integrator)', {
+        clickedCoords: { row: clickedRow, col: clickedCol },
+        sourceCoords,
+        isSameRow,
+        isSameCol,
+        selectedRow,
+        selectedCol,
+        willScoreRow: isSameRow,
+        willScoreCol: isSameCol
+      })
+    }
+
+    // Lock interaction to prevent multiple clicks
+    interactionLock.current = true
+
+    const actorId = sourceCard?.ownerId ?? (gameState.players.find((p: any) => p.id === gameState.activePlayerId)?.isDummy ? gameState.activePlayerId : (localPlayerId || gameState.activePlayerId))
+    const gridSize = gameState.board.length
+
+    // Determine the line boundaries based on whether row or column was selected
+    let startR = 0, endR = gridSize - 1
+    let startC = 0, endC = gridSize - 1
+
+    if (isSameRow) {
+      // Scoring the entire row
+      startR = endR = selectedRow
+    } else {
+      // Scoring the entire column
+      startC = endC = selectedCol
+    }
+
+    // Count Exploit counters in the selected line and track which cards have them
+    let exploitCount = 0
+    const cardsWithExploit: { row: number; col: number }[] = []
+
+    console.log('[lineSelectionHandlers] SELECT_LINE_FOR_EXPLOIT_SCORING: Counting exploits in line', {
+      startR, endR, startC, endC,
+      isSameRow, isSameCol,
+      selectedRow, selectedCol,
+      gridSize
+    })
+
+    for (let r = startR; r <= endR; r++) {
+      for (let c = startC; c <= endC; c++) {
+        const cell = gameState.board[r][c]
+        if (cell.card) {
+          const exploits = cell.card.statuses?.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === actorId).length || 0
+          if (exploits > 0) {
+            exploitCount += exploits
+            cardsWithExploit.push({ row: r, col: c })
+          }
+        }
+      }
+    }
+
+    console.log('[lineSelectionHandlers] SELECT_LINE_FOR_EXPLOIT_SCORING: Scoring result', {
+      hasTargetCoords: !!targetCoords,
+      exploitCount,
+      cardsWithExploit,
+      willShowFloatingText: exploitCount > 0 && actorId,
+      hasSourceCoords: !!sourceCoords,
+      sourceCoords
+    })
+
+    // Award points with floating text
+    if (exploitCount > 0 && actorId) {
+      // Show only ONE total floating text over the card that performed the ability
+      // Zius: total over target card (where Exploit was placed)
+      // Unwavering Integrator: total over source card (the card itself)
+      if (targetCoords) {
+        // Zius Setup: Show total over target card
+        triggerFloatingText({
+          row: targetCoords.row,
+          col: targetCoords.col,
+          text: `+${exploitCount}`,
+          playerId: actorId,
+        })
+      } else if (sourceCoords) {
+        // Unwavering Integrator: Show total over source card
+        triggerFloatingText({
+          row: sourceCoords.row,
+          col: sourceCoords.col,
+          text: `+${exploitCount}`,
+          playerId: actorId,
+        })
+      }
+
+      updatePlayerScore(actorId, exploitCount)
+    }
+
+    // Mark ability as used
+    if (sourceCoords && sourceCoords.row >= 0) {
+      markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    }
+
+    // Clear mode after delay
+    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+
+    // Unlock interaction
+    setTimeout(() => {
+      interactionLock.current = false
+    }, TIMING.MODE_CLEAR_DELAY + 100)
+
+    return true
+  }
+
   return false
 }

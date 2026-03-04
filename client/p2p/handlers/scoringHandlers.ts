@@ -300,6 +300,12 @@ export function handleCompleteRound(state: GameState): GameState {
 
 /**
  * START_NEXT_ROUND - start next round
+ * - Increments round number
+ * - Resets all players' scores to 0
+ * - Closes round end modal
+ * - Clears game winner
+ * - Starts Preparation phase for active player (auto-draw if enabled)
+ * - Transitions to Setup phase
  */
 export function handleStartNextRound(state: GameState): GameState {
   const newRound = (state.currentRound || 1) + 1
@@ -309,12 +315,34 @@ export function handleStartNextRound(state: GameState): GameState {
     score: 0  // Reset score
   }))
 
+  const activePlayerId = state.activePlayerId
+  let finalPhase = 0  // Preparation phase
+
+  // Execute Preparation phase for active player
+  if (activePlayerId) {
+    const player = newPlayers.find(p => p.id === activePlayerId)
+    if (player && state.autoDrawEnabled && player.deck && player.deck.length > 0) {
+      const drawnCard = player.deck.shift()
+      if (drawnCard) {
+        player.hand.push(drawnCard)
+        player.handSize = player.hand.length
+        player.deckSize = player.deck.length
+        console.log('[handleStartNextRound] Player', activePlayerId, 'drew card, hand:', player.hand.length)
+      }
+    }
+
+    // Transition to Setup phase
+    finalPhase = 1
+    console.log('[handleStartNextRound] Transition to Setup phase for player', activePlayerId)
+  }
+
   return {
     ...state,
     currentRound: newRound,
     players: newPlayers,
     isRoundEndModalOpen: false,
-    gameWinner: null
+    gameWinner: null,
+    currentPhase: finalPhase
   }
 }
 

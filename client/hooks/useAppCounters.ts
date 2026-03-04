@@ -393,6 +393,27 @@ export const useAppCounters = ({
                     }
                     // Use the new { row, col } as sourceCoords for chained action, not cursorStack.sourceCoords
                     onAction(chained, { row, col })
+                  } else if (cursorStack._autoStepsContext) {
+                    // AUTO_STEPS continuation after cursorStack completes (Zius Setup, Centurion Commit, etc.)
+                    const autoStepsContext = cursorStack._autoStepsContext
+                    console.log('[useAppCounters] Continuing AUTO_STEPS after cursorStack, step:', autoStepsContext.currentStepIndex)
+
+                    // Create CONTINUE_AUTO_STEPS action with stepContext (where the token was placed)
+                    const continueAction: any = {
+                      type: 'CONTINUE_AUTO_STEPS',
+                      sourceCard: cursorStack.sourceCard,
+                      sourceCoords: cursorStack.sourceCoords,
+                      isDeployAbility: cursorStack.isDeployAbility,
+                      readyStatusToRemove: cursorStack.readyStatusToRemove,
+                      payload: {
+                        _autoStepsContext: autoStepsContext,
+                        stepContext: {
+                          targetCoords: { row, col },
+                          targetCard: targetCard
+                        }
+                      }
+                    }
+                    onAction(continueAction, { row, col })
                   }
                   // Clear targeting mode when cursor stack is fully consumed
                   // This handles cases like GAWAIN_DEPLOY_SHIELD_AIM where no chained action exists

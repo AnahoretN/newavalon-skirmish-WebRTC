@@ -700,17 +700,30 @@ function handlePassTurn(state: GameState, playerId: number, reason: string): Gam
 
   console.log('[handlePassTurn] Turn passed from', playerId, 'to', nextPlayerId, 'reason:', reason)
 
+  // Check if player just finished scoring phase - remove 1 Stun token from each of their cards
+  const scoringComplete = reason === 'scoring_complete'
+
   // Reset enteredThisTurn on all board cards when passing turn
   // Also clear setupUsedThisTurn and commitUsedThisTurn (but not deployUsedThisTurn!)
   const newBoard = state.board.map(row =>
     row.map(cell => {
       if (cell.card) {
-        const newStatuses = cell.card.statuses?.filter((s: any) => {
+        let newStatuses = cell.card.statuses?.filter((s: any) => {
           // Keep all statuses except setupUsedThisTurn and commitUsedThisTurn
           if (s.type === 'setupUsedThisTurn') {return false}
           if (s.type === 'commitUsedThisTurn') {return false}
           return true
         }) || []
+
+        // After scoring, remove 1 Stun token from the player's own cards
+        if (scoringComplete && cell.card.ownerId === playerId) {
+          const stunIndex = newStatuses.findIndex((s: any) => s.type === 'Stun')
+          if (stunIndex !== -1) {
+            console.log('[handlePassTurn] Removing 1 Stun token from card', cell.card.id, 'owned by player', playerId)
+            // Remove only the first Stun token
+            newStatuses = newStatuses.filter((_: any, i: number) => i !== stunIndex)
+          }
+        }
 
         return {
           card: {
