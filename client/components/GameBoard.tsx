@@ -520,6 +520,21 @@ const GridCell = memo<{
             >
               {/* Wrapper for custom drag image - prevents tooltip from being included in drag */}
               <div data-card-element="true" className="w-full h-full">
+                {/* Debug: Log Lucius card data before rendering */}
+                {(() => {
+                  const card = cell.card
+                  if (card?.baseId?.toLowerCase().includes('lucius')) {
+                    console.log('[GameBoard] Rendering Lucius card:', {
+                      id: card.id,
+                      name: card.name,
+                      baseId: card.baseId,
+                      power: card.power,
+                      bonusPower: card.bonusPower,
+                      powerModifier: card.powerModifier
+                    })
+                  }
+                  return null
+                })()}
                 <Card
                   card={cell.card}
                   isFaceUp={isFaceUp}

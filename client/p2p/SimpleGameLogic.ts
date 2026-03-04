@@ -604,6 +604,24 @@ export function applyAction(
   // This is a fail-safe after any state update
   newState = removeStunFromLucius(newState)
 
+  // Debug: Check if Lucius cards still have powerModifier after all processing
+  if (action === 'PLAY_CARD_FROM_DISCARD' || action === 'RESURRECT_DISCARDED') {
+    for (const row of newState.board) {
+      for (const cell of row) {
+        if (cell.card?.baseId?.toLowerCase().includes('lucius')) {
+          console.log('[applyAction] RETURNING state with Lucius:', {
+            cardId: cell.card.id,
+            baseId: cell.card.baseId,
+            powerModifier: cell.card.powerModifier,
+            bonusPower: cell.card.bonusPower,
+            power: cell.card.power,
+            action: action
+          })
+        }
+      }
+    }
+  }
+
   return newState
 }
 
@@ -1046,20 +1064,34 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
         }
 
         // LUCIUS PASSIVE: +2 power if exited from Discard
-        let bonusPower = 0
+        let powerModifier = 0
         if (fromDiscard && isLucius(cardToPlay)) {
-          bonusPower = 2
-          console.log('[handlePlayCard] Lucius played from discard, adding +2 bonusPower')
+          powerModifier = 2
+          console.log('[handlePlayCard] Lucius played from discard, adding +2 powerModifier')
         }
 
-        // Create new card object - set bonusPower BEFORE spread to override any existing value
+        // Create new card object - set powerModifier AFTER spread to ensure it's applied
         const boardCard = {
-          bonusPower,
           ...cardToPlay,
           ownerId: actualPlayerId,
           isFaceDown: faceDown,
           enteredThisTurn: true,
-          statuses: finalStatuses
+          statuses: finalStatuses,
+          powerModifier: (cardToPlay.powerModifier || 0) + powerModifier  // Set last to override any existing value
+        }
+
+        // Debug: Verify powerModifier was applied - log full boardCard object
+        if (powerModifier > 0) {
+          console.log('[handlePlayCard] Board card powerModifier set to:', boardCard.powerModifier, 'card power:', boardCard.power, 'total power:', (boardCard.power || 0) + boardCard.powerModifier)
+          console.log('[handlePlayCard] Full boardCard object:', {
+            id: boardCard.id,
+            name: boardCard.name,
+            baseId: boardCard.baseId,
+            power: boardCard.power,
+            bonusPower: boardCard.bonusPower,
+            powerModifier: boardCard.powerModifier,
+            ownerId: boardCard.ownerId
+          })
         }
 
         return {
@@ -1108,6 +1140,18 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
   // Recalculate ready statuses AFTER phase switch
   // This ensures cards get correct ready statuses for the new phase
   recalculateAllReadyStatuses(newState)
+
+  // Debug: Check if Lucius powerModifier is preserved after recalculate
+  const luciusCell = newState.board[boardCoords.row][boardCoords.col]
+  if (luciusCell?.card?.baseId?.toLowerCase().includes('lucius')) {
+    console.log('[handlePlayCard] AFTER recalculateAllReadyStatuses:', {
+      id: luciusCell.card.id,
+      baseId: luciusCell.card.baseId,
+      bonusPower: luciusCell.card.bonusPower,
+      power: luciusCell.card.power,
+      powerModifier: luciusCell.card.powerModifier
+    })
+  }
 
   // Check and apply triggers when a card with Revealed status is played from hand
   // This handles the drag-and-drop case where ANNOUNCE_CARD is not used
@@ -2223,12 +2267,35 @@ function handleResurrectDiscarded(state: GameState, _playerId: number, data?: an
   // Get the card to resurrect
   const cardToResurrect = player.discard[cardIndex]
 
+  // LUCIUS PASSIVE: +2 power if exited from Discard
+  let powerModifier = 0
+  if (isLucius(cardToResurrect)) {
+    powerModifier = 2
+    console.log('[handleResurrectDiscarded] Lucius resurrected from discard, adding +2 powerModifier')
+  }
+
   // Create the card for the board
   const boardCard: Card = {
     ...cardToResurrect,
     id: `resurrected_${cardToResurrect.id}_${Date.now()}`, // New ID to avoid conflicts
     ownerId: cardOwnerId,
-    enteredThisTurn: false
+    enteredThisTurn: false,
+    powerModifier: (cardToResurrect.powerModifier || 0) + powerModifier  // Set last to override any existing value
+  }
+
+  // Debug: Verify powerModifier was applied - log full boardCard object
+  if (powerModifier > 0) {
+    const finalPowerModifier = boardCard.powerModifier ?? 0
+    console.log('[handleResurrectDiscarded] Board card powerModifier set to:', finalPowerModifier, 'card power:', boardCard.power, 'total power:', (boardCard.power || 0) + finalPowerModifier)
+    console.log('[handleResurrectDiscarded] Full boardCard object:', {
+      id: boardCard.id,
+      name: boardCard.name,
+      baseId: boardCard.baseId,
+      power: boardCard.power,
+      bonusPower: boardCard.bonusPower,
+      powerModifier: finalPowerModifier,
+      ownerId: boardCard.ownerId
+    })
   }
 
   // Remove card from discard
@@ -2239,7 +2306,11 @@ function handleResurrectDiscarded(state: GameState, _playerId: number, data?: an
   const newBoard = state.board.map((r, rIdx) =>
     r.map((cell, cIdx) => {
       if (rIdx === row && cIdx === col) {
-        return { card: boardCard }
+        const newCell = { card: boardCard }
+        if (powerModifier > 0) {
+          console.log('[handleResurrectDiscarded] Placing card on board at', {row, col}, 'with powerModifier:', newCell.card.powerModifier)
+        }
+        return newCell
       }
       return cell
     })
@@ -2271,6 +2342,19 @@ function handleResurrectDiscarded(state: GameState, _playerId: number, data?: an
 
   // Recalculate ready statuses
   recalculateAllReadyStatuses(newState)
+
+  // Debug: Check if powerModifier is still there after recalculateAllReadyStatuses
+  const luciusCell = newState.board[row][col]
+  if (luciusCell.card) {
+    console.log('[handleResurrectDiscarded] AFTER recalculateAllReadyStatuses:', {
+      id: luciusCell.card.id,
+      baseId: luciusCell.card.baseId,
+      powerModifier: luciusCell.card.powerModifier,
+      power: luciusCell.card.power,
+      bonusPower: luciusCell.card.bonusPower,
+      allProps: Object.keys(luciusCell.card)
+    })
+  }
 
   return newState
 }

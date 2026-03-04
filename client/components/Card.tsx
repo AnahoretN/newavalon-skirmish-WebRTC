@@ -588,8 +588,23 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     } else if (modifier < 0) {
       textColor = 'text-red-500'
     }
+    // Debug: ALWAYS log for Lucius or cards with bonusPower
+    const isLucius = card.baseId?.toLowerCase().includes('lucius')
+    if (isLucius || (card.bonusPower && card.bonusPower !== 0)) {
+      console.log('[Card] Power calculation:', {
+        cardId: card.id,
+        cardName: card.name,
+        baseId: card.baseId,
+        basePower: card.power,
+        powerModifier: card.powerModifier,
+        bonusPower: card.bonusPower,
+        modifier,
+        finalPower: power,
+        textColor
+      })
+    }
     return { currentPower: power, powerTextColor: textColor }
-  }, [card.power, card.powerModifier, card.bonusPower])
+  }, [card.power, card.powerModifier, card.bonusPower, card.id, card.name, card.baseId])
 
   const showTooltip = useMemo(() =>
     tooltipVisible && isFaceUp && !disableTooltip && (tooltipPos.x > 0 && tooltipPos.y > 0),
