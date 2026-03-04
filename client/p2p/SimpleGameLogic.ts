@@ -103,7 +103,6 @@ function removeStunFromLucius(state: GameState): GameState {
         const hadStun = cell.card.statuses.some((s: any) => s.type === 'Stun')
         if (hadStun) {
           modified = true
-          console.log('[removeStunFromLucius] Removing Stun from Lucius:', cell.card.id)
           const newStatuses = cell.card.statuses.filter((s: any) => s.type !== 'Stun')
           return { card: { ...cell.card, statuses: newStatuses } }
         }
@@ -121,7 +120,6 @@ function removeStunFromLucius(state: GameState): GameState {
  * Note: Cards with Stun immunity (like Lucius) won't receive Stun tokens
  */
 function processResurrectedTokens(state: GameState): GameState {
-  console.log('[processResurrectedTokens] Processing Resurrected tokens...')
   let modified = false
   let newState = { ...state }
   let resurrectedCount = 0
@@ -131,7 +129,6 @@ function processResurrectedTokens(state: GameState): GameState {
     row.map(cell => {
       if (cell.card && cell.card.statuses?.some((s: any) => s.type === 'Resurrected')) {
         resurrectedCount++
-        console.log('[processResurrectedTokens] Found card with Resurrected:', cell.card.id, cell.card.name)
 
         // Get the owner of the Resurrected status
         const resurrectedStatus = cell.card.statuses.find((s: any) => s.type === 'Resurrected')
@@ -139,7 +136,6 @@ function processResurrectedTokens(state: GameState): GameState {
 
         // Check if card is Lucius (immune to Stun)
         if (isLucius(cell.card)) {
-          console.log('[processResurrectedTokens] Skipping Stun on Lucius (immune):', cell.card.id)
           // Just remove Resurrected, don't add Stun
           modified = true
           const newStatuses = cell.card.statuses.filter((s: any) => s.type !== 'Resurrected')
@@ -157,14 +153,12 @@ function processResurrectedTokens(state: GameState): GameState {
           newStatuses.push({ type: 'Stun', addedByPlayerId: ownerPlayerId })
         }
 
-        console.log('[processResurrectedTokens] Added 2 Stun to card:', cell.card.id, 'owner:', ownerPlayerId)
         return { card: { ...cell.card, statuses: newStatuses } }
       }
       return cell
     })
   )
 
-  console.log('[processResurrectedTokens] Found', resurrectedCount, 'cards with Resurrected, modified:', modified)
   return modified ? { ...newState, board: newBoard } : newState
 }
 
@@ -358,11 +352,6 @@ export function applyAction(
   action: ActionType,
   data?: any
 ): GameState {
-  // Debug logging for ADD_STATUS_TO_BOARD_CARD
-  if (action === 'ADD_STATUS_TO_BOARD_CARD') {
-    console.log('[SimpleGameLogic] applyAction: ADD_STATUS_TO_BOARD_CARD', { playerId, data })
-  }
-
   // Validation - can this player perform this action
   if (!canPlayerAct(state, playerId, action, data)) {
     console.warn(`[SimpleGameLogic] Player ${playerId} cannot ${action}`)
@@ -603,24 +592,6 @@ export function applyAction(
   // LUCIUS PASSIVE: Remove any Stun tokens that somehow got on Lucius
   // This is a fail-safe after any state update
   newState = removeStunFromLucius(newState)
-
-  // Debug: Check if Lucius cards still have powerModifier after all processing
-  if (action === 'PLAY_CARD_FROM_DISCARD' || action === 'RESURRECT_DISCARDED') {
-    for (const row of newState.board) {
-      for (const cell of row) {
-        if (cell.card?.baseId?.toLowerCase().includes('lucius')) {
-          console.log('[applyAction] RETURNING state with Lucius:', {
-            cardId: cell.card.id,
-            baseId: cell.card.baseId,
-            powerModifier: cell.card.powerModifier,
-            bonusPower: cell.card.bonusPower,
-            power: cell.card.power,
-            action: action
-          })
-        }
-      }
-    }
-  }
 
   return newState
 }
@@ -1059,7 +1030,6 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
           const cardDef = getCardDefinition(cardToPlay.baseId ?? '')
           if (cardDef && (cardDef as any).ABILITIES?.some((a: any) => a.type === 'setup')) {
             finalStatuses = [...finalStatuses, { type: 'readySetup', addedByPlayerId: actualPlayerId }]
-            console.log('[handlePlayCard] Adding readySetup to Setup ability card played during Setup phase:', cardToPlay.baseId)
           }
         }
 
@@ -1067,7 +1037,6 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
         let powerModifier = 0
         if (fromDiscard && isLucius(cardToPlay)) {
           powerModifier = 2
-          console.log('[handlePlayCard] Lucius played from discard, adding +2 powerModifier')
         }
 
         // Create new card object - set powerModifier AFTER spread to ensure it's applied
@@ -1078,20 +1047,6 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
           enteredThisTurn: true,
           statuses: finalStatuses,
           powerModifier: (cardToPlay.powerModifier || 0) + powerModifier  // Set last to override any existing value
-        }
-
-        // Debug: Verify powerModifier was applied - log full boardCard object
-        if (powerModifier > 0) {
-          console.log('[handlePlayCard] Board card powerModifier set to:', boardCard.powerModifier, 'card power:', boardCard.power, 'total power:', (boardCard.power || 0) + boardCard.powerModifier)
-          console.log('[handlePlayCard] Full boardCard object:', {
-            id: boardCard.id,
-            name: boardCard.name,
-            baseId: boardCard.baseId,
-            power: boardCard.power,
-            bonusPower: boardCard.bonusPower,
-            powerModifier: boardCard.powerModifier,
-            ownerId: boardCard.ownerId
-          })
         }
 
         return {
@@ -1105,12 +1060,6 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
   // Add to boardHistory and update lastPlayedCardId only if from hand
   const newBoardHistory = isFromHand ? [...player.boardHistory, cardToPlay.id] : player.boardHistory
   const newLastPlayedCardId = isFromHand ? cardToPlay.id : player.lastPlayedCardId
-
-  if (isFromHand) {
-    console.log('[handlePlayCard] Card played from hand:', cardToPlay.id, 'newBoardHistory:', newBoardHistory, 'newLastPlayedCardId:', newLastPlayedCardId)
-  } else {
-    console.log('[handlePlayCard] Card NOT from hand (deck/discard):', cardToPlay.id, 'NOT adding to boardHistory')
-  }
 
   // Update player
   const newPlayers = state.players.map(p =>
@@ -1141,22 +1090,9 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
   // This ensures cards get correct ready statuses for the new phase
   recalculateAllReadyStatuses(newState)
 
-  // Debug: Check if Lucius powerModifier is preserved after recalculate
-  const luciusCell = newState.board[boardCoords.row][boardCoords.col]
-  if (luciusCell?.card?.baseId?.toLowerCase().includes('lucius')) {
-    console.log('[handlePlayCard] AFTER recalculateAllReadyStatuses:', {
-      id: luciusCell.card.id,
-      baseId: luciusCell.card.baseId,
-      bonusPower: luciusCell.card.bonusPower,
-      power: luciusCell.card.power,
-      powerModifier: luciusCell.card.powerModifier
-    })
-  }
-
   // Check and apply triggers when a card with Revealed status is played from hand
   // This handles the drag-and-drop case where ANNOUNCE_CARD is not used
   if (isFromHand && cardToPlay.statuses?.some((s: any) => s.type === 'Revealed')) {
-    console.log('[handlePlayCard] Checking triggers for Revealed card played from hand:', cardToPlay.baseId)
     const triggerState = checkAndApplyTriggers(newState, cardToPlay, boardCoords, actualPlayerId, 'hand')
     return triggerState
   }
@@ -2271,7 +2207,6 @@ function handleResurrectDiscarded(state: GameState, _playerId: number, data?: an
   let powerModifier = 0
   if (isLucius(cardToResurrect)) {
     powerModifier = 2
-    console.log('[handleResurrectDiscarded] Lucius resurrected from discard, adding +2 powerModifier')
   }
 
   // Create the card for the board
@@ -2283,21 +2218,6 @@ function handleResurrectDiscarded(state: GameState, _playerId: number, data?: an
     powerModifier: (cardToResurrect.powerModifier || 0) + powerModifier  // Set last to override any existing value
   }
 
-  // Debug: Verify powerModifier was applied - log full boardCard object
-  if (powerModifier > 0) {
-    const finalPowerModifier = boardCard.powerModifier ?? 0
-    console.log('[handleResurrectDiscarded] Board card powerModifier set to:', finalPowerModifier, 'card power:', boardCard.power, 'total power:', (boardCard.power || 0) + finalPowerModifier)
-    console.log('[handleResurrectDiscarded] Full boardCard object:', {
-      id: boardCard.id,
-      name: boardCard.name,
-      baseId: boardCard.baseId,
-      power: boardCard.power,
-      bonusPower: boardCard.bonusPower,
-      powerModifier: finalPowerModifier,
-      ownerId: boardCard.ownerId
-    })
-  }
-
   // Remove card from discard
   const newDiscard = [...player.discard]
   newDiscard.splice(cardIndex, 1)
@@ -2306,11 +2226,7 @@ function handleResurrectDiscarded(state: GameState, _playerId: number, data?: an
   const newBoard = state.board.map((r, rIdx) =>
     r.map((cell, cIdx) => {
       if (rIdx === row && cIdx === col) {
-        const newCell = { card: boardCard }
-        if (powerModifier > 0) {
-          console.log('[handleResurrectDiscarded] Placing card on board at', {row, col}, 'with powerModifier:', newCell.card.powerModifier)
-        }
-        return newCell
+        return { card: boardCard }
       }
       return cell
     })
@@ -2338,23 +2254,8 @@ function handleResurrectDiscarded(state: GameState, _playerId: number, data?: an
     }
   }
 
-  console.log('[handleResurrectDiscarded] Resurrected', boardCard.name, 'from discard to', boardCoords)
-
   // Recalculate ready statuses
   recalculateAllReadyStatuses(newState)
-
-  // Debug: Check if powerModifier is still there after recalculateAllReadyStatuses
-  const luciusCell = newState.board[row][col]
-  if (luciusCell.card) {
-    console.log('[handleResurrectDiscarded] AFTER recalculateAllReadyStatuses:', {
-      id: luciusCell.card.id,
-      baseId: luciusCell.card.baseId,
-      powerModifier: luciusCell.card.powerModifier,
-      power: luciusCell.card.power,
-      bonusPower: luciusCell.card.bonusPower,
-      allProps: Object.keys(luciusCell.card)
-    })
-  }
 
   return newState
 }
@@ -2760,7 +2661,6 @@ function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: a
 
   // LUCIUS PASSIVE: Immunity to Stun - Lucius cannot receive Stun tokens
   if (statusType === 'Stun' && isLucius(targetCard)) {
-    console.log('[handleAddStatusToBoardCard] Blocked Stun on Lucius (passive immunity):', targetCard.id)
     return state
   }
 

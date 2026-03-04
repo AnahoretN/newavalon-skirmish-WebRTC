@@ -272,16 +272,6 @@ export class SimpleHost {
     if (newState !== oldState) {
       this.state = newState
 
-      // Debug: Check if Lucius card has bonusPower in this.state after action
-      if (action === 'PLAY_CARD_FROM_DISCARD' || action === 'RESURRECT_DISCARDED') {
-        for (const row of this.state.board) {
-          for (const cell of row) {
-            if (cell.card?.baseId?.toLowerCase().includes('lucius') && cell.card.bonusPower) {
-              logger.info('[SimpleHost] State updated: Lucius has bonusPower:', cell.card.bonusPower, 'card id:', cell.card.id, 'action:', action)
-            }
-          }
-        }
-      }
       // Update playerIdCounter to reflect new max player ID
       // This prevents ID conflicts when players are added via actions (like SET_DUMMY_PLAYER_COUNT)
       const maxPlayerId = newState.players.length > 0
@@ -907,15 +897,6 @@ export class SimpleHost {
         .join(', ')
       if (announcedCards) {
         logger.info(`[SimpleHost] Host (player1) receiving state with announcedCards: [${announcedCards}]`)
-      }
-
-      // Debug: Check if Lucius card has bonusPower in the state being sent to UI
-      for (const row of hostState.board) {
-        for (const cell of row) {
-          if (cell.card?.baseId?.toLowerCase().includes('lucius') && cell.card.bonusPower) {
-            logger.info('[SimpleHost] notifyStateUpdate: Lucius has bonusPower:', cell.card.bonusPower, 'card id:', cell.card.id)
-          }
-        }
       }
 
       this.config.onStateUpdate(hostState)
