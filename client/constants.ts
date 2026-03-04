@@ -5,7 +5,7 @@
 
 import type { Card, PlayerColor } from './types'
 import { DeckType, DeckType as DeckTypeEnum } from './types'
-import { countersDatabase } from './content'
+import { getCountersDatabase } from './content'
 
 /**
  * The current version of the application.
@@ -109,11 +109,23 @@ export const TURN_PHASES = [
 /**
  * Image URLs for status icons.
  * Returns icons from the counters database.
+ * This function re-evaluates on every call to get fresh data.
  */
 export const getStatusIcons = (): Record<string, string> => {
-  return Object.fromEntries(
-    Object.entries(countersDatabase).map(([key, def]) => [key, def.imageUrl]),
+  const db = getCountersDatabase()
+  const icons = Object.fromEntries(
+    Object.entries(db).map(([key, def]) => [key, def.imageUrl]),
   )
+  return icons
+}
+
+/**
+ * Direct getter for a single status icon URL.
+ * Use this for immediate access to fresh icon URLs.
+ */
+export const getStatusIconUrl = (type: string): string | undefined => {
+  const db = getCountersDatabase()
+  return db[type]?.imageUrl
 }
 
 /**
@@ -122,17 +134,19 @@ export const getStatusIcons = (): Record<string, string> => {
  */
 export const STATUS_ICONS: Record<string, string> = new Proxy({} as Record<string, string>, {
   get(_target, prop) {
-    const icons = getStatusIcons()
-    return icons[prop as string]
+    // Direct access via getter function - always fresh
+    const db = getCountersDatabase()
+    return db[prop as string]?.imageUrl
   },
   ownKeys() {
-    return Object.keys(getStatusIcons())
+    return Object.keys(getCountersDatabase())
   },
   has(_target, prop) {
-    return prop in getStatusIcons()
+    return prop in getCountersDatabase()
   },
   getOwnPropertyDescriptor(_target, prop) {
-    const value = getStatusIcons()[prop as string]
+    const db = getCountersDatabase()
+    const value = db[prop as string]?.imageUrl
     return value !== undefined ? { enumerable: true, configurable: true, value } : undefined
   }
 })
@@ -142,8 +156,9 @@ export const STATUS_ICONS: Record<string, string> = new Proxy({} as Record<strin
  * Returns descriptions from the counters database.
  */
 export const getStatusDescriptions = (): Record<string, string> => {
+  const db = getCountersDatabase()
   return Object.fromEntries(
-    Object.entries(countersDatabase).map(([key, def]) => [key, def.description]),
+    Object.entries(db).map(([key, def]) => [key, def.description]),
   )
 }
 
@@ -173,7 +188,8 @@ export const STATUS_DESCRIPTIONS: Record<string, string> = new Proxy({} as Recor
  * Excludes Resurrected - players cannot place it manually, only via card effects.
  */
 export const getAvailableCounters = () => {
-  return Object.entries(countersDatabase)
+  const db = getCountersDatabase()
+  return Object.entries(db)
     .filter(([key, def]) =>
       key !== 'Resurrected' && // Exclude Resurrected token
       (!def.allowedPanels || def.allowedPanels.includes('COUNTER_PANEL'))
@@ -184,8 +200,9 @@ export const getAvailableCounters = () => {
 
 /**
  * Backward compatible export - uses the function
+ * NOTE: This is now a function to get fresh data after content loads
  */
-export const AVAILABLE_COUNTERS = getAvailableCounters()
+export const AVAILABLE_COUNTERS = () => getAvailableCounters()
 
 /**
  * An array of predefined counter items that can be placed on cards.

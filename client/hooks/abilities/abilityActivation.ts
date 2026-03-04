@@ -81,10 +81,13 @@ export function activateAbility(
 
   const action = getCardAbilityAction(card as any, gameState as any, card.ownerId!, boardCoords)
   if (action) {
-    // Check for DISCARD_FROM_HAND cost (Faber, etc.)
+    // Check for DISCARD_FROM_HAND cost (Faber, Lucius, etc.)
     if (action.payload?.cost?.type === 'DISCARD_FROM_HAND' && setAbilityMode) {
-      // Enter SELECT_TARGET mode first with DISCARD_FROM_HAND prompt
-      // Player must select a card from their hand to discard
+      // Determine the correct actionType based on the main ability action
+      // - SEARCH_DECK (Lucius): LUCIUS_SETUP - discard any card then search deck
+      // - CREATE_TOKEN (Faber): SELECT_HAND_FOR_DISCARD_THEN_PLACE_TOKEN - discard then place token
+      const isSearchDeckAbility = action.mode === 'SEARCH_DECK' || action.payload?.actionType === 'SEARCH_DECK'
+
       const discardMode: AbilityAction = {
         type: 'ENTER_MODE',
         mode: 'SELECT_TARGET',
@@ -93,10 +96,12 @@ export function activateAbility(
         isDeployAbility: action.isDeployAbility,
         readyStatusToRemove: action.readyStatusToRemove,
         payload: {
-          actionType: 'SELECT_HAND_FOR_DISCARD_THEN_PLACE_TOKEN',
+          actionType: isSearchDeckAbility ? 'LUCIUS_SETUP' : 'SELECT_HAND_FOR_DISCARD_THEN_PLACE_TOKEN',
           tokenId: action.payload.tokenId,
           range: action.payload.range || 'adjacent',
-          filter: action.payload.filter
+          // Only apply filter to discard for non-SEARCH_DECK abilities
+          // For Lucius (SEARCH_DECK), discard ANY card, filter applies to search only
+          filter: isSearchDeckAbility ? undefined : action.payload.filter
         }
       }
       // Remove ready status (but not for AUTO_STEPS - they handle it themselves)

@@ -81,6 +81,94 @@ function clearAllStatuses(card: Card): void {
 }
 
 /**
+ * Check if a card is Lucius, The Immortal
+ * Lucius has pass abilities: Immunity to Stun, +2 power if exited from Discard
+ */
+function isLucius(card: Card): boolean {
+  // Check by baseId (e.g., 'luciusTheImmortal' or similar)
+  if (!card.baseId) {return false}
+  const baseId = card.baseId.toLowerCase()
+  return baseId === 'luciustheimmortal' || baseId.includes('lucius')
+}
+
+/**
+ * Remove all Stun tokens from Lucius (his passive immunity)
+ * This should be called after any state update that might add Stun to Lucius
+ */
+function removeStunFromLucius(state: GameState): GameState {
+  let modified = false
+  const newBoard = state.board.map(row =>
+    row.map(cell => {
+      if (cell.card && isLucius(cell.card) && cell.card.statuses) {
+        const hadStun = cell.card.statuses.some((s: any) => s.type === 'Stun')
+        if (hadStun) {
+          modified = true
+          console.log('[removeStunFromLucius] Removing Stun from Lucius:', cell.card.id)
+          const newStatuses = cell.card.statuses.filter((s: any) => s.type !== 'Stun')
+          return { card: { ...cell.card, statuses: newStatuses } }
+        }
+      }
+      return cell
+    })
+  )
+
+  return modified ? { ...state, board: newBoard } : state
+}
+
+/**
+ * Process Resurrected tokens when phase changes
+ * All cards with Resurrected receive 2 Stun tokens, then all Resurrected tokens are removed
+ * Note: Cards with Stun immunity (like Lucius) won't receive Stun tokens
+ */
+function processResurrectedTokens(state: GameState): GameState {
+  console.log('[processResurrectedTokens] Processing Resurrected tokens...')
+  let modified = false
+  let newState = { ...state }
+  let resurrectedCount = 0
+
+  // First pass: Add 2 Stun tokens to cards with Resurrected
+  const newBoard = newState.board.map(row =>
+    row.map(cell => {
+      if (cell.card && cell.card.statuses?.some((s: any) => s.type === 'Resurrected')) {
+        resurrectedCount++
+        console.log('[processResurrectedTokens] Found card with Resurrected:', cell.card.id, cell.card.name)
+
+        // Get the owner of the Resurrected status
+        const resurrectedStatus = cell.card.statuses.find((s: any) => s.type === 'Resurrected')
+        const ownerPlayerId = resurrectedStatus?.addedByPlayerId ?? cell.card.ownerId ?? 0
+
+        // Check if card is Lucius (immune to Stun)
+        if (isLucius(cell.card)) {
+          console.log('[processResurrectedTokens] Skipping Stun on Lucius (immune):', cell.card.id)
+          // Just remove Resurrected, don't add Stun
+          modified = true
+          const newStatuses = cell.card.statuses.filter((s: any) => s.type !== 'Resurrected')
+          return { card: { ...cell.card, statuses: newStatuses } }
+        }
+
+        // Add 2 Stun tokens to non-immune cards
+        modified = true
+        const existingStatuses = cell.card.statuses || []
+        const statussWithoutResurrected = existingStatuses.filter((s: any) => s.type !== 'Resurrected')
+
+        // Add 2 Stun tokens with same owner as Resurrected status
+        const newStatuses = [...statussWithoutResurrected]
+        for (let i = 0; i < 2; i++) {
+          newStatuses.push({ type: 'Stun', addedByPlayerId: ownerPlayerId })
+        }
+
+        console.log('[processResurrectedTokens] Added 2 Stun to card:', cell.card.id, 'owner:', ownerPlayerId)
+        return { card: { ...cell.card, statuses: newStatuses } }
+      }
+      return cell
+    })
+  )
+
+  console.log('[processResurrectedTokens] Found', resurrectedCount, 'cards with Resurrected, modified:', modified)
+  return modified ? { ...newState, board: newBoard } : newState
+}
+
+/**
  * Restore LastPlayed status to previous card when a card with LastPlayed leaves battlefield
  * @param removedCard - The card being removed from battlefield
  * @param ownerId - The owner of the removed card
@@ -512,6 +600,10 @@ export function applyAction(
   // This ensures cards gain/lose readySetup/readyCommit when Support changes
   recalculateAllReadyStatuses(newState)
 
+  // LUCIUS PASSIVE: Remove any Stun tokens that somehow got on Lucius
+  // This is a fail-safe after any state update
+  newState = removeStunFromLucius(newState)
+
   return newState
 }
 
@@ -553,11 +645,17 @@ function canPlayerAct(
  * NEXT_PHASE - transition to next phase
  */
 function handleNextPhase(state: GameState, playerId: number): GameState {
-  const phase = state.currentPhase
+  console.log('[handleNextPhase] Phase transition from', state.currentPhase, 'playerId:', playerId)
+
+  // RESURRECTED TOKEN: Process before phase change
+  // All cards with Resurrected receive 2 Stun, then Resurrected is removed
+  let stateAfterResurrected = processResurrectedTokens(state)
+
+  const phase = stateAfterResurrected.currentPhase
 
   // Preparation (0) → Setup (1) - automatic, handled in passTurn
   if (phase === 0) {
-    const newState = { ...state, currentPhase: 1 }
+    const newState = { ...stateAfterResurrected, currentPhase: 1 }
     // Clear scoring mode if somehow active
     newState.isScoringStep = false
     newState.scoringLines = []
@@ -567,7 +665,7 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
 
   // Setup (1) → Main (2) - happens when playing card
   if (phase === 1) {
-    const newState = { ...state, currentPhase: 2 }
+    const newState = { ...stateAfterResurrected, currentPhase: 2 }
     // Clear scoring mode if somehow active
     newState.isScoringStep = false
     newState.scoringLines = []
@@ -577,7 +675,7 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
 
   // Main (2) → Commit (3)
   if (phase === 2) {
-    const newState = { ...state, currentPhase: 3 }
+    const newState = { ...stateAfterResurrected, currentPhase: 3 }
     // Clear scoring mode if somehow active
     newState.isScoringStep = false
     newState.scoringLines = []
@@ -593,12 +691,12 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
     const activePlayerId = state.activePlayerId
     console.log('[NEXT_PHASE to Scoring] Active player', activePlayerId, 'checking for LastPlayed cards...')
 
-    const player = state.players.find(p => p.id === activePlayerId)
+    const player = stateAfterResurrected.players.find(p => p.id === activePlayerId)
     const isDummyPlayer = player?.isDummy ?? false
 
     // Debug: log all player's cards on board
     const playerCardsOnBoard: any[] = []
-    state.board.forEach((row, _r) => {
+    stateAfterResurrected.board.forEach((row, _r) => {
       row.forEach((cell, _c) => {
         if (cell.card?.ownerId === activePlayerId) {
           playerCardsOnBoard.push({
@@ -614,7 +712,7 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
 
     // For dummy players, check if card belongs to them and has LastPlayed (any player could have added it)
     // For real players, check if card belongs to them AND was added by them this turn
-    const hasLastPlayedCards = state.board.some(row =>
+    const hasLastPlayedCards = stateAfterResurrected.board.some(row =>
       row.some(cell => {
         if (cell.card?.ownerId !== activePlayerId) {return false}
 
@@ -633,20 +731,20 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
     if (hasLastPlayedCards) {
       // Has cards with LastPlayed status - enter Scoring and calculate lines
       console.log('[NEXT_PHASE to Scoring] Entering scoring phase for player', activePlayerId)
-      return enterScoringPhase(state, activePlayerId ?? 0)
+      return enterScoringPhase(stateAfterResurrected, activePlayerId ?? 0)
     } else {
       // No cards with LastPlayed status - pass turn to next player
       console.log('[NEXT_PHASE to Scoring] No LastPlayed cards, passing turn')
-      return handlePassTurn(state, activePlayerId ?? 0, 'no_new_cards')
+      return handlePassTurn(stateAfterResurrected, activePlayerId ?? 0, 'no_new_cards')
     }
   }
 
   // Scoring (4) → PassTurn
   if (phase === 4) {
-    return handlePassTurn(state, playerId, 'scoring_complete')
+    return handlePassTurn(stateAfterResurrected, playerId, 'scoring_complete')
   }
 
-  return state
+  return stateAfterResurrected
 }
 
 /**
@@ -859,9 +957,10 @@ function executePreparationPhase(state: GameState, activePlayerId: number): Game
 /**
  * PLAY_CARD - play card from hand to board
  * Also supports direct card parameter for playing from deck/discard
+ * Supports fromDiscard parameter for Lucius's passive (+2 power if exited from Discard)
  */
 function handlePlayCard(state: GameState, playerId: number, data: any): GameState {
-  const { card, cardIndex, boardCoords, faceDown = false, playerId: targetPlayerId } = data || {}
+  const { card, cardIndex, boardCoords, faceDown = false, playerId: targetPlayerId, fromDiscard = false } = data || {}
   const actualPlayerId = targetPlayerId ?? playerId
   const player = state.players.find(p => p.id === actualPlayerId)
 
@@ -946,7 +1045,16 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
           }
         }
 
+        // LUCIUS PASSIVE: +2 power if exited from Discard
+        let bonusPower = 0
+        if (fromDiscard && isLucius(cardToPlay)) {
+          bonusPower = 2
+          console.log('[handlePlayCard] Lucius played from discard, adding +2 bonusPower')
+        }
+
+        // Create new card object - set bonusPower BEFORE spread to override any existing value
         const boardCard = {
+          bonusPower,
           ...cardToPlay,
           ownerId: actualPlayerId,
           isFaceDown: faceDown,
@@ -1959,7 +2067,7 @@ function handleSwapCards(state: GameState, _playerId: number, data?: any): GameS
 
 /**
  * SPAWN_TOKEN - spawn a token card on the board
- * Special case: Resurrection is added as a status to existing card (Immunis Deploy)
+ * Special case: Resurrected is added as a status to existing card (Immunis Deploy)
  */
 function handleSpawnToken(state: GameState, _playerId: number, data?: any): GameState {
   const { coords, tokenName, ownerId } = data || {}
@@ -1973,8 +2081,8 @@ function handleSpawnToken(state: GameState, _playerId: number, data?: any): Game
     return state
   }
 
-  // Special case: Resurrection is a status, not a token card (for Immunis Deploy)
-  if (tokenName === 'Resurrection') {
+  // Special case: Resurrected is a status, not a token card (for Immunis Deploy)
+  if (tokenName === 'Resurrected') {
     const cell = state.board[row][col]
     if (!cell.card) { return state } // Must have a card to add status to
 
@@ -1985,7 +2093,7 @@ function handleSpawnToken(state: GameState, _playerId: number, data?: any): Game
             card: {
               ...cell.card,
               statuses: [...(cell.card.statuses || []), {
-                type: 'Resurrection',
+                type: 'Resurrected',
                                         addedByPlayerId: ownerId
                                       }]
             }
@@ -1995,7 +2103,7 @@ function handleSpawnToken(state: GameState, _playerId: number, data?: any): Game
       })
     )
 
-    console.log('[handleSpawnToken] Added Resurrection status to card at', coords)
+    console.log('[handleSpawnToken] Added Resurrected status to card at', coords)
 
     // Recalculate ready statuses
     const newState = { ...state, board: newBoard }
@@ -2530,8 +2638,9 @@ function handlePlayCardFromDiscard(state: GameState, playerId: number, data: any
   const newPlayers = state.players.map(p => p.id === actualPlayerId ? updatedPlayer : p)
 
   // Use handlePlayCard logic to place the card on board
+  // Pass fromDiscard: true for Lucius's passive (+2 power if exited from Discard)
   const newState = { ...state, players: newPlayers }
-  return handlePlayCard(newState, actualPlayerId, { card: cardToPlay, boardCoords, faceDown })
+  return handlePlayCard(newState, actualPlayerId, { card: cardToPlay, boardCoords, faceDown, fromDiscard: true })
 }
 
 /**
@@ -2564,6 +2673,12 @@ function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: a
   // Create new card with added status
   const targetCard = cell.card
   const existingStatuses = targetCard.statuses || []
+
+  // LUCIUS PASSIVE: Immunity to Stun - Lucius cannot receive Stun tokens
+  if (statusType === 'Stun' && isLucius(targetCard)) {
+    console.log('[handleAddStatusToBoardCard] Blocked Stun on Lucius (passive immunity):', targetCard.id)
+    return state
+  }
 
   // If replaceStatusType is specified, remove that status type first
   let filteredStatuses = existingStatuses

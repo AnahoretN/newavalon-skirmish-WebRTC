@@ -2995,7 +2995,7 @@ function handleSelectLineForSupportTokens(
   }
 
   // Determine which line was selected
-  let targets: { row: number; col: number }[] = []
+  const targets: { row: number; col: number }[] = []
   const gridSize = gameState.board.length
   const lineType = sameRow ? 'horizontal' : 'vertical'
 
@@ -3109,7 +3109,7 @@ function handleSelectLineForThreatCounters(
   }
 
   // Determine which line was selected
-  let targets: { row: number; col: number }[] = []
+  const targets: { row: number; col: number }[] = []
   const gridSize = gameState.board.length
   const lineType = sameRow ? 'horizontal' : 'vertical'
 

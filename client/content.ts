@@ -248,13 +248,26 @@ export let tokenDatabase: Map<string, CardDefinition> = new Map()
  */
 export let countersDatabase: Record<string, Omit<CounterDefinition, 'id'>> = {}
 
+/**
+ * Get the current counters database.
+ * Use this to always get fresh data, especially for icon URLs.
+ */
+export const getCountersDatabase = (): Record<string, Omit<CounterDefinition, 'id'>> => {
+  return countersDatabase
+}
+
 // Load counters database from localStorage immediately for icon persistence
 // This ensures STATUS_ICONS are available even before fetchContentDatabase completes
 try {
   const cachedCounters = localStorage.getItem('counters_database')
   if (cachedCounters) {
-    _countersDatabase = JSON.parse(cachedCounters)
-    countersDatabase = _countersDatabase  // Update export immediately
+    const parsed = JSON.parse(cachedCounters)
+    // Check if cached data has Resurrected counter (added in version 0.2.11)
+    // If not, ignore the cache to force loading fresh data
+    if (parsed.Resurrected) {
+      _countersDatabase = parsed
+      countersDatabase = _countersDatabase  // Update export immediately
+    }
   }
 } catch (e) {
   // Silently fail if localStorage is not available

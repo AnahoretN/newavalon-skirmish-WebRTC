@@ -11,7 +11,7 @@
  */
 
 import type { CursorStackState } from '@/types'
-import { countersDatabase } from '@/content'
+import { getCountersDatabase } from '@/content'
 
 /**
  * Allowed target locations from countersDatabase
@@ -34,7 +34,7 @@ export interface TokenTargetingRules {
  * Get targeting rules for a token type from countersDatabase
  */
 export function getTokenTargetingRules(tokenType: string): TokenTargetingRules {
-  const counterDef = countersDatabase[tokenType]
+  const counterDef = getCountersDatabase()[tokenType]
   const allowedTargets = counterDef?.allowedTargets || []
 
   return {
@@ -119,7 +119,7 @@ export function canTokenTargetBoard(tokenType: string): boolean {
  * Get all token types that can target hand cards
  */
 export function getHandTargetableTokenTypes(): string[] {
-  return Object.entries(countersDatabase)
+  return Object.entries(getCountersDatabase())
     .filter(([_, def]: [string, any]) => def.allowedTargets?.includes('hand'))
     .map(([type]) => type)
 }
@@ -128,7 +128,7 @@ export function getHandTargetableTokenTypes(): string[] {
  * Get all token types that can target board cards
  */
 export function getBoardTargetableTokenTypes(): string[] {
-  return Object.entries(countersDatabase)
+  return Object.entries(getCountersDatabase())
     .filter(([_, def]: [string, any]) =>
       def.allowedTargets?.includes('board') || def.allowedTargets?.includes('board-facedown')
     )

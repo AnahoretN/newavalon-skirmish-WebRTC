@@ -524,9 +524,9 @@
           "mode": "ADJACENT_EMPTY",
           "details": {
             "filter": "hasFaction_Optimates",
-            "withToken": "Resurrection",
+            "withToken": "Resurrected",
             "endPhase": {
-              "replaceToken": "Resurrection",
+              "replaceToken": "Resurrected",
               "withToken": "Stun",
               "count": 2
             }
@@ -1391,10 +1391,10 @@
     "Resurrected": {
         "name": "Resurrected",
         "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365394/Resurrected_awaucv.webp",
-        "description": "This unit recently returned from the discard pile. It will become Stunned at the start of the next phase.",
+        "description": "When phase changes, this unit receives 2 Stun tokens, then all Resurrected tokens are removed from it.",
         "sortOrder": 8,
-        "allowedPanels": ["COUNTER_PANEL"],
-        "allowedTargets": ["board", "hand"]
+        "allowedPanels": [],
+        "allowedTargets": ["board"]
     },
     "Power+": {
         "name": "Power+",

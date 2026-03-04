@@ -14,6 +14,16 @@ const ADJACENT_DISTANCE = 1
 const RANGE_TWO_DISTANCE = 2
 
 /**
+ * Check if a card is Lucius, The Immortal
+ * Lucius has pass abilities: Immunity to Stun, +2 power if exited from Discard
+ */
+function isLucius(card: Card): boolean {
+  if (!card.baseId) {return false}
+  const baseId = card.baseId.toLowerCase()
+  return baseId === 'luciustheimmortal' || baseId.includes('lucius')
+}
+
+/**
  * Validates if a specific target meets constraints.
  */
 export const validateTarget = (
@@ -91,6 +101,11 @@ export const validateTarget = (
     if (card.statuses?.some(s => s.type === 'Revealed' && s.addedByPlayerId === userPlayerId)) {
       return false
     }
+  }
+
+  // 5.2 LUCIUS PASSIVE: Immunity to Stun - Lucius cannot receive Stun tokens
+  if (constraints.tokenType === 'Stun' && isLucius(card)) {
+    return false
   }
 
   // 6. Required Status

@@ -1,7 +1,7 @@
 import type { TranslationResource, LanguageCode, CardTranslation, CounterTranslation } from '@/locales/types'
 import { ru } from '@/locales/ru'
 import { sr } from '@/locales/sr'
-import { cardDatabase, tokenDatabase, countersDatabase } from '@/content'
+import { cardDatabase, tokenDatabase, getCountersDatabase } from '@/content'
 
 // --- Static English UI & Rules Definitions ---
 
@@ -285,11 +285,28 @@ tokenDatabase.forEach((def, id) => {
 })
 
 // Build English Counter Translations
-const enCounters: Record<string, CounterTranslation> = {}
-Object.entries(countersDatabase).forEach(([key, def]) => {
-  enCounters[key] = {
-    name: def.name,
-    description: def.description,
+// NOTE: Using Proxy to get fresh data after content loads
+const enCounters: Record<string, CounterTranslation> = new Proxy({} as Record<string, CounterTranslation>, {
+  get(_target, prop) {
+    const db = getCountersDatabase()
+    const def = db[prop as string]
+    if (!def) return undefined
+    return {
+      name: def.name,
+      description: def.description,
+    }
+  },
+  ownKeys() {
+    return Object.keys(getCountersDatabase())
+  },
+  has(_target, prop) {
+    return prop in getCountersDatabase()
+  },
+  getOwnPropertyDescriptor(_target, prop) {
+    const db = getCountersDatabase()
+    const def = db[prop as string]
+    if (!def) return undefined
+    return { enumerable: true, configurable: true, value: { name: def.name, description: def.description } }
   }
 })
 

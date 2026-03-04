@@ -58,7 +58,8 @@ const StatusIcon: React.FC<StatusIconProps> = memo(({ type, playerId, count, ref
   const [iconLoadState, setIconLoadState] = useState<'loading' | 'loaded' | 'failed'>('loading')
   const [currentIconUrl, setCurrentIconUrl] = useState<string | null>(null)
 
-  const iconUrl = useMemo(() => {
+  // Direct function to get icon URL - reads fresh from STATUS_ICONS every time
+  const getIconUrl = useCallback(() => {
     let url = STATUS_ICONS[type]
     if (url) {
       // Apply Cloudinary optimizations for status icons (small, fast loading)
@@ -69,11 +70,12 @@ const StatusIcon: React.FC<StatusIconProps> = memo(({ type, playerId, count, ref
     return url
   }, [type, refreshVersion])
 
-  // Reset loading state when icon URL changes
+  // Update icon URL when type or refreshVersion changes
   useEffect(() => {
-    setCurrentIconUrl(iconUrl)
+    const url = getIconUrl()
+    setCurrentIconUrl(url)
     setIconLoadState('loading')
-  }, [iconUrl])
+  }, [getIconUrl])
 
   const handleIconLoad = useCallback(() => {
     setIconLoadState('loaded')
@@ -96,7 +98,8 @@ const StatusIcon: React.FC<StatusIconProps> = memo(({ type, playerId, count, ref
     }
   }, [currentIconUrl])
 
-  const isSingleInstance = ['Support', 'Threat', 'Revealed', 'LastPlayed'].includes(type)
+  // Resurrected should only show once per card (like Support, Threat, etc.)
+  const isSingleInstance = ['Support', 'Threat', 'Revealed', 'LastPlayed', 'Resurrected'].includes(type)
   const showCount = !isSingleInstance && count > 1
 
   // When count is shown, icon padding is larger to make the icon smaller.
@@ -527,13 +530,19 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   }, [shouldHighlight, localPlayerId, card, onCardClick, boardCoords, triggerClickWave, players, targetingMode])
 
   // Aggregate statuses by TYPE and PLAYER ID to allow separate icons for different players.
-  // DEBUG: All statuses are now visible for debugging ability readiness.
-  // Normally hidden: readyDeploy, readySetup, readyCommit, deployUsedThisTurn, setupUsedThisTurn, commitUsedThisTurn
+  // Hidden statuses: readyDeploy, readySetup, readyCommit, deployUsedThisTurn, setupUsedThisTurn, commitUsedThisTurn
   const statusGroups = useMemo(() => {
-    // Empty array = all statuses visible (debug mode)
-    const hiddenStatusTypes: string[] = []
+    // Statuses that should be hidden from display (internal ability system statuses)
+    const hiddenStatusTypes: string[] = [
+      'readyDeploy',
+      'readySetup',
+      'readyCommit',
+      'deployUsedThisTurn',
+      'setupUsedThisTurn',
+      'commitUsedThisTurn'
+    ]
     const groups = (card.statuses ?? []).reduce((acc, status) => {
-      // Skip hidden statuses (empty for debug - all visible)
+      // Skip hidden statuses
       if (hiddenStatusTypes.includes(status.type)) {
         return acc
       }

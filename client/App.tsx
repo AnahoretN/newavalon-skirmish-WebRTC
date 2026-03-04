@@ -39,7 +39,7 @@ import type {
 } from './types'
 import { DeckType } from './types'
 import { STATUS_ICONS, STATUS_DESCRIPTIONS, PLAYER_COLOR_RGB } from './constants'
-import { countersDatabase, fetchContentDatabase } from './content'
+import { getCountersDatabase, fetchContentDatabase } from './content'
 import { validateTarget, calculateValidTargets, checkActionHasTargets } from '@shared/utils/targeting'
 import { getCommandAction } from '@server/utils/commandLogic'
 import { createTargetingActionFromCursorStack, createTargetingActionFromAbilityMode, determineTargetingPlayerId } from './utils/targetingActionUtils'
@@ -878,7 +878,7 @@ const AppInner = function AppInner() {
     fetchContentDatabase().then(() => {
       // After loading, if counters are now available, trigger a re-render
       // This ensures STATUS_ICONS are properly loaded for status displays
-      if (mounted && Object.keys(countersDatabase).length > 0) {
+      if (mounted && Object.keys(getCountersDatabase()).length > 0) {
         setImageRefreshVersion(prev => prev + 1)
       }
 
