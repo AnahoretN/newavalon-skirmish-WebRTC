@@ -610,7 +610,8 @@ function canPlayerAct(
   if (!state.isGameStarted) {
     return ['PLAYER_READY', 'CHANGE_PLAYER_NAME', 'CHANGE_PLAYER_COLOR',
             'CHANGE_PLAYER_DECK', 'SET_GAME_MODE', 'SET_GRID_SIZE',
-            'SET_PRIVACY', 'ASSIGN_TEAMS', 'SET_DUMMY_PLAYER_COUNT'].includes(action)
+            'SET_PRIVACY', 'ASSIGN_TEAMS', 'SET_DUMMY_PLAYER_COUNT',
+            'ANNOUNCE_CARD'].includes(action)
   }
 
   // Players can change their settings
@@ -2022,28 +2023,68 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
  * ANNOUNCE_CARD - announce card
  * If player already has an announced card, they are swapped:
  * - The existing announced card returns to player's hand
- * - The new card from hand becomes the announced card
+ * - The new card becomes the announced card
+ *
+ * Supports sources: 'hand', 'deck'
  */
 function handleAnnounceCard(state: GameState, playerId: number, data: any): GameState {
-  const { cardIndex, playerId: targetPlayerId } = data || {}
+  const { cardIndex, playerId: targetPlayerId, source } = data || {}
   const actualPlayerId = targetPlayerId ?? playerId
   const player = state.players.find(p => p.id === actualPlayerId)
 
   if (!player || cardIndex === undefined) {return state}
 
-  // Get the card to announce from the original hand (before any modifications)
-  const cardToAnnounce = player.hand[cardIndex]
-  if (!cardToAnnounce) {return state}
+  // Determine source array
+  const sourceArray = source === 'deck' ? player.deck : player.hand
+  const cardToAnnounce = sourceArray[cardIndex]
 
-  // Build new hand array
-  // If there's an existing announced card, add it to the end of hand first
+  if (!cardToAnnounce) {
+    return state
+  }
+
+  // Log card properties for debugging announced zone display issue
+  console.log('[ANNOUNCE_CARD] Moving card to announced:', {
+    source,
+    cardId: cardToAnnounce.id,
+    baseId: cardToAnnounce.baseId,
+    name: cardToAnnounce.name,
+    hasImageUrl: !!cardToAnnounce.imageUrl,
+    imageUrl: cardToAnnounce.imageUrl?.substring(0, 50) + '...',
+    hasFallbackImage: !!cardToAnnounce.fallbackImage,
+    deck: cardToAnnounce.deck,
+    types: cardToAnnounce.types,
+    isCommandCard: cardToAnnounce.deck === 'Command' || cardToAnnounce.types?.includes('Command') || cardToAnnounce.faction === 'Command',
+  })
+
+  // Check if this is a Command card from deck - use PLAY_COMMAND_FROM_DECK instead
+  const isCommandCard = cardToAnnounce.deck === 'Command' || cardToAnnounce.types?.includes('Command') || cardToAnnounce.faction === 'Command'
+
+  if (source === 'deck' && isCommandCard) {
+    return handlePlayCommandFromDeck(state, playerId, {
+      card: cardToAnnounce,
+      cardIndex,
+      ownerId: actualPlayerId
+    })
+  }
+
+  // Build new arrays based on source
   const existingAnnouncedCard = player.announcedCard
   let newHand = [...player.hand]
-  if (existingAnnouncedCard) {
-    newHand = [...newHand, existingAnnouncedCard]
+  let newDeck = source === 'deck' ? [...player.deck] : player.deck
+
+  if (source === 'deck') {
+    // Remove from deck
+    if (existingAnnouncedCard) {
+      newHand = [...newHand, existingAnnouncedCard]
+    }
+    newDeck.splice(cardIndex, 1)
+  } else {
+    // Remove from hand
+    if (existingAnnouncedCard) {
+      newHand = [...newHand, existingAnnouncedCard]
+    }
+    newHand.splice(cardIndex, 1)
   }
-  // Remove the card being announced from hand
-  newHand.splice(cardIndex, 1)
 
   // Announced card does NOT get LastPlayed status
   // (LastPlayed is only for cards that enter the battlefield, not showcase)
@@ -2061,6 +2102,8 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
         ...p,
         hand: newHand,
         handSize: newHand.length,
+        deck: newDeck,
+        deckSize: newDeck.length,
         announcedCard: announcedCard
         // Do NOT update boardHistory or lastPlayedCardId - card hasn't entered battlefield yet
       }
@@ -2072,7 +2115,7 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
 
   // Check and apply triggers when a card is announced (played)
   // This is where Vigilant Spotter trigger should fire - when opponent plays a revealed card
-  newState = checkAndApplyTriggers(newState, announcedCard, { row: -1, col: -1 }, actualPlayerId, 'hand')
+  newState = checkAndApplyTriggers(newState, announcedCard, { row: -1, col: -1 }, actualPlayerId, source || 'hand')
 
   return newState
 }
@@ -3497,8 +3540,9 @@ function handlePlayCommandFromTokenPanel(state: GameState, playerId: number, dat
  * Modal opening is handled client-side after receiving updated state
  */
 function handlePlayCommandFromDeck(state: GameState, playerId: number, data: any): GameState {
-  const { card, cardIndex, ownerId } = data || {}
-  if (!card || cardIndex === undefined) {
+  const { cardIndex, ownerId } = data || {}
+
+  if (cardIndex === undefined) {
     return state
   }
 
@@ -3508,18 +3552,41 @@ function handlePlayCommandFromDeck(state: GameState, playerId: number, data: any
     return state
   }
 
+  // Always get the actual card from deck to ensure all properties (imageUrl, etc.) are preserved
+  // The passed 'card' object might only have cardId, so we get the full card from deck
+  const deck = cardOwner.deck || []
+  if (cardIndex < 0 || cardIndex >= deck.length) {
+    return state
+  }
+
+  const actualCard = deck[cardIndex]
+  if (!actualCard) {
+    return state
+  }
+
+  // Log card properties for debugging announced zone display issue
+  console.log('[PLAY_COMMAND_FROM_DECK] Moving card to announced:', {
+    cardId: actualCard.id,
+    baseId: actualCard.baseId,
+    name: actualCard.name,
+    hasImageUrl: !!actualCard.imageUrl,
+    imageUrl: actualCard.imageUrl,
+    hasFallbackImage: !!actualCard.fallbackImage,
+    fallbackImage: actualCard.fallbackImage,
+    deck: actualCard.deck,
+    types: actualCard.types,
+  })
+
   // Move card from deck to announced (showcase)
   const updatedPlayers = state.players.map(p => {
     if (p.id === cardOwner.id) {
       // Remove card from deck by index
-      const newDeck = [...(p.deck || [])]
-      if (cardIndex >= 0 && cardIndex < newDeck.length) {
-        newDeck.splice(cardIndex, 1)
-      }
+      const newDeck = [...deck]
+      newDeck.splice(cardIndex, 1)
 
-      // Add to announced
+      // Add to announced - preserve all card properties including image
       const announcedCard = {
-        ...card,
+        ...actualCard,
         isFaceUp: true,
         revealedTo: 'all' as const,
         revealedToPlayerIds: [],

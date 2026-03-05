@@ -723,53 +723,55 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
             </DropZone>
 
             {/* Showcase */}
-            <DropZone onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'announced', playerId: player.id })} isOverClassName="rounded ring-2 ring-white">
-              <div className="aspect-square bg-gray-800 border border-dashed border-gray-600 rounded flex items-center justify-center relative overflow-hidden">
-                {player.announcedCard ? (
-                  <div
-                    className="w-full h-full p-1 cursor-pointer"
-                    draggable={canDrag}
-                    onDragStart={(e) => {
-                      if (canDrag) {
-                        setDraggedItem({
-                          card: player.announcedCard!,
-                          source: 'announced',
-                          playerId: player.id,
-                          isManual: true
-                        })
-                        // Set custom drag image to only include the card, not tooltip
-                        const cardElement = e.currentTarget.querySelector('[data-card-image]')
-                        if (cardElement) {
-                          e.dataTransfer.setDragImage(cardElement as Element, 20, 20)
+            <div className="aspect-square relative">
+              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'announced', playerId: player.id })} isOverClassName="rounded ring-2 ring-white">
+                <div className="w-full h-full bg-gray-800 border border-dashed border-gray-600 rounded flex items-center justify-center relative overflow-hidden">
+                  {player.announcedCard ? (
+                    <div
+                      className="w-full h-full p-1 cursor-pointer"
+                      draggable={canDrag}
+                      onDragStart={(e) => {
+                        if (canDrag) {
+                          setDraggedItem({
+                            card: player.announcedCard!,
+                            source: 'announced',
+                            playerId: player.id,
+                            isManual: true
+                          })
+                          // Set custom drag image to only include the card, not tooltip
+                          const cardElement = e.currentTarget.querySelector('[data-card-image]')
+                          if (cardElement) {
+                            e.dataTransfer.setDragImage(cardElement as Element, 20, 20)
+                          }
                         }
-                      }
-                    }}
-                    onDragEnd={() => { setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK) }}
-                    onContextMenu={(e) => canPerformActions && player.announcedCard && handleContextMenuWithCancel(e, 'announcedCard', {
-                      card: player.announcedCard,
-                      player
-                    })}
-                    onDoubleClick={() => onAnnouncedCardDoubleClick?.(player, player.announcedCard!)}
-                  >
-                    <div data-card-image="true">
-                      <CardComponent
-                      card={player.announcedCard}
-                      isFaceUp={true}
-                      playerColorMap={playerColorMap}
-                      playerColor={player.color}
-                      imageRefreshVersion={imageRefreshVersion}
-                      loadPriority={isLocalPlayer ? 'high' : 'low'}
-                      activePhaseIndex={currentPhase}
-                      activePlayerId={activePlayerId}
-                      disableActiveHighlights={disableActiveHighlights}
-                      preserveDeployAbilities={preserveDeployAbilities}
-                      disableImageTransition={true}
-                    />
+                      }}
+                      onDragEnd={() => { setTimeout(() => setDraggedItem(null), TIMING.DRAG_END_FALLBACK) }}
+                      onContextMenu={(e) => canPerformActions && player.announcedCard && handleContextMenuWithCancel(e, 'announcedCard', {
+                        card: player.announcedCard,
+                        player
+                      })}
+                      onDoubleClick={() => onAnnouncedCardDoubleClick?.(player, player.announcedCard!)}
+                    >
+                      <div data-card-image="true" className="w-full h-full">
+                        <CardComponent
+                        card={player.announcedCard}
+                        isFaceUp={true}
+                        playerColorMap={playerColorMap}
+                        playerColor={player.color}
+                        imageRefreshVersion={imageRefreshVersion}
+                        loadPriority={isLocalPlayer ? 'high' : 'low'}
+                        activePhaseIndex={currentPhase}
+                        activePlayerId={activePlayerId}
+                        disableActiveHighlights={disableActiveHighlights}
+                        preserveDeployAbilities={preserveDeployAbilities}
+                        disableImageTransition={true}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ) : <span className="text-[10px] sm:text-xs font-bold text-gray-500 select-none uppercase tracking-tight">{t('showcase')}</span>}
-              </div>
-            </DropZone>
+                  ) : <span className="text-[10px] sm:text-xs font-bold text-gray-500 select-none uppercase tracking-tight">{t('showcase')}</span>}
+                </div>
+              </DropZone>
+            </div>
 
             {/* Score */}
             <RemoteScore

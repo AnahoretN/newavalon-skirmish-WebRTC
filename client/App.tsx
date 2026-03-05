@@ -1065,15 +1065,16 @@ const AppInner = function AppInner() {
     const card = localPlayer.announcedCard
     const cardId = card.id
 
-    // Check if we're waiting to open modal for this card
-    if (pendingCommandFromTokenPanelRef.current === cardId) {
-      // We've already opened the modal, don't open again
-      pendingCommandFromTokenPanelRef.current = null
+    // Only auto-process if we're explicitly waiting for this card from token panel
+    // If ref is null or different, the card was placed by other means (playCommandCard, drag-and-drop, etc.)
+    // Those should handle their own modal opening
+    if (pendingCommandFromTokenPanelRef.current !== cardId) {
       return
     }
 
-    // Check if this card was just placed from token panel (no modal open yet)
-    // We detect this by checking if the card is in announced but commandModalCard is not set
+    // We've been waiting for this card - open the modal
+    pendingCommandFromTokenPanelRef.current = null
+
     const baseId = (card.baseId || card.id.split('_')[1] || card.id).toLowerCase()
     const complexCommands = [
       'overwatch', 'tacticalmaneuver', 'repositioning', 'inspiration',
@@ -1086,7 +1087,6 @@ const AppInner = function AppInner() {
     if (isComplexCommand && !commandModalCard) {
       // Open modal for complex command
       setCommandModalCard(card)
-      pendingCommandFromTokenPanelRef.current = cardId
     } else if (!isComplexCommand && !commandModalCard) {
       // Simple command - execute directly
       const actions = getCommandAction(card.id, -1, card as any, gameState as any, localPlayerId)
@@ -1096,7 +1096,6 @@ const AppInner = function AppInner() {
           { type: 'GLOBAL_AUTO_APPLY', payload: { cleanupCommand: true, card: card, ownerId: localPlayerId }, sourceCard: card },
         ])
       }
-      pendingCommandFromTokenPanelRef.current = cardId
     }
   }, [gameState?.players, localPlayerId, commandModalCard, setCommandModalCard, setActionQueue])
 
