@@ -5,44 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.12] - 2026-03-03
-
-### Added
-- **Trigger System**: New passive ability trigger system for event-based effects
-  - `TRIGGER_ON_EVENT` action type in content database
-  - Support for `OPPONENT_PLAYS_REVEALED_CARD` event type
-  - Trigger results with score modification support
-  - `checkAndApplyTriggers` function integrated into card announcement handlers
-  - `getActiveTriggers` and `checkTriggersOnCardPlaced` utilities
-  - `clearAllStatuses` function to remove all statuses including Revealed
-- **New Trigger Types**: Added support for:
-  - `OPPONENT_PLAYS_REVEALED_CARD` - triggers when opponent plays a card with Revealed status
-  - `OPPONENT_PLAYS_CARD_WITH_STATUS` - triggers for specific status types
-  - `CARD_ENTERS_BATTLEFIELD` - triggers for any card entering battlefield
-  - `CARD_DESTROYED` - triggers for card destruction (future use)
-
-### Changed
-- **Vigilant Spotter (Hoods)**: Fixed and improved Pass ability
-  - Old: "When a revealed card of the opponent enters the battlefield, gain 2 points."
-  - New: "When your opponent plays a revealed card, gain 2 points."
-  - Now triggers when opponent plays (announces) a card with Revealed status
-  - Requires Support (adjacent allied card) to function
-  - Commit ability text clarified: "Place 1 reveal counter on your opponent's card"
-- **Trigger Timing**: Moved from battlefield placement to card announcement (play function)
-  - Triggers now fire when card is announced from hand (more consistent)
-  - Applies to both unit cards and command cards
-- **Content Database**: Updated trigger system integration
-
-### Fixed
-- **Discard to Hand Movement**: Fixed bug where cards remained in discard after moving to hand
-  - Problem: `targetPlayerId` was used instead of `sourcePlayerId` for discard update
-  - Cards now properly removed from source discard when moved to hand
-- **Revealed Token Cleanup**: Revealed status now removed when card goes to discard or deck
-  - Previously, Revealed persisted even when card left play
-  - Now properly cleared using `clearAllStatuses` function
-- **ESlint Errors**: Fixed `curly` rule violations in multiple files
-  - Header.tsx, actionExecutionHandler.ts, modeHandlers.ts, useGameState.ts
-
 ## [0.2.11] - 2026-02-15
   - Added `TriggerEventType` and `TriggerDefinition` types to `contentAbilities.ts`
   - Exported trigger system types from shared abilities index

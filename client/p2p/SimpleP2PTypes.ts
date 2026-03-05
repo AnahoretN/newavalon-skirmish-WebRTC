@@ -96,6 +96,7 @@ export type ActionType =
   // Token cards
   | 'PLAY_TOKEN_CARD'
   | 'PLAY_COMMAND_FROM_TOKEN_PANEL'  // Command card from token panel - goes to announced
+  | 'PLAY_COMMAND_FROM_DECK'  // Command card from deck view - goes to announced
   | 'RESURRECT_DISCARDED'  // Immunis Deploy - return card from discard to board
 
   // Card orientation

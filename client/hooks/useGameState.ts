@@ -599,6 +599,20 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           ownerId: item.ownerId // Владелец = разместивший или dummy
         }
       } else if (item.source === 'deck') {
+        // Check if this is a Command card - Command cards go through announced → modal → discard flow
+        const isCommandCard = item.card?.deck === 'Command' || item.card?.types?.includes('Command') || item.card?.faction === 'Command'
+
+        if (isCommandCard && item.card) {
+          // Send special action for command card from deck
+          sendAction('PLAY_COMMAND_FROM_DECK', {
+            card: item.card,
+            cardIndex: item.cardIndex ?? 0,
+            ownerId: item.playerId ?? localPlayerId ?? 0,
+          })
+          return // Early return - don't send PLAY_CARD_FROM_DECK action
+        }
+
+        // Regular card (Unit, etc.)
         action = 'PLAY_CARD_FROM_DECK'
         actionData.cardIndex = item.cardIndex ?? 0
         actionData.playerId = item.playerId

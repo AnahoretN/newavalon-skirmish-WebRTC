@@ -535,6 +535,10 @@ export function applyAction(
       newState = handlePlayCommandFromTokenPanel(newState, playerId, data)
       break
 
+    case 'PLAY_COMMAND_FROM_DECK':
+      newState = handlePlayCommandFromDeck(newState, playerId, data)
+      break
+
     case 'FLIP_CARD':
       newState = handleFlipCard(newState, playerId, data)
       break
@@ -3465,6 +3469,53 @@ function handlePlayCommandFromTokenPanel(state: GameState, playerId: number, dat
     if (p.id === cardOwner.id) {
       // Remove card from deck
       const newDeck = (p.deck || []).filter((c: Card) => c.id !== card.id)
+
+      // Add to announced
+      const announcedCard = {
+        ...card,
+        isFaceUp: true,
+        revealedTo: 'all' as const,
+        revealedToPlayerIds: [],
+      }
+
+      return {
+        ...p,
+        deck: newDeck,
+        deckSize: newDeck.length,
+        announcedCard,
+      }
+    }
+    return p
+  })
+
+  return { ...state, players: updatedPlayers }
+}
+
+/**
+ * PLAY_COMMAND_FROM_DECK - play command card from deck view
+ * Moves command card from deck to announced (showcase)
+ * Modal opening is handled client-side after receiving updated state
+ */
+function handlePlayCommandFromDeck(state: GameState, playerId: number, data: any): GameState {
+  const { card, cardIndex, ownerId } = data || {}
+  if (!card || cardIndex === undefined) {
+    return state
+  }
+
+  // Find the player who owns this card
+  const cardOwner = state.players.find(p => p.id === (ownerId ?? playerId))
+  if (!cardOwner) {
+    return state
+  }
+
+  // Move card from deck to announced (showcase)
+  const updatedPlayers = state.players.map(p => {
+    if (p.id === cardOwner.id) {
+      // Remove card from deck by index
+      const newDeck = [...(p.deck || [])]
+      if (cardIndex >= 0 && cardIndex < newDeck.length) {
+        newDeck.splice(cardIndex, 1)
+      }
 
       // Add to announced
       const announcedCard = {
