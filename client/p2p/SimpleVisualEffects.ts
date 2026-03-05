@@ -75,8 +75,36 @@ function sanitizeAbilityAction(action: AbilityAction): any {
       continue
     }
 
-    // Skip payload if it's not serializable (could contain functions)
-    if (key === 'payload' && !isSerializable(value)) {
+    // Sanitize payload - keep serializable properties
+    if (key === 'payload' && value) {
+      if (isSerializable(value)) {
+        // Payload is serializable, copy it directly
+        sanitized.payload = value
+        // Log important payload properties for debugging
+        if (value.contextCardId || value.tokenType || value.count) {
+          logger.debug('[sanitizeAbilityAction] Preserving payload properties', {
+            contextCardId: value.contextCardId,
+            tokenType: value.tokenType,
+            count: value.count,
+            payloadKeys: Object.keys(value)
+          })
+        }
+      } else {
+        // Payload has non-serializable values, try to salvage what we can
+        const salvagedPayload: any = {}
+        for (const prop in value) {
+          const propValue = value[prop]
+          if (isSerializable(propValue)) {
+            salvagedPayload[prop] = propValue
+          }
+        }
+        if (Object.keys(salvagedPayload).length > 0) {
+          sanitized.payload = salvagedPayload
+          logger.debug('[sanitizeAbilityAction] Salvaged partial payload', {
+            salvagedKeys: Object.keys(salvagedPayload)
+          })
+        }
+      }
       continue
     }
 
@@ -214,6 +242,11 @@ export class SimpleVisualEffects {
     }
     if (mode.handTargets) {
       sanitizedMode.handTargets = mode.handTargets
+    }
+    // CRITICAL: Include chainedAction for False Orders and other multi-step abilities
+    // MUST be sanitized to preserve payload properties like contextCardId
+    if (mode.chainedAction) {
+      sanitizedMode.chainedAction = sanitizeAbilityAction(mode.chainedAction)
     }
     if (mode.isDeckSelectable !== undefined) {
       sanitizedMode.isDeckSelectable = mode.isDeckSelectable

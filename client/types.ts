@@ -293,6 +293,7 @@ export interface DropTarget {
     boardCoords?: { row: number; col: number }; // Target coordinates if dropping on the board.
     deckPosition?: 'top' | 'bottom'; // Target position if dropping on a deck.
     cardIndex?: number; // Target index if dropping on a specific card in a list (e.g. hand).
+    chainedAction?: AbilityAction; // For False Orders: enriched chainedAction with contextCardId
 }
 
 /**
@@ -375,8 +376,10 @@ export interface CursorStackState {
 export interface CommandContext {
     lastMovedCardCoords?: { row: number, col: number };
     lastMovedCardId?: string; // To track power of moved card
+    _sourceCoordsBeforeMove?: { row: number, col: number }; // Track where card WAS before move (for Tactical Maneuver rewards)
     sourceOwnerId?: number; // Owner of the ability source (e.g., Centurion's owner for BUFF_LINES_FROM_CONTEXT)
     selectedHandCard?: { playerId: number, cardIndex: number }; // For Quick Response Team
+    pendingCommandCard?: { sourceCoords: { row: number; col: number }; isDeployAbility?: boolean; readyStatusToRemove?: string }; // For Quick Response Team - marks command as used when play completes
 }
 
 /**
@@ -435,13 +438,15 @@ export type AbilityAction = {
  */
 export interface TargetingModeData {
     playerId: number; // The player whose turn it is to select a target
-    action: AbilityAction; // The action defining targeting constraints
+    action: AbilityAction; // The action defining targeting constraints (includes chainedAction for multi-step abilities)
     sourceCoords?: { row: number; col: number }; // Source card coordinates (if applicable)
     timestamp: number; // For uniqueness and timeout
     boardTargets?: {row: number, col: number}[]; // Valid board targets (pre-calculated)
     handTargets?: { playerId: number, cardIndex: number }[]; // Valid hand targets (pre-calculated)
     isDeckSelectable?: boolean; // Whether deck is a valid target
     originalOwnerId?: number; // The owner of the card that initiated this action (for correct highlight color)
+    // Convenience accessor for chainedAction (also available via action.chainedAction)
+    chainedAction?: AbilityAction; // Action to execute after this targeting mode completes (e.g., draw/score rewards for Tactical Maneuver)
 }
 
 /**

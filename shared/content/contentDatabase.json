@@ -1191,7 +1191,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367418/CMD_Experimental_Stimulants_plsnet.webp",
       "fallbackImage": "/images/cards/CMD_MOBILIZATION.png",
       "power": 0,
-      "abilityText": "● A unit you control on the battlefield may activate its Deploy ability one additional time.\n● Move one of your units to an empty cell in its line.",
+      "abilityText": "● A non-device unit you control on the battlefield may activate its Deploy ability one additional time.\n● Move one of your units to an empty cell in its line.",
       "types": ["Command"],
       "faction": "Command",
       "allowedPanels": ["DECK_BUILDER"]

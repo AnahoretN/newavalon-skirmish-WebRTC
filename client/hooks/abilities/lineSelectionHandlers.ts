@@ -470,16 +470,8 @@ export function handleLineSelection(
   // - Zius Setup: The line must pass through the target card (where Exploit was placed in step 1)
   // - Unwavering Integrator: Can select ANY row or column (first click determines the line)
   if (mode === 'SELECT_LINE_FOR_EXPLOIT_SCORING') {
-    console.log('[lineSelectionHandlers] SELECT_LINE_FOR_EXPLOIT_SCORING: Click detected', {
-      coords,
-      hasPayload: !!payload,
-      payloadTargetCoords: payload?.targetCoords,
-      commandContextCoords: commandContext.lastMovedCardCoords
-    })
-
     // Prevent multiple clicks
     if (interactionLock.current) {
-      console.log('[lineSelectionHandlers] SELECT_LINE_FOR_EXPLOIT_SCORING: Interaction locked, ignoring click')
       return true
     }
 
@@ -499,17 +491,8 @@ export function handleLineSelection(
       isSameRow = clickedRow === targetRow
       isSameCol = clickedCol === targetCol
 
-      console.log('[lineSelectionHandlers] SELECT_LINE_FOR_EXPLOIT_SCORING: Line selection (Zius)', {
-        clickedCoords: { row: clickedRow, col: clickedCol },
-        targetCoords: { row: targetRow, col: targetCol },
-        isSameRow,
-        isSameCol,
-        isValid: isSameRow || isSameCol
-      })
-
       if (!isSameRow && !isSameCol) {
         // Clicked cell is not in the same row or column as target - invalid
-        console.log('[lineSelectionHandlers] SELECT_LINE_FOR_EXPLOIT_SCORING: Invalid click - not in same row or column')
         return true
       }
     } else {
@@ -530,17 +513,6 @@ export function handleLineSelection(
       // Use the clicked row/col as the selected line
       selectedRow = clickedRow
       selectedCol = clickedCol
-
-      console.log('[lineSelectionHandlers] SELECT_LINE_FOR_EXPLOIT_SCORING: Line selection (Unwavering Integrator)', {
-        clickedCoords: { row: clickedRow, col: clickedCol },
-        sourceCoords,
-        isSameRow,
-        isSameCol,
-        selectedRow,
-        selectedCol,
-        willScoreRow: isSameRow,
-        willScoreCol: isSameCol
-      })
     }
 
     // Lock interaction to prevent multiple clicks
@@ -565,13 +537,6 @@ export function handleLineSelection(
     let exploitCount = 0
     const cardsWithExploit: { row: number; col: number }[] = []
 
-    console.log('[lineSelectionHandlers] SELECT_LINE_FOR_EXPLOIT_SCORING: Counting exploits in line', {
-      startR, endR, startC, endC,
-      isSameRow, isSameCol,
-      selectedRow, selectedCol,
-      gridSize
-    })
-
     for (let r = startR; r <= endR; r++) {
       for (let c = startC; c <= endC; c++) {
         const cell = gameState.board[r][c]
@@ -584,15 +549,6 @@ export function handleLineSelection(
         }
       }
     }
-
-    console.log('[lineSelectionHandlers] SELECT_LINE_FOR_EXPLOIT_SCORING: Scoring result', {
-      hasTargetCoords: !!targetCoords,
-      exploitCount,
-      cardsWithExploit,
-      willShowFloatingText: exploitCount > 0 && actorId,
-      hasSourceCoords: !!sourceCoords,
-      sourceCoords
-    })
 
     // Award points with floating text
     if (exploitCount > 0 && actorId) {

@@ -179,26 +179,20 @@ function restoreLastPlayedToPreviousCard(
     s => s.type === 'LastPlayed' && s.addedByPlayerId === ownerId
   )
 
-  console.log('[restoreLastPlayedToPreviousCard] Card removed:', removedCard.id, 'hadLastPlayed:', hadLastPlayed, 'ownerId:', ownerId)
-
   if (!hadLastPlayed) {
     return state // No restoration needed
   }
 
   const player = state.players.find(p => p.id === ownerId)
   if (!player || !player.boardHistory) {
-    console.log('[restoreLastPlayedToPreviousCard] No player or boardHistory found')
     return state
   }
-
-  console.log('[restoreLastPlayedToPreviousCard] boardHistory:', player.boardHistory)
 
   // Find previous card in boardHistory (excluding the removed card)
   const historyWithoutRemoved = player.boardHistory.filter(id => id !== removedCard.id)
 
   if (historyWithoutRemoved.length === 0) {
     // No previous cards - just update boardHistory and lastPlayedCardId
-    console.log('[restoreLastPlayedToPreviousCard] No previous cards in history')
     const newPlayers = state.players.map(p =>
       p.id === ownerId
         ? { ...p, boardHistory: historyWithoutRemoved, lastPlayedCardId: null }
@@ -227,7 +221,6 @@ function restoreLastPlayedToPreviousCard(
 
   if (!foundCardId) {
     // No cards from history are still on board - clear LastPlayed
-    console.log('[restoreLastPlayedToPreviousCard] No cards from history still on board')
     const newPlayers = state.players.map(p =>
       p.id === ownerId
         ? { ...p, boardHistory: historyWithoutRemoved, lastPlayedCardId: null }
@@ -239,8 +232,6 @@ function restoreLastPlayedToPreviousCard(
   // Remove all cards after the found one from history (they left the board)
   const foundIndex = historyWithoutRemoved.indexOf(foundCardId)
   const trimmedHistory = historyWithoutRemoved.slice(0, foundIndex + 1)
-
-  console.log('[restoreLastPlayedToPreviousCard] Restoring LastPlayed to card:', foundCardId, 'trimmedHistory:', trimmedHistory)
 
   // Find this card on board and restore LastPlayed status
   const newBoard = state.board.map(row =>
@@ -291,20 +282,15 @@ function checkAndApplyTriggers(
   playerId: number,
   source: 'hand' | 'deck' | 'discard' | 'announced' | 'board'
 ): GameState {
-  console.log('[checkAndApplyTriggers] CALLED - placedCard:', placedCard.baseId, 'coords:', coords, 'playerId:', playerId, 'source:', source)
-  console.log('[checkAndApplyTriggers] Placed card statuses:', placedCard.statuses)
-
   // Create the card lookup function - use contentDatabase directly
   const cardLookup: CardLookupFn = (baseId: string) => {
     // Try contentDatabase first (most reliable)
     if ((contentDatabase.cardDatabase as any)[baseId]) {
       const def = (contentDatabase.cardDatabase as any)[baseId]
-      console.log('[checkAndApplyTriggers] cardLookup for', baseId, 'found in contentDatabase, abilities:', def.ABILITIES?.length)
       return def
     }
     // Fallback to getCardDefinition
     const def = getCardDefinition(baseId) as { ABILITIES?: any[] } | null
-    console.log('[checkAndApplyTriggers] cardLookup for', baseId, 'via getCardDefinition:', def ? 'found' : 'NOT FOUND', 'abilities:', def?.ABILITIES?.length)
     return def
   }
 
@@ -319,13 +305,9 @@ function checkAndApplyTriggers(
   // Check for matching triggers
   const triggerResults = checkTriggersOnCardPlaced(state, event, cardLookup)
 
-  console.log('[checkAndApplyTriggers] Trigger results:', triggerResults)
-
   if (triggerResults.length === 0) {
     return state
   }
-
-  console.log('[checkAndApplyTriggers] Triggers fired:', triggerResults)
 
   // Apply trigger effects (modify scores, etc.)
   const newState = state
@@ -334,7 +316,6 @@ function checkAndApplyTriggers(
       const playerToUpdate = newState.players.find(p => p.id === result.triggerOwnerId)
       if (playerToUpdate) {
         playerToUpdate.score = (playerToUpdate.score || 0) + result.points
-        console.log('[checkAndApplyTriggers] Awarded', result.points, 'points to player', result.triggerOwnerId)
       }
     }
   })
@@ -462,6 +443,10 @@ export function applyAction(
       newState = handleDrawCard(newState, playerId, data)
       break
 
+    case 'DRAW_CARDS_BATCH':
+      newState = handleDrawCardsBatch(newState, playerId, data)
+      break
+
     case 'SHUFFLE_DECK':
       newState = handleShuffleDeck(newState, playerId)
       break
@@ -514,12 +499,20 @@ export function applyAction(
       newState = handleMarkAbilityUsed(newState, data)
       break
 
+    case 'GLOBAL_AUTO_APPLY':
+      newState = handleGlobalAutoApply(newState, playerId, data)
+      break
+
     case 'REMOVE_ALL_COUNTERS_BY_TYPE':
       newState = handleRemoveAllCountersByType(newState, data)
       break
 
     case 'REMOVE_COUNTER_BY_TYPE':
       newState = handleRemoveCounterByType(newState, data)
+      break
+
+    case 'REMOVE_COUNTERS_WITH_REWARD':
+      newState = handleRemoveCountersWithReward(newState, playerId, data)
       break
 
     case 'ADD_STATUS_TO_BOARD_CARD':
@@ -536,6 +529,10 @@ export function applyAction(
 
     case 'PLAY_TOKEN_CARD':
       newState = handlePlayTokenCard(newState, playerId, data)
+      break
+
+    case 'PLAY_COMMAND_FROM_TOKEN_PANEL':
+      newState = handlePlayCommandFromTokenPanel(newState, playerId, data)
       break
 
     case 'FLIP_CARD':
@@ -634,8 +631,6 @@ function canPlayerAct(
  * NEXT_PHASE - transition to next phase
  */
 function handleNextPhase(state: GameState, playerId: number): GameState {
-  console.log('[handleNextPhase] Phase transition from', state.currentPhase, 'playerId:', playerId)
-
   // RESURRECTED TOKEN: Process before phase change
   // All cards with Resurrected receive 2 Stun, then Resurrected is removed
   let stateAfterResurrected = processResurrectedTokens(state)
@@ -678,26 +673,9 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
     // We use state.activePlayerId, not playerId (who clicked the button)
     // This is important when Player A plays cards for Dummy Player B
     const activePlayerId = state.activePlayerId
-    console.log('[NEXT_PHASE to Scoring] Active player', activePlayerId, 'checking for LastPlayed cards...')
 
     const player = stateAfterResurrected.players.find(p => p.id === activePlayerId)
     const isDummyPlayer = player?.isDummy ?? false
-
-    // Debug: log all player's cards on board
-    const playerCardsOnBoard: any[] = []
-    stateAfterResurrected.board.forEach((row, _r) => {
-      row.forEach((cell, _c) => {
-        if (cell.card?.ownerId === activePlayerId) {
-          playerCardsOnBoard.push({
-            id: cell.card.id,
-            name: cell.card.name,
-            statuses: cell.card.statuses,
-            hasLastPlayed: cell.card?.statuses?.some(s => s.type === 'LastPlayed')
-          })
-        }
-      })
-    })
-    console.log('[NEXT_PHASE to Scoring] Player cards on board:', playerCardsOnBoard)
 
     // For dummy players, check if card belongs to them and has LastPlayed (any player could have added it)
     // For real players, check if card belongs to them AND was added by them this turn
@@ -715,15 +693,11 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
       })
     )
 
-    console.log('[NEXT_PHASE to Scoring] hasLastPlayedCards:', hasLastPlayedCards, 'isDummy:', isDummyPlayer)
-
     if (hasLastPlayedCards) {
       // Has cards with LastPlayed status - enter Scoring and calculate lines
-      console.log('[NEXT_PHASE to Scoring] Entering scoring phase for player', activePlayerId)
       return enterScoringPhase(stateAfterResurrected, activePlayerId ?? 0)
     } else {
       // No cards with LastPlayed status - pass turn to next player
-      console.log('[NEXT_PHASE to Scoring] No LastPlayed cards, passing turn')
       return handlePassTurn(stateAfterResurrected, activePlayerId ?? 0, 'no_new_cards')
     }
   }
@@ -750,8 +724,6 @@ function enterScoringPhase(state: GameState, playerId: number): GameState {
     lineIndex: line.index,
     score: calculateLineScore(state, playerId, line.type, line.index)
   }))
-
-  console.log('[enterScoringPhase] Player', playerId, 'scoring lines:', scoringLines)
 
   return {
     ...state,
@@ -785,8 +757,6 @@ function handlePassTurn(state: GameState, playerId: number, reason: string): Gam
   const nextIndex = (currentIndex + 1) % activePlayerIds.length
   const nextPlayerId = activePlayerIds[nextIndex]
 
-  console.log('[handlePassTurn] Turn passed from', playerId, 'to', nextPlayerId, 'reason:', reason)
-
   // Check if player just finished scoring phase - remove 1 Stun token from each of their cards
   const scoringComplete = reason === 'scoring_complete'
 
@@ -806,7 +776,6 @@ function handlePassTurn(state: GameState, playerId: number, reason: string): Gam
         if (scoringComplete && cell.card.ownerId === playerId) {
           const stunIndex = newStatuses.findIndex((s: any) => s.type === 'Stun')
           if (stunIndex !== -1) {
-            console.log('[handlePassTurn] Removing 1 Stun token from card', cell.card.id, 'owned by player', playerId)
             // Remove only the first Stun token
             newStatuses = newStatuses.filter((_: any, i: number) => i !== stunIndex)
           }
@@ -910,8 +879,6 @@ function executePreparationPhase(state: GameState, activePlayerId: number): Game
 
   if (!player) {return state}
 
-  console.log('[executePreparationPhase] Player', activePlayerId, 'autoDraw:', state.autoDrawEnabled, 'deckSize:', player.deck?.length || 0)
-
   // Auto-draw if enabled and deck has cards
   if (state.autoDrawEnabled && player.deck && player.deck.length > 0) {
     const drawnCard = player.deck.shift()
@@ -919,7 +886,6 @@ function executePreparationPhase(state: GameState, activePlayerId: number): Game
       player.hand.push(drawnCard)
       player.handSize = player.hand.length
       player.deckSize = player.deck.length
-      console.log('[executePreparationPhase] Player', activePlayerId, 'drew card, hand:', player.hand.length)
     }
   }
 
@@ -931,7 +897,6 @@ function executePreparationPhase(state: GameState, activePlayerId: number): Game
 
   // Transition to Setup
   newState.currentPhase = 1
-  console.log('[executePreparationPhase] Transition to Setup phase for player', activePlayerId)
 
   // Recalculate ready statuses for new active player in Setup phase
   recalculateAllReadyStatuses(newState)
@@ -1103,8 +1068,18 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
 /**
  * MOVE_CARD_ON_BOARD - move card from one cell to another
  */
-function handleMoveCardOnBoard(state: GameState, _playerId: number, data: any): GameState {
-  const { fromCoords, toCoords, faceDown } = data || {}
+function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): GameState {
+  const { fromCoords, toCoords, faceDown, targetingMode, contextCardId: directContextCardId } = data || {}
+
+  console.log('[WebRTC handleMoveCardOnBoard] START', {
+    fromCoords,
+    toCoords,
+    faceDown,
+    hasTargetingMode: !!targetingMode,
+    targetingMode,
+    hasDirectContextCardId: !!directContextCardId,
+    contextCardId: directContextCardId,
+  })
 
   if (!fromCoords || !toCoords) {return state}
 
@@ -1145,9 +1120,168 @@ function handleMoveCardOnBoard(state: GameState, _playerId: number, data: any): 
     })
   )
 
-  console.log('[handleMoveCardOnBoard] Moved card from', fromCoords, 'to', toCoords)
+  let newState = { ...state, board: newBoard }
 
-  return { ...state, board: newBoard }
+  // CRITICAL: Handle token placement on moved card (False Orders Option 1: Stun x2)
+  // Check direct contextCardId first (from actionData), then fall back to chainedAction.payload
+  const payload = targetingMode?.chainedAction?.payload || targetingMode?.action?.chainedAction?.payload || targetingMode?.action?.payload?.chainedAction?.payload
+  const contextCardId = directContextCardId || payload?.contextCardId
+  const tokenType = payload?.tokenType
+  const count = payload?.count
+  const ownerId = payload?.ownerId
+
+  console.log('[WebRTC handleMoveCardOnBoard] Checking token placement conditions', {
+    hasDirectContextCardId: !!directContextCardId,
+    directContextCardId,
+    hasChainedPayload: !!payload,
+    hasToken: !!tokenType,
+    tokenType,
+    hasCount: !!count,
+    count,
+    hasContextCardId: !!contextCardId,
+    contextCardId,
+    fullData: data,
+  })
+
+  if (tokenType && count && contextCardId) {
+    console.log('[WebRTC handleMoveCardOnBoard] Placing tokens on moved card', {
+      tokenType,
+      count,
+      contextCardId,
+      ownerId: ownerId || playerId,
+    })
+
+    // Find the moved card by ID
+    let targetCoords: { row: number; col: number } | null = null
+    for (let r = 0; r < newState.board.length; r++) {
+      for (let c = 0; c < newState.board[r].length; c++) {
+        const card = newState.board[r][c].card
+        if (card && card.id === contextCardId) {
+          targetCoords = { row: r, col: c }
+          break
+        }
+      }
+      if (targetCoords) break
+    }
+
+    if (!targetCoords && sourceCard) {
+      // Fallback: try to find card by sourceCard.id
+      for (let r = 0; r < newState.board.length; r++) {
+        for (let c = 0; c < newState.board[r].length; c++) {
+          const card = newState.board[r][c].card
+          if (card && card.id === sourceCard.id) {
+            targetCoords = { row: r, col: c }
+            break
+          }
+        }
+        if (targetCoords) break
+      }
+    }
+
+    if (targetCoords) {
+      // Add the tokens using handleAddStatusToBoardCard
+      for (let i = 0; i < count; i++) {
+        newState = handleAddStatusToBoardCard(newState, playerId, {
+          boardCoords: targetCoords,
+          statusType: tokenType,
+          ownerId: ownerId || playerId,
+          count: 1,
+        })
+      }
+      console.log('[WebRTC handleMoveCardOnBoard] Tokens placed successfully at', targetCoords)
+    } else {
+      console.log('[WebRTC handleMoveCardOnBoard] Card not found for token placement', { contextCardId, sourceCardId: sourceCard?.id })
+    }
+  }
+
+  // CRITICAL: Handle context rewards for command cards like Tactical Maneuver
+  // Only process if we didn't already handle token placement above
+  if (!contextCardId && targetingMode) {
+    const chainedAction = targetingMode?.chainedAction || targetingMode?.action?.chainedAction || targetingMode?.action?.payload?.chainedAction
+
+    console.log('[WebRTC handleMoveCardOnBoard] Checking for chainedAction', {
+      hasTargetingMode: !!targetingMode,
+      hasDirectChainedAction: !!targetingMode?.chainedAction,
+      hasActionChainedAction: !!targetingMode?.action?.chainedAction,
+      hasPayloadChainedAction: !!targetingMode?.action?.payload?.chainedAction,
+      foundChainedAction: !!chainedAction,
+    })
+
+    if (chainedAction) {
+      const chainedPayload = chainedAction.payload
+
+      console.log('[WebRTC handleMoveCardOnBoard] Has chainedAction', {
+        type: chainedAction.type,
+        payloadKeys: chainedAction.payload ? Object.keys(chainedAction.payload) : [],
+        contextReward: chainedPayload?.contextReward,
+        tokenType: chainedPayload?.tokenType,
+        count: chainedPayload?.count,
+        contextCardId: chainedPayload?.contextCardId,
+        sourceCard: chainedAction.sourceCard,
+        sourceCardName: chainedAction.sourceCard?.name,
+        fullPayload: chainedAction.payload,
+      })
+
+      // Handle context rewards (Tactical Maneuver draw/score)
+      if (chainedPayload?.contextReward && chainedAction.sourceCard) {
+        // Create context data for reward
+        const rewardData = {
+          payload: {
+            ...chainedPayload,
+            _sourceCoordsBeforeMove: fromCoords,  // Where card WAS before move
+            _tempContextId: sourceCard.id,  // Card ID for finding
+            lastMovedCardCoords: toCoords,  // Where card IS now
+          },
+          sourceCard: chainedAction.sourceCard,
+        }
+
+        console.log('[WebRTC handleMoveCardOnBoard] Executing context reward', rewardData)
+        newState = handleContextReward(newState, playerId, rewardData)
+      }
+
+      // Handle token placement from chainedAction (fallback if not handled above)
+      if (chainedPayload?.tokenType && chainedPayload?.count && chainedPayload?.contextCardId && !contextCardId) {
+        console.log('[WebRTC handleMoveCardOnBoard] Placing tokens from chainedAction fallback', {
+          tokenType: chainedPayload.tokenType,
+          count: chainedPayload.count,
+          contextCardId: chainedPayload.contextCardId,
+        })
+
+        // Find the moved card by ID
+        let targetCoords: { row: number; col: number } | null = null
+        for (let r = 0; r < newState.board.length; r++) {
+          for (let c = 0; c < newState.board[r].length; c++) {
+            const card = newState.board[r][c].card
+            if (card && card.id === chainedPayload.contextCardId) {
+              targetCoords = { row: r, col: c }
+              break
+            }
+          }
+          if (targetCoords) break
+        }
+
+        if (targetCoords) {
+          // Add the tokens using handleAddStatusToBoardCard
+          for (let i = 0; i < chainedPayload.count; i++) {
+            newState = handleAddStatusToBoardCard(newState, playerId, {
+              boardCoords: targetCoords,
+              statusType: chainedPayload.tokenType,
+              ownerId: chainedPayload.ownerId || playerId,
+              count: 1,
+            })
+          }
+          console.log('[WebRTC handleMoveCardOnBoard] Tokens placed from chainedAction fallback')
+        }
+      }
+    }
+  }
+
+  // Clear targeting mode after move
+  if (targetingMode) {
+    newState = { ...newState, targetingMode: null }
+  }
+
+  return newState
 }
 
 /**
@@ -1870,7 +2004,6 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
           })
         )
       }
-      console.log('[handlePlayAnnouncedToBoard] Adding readySetup to Setup ability card played during Setup phase:', cardToPlay.baseId)
     }
   }
 
@@ -1935,7 +2068,6 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
 
   // Check and apply triggers when a card is announced (played)
   // This is where Vigilant Spotter trigger should fire - when opponent plays a revealed card
-  console.log('[handleAnnounceCard] Checking triggers for announced card:', announcedCard.baseId, 'statuses:', announcedCard.statuses)
   newState = checkAndApplyTriggers(newState, announcedCard, { row: -1, col: -1 }, actualPlayerId, 'hand')
 
   return newState
@@ -2037,8 +2169,6 @@ function handleSwapCards(state: GameState, _playerId: number, data?: any): GameS
     })
   )
 
-  console.log('[handleSwapCards] Swapped cards at', coords1, 'and', coords2)
-
   return {
     ...state,
     board: newBoard
@@ -2082,8 +2212,6 @@ function handleSpawnToken(state: GameState, _playerId: number, data?: any): Game
         return cell
       })
     )
-
-    console.log('[handleSpawnToken] Added Resurrected status to card at', coords)
 
     // Recalculate ready statuses
     const newState = { ...state, board: newBoard }
@@ -2157,11 +2285,8 @@ function handleSpawnToken(state: GameState, _playerId: number, data?: any): Game
           })
         )
       }
-      console.log('[handleSpawnToken] Adding readySetup to Setup ability token spawned during Setup phase:', tokenName)
     }
   }
-
-  console.log('[handleSpawnToken] Spawned', tokenName, 'at', coords, 'for owner', ownerId, 'phase', newState.currentPhase)
 
   // Recalculate ready statuses for all cards AFTER phase switch
   // This ensures the token gets correct ready statuses for the new phase
@@ -2295,6 +2420,47 @@ function handleDrawCard(state: GameState, playerId: number, data?: any): GameSta
 }
 
 /**
+ * DRAW_CARDS_BATCH - draw multiple cards for a player
+ * Used by Tactical Maneuver, Inspiration, and other abilities
+ */
+function handleDrawCardsBatch(state: GameState, playerId: number, data?: any): GameState {
+  const { count, targetPlayerId } = data || {}
+  const actualCount = count || 1
+  const targetId = targetPlayerId ?? playerId
+
+  const player = state.players.find(p => p.id === targetId)
+  if (!player || !player.deck || player.deck.length === 0) {return state}
+
+  // Draw cards from deck (up to count or deck size, whichever is smaller)
+  const cardsToDraw = Math.min(actualCount, player.deck.length)
+  const drawnCards: Card[] = []
+
+  for (let i = 0; i < cardsToDraw; i++) {
+    const card = player.deck[i]
+    if (card) {
+      drawnCards.push(card)
+    }
+  }
+
+  const newDeck = player.deck.slice(cardsToDraw)
+  const newHand = [...player.hand, ...drawnCards]
+
+  const newPlayers = state.players.map(p =>
+    p.id === targetId
+      ? {
+          ...p,
+          deck: newDeck,
+          deckSize: newDeck.length,
+          hand: newHand,
+          handSize: newHand.length
+        }
+      : p
+  )
+
+  return { ...state, players: newPlayers }
+}
+
+/**
  * SHUFFLE_DECK - shuffle deck
  */
 function handleShuffleDeck(state: GameState, playerId: number): GameState {
@@ -2369,8 +2535,6 @@ function handleChangePlayerDeck(state: GameState, playerId: number, deckType: De
       : p
   )
 
-  console.log(`[SimpleGameLogic] Player ${playerId} changed deck to ${deckType}, ${newDeck.length} cards`)
-
   return { ...state, players: newPlayers }
 }
 /**
@@ -2384,22 +2548,15 @@ function handleMarkAbilityUsed(state: GameState, data: any): GameState {
   const { row, col } = coords
   if (row === undefined || col === undefined) {return state}
 
-  const cardBaseId = state.board[row]?.[col]?.card?.baseId
-  console.log('[handleMarkAbilityUsed] Processing:', { coords, isDeploy, readyStatusToRemove, cardBaseId })
-
   const newBoard = state.board.map((r, rIdx) =>
     r.map((cell, cIdx) => {
       if (rIdx === row && cIdx === col && cell.card) {
         const newCard = { ...cell.card }
         if (!newCard.statuses) {newCard.statuses = []}
 
-        console.log('[handleMarkAbilityUsed] Current statuses before:', newCard.statuses.map(s => s.type))
-
         // Remove the ready status
         if (readyStatusToRemove) {
-          const beforeCount = newCard.statuses.length
           newCard.statuses = newCard.statuses.filter(s => s.type !== readyStatusToRemove)
-          console.log('[handleMarkAbilityUsed] Removed', readyStatusToRemove, 'status count:', beforeCount, '->', newCard.statuses.length)
         }
 
         // Mark ability as used based on type
@@ -2408,7 +2565,6 @@ function handleMarkAbilityUsed(state: GameState, data: any): GameState {
           const deployUsedStatus = 'deployUsedThisTurn'
           if (!newCard.statuses.some(s => s.type === deployUsedStatus)) {
             newCard.statuses.push({ type: deployUsedStatus, addedByPlayerId: newCard.ownerId || 0 })
-            console.log('[handleMarkAbilityUsed] Added deployUsedThisTurn to card:', newCard.baseId)
           }
 
           // After Deploy is used, check if card has phase-specific ability for current phase
@@ -2419,31 +2575,24 @@ function handleMarkAbilityUsed(state: GameState, data: any): GameState {
           if (state.currentPhase === 1 && hasSetupAbility) {
             // Add Setup status after Deploy is used
             newCard.statuses.push({ type: READY_STATUS.SETUP, addedByPlayerId: newCard.ownerId || 0 })
-            console.log('[handleMarkAbilityUsed] Added readySetup after Deploy to card:', newCard.baseId)
           } else if (state.currentPhase === 3 && hasCommitAbility) {
             // Add Commit status after Deploy is used
             newCard.statuses.push({ type: READY_STATUS.COMMIT, addedByPlayerId: newCard.ownerId || 0 })
-            console.log('[handleMarkAbilityUsed] Added readyCommit after Deploy to card:', newCard.baseId)
           }
         } else if (readyStatusToRemove === 'readySetup') {
           // Setup: mark as used this turn
           const setupUsedStatus = 'setupUsedThisTurn'
           if (!newCard.statuses.some(s => s.type === setupUsedStatus)) {
             newCard.statuses.push({ type: setupUsedStatus, addedByPlayerId: newCard.ownerId || 0 })
-            console.log('[handleMarkAbilityUsed] Added setupUsedThisTurn to card:', newCard.baseId)
           }
         } else if (readyStatusToRemove === 'readyCommit') {
           // Commit: mark as used this turn
           const commitUsedStatus = 'commitUsedThisTurn'
           if (!newCard.statuses.some(s => s.type === commitUsedStatus)) {
             newCard.statuses.push({ type: commitUsedStatus, addedByPlayerId: newCard.ownerId || 0 })
-            console.log('[handleMarkAbilityUsed] Added commitUsedThisTurn to card:', newCard.baseId)
-          } else {
-            console.log('[handleMarkAbilityUsed] commitUsedThisTurn already exists on card:', newCard.baseId)
           }
         }
 
-        console.log('[handleMarkAbilityUsed] Final statuses:', newCard.statuses.map(s => s.type))
         return { ...cell, card: newCard }
       }
       return cell
@@ -2451,6 +2600,208 @@ function handleMarkAbilityUsed(state: GameState, data: any): GameState {
   )
 
   return { ...state, board: newBoard }
+}
+
+/**
+ * GLOBAL_AUTO_APPLY - Handle global apply actions with context rewards
+ * Used by Tactical Maneuver and other command cards
+ * Supports contextReward: DRAW_MOVED_POWER, SCORE_MOVED_POWER
+ */
+function handleGlobalAutoApply(state: GameState, playerId: number, data: any): GameState {
+  const { payload, sourceCard } = data || {}
+  if (!payload) {return state}
+
+  // Handle context rewards (Tactical Maneuver, etc.)
+  if (payload.contextReward && sourceCard) {
+    return handleContextReward(state, playerId, data)
+  }
+
+  // Handle token placement on moved card (False Orders Option 1: Stun x2)
+  if (payload.tokenType && payload.count && payload.contextCardId) {
+    console.log('[WebRTC handleGlobalAutoApply] Placing tokens on moved card', {
+      tokenType: payload.tokenType,
+      count: payload.count,
+      contextCardId: payload.contextCardId,
+      ownerId: payload.ownerId,
+    })
+
+    // Find the moved card by ID
+    let targetCoords: { row: number; col: number } | null = null
+    for (let r = 0; r < state.board.length; r++) {
+      for (let c = 0; c < state.board[r].length; c++) {
+        const card = state.board[r][c].card
+        if (card && card.id === payload.contextCardId) {
+          targetCoords = { row: r, col: c }
+          break
+        }
+      }
+      if (targetCoords) break
+    }
+
+    if (!targetCoords) {
+      console.log('[WebRTC handleGlobalAutoApply] Card not found for token placement')
+      return state
+    }
+
+    // Add the tokens using handleAddStatusToBoardCard
+    let newState = state
+    for (let i = 0; i < payload.count; i++) {
+      newState = handleAddStatusToBoardCard(newState, playerId, {
+        boardCoords: targetCoords,
+        statusType: payload.tokenType,
+        ownerId: payload.ownerId || playerId,
+        count: 1,
+      })
+    }
+
+    console.log('[WebRTC handleGlobalAutoApply] Tokens placed successfully')
+    return newState
+  }
+
+  // Handle cleanup command (discard command card after use)
+  if (payload.cleanupCommand && payload.card) {
+    const commandOwnerId = sourceCard?.ownerId || playerId
+    return handleCleanupCommand(state, commandOwnerId, payload.card)
+  }
+
+  return state
+}
+
+/**
+ * Handle context reward actions (Tactical Maneuver draw/score)
+ */
+function handleContextReward(state: GameState, playerId: number, data: any): GameState {
+  const { payload, sourceCard } = data || {}
+  const rewardType = payload?.contextReward
+
+  console.log('[WebRTC handleContextReward] START', {
+    rewardType,
+    sourceCardName: sourceCard?.name,
+    sourceCardOwnerId: sourceCard?.ownerId,
+    _sourceCoordsBeforeMove: payload?._sourceCoordsBeforeMove,
+    _tempContextId: payload?._tempContextId,
+    lastMovedCardCoords: payload?.lastMovedCardCoords,
+  })
+
+  if (!rewardType || !sourceCard) {return state}
+
+  // CRITICAL: Use _sourceCoordsBeforeMove first (where card IS now), not destination
+  // This fixes timing issue where moveItem is async and card hasn't moved yet
+  const sourceBeforeMove = payload?._sourceCoordsBeforeMove
+  const coords = sourceBeforeMove || payload?.lastMovedCardCoords
+  if (!coords || coords.row < 0) {return state}
+
+  console.log('[WebRTC handleContextReward] Looking for card at coords', {
+    sourceBeforeMove,
+    lastMovedCardCoords: payload?.lastMovedCardCoords,
+    finalCoords: coords,
+  })
+
+  // Find the card at coords
+  let card = state.board[coords.row][coords.col]?.card
+
+  // Handle stale state - search by card ID if needed
+  const searchId = payload?._tempContextId
+  if ((!card || (searchId && card.id !== searchId)) && searchId) {
+    console.log('[WebRTC handleContextReward] Card not at coords, searching by ID', { searchId })
+    for (let r = 0; r < state.board.length; r++) {
+      for (let c = 0; c < state.board[r].length; c++) {
+        if (state.board[r][c].card?.id === searchId) {
+          card = state.board[r][c].card
+          console.log('[WebRTC handleContextReward] Found card at', { row: r, col: c })
+          break
+        }
+      }
+      if (card) {break}
+    }
+  }
+
+  if (!card) {
+    console.warn('[WebRTC handleContextReward] No card found')
+    return state
+  }
+
+  // Calculate amount from card power
+  const amount = Math.max(0, card.power + (card.powerModifier || 0) + (card.bonusPower || 0))
+  const rewardOwnerId = sourceCard.ownerId || playerId
+
+  console.log('[WebRTC handleContextReward] Found card, applying reward', {
+    cardName: card.name,
+    cardId: card.id,
+    cardPower: card.power,
+    powerModifier: card.powerModifier,
+    bonusPower: card.bonusPower,
+    amount,
+    rewardOwnerId,
+    rewardType,
+  })
+
+  if (rewardType === 'DRAW_MOVED_POWER' || rewardType === 'DRAW_EQUAL_POWER') {
+    // Draw cards for the reward owner
+    console.log('[WebRTC handleContextReward] DRAW_MOVED_POWER', { rewardOwnerId, amount })
+    const newPlayers = state.players.map(p => {
+      if (p.id === rewardOwnerId && p.deck && p.hand) {
+        const cardsToDraw = Math.min(amount, p.deck.length)
+        const drawnCards: Card[] = []
+        for (let i = 0; i < cardsToDraw; i++) {
+          const cardDrawn = p.deck.shift()
+          if (cardDrawn) {
+            drawnCards.push(cardDrawn)
+          }
+        }
+        console.log('[WebRTC handleContextReward] Drew cards', {
+          playerId: rewardOwnerId,
+          count: drawnCards.length,
+          deckSize: p.deck.length,
+        })
+        return {
+          ...p,
+          deck: p.deck,
+          deckSize: p.deck.length,
+          hand: [...p.hand, ...drawnCards],
+          handSize: p.hand.length + drawnCards.length
+        }
+      }
+      return p
+    })
+    return { ...state, players: newPlayers }
+  } else if (rewardType === 'SCORE_MOVED_POWER') {
+    // Add score for the reward owner
+    console.log('[WebRTC handleContextReward] SCORE_MOVED_POWER', { rewardOwnerId, amount })
+    const newPlayers = state.players.map(p => {
+      if (p.id === rewardOwnerId) {
+        return { ...p, score: (p.score || 0) + amount }
+      }
+      return p
+    })
+    return { ...state, players: newPlayers }
+  }
+
+  return state
+}
+
+/**
+ * Handle cleanup command - discard command card after use
+ */
+function handleCleanupCommand(state: GameState, playerId: number, commandCard: Card): GameState {
+  // Find the command card in the player's announced cards and move to discard
+  const player = state.players.find(p => p.id === playerId)
+  if (!player || !player.announcedCard) {return state}
+
+  const newPlayers = state.players.map(p => {
+    if (p.id === playerId) {
+      const discard = [...(p.discard || []), commandCard]
+      return {
+        ...p,
+        discard,
+        discardSize: discard.length,
+        announcedCard: null
+      }
+    }
+    return p
+  })
+
+  return { ...state, players: newPlayers }
 }
 
 /**
@@ -2531,6 +2882,77 @@ function handleRemoveCounterByType(state: GameState, data: any): GameState {
       recheckReadyStatuses(newCard, newState)
     }
   }
+
+  return newState
+}
+
+/**
+ * REMOVE_COUNTERS_WITH_REWARD - Remove multiple counters from a card and give reward
+ * Used by Inspiration command - removes counters and gives draw or score reward
+ * CRITICAL: The reward goes to the CARD OWNER, not the player who sent the action
+ * This ensures that when a player uses Inspiration on a dummy player's card,
+ * the dummy player (card owner) gets the reward, not the local player.
+ */
+function handleRemoveCountersWithReward(state: GameState, playerId: number, data: any): GameState {
+  const { coords, countsToRemove, callbackAction } = data || {}
+  if (!coords || !countsToRemove || !callbackAction) {return state}
+
+  const { row, col } = coords
+  if (row === undefined || col === undefined) {return state}
+
+  const cell = state.board[row][col]
+  if (!cell?.card) {return state}
+
+  // CRITICAL: Use card owner for reward, not action sender
+  // For Inspiration, the card owner should draw the cards
+  const rewardOwnerId = cell.card.ownerId || playerId
+
+  // Remove counters from card
+  const newBoard = state.board.map((r, rIdx) =>
+    r.map((c, cIdx) => {
+      if (rIdx === row && cIdx === col && cell.card) {
+        const cardStatuses = cell.card.statuses ? [...cell.card.statuses] : []
+        let totalRemoved = 0
+
+        // Remove each counter type by count
+        Object.entries(countsToRemove).forEach(([type, count]) => {
+          for (let i = 0; i < (count as number); i++) {
+            const lastIndex = cardStatuses.map(s => s.type).lastIndexOf(type)
+            if (lastIndex > -1) {
+              cardStatuses.splice(lastIndex, 1)
+              totalRemoved++
+            }
+          }
+        })
+
+        return { ...c, card: { ...cell.card, statuses: cardStatuses } }
+      }
+      return c
+    })
+  )
+
+  const newState = { ...state, board: newBoard }
+
+  // Apply reward: Draw cards from deck
+  if (callbackAction === 'DRAW_REMOVED') {
+    const totalRemoved = Object.values(countsToRemove).reduce((sum: number, count: unknown) => sum + (count as number), 0)
+    if (totalRemoved > 0) {
+      // CRITICAL: Use rewardOwnerId (card owner), not playerId (action sender)
+      const playerToUpdate = newState.players.find(p => p.id === rewardOwnerId)
+      if (playerToUpdate && playerToUpdate.deck) {
+        const cardsToDraw = Math.min(totalRemoved, playerToUpdate.deck.length)
+        for (let i = 0; i < cardsToDraw; i++) {
+          const cardDrawn = playerToUpdate.deck.shift()
+          if (cardDrawn && playerToUpdate.hand) {
+            playerToUpdate.hand.push(cardDrawn)
+          }
+        }
+        // Update hand size
+        playerToUpdate.handSize = playerToUpdate.hand.length
+      }
+    }
+  }
+  // Score reward is handled separately via UPDATE_PLAYER_SCORE action
 
   return newState
 }
@@ -2932,6 +3354,10 @@ function handleTransferAllStatuses(state: GameState, _playerId: number, data: an
  * PLAY_TOKEN_CARD - place token card on battlefield
  * Token is NOT removed from panel (can be used multiple times)
  * Owner = player who placed it (or dummy if active)
+ *
+ * CRITICAL: For Command cards, use the same flow as playing from hand:
+ * 1. Move to announced (showcase) - removes from deck
+ * 2. Then process command modal or execute actions
  */
 function handlePlayTokenCard(state: GameState, playerId: number, data: any): GameState {
   const { card, boardCoords, ownerId } = data || {}
@@ -2950,7 +3376,48 @@ function handlePlayTokenCard(state: GameState, playerId: number, data: any): Gam
   }
 
   const cell = state.board[row][col]
-  // Can only place token on empty cells
+
+  // CRITICAL: Check if this is a Command card
+  const isCommandCard = card.deck === 'Command' || card.types?.includes('Command') || card.faction === 'Command'
+
+  if (isCommandCard) {
+    // Command cards go through announced → discard flow, NOT directly to board
+    // Find the player who owns this card
+    const cardOwner = state.players.find(p => p.id === (ownerId ?? playerId))
+    if (!cardOwner) {
+      return state
+    }
+
+    // Move card from deck to announced (showcase)
+    const updatedPlayers = state.players.map(p => {
+      if (p.id === cardOwner.id) {
+        // Remove card from deck
+        const newDeck = (p.deck || []).filter((c: Card) => c.id !== card.id)
+
+        // Add to announced
+        const announcedCard = {
+          ...card,
+          isFaceUp: true,
+          revealedTo: 'all' as const,
+          revealedToPlayerIds: [],
+        }
+
+        return {
+          ...p,
+          deck: newDeck,
+          deckSize: newDeck.length,
+          announcedCard,
+        }
+      }
+      return p
+    })
+
+    // NOTE: Command modal opening and action execution is handled client-side
+    // This server-side change just moves the card to announced
+    return { ...state, players: updatedPlayers }
+  }
+
+  // Regular token cards (Units, etc.) - place on empty cell only
   if (cell.card) {
     return state
   }
@@ -2974,6 +3441,50 @@ function handlePlayTokenCard(state: GameState, playerId: number, data: any): Gam
   )
 
   return { ...state, board: newBoard }
+}
+
+/**
+ * PLAY_COMMAND_FROM_TOKEN_PANEL - play command card from token panel
+ * Moves command card from deck to announced (showcase)
+ * Modal opening is handled client-side after receiving updated state
+ */
+function handlePlayCommandFromTokenPanel(state: GameState, playerId: number, data: any): GameState {
+  const { card, ownerId } = data || {}
+  if (!card) {
+    return state
+  }
+
+  // Find the player who owns this card
+  const cardOwner = state.players.find(p => p.id === (ownerId ?? playerId))
+  if (!cardOwner) {
+    return state
+  }
+
+  // Move card from deck to announced (showcase)
+  const updatedPlayers = state.players.map(p => {
+    if (p.id === cardOwner.id) {
+      // Remove card from deck
+      const newDeck = (p.deck || []).filter((c: Card) => c.id !== card.id)
+
+      // Add to announced
+      const announcedCard = {
+        ...card,
+        isFaceUp: true,
+        revealedTo: 'all' as const,
+        revealedToPlayerIds: [],
+      }
+
+      return {
+        ...p,
+        deck: newDeck,
+        deckSize: newDeck.length,
+        announcedCard,
+      }
+    }
+    return p
+  })
+
+  return { ...state, players: updatedPlayers }
 }
 
 /**

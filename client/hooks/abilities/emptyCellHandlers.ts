@@ -117,7 +117,8 @@ export function handleEmptyCellClick(
         ...(cursorStack.range && { range: cursorStack.range }),
       },
       localPlayerId ?? 0,
-      gameState.players
+      gameState.players,
+      cursorStack.originalOwnerId // CRITICAL: Pass token owner ID for command cards
     )
 
     if (isValid) {
@@ -314,10 +315,13 @@ export function handleEmptyCellClick(
     // Check if allowSelf and clicking on same position
     const isSelfMove = payload?.allowSelf && boardCoords.row === currentCardCoords.row && boardCoords.col === currentCardCoords.col
 
+    // CRITICAL: Capture the moved card BEFORE calling moveItem
+    // This is needed for False Orders Option 1 to place tokens on the moved card
+    const movedCard = gameState.board[currentCardCoords.row][currentCardCoords.col].card
+
     if (!isSelfMove) {
-      const liveCard = gameState.board[currentCardCoords.row][currentCardCoords.col].card
-      if (liveCard) {
-        moveItem({ card: liveCard, source: 'board', boardCoords: currentCardCoords, bypassOwnershipCheck: true }, { target: 'board', boardCoords })
+      if (movedCard) {
+        moveItem({ card: movedCard, source: 'board', boardCoords: currentCardCoords, bypassOwnershipCheck: true }, { target: 'board', boardCoords })
       }
     }
 
@@ -332,11 +336,37 @@ export function handleEmptyCellClick(
       if (nextAction.targetOwnerId === -2) {
         nextAction.targetOwnerId = sourceCard.ownerId
       }
+      // CRITICAL: Always set payload object if needed
+      if (!nextAction.payload) {
+        nextAction.payload = {}
+      }
+      // Set context identifiers for token placement (False Orders Stun x2)
       if (payload.recordContext) {
-        if (!nextAction.payload) {
-          nextAction.payload = {}
-        }
         nextAction.payload._tempContextId = sourceCard.id
+      }
+      // CRITICAL: Set contextCardId for token placement after card move
+      // This is needed for abilities like False Orders Option 1 that place tokens on the moved card
+      // IMPORTANT: Use the movedCard captured above (from the board), NOT sourceCard (which is the command card)
+      if (!nextAction.payload.contextCardId) {
+        if (movedCard) {
+          nextAction.payload.contextCardId = movedCard.id
+          console.log('[SELECT_CELL] Setting contextCardId in chainedAction', {
+            contextCardId: movedCard.id,
+            cardName: movedCard.name,
+            tokenType: nextAction.payload?.tokenType,
+            count: nextAction.payload?.count,
+            sourceCardName: sourceCard.name,
+            isSelfMove,
+          })
+        } else {
+          console.warn('[SELECT_CELL] Could not set contextCardId - movedCard is undefined', {
+            currentCardCoords,
+            boardCoords,
+            sourceCardName: sourceCard.name,
+            tokenType: nextAction.payload?.tokenType,
+            count: nextAction.payload?.count,
+          })
+        }
       }
       setAbilityMode(null)
       setTimeout(() => {

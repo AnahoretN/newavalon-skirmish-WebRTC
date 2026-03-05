@@ -45,6 +45,7 @@ export const validateTarget = (
     },
   userPlayerId: number | null,
   players: GameState['players'],
+  tokenOwnerId?: number, // CRITICAL: For command cards, the token owner might differ from userPlayerId
 ): boolean => {
   const { card, ownerId, location } = target
 
@@ -61,15 +62,19 @@ export const validateTarget = (
   // 3. Only Opponents
   // TARGET_OPPONENTS in targetOwnerId also implies Only Opponents
   if (constraints.onlyOpponents || constraints.targetOwnerId === TARGET_OPPONENTS) {
-    // Cannot be self
-    if (ownerId === userPlayerId) {
+    // CRITICAL: Use tokenOwnerId if available (for command cards), otherwise use userPlayerId
+    // This fixes False Orders where Host (player 1) activates Dummy's (player 2) command
+    const effectiveOwnerId = tokenOwnerId !== undefined ? tokenOwnerId : userPlayerId
+
+    // Cannot be self (token owner's own cards)
+    if (ownerId === effectiveOwnerId) {
       return false
     }
 
     // Cannot be teammate
-    const userPlayer = players.find(p => p.id === userPlayerId)
+    const tokenOwner = players.find(p => p.id === effectiveOwnerId)
     const targetPlayer = players.find(p => p.id === ownerId)
-    if (userPlayer && targetPlayer && userPlayer.teamId !== undefined && userPlayer.teamId === targetPlayer.teamId) {
+    if (tokenOwner && targetPlayer && tokenOwner.teamId !== undefined && tokenOwner.teamId === targetPlayer.teamId) {
       return false
     }
   }
@@ -375,6 +380,7 @@ export const calculateValidTargets = (
             constraints,
             actorId,
             currentGameState.players,
+            action.sourceCard?.ownerId, // CRITICAL: Pass token owner ID for proper uniqueness check (e.g., Revealed)
           )
           if (isValid) {
             targets.push({ row: r, col: c })

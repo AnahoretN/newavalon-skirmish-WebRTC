@@ -35,7 +35,6 @@ export function handleSelectScoringLine(state: GameState, playerId: number, data
   const isDummyPlayer = activePlayer?.isDummy ?? false
 
   if (state.activePlayerId !== playerId && !isDummyPlayer) {
-    console.log('[handleSelectScoringLine] Player', playerId, 'cannot score for active player', state.activePlayerId)
     return state
   }
 
@@ -47,8 +46,6 @@ export function handleSelectScoringLine(state: GameState, playerId: number, data
 
   // Calculate points based on cards in line
   const points = calculateLineScore(state, scoringPlayerId, lineType, lineIndex)
-
-  console.log('[handleSelectScoringLine] Player', playerId, 'clicked for', scoringPlayerId, 'selected', lineType, lineIndex, 'score:', points)
 
   const newPlayers = state.players.map(p =>
     p.id === scoringPlayerId
@@ -220,8 +217,6 @@ export function findScoringLinesWithPlayerCard(
   let lastPlayedCoords: { row: number; col: number } | null = null
   const boardSize = state.board.length  // Use full board size, not activeGridSize
 
-  console.log('[findScoringLinesWithPlayerCard] Player', playerId, 'lastPlayedCardId:', player.lastPlayedCardId, 'boardSize:', boardSize, 'activeGridSize:', state.activeGridSize)
-
   if (player.lastPlayedCardId) {
     // Search by lastPlayedCardId - search ENTIRE board, not just active area
     for (let r = 0; r < boardSize; r++) {
@@ -229,7 +224,6 @@ export function findScoringLinesWithPlayerCard(
         const cell = state.board[r]?.[c]
         if (cell.card?.id === player.lastPlayedCardId) {
           lastPlayedCoords = { row: r, col: c }
-          console.log('[findScoringLinesWithPlayerCard] Found lastPlayedCard at:', { row: r, col: c })
           break
         }
       }
@@ -239,13 +233,11 @@ export function findScoringLinesWithPlayerCard(
 
   // If last played not found, look for any card with enteredThisTurn
   if (!lastPlayedCoords) {
-    console.log('[findScoringLinesWithPlayerCard] lastPlayedCardId not found, searching for enteredThisTurn...')
     for (let r = 0; r < boardSize; r++) {
       for (let c = 0; c < boardSize; c++) {
         const cell = state.board[r]?.[c]
         if (cell.card?.ownerId === playerId && cell.card.enteredThisTurn) {
           lastPlayedCoords = { row: r, col: c }
-          console.log('[findScoringLinesWithPlayerCard] Found enteredThisTurn at:', { row: r, col: c })
           break
         }
       }
@@ -255,7 +247,6 @@ export function findScoringLinesWithPlayerCard(
 
   // If no card found - no lines for scoring
   if (!lastPlayedCoords) {
-    console.log('[findScoringLinesWithPlayerCard] No card found for player', playerId)
     return []
   }
 
@@ -287,7 +278,6 @@ export function findScoringLinesWithPlayerCard(
   // Diagonal lines not currently used in scoring phase
   // (may be used in card abilities)
 
-  console.log('[findScoringLinesWithPlayerCard] Found', lines.length, 'lines for player', playerId)
   return lines
 }
 
@@ -327,13 +317,11 @@ export function handleStartNextRound(state: GameState): GameState {
         player.hand.push(drawnCard)
         player.handSize = player.hand.length
         player.deckSize = player.deck.length
-        console.log('[handleStartNextRound] Player', activePlayerId, 'drew card, hand:', player.hand.length)
       }
     }
 
     // Transition to Setup phase
     finalPhase = 1
-    console.log('[handleStartNextRound] Transition to Setup phase for player', activePlayerId)
   }
 
   return {

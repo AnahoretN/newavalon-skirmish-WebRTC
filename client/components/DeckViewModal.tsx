@@ -114,6 +114,7 @@ interface DeckViewModalProps {
   imageRefreshVersion?: number;
   highlightFilter?: (card: CardType) => boolean; // Optional filter to highlight certain cards (e.g. Units)
   cursorStack?: CursorStackState | null;
+  disableDrag?: boolean; // If true, disable dragging cards (e.g., when opened for card pick/search ability)
 }
 
 export const DeckViewModal: React.FC<DeckViewModalProps> = ({
@@ -134,6 +135,7 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
   imageRefreshVersion,
   highlightFilter,
   cursorStack = null,
+  disableDrag = false,
 }) => {
   const { t } = useLanguage()
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
@@ -233,7 +235,7 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
   }, [localCards, draggedIndex, dragOverIndex])
 
   const handleDragStart = useCallback((card: CardType, index: number) => {
-    if (!canInteract) {
+    if (!canInteract || disableDrag) {
       return
     }
 
@@ -242,7 +244,7 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
     draggedCardRef.current = card
     setDroppedOutside(false)
     setIsDragging(true)
-  }, [canInteract])
+  }, [canInteract, disableDrag])
 
   const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
     e.preventDefault()
@@ -334,6 +336,7 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
               const isBeingDragged = draggedCardId === card.id
               const isDragTarget = dragOverIndex === index && draggedIndex !== index
               const isInteractive = canInteract && isMatchingFilter && !cursorStack
+              const canDragThisCard = isInteractive && !disableDrag
 
               const opacity = isBeingDragged ? 0.5 : (isMatchingFilter ? 1 : 0.3)
 
@@ -341,7 +344,7 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
                 <div
                   key={`${card.id}-${index}`}
                   style={{ opacity }}
-                  draggable={isInteractive}
+                  draggable={canDragThisCard}
                   onDragStart={() => handleDragStart(card, originalIndex)}
                   onDragOver={(e) => handleDragOver(e, index)}
                   onDragEnd={handleDragEnd}
@@ -357,9 +360,9 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
                   onDoubleClick={() => isInteractive && onCardDoubleClick?.(originalIndex)}
                   data-interactive={isInteractive}
                   className={`w-28 h-28 relative transition-all rounded-lg
-                    ${isInteractive ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}
+                    ${canDragThisCard ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}
                     ${isDragTarget ? 'scale-105 z-10' : ''}
-                    ${isBeingDragged ? 'scale-95' : 'hover:scale-105'}
+                    ${isBeingDragged ? 'scale-95' : (!disableDrag ? 'hover:scale-105' : '')}
                   `}
                 >
                   <div className={`w-full h-full ${isHighlighted && highlightFilter ? 'ring-3 ring-cyan-400 rounded-md shadow-[0_0_9px_#22d3ee]' : ''}`}>
@@ -377,9 +380,11 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
             {displayCards.length === 0 && <p className="col-span-5 w-full text-center text-gray-400 py-8">{t('empty')}</p>}
           </div>
         </div>
-        <p className="text-gray-400 text-xs mt-2 text-center">
-          {t('dragCardsReorder')}
-        </p>
+        {!disableDrag && (
+          <p className="text-gray-400 text-xs mt-2 text-center">
+            {t('dragCardsReorder')}
+          </p>
+        )}
       </div>
     </div>
   )

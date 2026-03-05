@@ -65,6 +65,7 @@ interface UseAppAbilitiesProps {
     setTargetingMode: (action: AbilityAction, playerId: number, sourceCoords?: { row: number; col: number }, preCalculatedTargets?: {row: number, col: number}[], commandContext?: CommandContext) => void;
     clearTargetingMode: () => void;
     validTargets?: {row: number, col: number}[];
+    sendAction?: (action: string, data?: any) => void;
 }
 
 /**
@@ -123,6 +124,7 @@ export const useAppAbilities = ({
   setTargetingMode,
   clearTargetingMode,
   validTargets,
+  sendAction,
 }: UseAppAbilitiesProps) => {
 
   // Store handleLineSelection ref to avoid circular dependency
@@ -199,6 +201,8 @@ export const useAppAbilities = ({
       applyGlobalEffect,
       drawCardsBatch,
       setTargetingMode,
+      clearTargetingMode,
+      sendAction,
     })
   }, [
     gameState,
@@ -238,6 +242,8 @@ export const useAppAbilities = ({
     applyGlobalEffect,
     drawCardsBatch,
     setTargetingMode,
+    clearTargetingMode,
+    sendAction,
   ])
 
   // Auto-Execute GLOBAL_AUTO_APPLY actions when they appear in abilityMode
@@ -292,6 +298,7 @@ export const useAppAbilities = ({
         constraints,
         gameState.activePlayerId,
         gameState.players,
+        cursorStack.originalOwnerId // CRITICAL: Pass token owner ID for command cards
       )
 
       if (isValid) {
@@ -552,6 +559,7 @@ export const useAppAbilities = ({
       setCursorStack,
       clearTargetingMode,
       clearValidTargets,
+      setPlayMode,
       activateAbility: (c, coords) => activateAbilityModule(c, coords, {
         gameState,
         localPlayerId,
@@ -562,7 +570,7 @@ export const useAppAbilities = ({
         addBoardCardStatus,
       }),
     })
-  }, [abilityMode, cursorStack, gameState, localPlayerId, handleActionExecution, markAbilityUsed, setAbilityMode, setCommandContext, triggerHandCardSelection, moveItem, setCursorStack, clearTargetingMode, clearValidTargets, interactionLock])
+  }, [abilityMode, cursorStack, gameState, localPlayerId, handleActionExecution, markAbilityUsed, setAbilityMode, setCommandContext, triggerHandCardSelection, moveItem, setCursorStack, clearTargetingMode, clearValidTargets, setPlayMode, interactionLock])
 
   /**
    * Handle double click on announced card

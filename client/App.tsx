@@ -85,6 +85,7 @@ const AppInner = function AppInner() {
     gamesList,
     requestGamesList,
     exitGame,
+    sendAction,
     moveItem,
     updateState,
     shufflePlayerDeck,
@@ -364,8 +365,8 @@ const AppInner = function AppInner() {
     drawCard,
     drawCardsBatch,
     updatePlayerScore,
-    updateState,
     removeBoardCardStatus,
+    sendAction,
   })
 
   // Wrapper for nextPhase that sets justAutoTransitioned flag
@@ -427,6 +428,7 @@ const AppInner = function AppInner() {
     setTargetingMode,
     clearTargetingMode,
     validTargets,
+    sendAction,
   })
 
   const handleAnnouncedCardDoubleClick = (player: Player, card: Card) => {
@@ -703,15 +705,62 @@ const AppInner = function AppInner() {
     }
   }, [abilityMode, gameState.targetingMode, gameState.activePlayerId, localPlayerId, triggerDeckSelection, clearTargetingMode, requestDeckView])
 
-  // Sync validHandTargets when targetingMode.handTargets changes (for P2P mode)
-  // When another player activates targeting mode with hand targets, we need to update our local state
+  // CRITICAL: Sync validHandTargets dynamically based on current hand state (not static targetingMode.handTargets)
+  // This fixes the issue where Faber's DISCARD_FROM_HAND mode highlights stale cards from when Faber was deployed
+  // instead of current cards in hand at ability activation time
   useEffect(() => {
     // Only sync from remote targetingMode if we don't have our own active mode
     // This prevents local abilityMode/cursorStack from being overridden by remote targetingMode
     const hasLocalActiveMode = abilityMode || cursorStack || playMode || commandModalCard
 
+    // CRITICAL: For SELECT_CELL mode (False Orders), always clear handTargets
+    // SELECT_CELL should only highlight board cells, not hand cards
+    const isSelectCellMode = abilityMode?.mode === 'SELECT_CELL'
+    if (isSelectCellMode) {
+      setValidHandTargets([])
+      return
+    }
+
     if (gameState.targetingMode?.handTargets && !hasLocalActiveMode) {
-      setValidHandTargets(gameState.targetingMode.handTargets)
+      // CRITICAL: Don't use static targetingMode.handTargets - they contain stale indices
+      // Instead, dynamically compute valid targets based on current hand state
+      const targetingPlayerId = gameState.targetingMode.playerId
+      const action = gameState.targetingMode.action
+
+      // CRITICAL: Check for restrictions (e.g., False Orders Revealed token)
+      // Note: These fields are in action.payload
+      const excludedOwnerId = action?.payload?.excludeOwnerId ?? action?.excludeOwnerId
+      const onlyOpponents = action?.payload?.onlyOpponents ?? action?.onlyOpponents
+
+      // If targeting player is excluded, don't show their hand
+      if (targetingPlayerId === excludedOwnerId) {
+        setValidHandTargets([])
+      } else {
+        // Collect hand targets from all non-excluded players
+        const freshHandTargets: {playerId: number, cardIndex: number}[] = []
+
+        for (const player of gameState.players) {
+          // Skip excluded player
+          if (player.id === excludedOwnerId) {
+            continue
+          }
+          // Skip teammates if onlyOpponents is set
+          if (onlyOpponents && excludedOwnerId !== undefined) {
+            const excludedPlayer = gameState.players.find(p => p.id === excludedOwnerId)
+            if (excludedPlayer && excludedPlayer.teamId !== undefined && excludedPlayer.teamId === player.teamId) {
+              continue
+            }
+          }
+
+          if (player.hand && player.hand.length > 0) {
+            for (let i = 0; i < player.hand.length; i++) {
+              freshHandTargets.push({ playerId: player.id, cardIndex: i })
+            }
+          }
+        }
+
+        setValidHandTargets(freshHandTargets)
+      }
     } else if (!gameState.targetingMode?.handTargets && !hasLocalActiveMode) {
       // Clear validHandTargets when targetingMode is cleared (no longer has handTargets)
       // This ensures remote players see targeting highlights cleared when token is placed
@@ -719,7 +768,16 @@ const AppInner = function AppInner() {
       setValidHandTargets([])
     }
     // If hasLocalActiveMode is true, we skip syncing - let the other useEffect handle it
-  }, [gameState.targetingMode?.handTargets, gameState.targetingMode?.timestamp, abilityMode, cursorStack, playMode, commandModalCard])
+  }, [
+    gameState.targetingMode?.handTargets,
+    gameState.targetingMode?.timestamp,
+    gameState.targetingMode?.playerId,
+    gameState.players,
+    abilityMode,
+    cursorStack,
+    playMode,
+    commandModalCard
+  ])
 
   const handleTopDeckReorder = useCallback((playerId: number, newTopCards: Card[]) => {
     reorderTopDeck(playerId, newTopCards)
@@ -975,6 +1033,73 @@ const AppInner = function AppInner() {
     return undefined
   }, [latestNoTarget])
 
+  // Mark command card as used when playMode completes (for Quick Response Team)
+  const prevPlayModeRef = useRef<{ card: Card; sourceItem: any; faceDown?: boolean } | null>(null)
+  useEffect(() => {
+    // When playMode goes from non-null to null and there's a pending command card
+    if (prevPlayModeRef.current && !playMode && commandContext.pendingCommandCard) {
+      const { sourceCoords, isDeployAbility, readyStatusToRemove } = commandContext.pendingCommandCard
+      if (sourceCoords && sourceCoords.row >= 0) {
+        markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+      }
+      // Clear the pending command card
+      setCommandContext((prev: any) => {
+        const { pendingCommandCard, ...rest } = prev
+        return rest
+      })
+    }
+    prevPlayModeRef.current = playMode
+  }, [playMode, commandContext.pendingCommandCard, markAbilityUsed, setCommandContext])
+
+  // Handle command card from token panel - open modal when card appears in announced
+  const pendingCommandFromTokenPanelRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!localPlayerId || !gameState?.players) return
+
+    const localPlayer = gameState.players.find(p => p.id === localPlayerId)
+    if (!localPlayer?.announcedCard) {
+      pendingCommandFromTokenPanelRef.current = null
+      return
+    }
+
+    const card = localPlayer.announcedCard
+    const cardId = card.id
+
+    // Check if we're waiting to open modal for this card
+    if (pendingCommandFromTokenPanelRef.current === cardId) {
+      // We've already opened the modal, don't open again
+      pendingCommandFromTokenPanelRef.current = null
+      return
+    }
+
+    // Check if this card was just placed from token panel (no modal open yet)
+    // We detect this by checking if the card is in announced but commandModalCard is not set
+    const baseId = (card.baseId || card.id.split('_')[1] || card.id).toLowerCase()
+    const complexCommands = [
+      'overwatch', 'tacticalmaneuver', 'repositioning', 'inspiration',
+      'datainterception', 'falseorders', 'experimentalstimulants',
+      'logisticschain', 'quickresponseteam', 'temporaryshelter', 'enhancedinterrogation',
+    ]
+
+    const isComplexCommand = complexCommands.some((id) => baseId.includes(id))
+
+    if (isComplexCommand && !commandModalCard) {
+      // Open modal for complex command
+      setCommandModalCard(card)
+      pendingCommandFromTokenPanelRef.current = cardId
+    } else if (!isComplexCommand && !commandModalCard) {
+      // Simple command - execute directly
+      const actions = getCommandAction(card.id, -1, card as any, gameState as any, localPlayerId)
+      if (actions.length > 0) {
+        setActionQueue([
+          ...(actions as any),
+          { type: 'GLOBAL_AUTO_APPLY', payload: { cleanupCommand: true, card: card, ownerId: localPlayerId }, sourceCard: card },
+        ])
+      }
+      pendingCommandFromTokenPanelRef.current = cardId
+    }
+  }, [gameState?.players, localPlayerId, commandModalCard, setCommandModalCard, setActionQueue])
+
   // Track token status changes for ability readiness recheck
   const tokenHashRef = useRef<string>('')
 
@@ -1157,13 +1282,6 @@ const AppInner = function AppInner() {
     // When tokens are being placed (cursorStack), abilityMode is suppressed visually
     // The ability may still modify cursorStack parameters, but doesn't add its own targets
     if (abilityMode?.type === 'ENTER_MODE' && abilityMode.mode === 'SELECT_TARGET' && !cursorStack) {
-      // Debug logging for targeting mode activation
-      logger.info(`[App.tsx] ENTER_MODE SELECT_TARGET detected`, {
-        actionType: abilityMode.payload?.actionType,
-        hasFilter: !!abilityMode.payload?.filter,
-        filterType: typeof abilityMode.payload?.filter,
-        sourceCardName: abilityMode.sourceCard?.name,
-      })
       // Special logic for Quick Response Team Hand Selection highlight
       if (abilityMode.payload.actionType === 'SELECT_HAND_FOR_DEPLOY' || abilityMode.payload.filter) {
         gameState.players.forEach(p => {
@@ -1190,8 +1308,6 @@ const AppInner = function AppInner() {
     // Uses universal token targeting rules from countersDatabase
     if (cursorStack) {
       const tokenRules = getTokenTargetingRules(cursorStack.type)
-
-      // If cursorStack doesn't allow hand targets, clear any from abilityMode
       if (!tokenRules.allowHand) {
         handTargets.length = 0 // Clear handTargets - tokens like Exploit/Aim/Stun/Shield can't go on hand cards
       } else {
@@ -1206,12 +1322,15 @@ const AppInner = function AppInner() {
               ...(cursorStack.requiredTargetStatus && { requiredTargetStatus: cursorStack.requiredTargetStatus }),
               tokenType: cursorStack.type,
             }
+
             const isValid = validateTarget(
               { card, ownerId: p.id, location: 'hand' },
               constraints,
               actorId,
               gameState.players,
+              cursorStack.originalOwnerId, // CRITICAL: Pass token owner ID for command cards
             )
+
             if (isValid) {
               handTargets.push({ playerId: p.id, cardIndex: index })
             }
@@ -1241,15 +1360,12 @@ const AppInner = function AppInner() {
     }
 
     setValidTargets(boardTargets)
-    setValidHandTargets(handTargets)
-
-    // Debug: log valid targets for line selection modes
-    if (abilityMode && (abilityMode.mode === 'SCORE_LAST_PLAYED_LINE' || abilityMode.mode === 'SELECT_LINE_END' || abilityMode.mode === 'ZIUS_LINE_SELECT')) {
-      logger.info(`[App.tsx] Line selection mode (${abilityMode.mode}) - set ${boardTargets.length} validTargets`, {
-        boardTargets: boardTargets.slice(0, 5), // Log first 5 for brevity
-        sourceCoords: abilityMode.sourceCoords,
-        boardSize,
-      })
+    // CRITICAL: For SELECT_CELL mode (False Orders), never show hand targets
+    // SELECT_CELL should only highlight board cells, not hand cards
+    if (abilityMode?.mode === 'SELECT_CELL') {
+      setValidHandTargets([])
+    } else {
+      setValidHandTargets(handTargets)
     }
 
     // Use universal targeting mode system to sync targets to all players
@@ -1321,8 +1437,12 @@ const AppInner = function AppInner() {
             hasAbilityMode: !!abilityMode,
           })
 
+          // CRITICAL: For SELECT_CELL mode, never pass handTargets - only board targets
+          // SELECT_CELL is for selecting empty cells on the board, NOT cards in hand
+          const finalHandTargets = targetingAction.mode === 'SELECT_CELL' ? [] : handTargets
+
           // Pass pre-calculated boardTargets and handTargets to avoid recalculating (important for line modes and hand targeting)
-          setTargetingMode(targetingAction, targetingPlayerId, sourceCoords, boardTargets, commandContext, handTargets)
+          setTargetingMode(targetingAction, targetingPlayerId, sourceCoords, boardTargets, commandContext, finalHandTargets)
         } else {
           // For line selection modes, only set local validTargets - don't call setTargetingMode
           // The line selection is handled via handleLineSelection in lineSelectionHandlers.ts
@@ -1448,11 +1568,104 @@ const AppInner = function AppInner() {
       const boardTargets = gameState.targetingMode.boardTargets || []
       setValidTargets(boardTargets)
 
-      // Also sync handTargets if present
-      if (gameState.targetingMode.handTargets) {
-        setValidHandTargets(gameState.targetingMode.handTargets)
+      // CRITICAL: If cursorStack is active, use its targeting rules instead of gameState.targetingMode
+      // This ensures Revealed token properly excludes owner's hand and other token-specific rules
+      if (cursorStack) {
+        const tokenRules = getTokenTargetingRules(cursorStack.type)
+        if (!tokenRules.allowHand) {
+          // Tokens like Exploit/Aim/Stun/Shield can't go on hand cards
+          setValidHandTargets([])
+        } else {
+          // Token can target hand - use cursorStack targeting rules
+          const freshHandTargets: {playerId: number, cardIndex: number}[] = []
+          const excludedOwnerId = cursorStack.excludeOwnerId
+          const onlyOpponents = cursorStack.onlyOpponents || (cursorStack.targetOwnerId === -1)
+          const tokenOwnerId = cursorStack.originalOwnerId
+
+          for (const player of gameState.players) {
+            // Skip excluded player (token owner's own hand for Revealed)
+            if (player.id === excludedOwnerId) {
+              continue
+            }
+            // Skip teammates if onlyOpponents is set
+            if (onlyOpponents && excludedOwnerId !== undefined) {
+              const excludedPlayer = gameState.players.find(p => p.id === excludedOwnerId)
+              if (excludedPlayer && excludedPlayer.teamId !== undefined && excludedPlayer.teamId === player.teamId) {
+                continue
+              }
+            }
+
+            if (player.hand && player.hand.length > 0) {
+              for (let i = 0; i < player.hand.length; i++) {
+                const card = player.hand[i]
+                // CRITICAL: Check if card already has this token (for uniqueness)
+                if (cursorStack.type === 'Revealed') {
+                  const hasOurToken = card.statuses?.some(s =>
+                    s.type === 'Revealed' && s.addedByPlayerId === tokenOwnerId
+                  )
+                  if (hasOurToken) {
+                    continue
+                  }
+                }
+                freshHandTargets.push({ playerId: player.id, cardIndex: i })
+              }
+            }
+          }
+
+          setValidHandTargets(freshHandTargets)
+        }
+        // Still mark that we have targeting mode and sync boardTargets
+        prevHadTargetingModeRef.current = true
+        prevTargetingModePlayerIdRef.current = gameState.targetingMode.playerId
+        return
+      }
+
+      // CRITICAL: Don't use static targetingMode.handTargets - compute dynamically from current hand
+      // This fixes Faber's DISCARD_FROM_HAND showing stale cards
+      // ALSO CRITICAL: For SELECT_CELL mode, NEVER show hand targets - only board cells are valid
+      const isSelectCellMode = gameState.targetingMode.action?.mode === 'SELECT_CELL'
+      if (!isSelectCellMode && gameState.targetingMode.handTargets) {
+        const targetingPlayerId = gameState.targetingMode.playerId
+        const action = gameState.targetingMode.action
+
+        // CRITICAL: Check if there are restrictions on which hands can be targeted
+        // e.g., False Orders Option 0 (Reveal x2) with onlyOpponents/excludeOwnerId
+        // Note: These fields are in action.payload (set in actionExecutionHandler.ts)
+        const excludedOwnerId = action?.payload?.excludeOwnerId ?? action?.excludeOwnerId
+        const onlyOpponents = action?.payload?.onlyOpponents ?? action?.onlyOpponents
+
+        if (targetingPlayerId === excludedOwnerId) {
+          // CRITICAL: If targeting player is the excluded owner, don't show their hand as valid targets
+          // This fixes False Orders Revealed token highlighting owner's own hand
+          setValidHandTargets([])
+        } else {
+          // Collect hand targets from all players that are not excluded
+          const freshHandTargets: {playerId: number, cardIndex: number}[] = []
+
+          for (const player of gameState.players) {
+            // Skip excluded player (token owner's own hand)
+            if (player.id === excludedOwnerId) {
+              continue
+            }
+            // Skip teammates if onlyOpponents is set
+            if (onlyOpponents && excludedOwnerId !== undefined) {
+              const excludedPlayer = gameState.players.find(p => p.id === excludedOwnerId)
+              if (excludedPlayer && excludedPlayer.teamId !== undefined && excludedPlayer.teamId === player.teamId) {
+                continue
+              }
+            }
+
+            if (player.hand && player.hand.length > 0) {
+              for (let i = 0; i < player.hand.length; i++) {
+                freshHandTargets.push({ playerId: player.id, cardIndex: i })
+              }
+            }
+          }
+
+          setValidHandTargets(freshHandTargets)
+        }
       } else {
-        // Clear hand targets if targeting mode doesn't have any
+        // Clear hand targets if targeting mode doesn't have any OR is SELECT_CELL mode
         setValidHandTargets([])
       }
 
@@ -1473,7 +1686,7 @@ const AppInner = function AppInner() {
         prevTargetingModePlayerIdRef.current = undefined
       }
     }
-  }, [gameState.targetingMode, abilityMode, cursorStack, playMode, localPlayerId])
+  }, [gameState.targetingMode, gameState.targetingMode?.handTargets, gameState.targetingMode?.timestamp, gameState.targetingMode?.playerId, gameState.players, abilityMode, cursorStack, playMode, localPlayerId])
 
   // Scoring Phase Logic
   useEffect(() => {
@@ -2069,9 +2282,16 @@ const AppInner = function AppInner() {
       return
     }
 
-    // Shuffle deck if required by the search ability
+    // Shuffle deck if required by the search ability (even when cancelling without selection)
     if (viewingDiscard.shuffleOnClose) {
       shufflePlayerDeck(viewingDiscard.player.id)
+    }
+
+    // If closing during a card pick/search ability without selecting a card, cancel the ability
+    if (viewingDiscard.pickConfig) {
+      setViewingDiscard(null)
+      setAbilityMode(null)
+      return
     }
 
     // Draw card and mark ability used if triggered by deploy/setup ability
@@ -2699,6 +2919,7 @@ const AppInner = function AppInner() {
           imageRefreshVersion={imageRefreshVersion}
           highlightFilter={highlightFilter}
           cursorStack={cursorStack}
+          disableDrag={!!viewingDiscard.pickConfig}
         />
       )}
 

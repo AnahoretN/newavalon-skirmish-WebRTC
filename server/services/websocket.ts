@@ -68,7 +68,8 @@ import {
   handleLoadCustomDeck,
   handleSetDummyPlayerCount,
   handleLogGameAction,
-  handleGetGameLogs
+  handleGetGameLogs,
+  handleRemoveCountersWithReward
 } from '../handlers/playerSettings.js';
 import {
   handleToggleAutoAbilities,
@@ -179,6 +180,7 @@ function routeMessage(ws, data) {
     'SET_GAME_PRIVACY': handleSetGamePrivacy,
     'SET_GRID_SIZE': handleSetGridSize,
     'DRAW_CARD': handleDrawCard,
+    'DRAW_CARDS_BATCH': handleDrawCardsBatch,
     'SHUFFLE_DECK': handleShuffleDeck,
     'ANNOUNCE_CARD': handleAnnounceCard,
     'PLAY_COUNTER': handlePlayCounter,
@@ -189,6 +191,7 @@ function routeMessage(ws, data) {
     'CANCEL_PENDING_COMMAND': handleCancelPendingCommand,
     'EXECUTE_PENDING_COMMAND': handleExecutePendingCommand,
     'FLIP_CARD': handleFlipCard,
+    'REMOVE_COUNTERS_WITH_REWARD': handleRemoveCountersWithReward,
     'START_READY_CHECK': handleStartReadyCheck,
     'CANCEL_READY_CHECK': handleCancelReadyCheck,
     'TRIGGER_HIGHLIGHT': handleTriggerHighlight,
@@ -391,6 +394,7 @@ const handlePlayCard = () => handleClientSideAction();
 const handleMoveCard = () => handleClientSideAction();
 const handleEndTurn = () => handleClientSideAction();
 const handleDrawCard = () => handleClientSideAction();
+const handleDrawCardsBatch = () => handleClientSideAction();
 const handleShuffleDeck = () => handleClientSideAction();
 const handleAnnounceCard = () => handleClientSideAction();
 const handlePlayCounter = () => handleClientSideAction();

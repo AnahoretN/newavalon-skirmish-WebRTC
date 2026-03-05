@@ -221,10 +221,12 @@ export const getCommandAction = (
           useContextCard: true, // Use the card from commandContext.lastMovedCardCoords
           chainedAction: {
             type: 'GLOBAL_AUTO_APPLY',
+            sourceCard: card, // Include sourceCard for proper ownership
             payload: {
               tokenType: 'Stun',
               count: 2,
               ownerId: localPlayerId, // Stun belongs to Command Player
+              // contextCardId will be set by handleSelectCell based on the moved card
             },
           },
         },
@@ -237,6 +239,7 @@ export const getCommandAction = (
   // =========================================================================
   else if (baseId === 'experimentalstimulants') {
     // Option 0: Reactivate Deploy (Reset flag)
+    // Can target any Unit you control except Devices
     if (optionIndex === 0) {
       actions.push({
         type: 'ENTER_MODE',
@@ -244,7 +247,7 @@ export const getCommandAction = (
         sourceCard: card,
         payload: {
           actionType: 'RESET_DEPLOY',
-          filter: (target: Card) => target.ownerId === localPlayerId && target.types?.includes('Unit'),
+          filter: (target: Card) => target.ownerId === localPlayerId && target.types?.includes('Unit') && !target.types?.includes('Device'),
         },
       })
     }

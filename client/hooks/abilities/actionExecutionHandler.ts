@@ -55,6 +55,8 @@ export interface ActionHandlerProps {
   drawCardsBatch: (playerId: number, count: number) => void
   setTargetingMode: (action: AbilityAction, playerId: number, sourceCoords?: { row: number; col: number }, preCalculatedTargets?: {row: number, col: number}[], commandContext?: CommandContext, preCalculatedHandTargets?: {playerId: number, cardIndex: number}[]) => void
   clearTargetingMode?: () => void
+  // P2P: sendAction for GLOBAL_AUTO_APPLY with contextCardId (False Orders Stun x2)
+  sendAction?: (action: string, data?: any) => void
 }
 
 /**
@@ -274,7 +276,49 @@ function handleGlobalAutoApply(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
-  const { gameState, localPlayerId, commandContext, markAbilityUsed, triggerNoTarget, triggerFloatingText, updatePlayerScore, applyGlobalEffect, addBoardCardStatus, removeStatusByType, handleActionExecution: execAction } = props
+  const { gameState, localPlayerId, commandContext, markAbilityUsed, triggerNoTarget, triggerFloatingText, updatePlayerScore, applyGlobalEffect, addBoardCardStatus, removeStatusByType, handleActionExecution: execAction, sendAction } = props
+
+  logger.info('[handleGlobalAutoApply] START', {
+    customAction: action.payload?.customAction,
+    contextReward: action.payload?.contextReward,
+    tokenType: action.payload?.tokenType,
+    hasFilter: !!action.payload?.filter,
+    sourceCardName: action.sourceCard?.name,
+    sourceCardOwnerId: action.sourceCard?.ownerId,
+    hasContextCardId: !!action.payload?.contextCardId,
+    contextCardId: action.payload?.contextCardId,
+  })
+
+  // P2P: Token placement on moved card (False Orders Option 1: Stun x2)
+  // Send to host for processing since client can't directly modify shared state
+  if (action.payload?.contextCardId && action.payload?.tokenType && action.payload?.count && sendAction) {
+    logger.info('[handleGlobalAutoApply] Sending token placement to P2P host', {
+      contextCardId: action.payload.contextCardId,
+      tokenType: action.payload.tokenType,
+      count: action.payload.count,
+      ownerId: action.payload.ownerId,
+      sourceCardId: action.sourceCard?.id,
+      sourceCardName: action.sourceCard?.name,
+    })
+    // Send action to host with full payload
+    sendAction('GLOBAL_AUTO_APPLY', {
+      payload: action.payload,
+      sourceCard: action.sourceCard,
+    })
+    markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
+    return
+  } else {
+    // Debug log to help diagnose issues
+    if (action.payload?.tokenType && action.payload?.count) {
+      logger.warn('[handleGlobalAutoApply] Token data present but missing contextCardId or sendAction', {
+        hasContextCardId: !!action.payload?.contextCardId,
+        hasSendAction: !!sendAction,
+        contextCardId: action.payload?.contextCardId,
+        tokenType: action.payload?.tokenType,
+        count: action.payload?.count,
+      })
+    }
+  }
 
   // FINN_SCORING
   if (action.payload?.customAction === 'FINN_SCORING') {
@@ -548,8 +592,16 @@ function handleCreateStack(
 
     const tokenType = action.tokenType || 'Aim'
 
-    // Special handling for Revealed token with targetOwnerId - include hand targets
+    // Special handling for Revealed token - include hand targets for opponents
+    // Case 1: Specific target owner (e.g., "reveal cards from player X's hand")
     if (tokenType === 'Revealed' && action.targetOwnerId) {
+      logger.info('[handleCreateStack] Revealed token with targetOwnerId', {
+        targetOwnerId: action.targetOwnerId,
+        excludeOwnerId: action.excludeOwnerId,
+        onlyOpponents: action.onlyOpponents,
+        onlyFaceDown: action.onlyFaceDown,
+        willCreateHandTargets: true,
+      })
       // Collect hand targets for the specific opponent
       const handTargets: {playerId: number, cardIndex: number}[] = []
       const targetPlayer = gameState.players.find(p => p.id === action.targetOwnerId)
@@ -578,6 +630,65 @@ function handleCreateStack(
           tokenType,
           filter: () => true,
           targetOwnerId: action.targetOwnerId,
+        },
+        sourceCoords: action.sourceCoords || sourceCoords,
+        sourceCard: action.sourceCard,
+      }
+
+      // Activate targeting mode so all players see the valid hand targets highlighted
+      setTargetingMode(dummyAction, tokenOwnerId, sourceCoords, undefined, undefined, handTargets)
+    }
+    // Case 2: Revealed with onlyOpponents (e.g., False Orders Option 0 - reveal any opponent's cards)
+    else if (tokenType === 'Revealed' && (action.onlyOpponents || action.excludeOwnerId)) {
+      logger.info('[handleCreateStack] Revealed token with onlyOpponents/excludeOwnerId', {
+        excludeOwnerId: action.excludeOwnerId,
+        onlyOpponents: action.onlyOpponents,
+        onlyFaceDown: action.onlyFaceDown,
+        willCreateHandTargets: true,
+      })
+      // Collect hand targets for ALL opponents (excluding excluded owner)
+      const handTargets: {playerId: number, cardIndex: number}[] = []
+      const excludedId = action.excludeOwnerId ?? tokenOwnerId
+
+      for (const player of gameState.players) {
+        // Skip excluded player (token owner's own hand)
+        if (player.id === excludedId) {
+          continue
+        }
+        // Skip teammates if onlyOpponents is set
+        if (action.onlyOpponents) {
+          const tokenOwner = gameState.players.find(p => p.id === tokenOwnerId)
+          if (tokenOwner && tokenOwner.teamId !== undefined && tokenOwner.teamId === player.teamId) {
+            continue
+          }
+        }
+        // Add this player's hand cards
+        if (player.hand) {
+          for (let i = 0; i < player.hand.length; i++) {
+            const card = player.hand[i]
+            // Check if card doesn't already have our Revealed token
+            const hasOurRevealed = card.statuses?.some(s =>
+              s.type === 'Revealed' && s.addedByPlayerId === tokenOwnerId
+            )
+            if (!hasOurRevealed) {
+              handTargets.push({ playerId: player.id, cardIndex: i })
+            }
+          }
+        }
+      }
+
+      // Create cursorStack
+      setCursorStack(createTokenCursorStack(tokenType, tokenOwnerId, null, modifications))
+
+      // Create a dummy action for setTargetingMode (required parameter)
+      const dummyAction: AbilityAction = {
+        type: 'CREATE_STACK',
+        mode: 'SELECT_TARGET',
+        payload: {
+          tokenType,
+          filter: () => true,
+          excludeOwnerId: action.excludeOwnerId,
+          onlyOpponents: action.onlyOpponents,
         },
         sourceCoords: action.sourceCoords || sourceCoords,
         sourceCard: action.sourceCard,
@@ -1444,7 +1555,6 @@ function handleEnterMode(
   // SELECT_LINE_FOR_SUPPORT_COUNTERS (Signal Prophet Deploy)
   // CRITICAL: Do NOT call setTargetingMode - line selection modes use abilityMode only!
   if (mode === 'SELECT_LINE_FOR_SUPPORT_COUNTERS') {
-    console.log('[handleEnterMode] SELECT_LINE_FOR_SUPPORT_COUNTERS: Setting abilityMode only (no targetingMode)')
     setAbilityMode(action)
     return
   }
@@ -1452,7 +1562,6 @@ function handleEnterMode(
   // SELECT_LINE_FOR_THREAT_COUNTERS (Code Keeper Deploy)
   // CRITICAL: Do NOT call setTargetingMode - line selection modes use abilityMode only!
   if (mode === 'SELECT_LINE_FOR_THREAT_COUNTERS') {
-    console.log('[handleEnterMode] SELECT_LINE_FOR_THREAT_COUNTERS: Setting abilityMode only (no targetingMode)')
     setAbilityMode(action)
     return
   }
@@ -1460,8 +1569,17 @@ function handleEnterMode(
   // SELECT_LINE_FOR_EXPLOIT_SCORING (Zius Setup, Unwavering Integrator Setup)
   // CRITICAL: Do NOT call setTargetingMode - line selection modes use abilityMode only!
   if (mode === 'SELECT_LINE_FOR_EXPLOIT_SCORING') {
-    console.log('[handleEnterMode] SELECT_LINE_FOR_EXPLOIT_SCORING: Setting abilityMode only (no targetingMode)')
     setAbilityMode(action)
+    return
+  }
+
+  // SELECT_CELL (False Orders, Data Interception, etc.)
+  // CRITICAL: Only board targets (empty cells), NO hand targets
+  if (mode === 'SELECT_CELL') {
+    setAbilityMode(action)
+    // SELECT_CELL is for selecting empty cells on the board, not cards in hand
+    // Do NOT set targeting mode with hand targets
+    // Empty cell highlighting is handled by GameBoard based on abilityMode
     return
   }
 
@@ -1483,22 +1601,45 @@ function handleContextReward(
   const { gameState, commandContext, updatePlayerScore, triggerFloatingText, drawCardsBatch, removeBoardCardStatus, addBoardCardStatus, modifyBoardCardPower, markAbilityUsed } = props
 
   const rewardType = action.payload?.contextReward
-  const coords = commandContext.lastMovedCardCoords || sourceCoords
+
+  logger.info('[handleContextReward] START', {
+    rewardType,
+    sourceCardName: action.sourceCard?.name,
+    sourceCardOwnerId: action.sourceCard?.ownerId,
+    sourceCoords,
+    _sourceCoordsBeforeMove: action.payload?._sourceCoordsBeforeMove,
+    _tempContextId: action.payload?._tempContextId,
+    commandContext,
+  })
+
+  // CRITICAL: Use _sourceCoordsBeforeMove first (where card IS now), not destination
+  // This fixes timing issue where moveItem is async and card hasn't moved yet
+  const sourceBeforeMove = action.payload?._sourceCoordsBeforeMove
+  const coords = sourceBeforeMove || commandContext.lastMovedCardCoords || sourceCoords
+
+  logger.info('[handleContextReward] Looking for card at coords', {
+    sourceBeforeMove,
+    lastMovedCardCoords: commandContext.lastMovedCardCoords,
+    finalCoords: coords,
+  })
 
   if (!coords || coords.row < 0) {
+    logger.warn('[handleContextReward] No valid coords')
     return
   }
 
   // Find the card at coords
   let card = gameState.board[coords.row][coords.col].card
 
-  // Handle stale state
+  // Handle stale state - search by ID if card not at expected coords
   const searchId = action.payload?._tempContextId || commandContext.lastMovedCardId
   if ((!card || (searchId && card.id !== searchId)) && searchId) {
+    logger.info('[handleContextReward] Card not at expected coords, searching by ID', { searchId })
     for (let r = 0; r < gameState.board.length; r++) {
       for (let c = 0; c < gameState.board[r].length; c++) {
         if (gameState.board[r][c].card?.id === searchId) {
           card = gameState.board[r][c].card
+          logger.info('[handleContextReward] Found card at', { row: r, col: c })
           break
         }
       }
@@ -1509,15 +1650,37 @@ function handleContextReward(
   }
 
   if (!card) {
-    logger.warn('[ContextReward] No card at coords')
+    logger.warn('[handleContextReward] No card found', {
+      coords,
+      searchId,
+      lastMovedCardId: commandContext.lastMovedCardId,
+    })
     return
   }
 
   const amount = Math.max(0, card.power + (card.powerModifier || 0) + (card.bonusPower || 0))
 
+  logger.info('[handleContextReward] Found card, applying reward', {
+    cardName: card.name,
+    cardId: card.id,
+    cardPower: card.power,
+    powerModifier: card.powerModifier,
+    bonusPower: card.bonusPower,
+    amount,
+    rewardOwnerId: action.sourceCard?.ownerId,
+  })
+
   if (rewardType === 'DRAW_MOVED_POWER' || rewardType === 'DRAW_EQUAL_POWER') {
+    logger.info('[handleContextReward] DRAW_MOVED_POWER', {
+      ownerId: action.sourceCard?.ownerId,
+      amount,
+    })
     drawCardsBatch(action.sourceCard?.ownerId || 0, amount)
   } else if (rewardType === 'SCORE_MOVED_POWER') {
+    logger.info('[handleContextReward] SCORE_MOVED_POWER', {
+      ownerId: action.sourceCard?.ownerId,
+      amount,
+    })
     triggerFloatingText({
       row: coords.row,
       col: coords.col,

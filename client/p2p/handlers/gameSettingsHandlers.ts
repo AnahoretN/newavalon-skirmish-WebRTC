@@ -145,8 +145,6 @@ export function handlePlayerReady(state: GameState, playerId: number, startGameF
  * Preserves players and their deck choices, but resets everything else
  */
 export function handleResetGame(state: GameState): GameState {
-  console.log('[handleResetGame] Resetting game to lobby state')
-
   // Preserve player data for restoration
   const playersToKeep = state.players.map(p => {
     const deckType = p.selectedDeck || 'SynchroTech'
@@ -220,8 +218,6 @@ export function startGame(state: GameState): GameState {
   const activePlayers = state.players.filter(p => !p.isDisconnected && !p.isSpectator)
   const startingPlayer = activePlayers[Math.floor(Math.random() * activePlayers.length)]
 
-  console.log('[startGame] Starting player:', startingPlayer.id, startingPlayer.name)
-
   // Deal initial hands (6 cards to each player)
   const newPlayers = state.players.map(p => {
     if (p.isSpectator || p.isDisconnected) {return p}
@@ -234,8 +230,6 @@ export function startGame(state: GameState): GameState {
         hand.push(deck.shift()!)
       }
     }
-
-    console.log(`[startGame] Player ${p.id} (${p.name}) drew 6 cards`)
 
     return {
       ...p,
@@ -255,7 +249,6 @@ export function startGame(state: GameState): GameState {
       sp.hand.push(card)
       sp.handSize = sp.hand.length
       sp.deckSize = sp.deck.length
-      console.log(`[startGame] Starting player ${sp.id} drew 7th card`)
     }
   }
 

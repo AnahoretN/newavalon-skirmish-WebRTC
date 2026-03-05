@@ -20,7 +20,10 @@ const computeStatusCounts = (statuses: any[]): Record<string, number> => {
           s.type !== 'REDEPLOY' &&
           s.type !== 'readyDeploy' &&
           s.type !== 'readyCommit' &&
-          s.type !== 'readySetup',
+          s.type !== 'readySetup' &&
+          s.type !== 'deployUsedThisTurn' &&
+          s.type !== 'setupUsedThisTurn' &&
+          s.type !== 'commitUsedThisTurn',
   )
   return availableStatuses.reduce((acc, s) => {
     acc[s.type] = (acc[s.type] || 0) + 1

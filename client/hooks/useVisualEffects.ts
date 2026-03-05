@@ -173,19 +173,28 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
    * Trigger click wave effect (colored ripple animation)
    * Shows when any player clicks on a card or cell
    * Uses DIRECT DOM for instant local display, React state for network sync
+   *
+   * @param location - The location where the click occurred
+   * @param boardCoords - Board coordinates (for board location)
+   * @param handTarget - Hand card target (for hand location)
+   * @param effectOwnerId - Optional: Use this player's color instead of local player's
+   *                       This is used for command cards like False Orders where the effect
+   *                       should show the command owner's color, not the card mover's color.
    */
   const triggerClickWave = useCallback((
     location: 'board' | 'hand' | 'deck',
     boardCoords?: { row: number; col: number },
-    handTarget?: { playerId: number; cardIndex: number }
+    handTarget?: { playerId: number; cardIndex: number },
+    effectOwnerId?: number
   ) => {
     if (localPlayerIdRef.current === null) {
       return
     }
 
     // Get player color from game state
-    const playerId = localPlayerIdRef.current
-    const player = gameStateRef.current.players.find(p => p.id === playerId)
+    // Use effectOwnerId if provided (for command card effects), otherwise use local player
+    const playerIdForColor = effectOwnerId ?? localPlayerIdRef.current
+    const player = gameStateRef.current.players.find(p => p.id === playerIdForColor)
     if (!player) {
       return
     }
@@ -195,11 +204,11 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
       location,
       boardCoords,
       handTarget,
-      clickedByPlayerId: playerId,
-      playerColor: player.color,
+      clickedByPlayerId: localPlayerIdRef.current, // Who actually clicked
+      playerColor: player.color, // Color of effectOwnerId or local player
       // Only add _local flag for host (player 1) to prevent duplicate display
       // Guest clicks should be seen by host via onClickWave callback
-      _local: playerId === 1,
+      _local: localPlayerIdRef.current === 1,
     }
 
     // INSTANT: Direct DOM manipulation - bypasses React entirely
@@ -248,6 +257,10 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
       return
     }
 
+    // CRITICAL: For command cards like Tactical Maneuver, chainedAction is in action.payload.chainedAction
+    // For other abilities, it might be at action.chainedAction. Check both.
+    const actualChainedAction = action.chainedAction || action.payload?.chainedAction
+
     const targetingModeData: TargetingModeData = {
       playerId,
       action,
@@ -255,7 +268,17 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
       timestamp: Date.now(),
       boardTargets: preCalculatedTargets,
       handTargets: preCalculatedHandTargets,
+      // Extract these from action for easier access (also available via action.chainedAction)
+      chainedAction: actualChainedAction,
+      originalOwnerId: action.originalOwnerId,
     }
+
+    console.log('[setTargetingMode]', {
+      mode: action.mode,
+      hasDirectChainedAction: !!action.chainedAction,
+      hasPayloadChainedAction: !!action.payload?.chainedAction,
+      actualChainedAction,
+    })
 
     // Update local state immediately
     setGameState((prev: any) => ({

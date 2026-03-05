@@ -439,7 +439,7 @@ export const sr: TranslationResource = {
     },
     experimentalStimulants: {
       name: 'Eksperimentalni Stimulatori',
-      abilityText: '● Jednica pod tvojom kontrolom na bojištu može aktivirati svoju Deploy sposobnost još jednom.\n● Pomeri tvoju jedinicu u praznu ćeliju u njenoj liniji.',
+      abilityText: '● Ne-uređajeva jedinica pod tvojom kontrolom na bojištu može aktivirati svoju Deploy sposobnost još jednom.\n● Pomeri tvoju jedinicu u praznu ćeliju u njenoj liniji.',
     },
     logisticsChain: {
       name: 'Lanac Logistike',

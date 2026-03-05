@@ -46,6 +46,7 @@ export type ActionType =
 
   // Deck control
   | 'DRAW_CARD'
+  | 'DRAW_CARDS_BATCH'
   | 'SHUFFLE_DECK'
   | 'REQUEST_DECK_VIEW'
 
@@ -70,6 +71,9 @@ export type ActionType =
   // Game reset
   | 'RESET_GAME'
 
+  // Global actions
+  | 'GLOBAL_AUTO_APPLY'
+
   // Game settings
   | 'SET_GAME_MODE'
   | 'SET_GRID_SIZE'
@@ -81,6 +85,7 @@ export type ActionType =
   | 'MARK_ABILITY_USED'
   | 'REMOVE_ALL_COUNTERS_BY_TYPE'
   | 'REMOVE_COUNTER_BY_TYPE'  // Remove counter by type and owner (for Censor Commit)
+  | 'REMOVE_COUNTERS_WITH_REWARD'  // Remove counters with draw/score reward (Inspiration)
   | 'MODIFY_CARD_POWER'
 
   // Status effects
@@ -90,6 +95,7 @@ export type ActionType =
 
   // Token cards
   | 'PLAY_TOKEN_CARD'
+  | 'PLAY_COMMAND_FROM_TOKEN_PANEL'  // Command card from token panel - goes to announced
   | 'RESURRECT_DISCARDED'  // Immunis Deploy - return card from discard to board
 
   // Card orientation

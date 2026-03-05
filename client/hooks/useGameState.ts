@@ -63,11 +63,12 @@ interface UseGameStateResult {
 
   // Card actions
   drawCard: (playerId?: number) => void
-  drawCardsBatch: (count: number, playerId?: number) => void
+  drawCardsBatch: (playerId: number, count: number) => void
   handleDrop: (item: DragItem, target: any) => void
   moveItem: (item: any, target: any) => void
   updateState: (stateOrFn: any) => void
   shufflePlayerDeck: (playerId?: number) => void
+  sendAction: (action: string, data?: any) => void
 
   // Status effects
   addBoardCardStatus: (coords: any, status: any, playerId?: number) => void
@@ -99,7 +100,7 @@ interface UseGameStateResult {
   latestNoTarget: { coords: { row: number; col: number }; timestamp: number } | null
   triggerDeckSelection: (playerId: number, selectedByPlayerId: number) => void
   triggerHandCardSelection: (playerId: number, cardIndex: number, selectedByPlayerId: number) => void
-  triggerClickWave: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void
+  triggerClickWave: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }, effectOwnerId?: number) => void
   clickWaves: Array<{ timestamp: number; location: 'board' | 'hand' | 'deck'; boardCoords?: { row: number; col: number }; handTarget?: { playerId: number, cardIndex: number }; clickedByPlayerId: number; playerColor: string }>
   triggerFloatingText: (data: Omit<FloatingTextData, 'timestamp'> | Omit<FloatingTextData, 'timestamp'>[]) => void
   latestFloatingTexts: FloatingTextData[] | { text: string; coords?: { row: number; col: number }; color: string; timestamp: number }[]
@@ -138,7 +139,7 @@ interface UseGameStateResult {
 
   // Game reset
   resetGame: () => void
-  resetDeployStatus: () => void
+  resetDeployStatus: (coords: { row: number; col: number }) => void
   removeStatusByType: (coords: { row: number; col: number }, type: string) => void
   reorderTopDeck: (playerId: number, newTopCards: any[]) => void
   reorderCards: (playerId: number, newOrder: any[], source?: string) => void
@@ -183,7 +184,6 @@ function personalToGameState(personal: PersonalizedState, localPlayerId: number)
       } else if (p.deckSize && p.deckSize > 0) {
         // Deck view target - есть deckSize но нет deck массива
         // Сохраняем deckSize для корректного отображения
-        console.log('[personalToGameState] Deck view target', p.id, 'deckSize:', p.deckSize)
         return {
           ...p,
           hand: p.hand || [],
@@ -198,7 +198,6 @@ function personalToGameState(personal: PersonalizedState, localPlayerId: number)
       } else {
         // Для других игроков - только размеры + announcedCard (витрина видна всем)
         // Используем deckSize из персонализированного состояния
-        console.log('[personalToGameState] Remote player', p.id, 'deckSize:', p.deckSize, 'handSize:', p.handSize, 'color:', p.color, 'colorType:', typeof p.color)
         return {
           ...p,
           hand: p.hand || [],
@@ -547,9 +546,13 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     sendAction('DRAW_CARD', { targetPlayerId: playerId })
   }, [sendAction])
 
-  const drawCardsBatch = useCallback((_count: number, _playerId?: number) => {
-    // TODO
-  }, [])
+  const drawCardsBatch = useCallback((playerId: number, count: number) => {
+    // Draw multiple cards for a player
+    // Used by Tactical Maneuver, Inspiration, and other abilities
+    console.log('[drawCardsBatch] Drawing cards', { playerId, count })
+    logger.info('[drawCardsBatch] Drawing cards', { playerId, count })
+    sendAction('DRAW_CARDS_BATCH', { count, targetPlayerId: playerId })
+  }, [sendAction])
 
   const handleDrop = useCallback((item: DragItem, target: any) => {
     if (target.target === 'board') {
@@ -572,8 +575,21 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           replaceStatusType: item.replaceStatusType,
           count: item.count || 1
         }
-        console.log('[useGameState] Sending ADD_STATUS_TO_BOARD_CARD:', actionData)
       } else if (item.source === 'token_panel') {
+        // Check if this is a Command card - Command cards go through announced → discard flow
+        const isCommandCard = item.card?.deck === 'Command' || item.card?.types?.includes('Command') || item.card?.faction === 'Command'
+
+        if (isCommandCard && item.card) {
+          // Send special action for command card from token panel
+          // Client-side will handle opening modal, server-side moves card to announced
+          sendAction('PLAY_COMMAND_FROM_TOKEN_PANEL', {
+            card: item.card,
+            ownerId: item.ownerId ?? item.playerId ?? localPlayerId ?? 0,
+          })
+          return // Early return - don't send PLAY_TOKEN_CARD action
+        }
+
+        // Regular token card (Unit, etc.)
         // Размещение карты-токена на пустую клетку поля боя
         // Токен НЕ удаляется из панели (может использоваться многократно)
         action = 'PLAY_TOKEN_CARD'
@@ -607,7 +623,9 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           fromCoords: item.boardCoords,
           toCoords: target.boardCoords,
           faceDown: item.card?.isFaceDown,
-          playerId: item.playerId
+          playerId: item.playerId,
+          // CRITICAL: Pass targeting mode for chained actions (Tactical Maneuver rewards)
+          targetingMode: gameState.targetingMode,
         }
       }
 
@@ -753,13 +771,27 @@ export function useGameState(_props: any = {}): UseGameStateResult {
         }
       } else if (item.source === 'board') {
         action = 'MOVE_CARD_ON_BOARD'
-        actionData = {
+        // CRITICAL: For False Orders Stun x2, include contextCardId in action data
+        // This is simpler than modifying targetingMode.chainedAction and works reliably
+        const extraData: any = {
           cardId: item.card?.id,
           fromCoords: item.boardCoords,
           toCoords: target.boardCoords,
           faceDown: item.card?.isFaceDown,
-          playerId: item.playerId
+          playerId: item.playerId,
+          targetingMode: gameState.targetingMode,
         }
+
+        // Add contextCardId if available in target.chainedAction.payload
+        if (target.chainedAction?.payload?.contextCardId) {
+          extraData.contextCardId = target.chainedAction.payload.contextCardId
+          console.log('[moveItem] Adding contextCardId to actionData', {
+            contextCardId: target.chainedAction.payload.contextCardId,
+            cardId: item.card?.id,
+          })
+        }
+
+        actionData = extraData
       }
 
       sendAction(action, actionData)
@@ -785,6 +817,22 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           cardIndex: item.cardIndex,
           playerId: item.playerId
         })
+      } else if (item.source === 'deck') {
+        // Reordering within deck (e.g., move card to bottom)
+        // Get the player's deck to calculate new order
+        const player = gameState.players.find(p => p.id === item.playerId)
+        if (player && player.deck && item.cardIndex !== undefined) {
+          const cardToMove = player.deck[item.cardIndex]
+          if (cardToMove) {
+            // Create new deck order with card moved to bottom
+            const newDeck = player.deck.filter((_, i) => i !== item.cardIndex)
+            newDeck.push(cardToMove) // Add to bottom
+            sendAction('REORDER_CARDS', {
+              playerId: item.playerId,
+              newOrder: newDeck
+            })
+          }
+        }
       } else if (item.source === 'board') {
         const cardId = item.card?.id
         if (cardId) {
@@ -841,7 +889,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
         playerId: item.playerId
       })
     }
-  }, [sendAction])
+  }, [sendAction, gameState])
 
 
   const updateState = useCallback((_stateOrFn: any) => {
@@ -965,13 +1013,11 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   const flipBoardCard = useCallback((coords: any) => {
     if (!coords) { return }
     sendAction('FLIP_CARD', { boardCoords: coords, faceDown: false })
-    console.log('[useGameState] flipBoardCard: Flipping card face-up at', coords)
   }, [sendAction])
 
   const flipBoardCardFaceDown = useCallback((coords: any) => {
     if (!coords) { return }
     sendAction('FLIP_CARD', { boardCoords: coords, faceDown: true })
-    console.log('[useGameState] flipBoardCardFaceDown: Flipping card face-down at', coords)
   }, [sendAction])
   const revealHandCard = useCallback(() => {}, [])
   const revealBoardCard = useCallback(() => {}, [])
@@ -1040,7 +1086,11 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   const resetGame = useCallback(() => {
     sendAction('RESET_GAME')
   }, [sendAction])
-  const resetDeployStatus = useCallback(() => {}, [])
+  const resetDeployStatus = useCallback((coords: { row: number; col: number }) => {
+    // Remove deployUsedThisTurn status from the card at coords
+    // This allows the card to use its Deploy ability again (Experimental Stimulants)
+    sendAction('REMOVE_ALL_COUNTERS_BY_TYPE', { coords, type: 'deployUsedThisTurn' })
+  }, [sendAction])
   const removeStatusByType = useCallback((coords: { row: number; col: number }, type: string) => {
     sendAction('REMOVE_ALL_COUNTERS_BY_TYPE', { coords, type })
   }, [sendAction])
@@ -1192,6 +1242,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     latestFloatingTexts: latestFloatingTextsRef.current,
     latestDeckSelections: latestDeckSelectionsRef.current,
     latestHandCardSelections: latestHandCardSelectionsRef.current,
+    sendAction,
     moveItem,
     requestGamesList,
     exitGame,

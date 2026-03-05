@@ -379,7 +379,6 @@ export function getCardAbilities(baseId: string): ContentAbility[] {
   const card = _cardDatabase.get(baseId)
   if (card && (card as any).ABILITIES) {
     const abilities = (card as any).ABILITIES as ContentAbility[]
-    console.log(`[content.ts] Card ${baseId} has ${abilities.length} abilities:`, abilities.map(a => a.type))
     return abilities
   }
 
@@ -387,11 +386,9 @@ export function getCardAbilities(baseId: string): ContentAbility[] {
   const token = _tokenDatabase.get(baseId)
   if (token && (token as any).ABILITIES) {
     const abilities = (token as any).ABILITIES as ContentAbility[]
-    console.log(`[content.ts] Token ${baseId} has ${abilities.length} abilities:`, abilities.map(a => a.type))
     return abilities
   }
 
-  console.log(`[content.ts] Card/Token ${baseId} has no ABILITIES field`)
   return []
 }
 

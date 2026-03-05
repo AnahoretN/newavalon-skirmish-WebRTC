@@ -151,6 +151,101 @@ export function handleUpdatePlayerScore(ws, data) {
 }
 
 /**
+ * Handle REMOVE_COUNTERS_WITH_REWARD message
+ * Removes counters from a card and optionally draws cards as reward
+ * Used by Inspiration command and other counter removal abilities
+ */
+export function handleRemoveCountersWithReward(ws, data) {
+  try {
+    // Get gameId from WebSocket connection
+    const { getGameIdForClient } = require('../gameState.js');
+    const gameId = getGameIdForClient(ws);
+
+    const { playerId, coords, countsToRemove, callbackAction } = data;
+    const { getGameState } = require('../gameState.js');
+    const { broadcastToGame } = require('../websocket.js');
+    const gameState = getGameState(gameId);
+
+    if (!gameState) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Game not found'
+      }));
+      return;
+    }
+
+    if (!coords || !countsToRemove || !callbackAction) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Missing required data'
+      }));
+      return;
+    }
+
+    const { row, col } = coords;
+    if (row === undefined || col === undefined) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Invalid coords'
+      }));
+      return;
+    }
+
+    const cell = gameState.board[row]?.[col];
+    if (!cell?.card) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Card not found at coords'
+      }));
+      return;
+    }
+
+    // CRITICAL: Use card owner for reward, not action sender
+    // For Inspiration, the card owner should draw the cards
+    const rewardOwnerId = cell.card.ownerId || playerId;
+
+    // Remove counters from card
+    const cardStatuses = cell.card.statuses ? [...cell.card.statuses] : [];
+    Object.entries(countsToRemove).forEach(([type, count]) => {
+      for (let i = 0; i < (count as number); i++) {
+        const lastIndex = cardStatuses.map(s => s.type).lastIndexOf(type);
+        if (lastIndex > -1) {
+          cardStatuses.splice(lastIndex, 1);
+        }
+      }
+    });
+
+    // Update card statuses
+    cell.card.statuses = cardStatuses;
+
+    // Handle DRAW_REMOVED reward - draw cards from deck
+    if (callbackAction === 'DRAW_REMOVED') {
+      const totalRemoved = Object.values(countsToRemove).reduce((sum: number, count) => sum + (count as number), 0) as number;
+      if (totalRemoved > 0) {
+        // CRITICAL: Use rewardOwnerId (card owner), not playerId (action sender)
+        const playerToUpdate = gameState.players.find(p => p.id === rewardOwnerId);
+        if (playerToUpdate && playerToUpdate.deck) {
+          const cardsToDraw = Math.min(totalRemoved, playerToUpdate.deck.length);
+          for (let i = 0; i < cardsToDraw; i++) {
+            const cardDrawn = playerToUpdate.deck.shift();
+            if (cardDrawn && playerToUpdate.hand) {
+              playerToUpdate.hand.push(cardDrawn);
+            }
+          }
+          // Update hand size
+          playerToUpdate.handSize = playerToUpdate.hand.length;
+        }
+      }
+    }
+
+    broadcastToGame(gameId, gameState);
+  } catch (error) {
+    const { logger } = require('../utils/logger.js');
+    logger.error('Failed to remove counters with reward:', error);
+  }
+}
+
+/**
  * Handle CHANGE_PLAYER_DECK message
  * Changes a player's selected deck (before game starts)
  */

@@ -186,12 +186,24 @@ export const STATUS_DESCRIPTIONS: Record<string, string> = new Proxy({} as Recor
  * Available counters for the Counters Modal, sorted by sortOrder.
  * Filters counters to only show those allowed in the COUNTER_PANEL.
  * Excludes Resurrected - players cannot place it manually, only via card effects.
+ * Excludes UsedThisTurn and ready statuses - these are system-managed.
  */
 export const getAvailableCounters = () => {
   const db = getCountersDatabase()
+  // System-managed statuses that should not appear in Remove Counters modal
+  const systemStatuses = [
+    'UsedThisTurn',           // Turn-limited usage tracking
+    'deployUsedThisTurn',     // Deploy ability used this turn
+    'setupUsedThisTurn',      // Setup ability used this turn (lowercase!)
+    'commitUsedThisTurn',     // Commit ability used this turn (lowercase!)
+    'readyDeploy',            // Deploy ready status
+    'readySetup',             // Setup ready status
+    'readyCommit',            // Commit ready status
+  ]
   return Object.entries(db)
     .filter(([key, def]) =>
       key !== 'Resurrected' && // Exclude Resurrected token
+      !systemStatuses.includes(key) && // Exclude system-managed statuses
       (!def.allowedPanels || def.allowedPanels.includes('COUNTER_PANEL'))
     )
     .sort(([, a], [, b]) => a.sortOrder - b.sortOrder)

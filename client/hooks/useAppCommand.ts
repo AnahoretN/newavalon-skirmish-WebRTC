@@ -1,8 +1,6 @@
 import { useCallback } from 'react'
 import type { Card, GameState, AbilityAction, CommandContext, DragItem, CounterSelectionData } from '@/types'
 import { getCommandAction } from '@server/utils/commandLogic'
-import { deepCloneState } from '@/utils/common'
-import { recalculateBoardStatuses } from '@shared/utils/boardUtils'
 import { logger } from '@/utils/logger'
 
 interface UseAppCommandProps {
@@ -16,8 +14,8 @@ interface UseAppCommandProps {
     drawCard: (playerId: number) => void;
     drawCardsBatch: (playerId: number, count: number) => void;
     updatePlayerScore: (playerId: number, delta: number) => void;
-    updateState: (stateOrFn: GameState | ((prevState: GameState) => GameState)) => void;
     removeBoardCardStatus: (coords: any, status: string) => void;
+    sendAction: (action: string, data?: any) => void;
 }
 
 export const useAppCommand = ({
@@ -31,8 +29,8 @@ export const useAppCommand = ({
   // drawCard,
   // drawCardsBatch,
   updatePlayerScore,
-  updateState,
   // removeBoardCardStatus,
+  sendAction,
 }: UseAppCommandProps) => {
 
   const playCommandCard = useCallback((card: Card, source: DragItem) => {
@@ -172,50 +170,11 @@ export const useAppCommand = ({
       return
     }
 
-    // 2. Batch update: Remove counters AND apply reward in a single state update
-    // This prevents race conditions with server sync
-    updateState((currentState) => {
-      if (!currentState.isGameStarted) {
-        return currentState
-      }
-      const newState: GameState = deepCloneState(currentState)
-      const card = newState.board[boardCoords.row][boardCoords.col].card
-
-      // Calculate total removed and remove counters
-      let totalRemoved = 0
-      const cardStatuses = card?.statuses ?? []
-      Object.entries(countsToRemove).forEach(([type, count]) => {
-        for (let i = 0; i < count; i++) {
-          const lastIndex = cardStatuses.map(s => s.type).lastIndexOf(type)
-          if (lastIndex > -1 && card?.statuses) {
-            card.statuses.splice(lastIndex, 1)
-            totalRemoved++
-          }
-        }
-      })
-      if (!card?.statuses && card) {
-        // Initialize statuses array if it doesn't exist
-        card.statuses = []
-      }
-
-      // Recalculate board statuses after removing counters
-      newState.board = recalculateBoardStatuses(newState)
-
-      // Apply reward: Draw cards from deck
-      if (totalRemoved > 0 && data.callbackAction === 'DRAW_REMOVED') {
-        const playerToUpdate = newState.players.find((p: any) => p.id === ownerId)
-        if (playerToUpdate) {
-          const cardsToDraw = Math.min(totalRemoved, playerToUpdate.deck.length)
-          for (let i = 0; i < cardsToDraw; i++) {
-            const cardDrawn = playerToUpdate.deck.shift()
-            if (cardDrawn) {
-              playerToUpdate.hand.push(cardDrawn)
-            }
-          }
-        }
-      }
-
-      return newState
+    // Send action to remove counters with reward (works for both WebSocket and WebRTC)
+    sendAction('REMOVE_COUNTERS_WITH_REWARD', {
+      coords: boardCoords,
+      countsToRemove,
+      callbackAction: data.callbackAction,
     })
 
     // Apply score reward separately (it's not in gameState.board, so can be done separately)
@@ -237,7 +196,7 @@ export const useAppCommand = ({
     }
 
     setCounterSelectionData(null)
-  }, [localPlayerId, updatePlayerScore, setActionQueue, setCounterSelectionData, gameState, updateState])
+  }, [localPlayerId, updatePlayerScore, setActionQueue, setCounterSelectionData, gameState, sendAction])
 
   return {
     playCommandCard,

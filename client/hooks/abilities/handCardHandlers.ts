@@ -28,6 +28,7 @@ export interface HandCardClickProps {
   activateAbility: (card: Card, coords: { row: number; col: number }) => void
   clearTargetingMode: () => void
   clearValidTargets?: () => void
+  setPlayMode?: React.Dispatch<React.SetStateAction<{ card: Card; sourceItem: any; faceDown?: boolean } | null>>
 }
 
 /**
@@ -54,6 +55,7 @@ export function handleHandCardClick(
     setCursorStack,
     clearTargetingMode,
     clearValidTargets,
+    setPlayMode,
   } = props
 
   if (interactionLock.current) {
@@ -86,6 +88,7 @@ export function handleHandCardClick(
       constraints,
       gameState.activePlayerId,
       gameState.players,
+      cursorStack.originalOwnerId // CRITICAL: Pass token owner ID for command cards
     )
 
     if (isValid) {
@@ -141,14 +144,28 @@ export function handleHandCardClick(
         return
       }
 
-      setCommandContext((prev: any) => ({ ...prev, selectedHandCard: { playerId: player.id, cardIndex } }))
+      // Store command card info to mark as used when play completes
+      // Store selected card info for reference
+      setCommandContext((prev: any) => ({
+        ...prev,
+        pendingCommandCard: {
+          sourceCoords: abilityMode.sourceCoords,
+          isDeployAbility: abilityMode.isDeployAbility,
+          readyStatusToRemove: abilityMode.readyStatusToRemove,
+        },
+        selectedHandCard: { playerId: player.id, cardIndex, card }
+      }))
 
-      setAbilityMode({
-        type: 'ENTER_MODE',
-        mode: 'SELECT_CELL',
-        sourceCard: card,
-        payload: { range: 'global', moveFromHand: true },
-      })
+      // Start normal play mode for the selected Unit card
+      const sourceItem: any = { card, source: 'hand', playerId: player.id, cardIndex }
+      if (setPlayMode) {
+        setPlayMode({ card, sourceItem, faceDown: false })
+      }
+
+      // Clear ability mode - play mode will handle the rest
+      clearTargetingMode()
+      clearValidTargets?.()
+      setAbilityMode(null)
       return
     }
 

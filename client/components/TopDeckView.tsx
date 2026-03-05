@@ -189,7 +189,7 @@ const TopDeckView: React.FC<TopDeckViewProps> = memo(({
   }, [isLocked, viewCount, player.deck.length])
 
   const handleDecrement = useCallback(() => {
-    if (!isLocked && viewCount > 1) {
+    if (!isLocked && viewCount > 0) {
       setViewCount(prev => prev - 1)
     }
   }, [isLocked, viewCount])
@@ -284,6 +284,10 @@ const TopDeckView: React.FC<TopDeckViewProps> = memo(({
       } },
       { label: t('moveToBottom'), onClick: () => {
         onMoveToBottom(contextMenu.cardIndex)
+        // Decrease view count by 1 after moving card to bottom
+        if (viewCount > 0) {
+          setViewCount(prev => Math.max(0, prev - 1))
+        }
       } },
       { isDivider: true },
       { label: t('toHand'), disabled: isLocked, onClick: () => {
@@ -293,7 +297,7 @@ const TopDeckView: React.FC<TopDeckViewProps> = memo(({
         onMoveToDiscard(contextMenu.cardIndex)
       } },
     ]
-  }, [displayCards, isLocked, onViewCard, onPlayCard, onMoveToBottom, onMoveToHand, onMoveToDiscard, contextMenu, t])
+  }, [displayCards, isLocked, onViewCard, onPlayCard, onMoveToBottom, onMoveToHand, onMoveToDiscard, contextMenu, t, viewCount])
 
   if (!isOpen) {
     return null
@@ -313,7 +317,7 @@ const TopDeckView: React.FC<TopDeckViewProps> = memo(({
         <div className="flex items-center gap-4 mb-4 bg-gray-900 p-2 rounded-full border border-gray-700">
           <button
             onClick={handleDecrement}
-            disabled={isLocked || viewCount <= 1}
+            disabled={isLocked || viewCount <= 0}
             className="w-8 h-8 flex items-center justify-center bg-gray-700 hover:bg-red-600 rounded-full text-white font-bold disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
                         -

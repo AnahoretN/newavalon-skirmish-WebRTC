@@ -4,7 +4,7 @@ import { ClickWave as ClickWaveComponent } from './ClickWave'
 import { Card } from './Card'
 import { PLAYER_COLORS, FLOATING_TEXT_COLORS, PLAYER_COLOR_RGB } from '@/constants'
 import { hasReadyAbilityInCurrentPhase } from '@/utils/autoAbilities'
-import { rgba, TIMING } from '@/utils/common'
+import { TIMING } from '@/utils/common'
 
 interface GameBoardProps {
   board: Board;
@@ -411,10 +411,10 @@ const GridCell = memo<{
                 className="absolute inset-0 rounded-md pointer-events-none animate-pulse"
                 style={{
                   zIndex: 35,
-                  boxShadow: `0 0 8px 1px ${rgba(rgb, 0.3)}`,
-                  border: '2px dashed',
+                  boxShadow: `0 0 10px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75)`,
+                  border: '3px solid',
                   borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
-                  background: `radial-gradient(circle at center, transparent 40%, ${rgba(rgb, 0.2)} 100%)`,
+                  background: `radial-gradient(circle at center, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 0%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 100%)`,
                 }}
               />
             )

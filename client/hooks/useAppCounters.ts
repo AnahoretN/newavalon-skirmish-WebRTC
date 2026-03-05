@@ -163,7 +163,6 @@ export const useAppCounters = ({
               const tokenOwnerId = cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId ?? effectiveActorId
               if (playerId === tokenOwnerId) {
                 // Attempting to place on own hand card - do nothing, keep cursor stack active
-                console.log('[useAppCounters] Revealed token cannot be placed on own hand card')
                 return
               }
 
@@ -222,6 +221,7 @@ export const useAppCounters = ({
               constraints,
               effectiveActorId,
               gameState.players,
+              cursorStack.originalOwnerId, // CRITICAL: Pass token owner ID for command cards
             )
 
             if (!isValid) {
@@ -273,7 +273,6 @@ export const useAppCounters = ({
         const boardCell = target?.closest('[data-board-coords]')
         if (boardCell) {
           const coords = boardCell.getAttribute('data-board-coords')
-          console.log('[useAppCounters] Board cell detected, coords:', coords)
           if (coords) {
             const [rowStr, colStr] = coords.split(',')
             const row = parseInt(rowStr, 10)
@@ -287,7 +286,6 @@ export const useAppCounters = ({
               gameState.board[row][col]
             ) {
               const targetCard = gameState.board[row][col].card
-              console.log('[useAppCounters] Target card:', targetCard ? { id: targetCard.id, name: targetCard.name, isFaceDown: targetCard.isFaceDown, ownerId: targetCard.ownerId, statuses: targetCard.statuses } : 'NO CARD')
 
               if (targetCard?.ownerId !== undefined) {
                 const constraints = {
@@ -303,15 +301,13 @@ export const useAppCounters = ({
                   tokenType: cursorStack.type,
                 }
 
-                console.log('[useAppCounters] Board drop attempt:', { cardId: targetCard.id, cardName: targetCard.name, isFaceDown: targetCard.isFaceDown, ownerId: targetCard.ownerId, tokenType: cursorStack.type, effectiveActorId })
-
                 const isValid = validateTarget(
                   { card: targetCard, ownerId: targetCard.ownerId, location: 'board', boardCoords: { row, col } },
                   constraints,
                   effectiveActorId,
                   gameState.players,
+                  cursorStack.originalOwnerId, // CRITICAL: Pass token owner ID for command cards
                 )
-                console.log('[useAppCounters] Validation result:', isValid)
 
                 if (!isValid) {
                   // Invalid target - keep cursor stack active to allow retry
@@ -329,8 +325,6 @@ export const useAppCounters = ({
 
               if (targetCard) {
                 const amountToDrop = cursorStack.placeAllAtOnce ? cursorStack.count : 1
-
-                console.log('[useAppCounters] Calling handleDrop with:', { statusType: cursorStack.type, ownerId: cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId, boardCoords: { row, col } })
 
                 handleDrop({
                   card: { id: 'stack', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, abilityText: '', types: [] },
@@ -396,7 +390,6 @@ export const useAppCounters = ({
                   } else if (cursorStack._autoStepsContext) {
                     // AUTO_STEPS continuation after cursorStack completes (Zius Setup, Centurion Commit, etc.)
                     const autoStepsContext = cursorStack._autoStepsContext
-                    console.log('[useAppCounters] Continuing AUTO_STEPS after cursorStack, step:', autoStepsContext.currentStepIndex)
 
                     // Create CONTINUE_AUTO_STEPS action with stepContext (where the token was placed)
                     const continueAction: any = {
