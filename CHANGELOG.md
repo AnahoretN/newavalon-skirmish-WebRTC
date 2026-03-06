@@ -5,71 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.11] - 2026-02-15
-  - Added `TriggerEventType` and `TriggerDefinition` types to `contentAbilities.ts`
-  - Exported trigger system types from shared abilities index
-- **Translations**: Updated Russian and Serbian translations for Vigilant Spotter
-
-### Fixed
-- ESLint `curly` rule violations in multiple files
-  - Header.tsx, actionExecutionHandler.ts, modeHandlers.ts, useGameState.ts
-
-## [0.2.11] - 2026-02-15
+## [0.2.11] - 2026-03-06
 
 ### Added
-- **SimpleWebRTC P2P System**: Complete rewrite of WebRTC P2P mode
-  - Peer-to-peer gameplay without central server during game
-  - Host authority with personalized state broadcasting
-  - 30-second reconnection window for disconnected guests
-  - localStorage persistence for F5 (page refresh) support
-  - Automatic dummy player conversion after timeout
-  - Visual effects synchronization (highlights, floating text, targeting modes, click waves)
-  - Phase management and round progression
-  - Full game state tracking and synchronization
-- **Unified Modal System**: Complete modal management with React Context
-  - Created `useModals.tsx` with React Context-based state management
-  - Added `ModalsRenderer` component for centralized modal rendering
-  - Available in both MainMenu and Game views
-  - Convenience hooks: `useSettingsModal()`, `useRulesModal()`, `useDeckBuilderModal()`, etc.
+- **P2P WebRTC System - Fully Completed**: Complete peer-to-peer multiplayer without central server during gameplay
+  - **Architecture**: Host player (player 1) becomes the game authority, all other players connect as guests
+  - **Connection**: Host shares peer ID via invite link, guests connect directly using PeerJS WebRTC library
+  - **State Synchronization**: Host maintains master game state, broadcasts personalized state updates to all guests
+  - **Personalized States**: Each player receives custom state view (own hand/deck visible, opponents' cards hidden as placeholders)
+  - **Reconnection System**: 30-second reconnect window with localStorage persistence, F5 support
+  - **Phase Management**: Automatic phase transitions (Preparation → Setup → Main → Commit → Scoring)
+  - **Round Management**: Round victory detection, best-of-3 match system, round end modal
+  - **Binary Encoding**: ~90% size reduction for card data transmission using baseId only
+  - **Visual Effects**: All visual effects synchronized across all players (highlights, floating text, targeting)
+
+- **Global Visual Effects System**: All players now see the same visual feedback
+  - **Highlights**: Row/column/cell highlights broadcast to all players when targeting
+  - **Floating Text**: Damage numbers, score changes, ability effects visible to everyone
+  - **Targeting Mode**: Valid targets highlighted with activating player's color for all players
+  - **No-Target Overlay**: Red "X" overlay when ability has no valid targets
+  - **Click Waves**: Visual ripple effect when player clicks any game element
+  - **Batched Updates**: Floating texts batched for network efficiency with staggered timing
+
+- **Mulligan System**: Pre-game card exchange phase before first turn
+  - Activates after all players draw starting hand (6 cards each)
+  - 2x3 grid layout displays player's hand face-up
+  - Click-to-exchange mechanic: click any card to send it to bottom of deck and draw new card
+  - 3 exchange attempts per player, displayed as "[Attempts: 3]" in modal header
+  - Attempts counter decrements with each exchange, prevents exchange at 0
+  - "Confirm Hand" button shows confirmation progress: "Confirm Hand [X/Y]"
+  - First player receives 7th card AFTER all players confirm mulligan
+  - Waiting screen shows confirmation status for all players
 
 ### Changed
-- **App.tsx Refactor**: Split into `AppInner` and `App` components
-  - `ModalsProvider` now wraps the entire application
-  - `ModalsRenderer` available in both MainMenu and Game views
-- **useModals.ts → useModals.tsx**: Renamed to .tsx for JSX support
-  - Replaced Zustand with React Context (Zustand v5 had reactivity issues)
-- **Code Splitting**: Refactored useGameState.ts into focused modules
-  - `useGameLifecycle.ts` - game creation, joining, exiting
-  - `gameCreators.ts` - game ID generation, deck creation, initial state
-  - `gameStateStorage.ts` - save/load/clear game state
-  - `useVisualEffects.ts` - highlight and floating text effects
-  - `useWebRTC.ts` - WebRTC P2P connection management
-  - `useTargetingMode.ts` - universal targeting system
-  - `useBoardManipulation.ts` - board operations
-  - `useCardMovement.ts` - card drag-and-drop
-  - `useCardOperations.ts` - card abilities and status
-  - `useCardStatus.ts` - card status management
-  - `useDeckManagement.ts` - deck operations
-  - `useGameSettings.ts` - game configuration
-  - `usePhaseManagement.ts` - phase transitions
-  - `usePlayerActions.ts` - player-specific actions
-  - `useReadyCheck.ts` - ready check system
-  - `useScoring.ts` - score calculations
-  - `websocketHelpers.ts` - WebSocket utilities
-  - `types.ts` - shared type definitions
+- **SimpleHost**: P2P host now handles all game logic previously on server
+  - `personalizeForPlayer()` creates custom state views for privacy
+  - `broadcastAll()` sends personalized state to each connected guest
+  - `applyAction()` routes player actions to appropriate handlers
+  - Auto-handling of scoring, phase transitions, round management
+
+- **SimpleGuest**: Guest connection manager for P2P mode
+  - Connects to host using peer ID from invite link
+  - Sends player actions to host, receives state updates
+  - Handles disconnect/reconnect with automatic retry
+
+- **Localization**: Added mulligan-related translations in English, Russian, and Serbian
+  - Mulligan modal, instructions, button labels, status messages
 
 ### Fixed
-- **Modal Opening Bug**: Fixed modal windows not opening from main menu
-  - Root cause: `ModalsRenderer` was only rendered in game state, not in MainMenu
-  - Added `ModalsRenderer` to both return paths in App.tsx
-  - Fixed double wrapper issue (BaseModal + custom wrapper)
-  - Fixed callback passing through modalData
-- **DeckType Runtime Error**: Fixed import type vs regular import causing runtime error
-- **WebRTC Reconnection Loop**: Fixed infinite reconnect cycle on HMR (Hot Module Replacement)
-  - Added sessionStorage flag to prevent duplicate auto-restore attempts
-  - Auto-restore now works correctly on page reload but skips on HMR
-- **Unused Imports**: Removed unused imports from useGameState.ts
+- **Personalized State Bug**: Fixed `mulliganAttempts` and `hasMulliganed` not being included in personalized state
+  - Added these fields to all three cases: local player, deck view target, and remote players
+  - Mulligan attempts counter now updates correctly for all players
 
+- **TypeScript & ESLint**: Fixed all type errors and lint warnings
+  - Removed all debug console.log statements (49 warnings removed)
+  - Fixed curly brace rules for if statements
+  - Fixed equality comparisons (!= → !==)
+  - Fixed let/const declarations
+
+- **GitHub Pages Deployment**: Fixed BASE_URL from `/newavalon-skirmish-WebRTC/` to `/` for root path hosting
 
 ## [0.2.10] - 2026-02-15
 
