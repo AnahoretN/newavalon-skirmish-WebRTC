@@ -63,8 +63,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed equality comparisons (!= → !==)
   - Fixed let/const declarations
 
-- **GitHub Pages Deployment**: Fixed BASE_URL from `/newavalon-skirmish-WebRTC/` to `/` for root path hosting
-
 ## [0.2.10] - 2026-02-15
 
 ### Added
