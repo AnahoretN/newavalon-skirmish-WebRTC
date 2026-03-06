@@ -13,7 +13,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Connection**: Host shares peer ID via invite link, guests connect directly using PeerJS WebRTC library
   - **State Synchronization**: Host maintains master game state, broadcasts personalized state updates to all guests
   - **Personalized States**: Each player receives custom state view (own hand/deck visible, opponents' cards hidden as placeholders)
-  - **Reconnection System**: 30-second reconnect window with localStorage persistence, F5 support
   - **Phase Management**: Automatic phase transitions (Preparation → Setup → Main → Commit → Scoring)
   - **Round Management**: Round victory detection, best-of-3 match system, round end modal
   - **Binary Encoding**: ~90% size reduction for card data transmission using baseId only
@@ -37,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - First player receives 7th card AFTER all players confirm mulligan
   - Waiting screen shows confirmation status for all players
 
+- **Player Reconnection System**: Automatic reconnection for disconnected players
+  - 30-second reconnection window when player disconnects accidentally
+  - Reconnection overlay with countdown timer on disconnected player panel
+  - Auto-reconnect on page load using saved credentials (localStorage)
+  - Guest player cards displayed with player's color as background (no more white placeholders)
+  - Intentional exit (Exit button) converts player to dummy immediately
+  - Multiple reconnection attempts prevented with ref tracking
+  - Connection cleanup on reconnect to prevent duplicate connections
+
 ### Changed
 - **SimpleHost**: P2P host now handles all game logic previously on server
   - `personalizeForPlayer()` creates custom state views for privacy
@@ -51,17 +59,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Localization**: Added mulligan-related translations in English, Russian, and Serbian
   - Mulligan modal, instructions, button labels, status messages
-
-### Fixed
-- **Personalized State Bug**: Fixed `mulliganAttempts` and `hasMulliganed` not being included in personalized state
-  - Added these fields to all three cases: local player, deck view target, and remote players
-  - Mulligan attempts counter now updates correctly for all players
-
-- **TypeScript & ESLint**: Fixed all type errors and lint warnings
-  - Removed all debug console.log statements (49 warnings removed)
-  - Fixed curly brace rules for if statements
-  - Fixed equality comparisons (!= → !==)
-  - Fixed let/const declarations
 
 ## [0.2.10] - 2026-02-15
 
