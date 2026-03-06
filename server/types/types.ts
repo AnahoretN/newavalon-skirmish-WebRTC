@@ -122,6 +122,7 @@ export interface Player {
   autoDrawEnabled?: boolean; // Whether this player has auto-draw enabled.
   isSpectator?: boolean; // True if this "player" is actually a spectator in the players array.
   disconnectTimestamp?: number; // Timestamp when player disconnected (for timeout tracking)
+  reconnectionDeadline?: number; // Unix timestamp when reconnection window closes (30 seconds after disconnect)
   position?: number; // Position in turn order (0-based)
 }
 

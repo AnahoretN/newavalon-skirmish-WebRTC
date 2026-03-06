@@ -171,9 +171,27 @@ function personalToGameState(personal: PersonalizedState, localPlayerId: number)
     ...personal,
     visualEffects: visualEffectsMap,
     players: personal.players.map(p => {
-      // Если есть deck с картами - это полные данные (локальный игрок или dummy)
-      // Remote игроки имеют placeholder hand но не имеют deck массива
-      if (p.deck && p.deck.length > 0) {
+      // Локальный игрок или dummy - полные данные
+      // Определяем по p.id === localPlayerId или p.isDummy, НЕ по deck.length!
+      const isLocalPlayer = p.id === localPlayerId
+      const isDummy = p.isDummy
+
+      if (isLocalPlayer || isDummy) {
+        // Локальный игрок всегда получает полные данные (hand, deck, discard, boardHistory)
+        // Даже если deck пустой - это всё ещё локальный игрок
+        return {
+          ...p,
+          hand: p.hand || [],
+          deck: p.deck || [],
+          discard: p.discard || [],
+          boardHistory: p.boardHistory || [],
+          announcedCard: p.announcedCard || null,
+          handSize: (p.hand || []).length,
+          deckSize: p.deck?.length || p.deckSize || 0,
+          discardSize: p.discard?.length || p.discardSize || 0
+        }
+      } else if (p.deck && p.deck.length > 0) {
+        // Deck view target - полный deck доступен для просмотра
         return {
           ...p,
           hand: p.hand || [],
@@ -186,8 +204,7 @@ function personalToGameState(personal: PersonalizedState, localPlayerId: number)
           discardSize: p.discard?.length || 0
         }
       } else if (p.deckSize && p.deckSize > 0) {
-        // Deck view target - есть deckSize но нет deck массива
-        // Сохраняем deckSize для корректного отображения
+        // Deck view target - есть deckSize но нет deck массива (placeholder)
         return {
           ...p,
           hand: p.hand || [],
@@ -201,14 +218,13 @@ function personalToGameState(personal: PersonalizedState, localPlayerId: number)
         }
       } else {
         // Для других игроков - только размеры + announcedCard (витрина видна всем)
-        // Используем deckSize из персонализированного состояния
         return {
           ...p,
           hand: p.hand || [],
           deck: [],
           discard: [],
           boardHistory: [],
-          announcedCard: p.announcedCard || null,  // Витрина видна всем игрокам
+          announcedCard: p.announcedCard || null,
           handSize: p.handSize || 0,
           deckSize: p.deckSize || 0,
           discardSize: p.discardSize || 0
@@ -226,6 +242,10 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   const [gameState, setGameState] = useState<GameState>(createInitialState())
   const [localPlayerId, setLocalPlayerId] = useState<number>(1)
   const [connectionStatus, setConnectionStatus] = useState<'Connecting' | 'Connected' | 'Disconnected'>('Disconnected')
+
+  // Reconnection state
+  const [isReconnecting, setIsReconnecting] = useState<boolean>(false)
+  const [reconnectProgress, setReconnectProgress] = useState<{ attempt: number; maxAttempts: number; timeRemaining: number } | null>(null)
 
   // P2P менеджеры
   const hostRef = useRef<SimpleHost | null>(null)
@@ -472,6 +492,101 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     // For invite join, we treat gameId as hostPeerId for now
     return joinGameViaModal(gameId)
   }, [joinGameViaModal])
+
+  // Ref to track if reconnection is in progress (prevents duplicate attempts)
+  const isReconnectingRef = useRef(false)
+
+  // ============================================================================
+  // Auto-reconnect on mount if credentials exist
+  // ============================================================================
+  useEffect(() => {
+    // Only attempt auto-reconnect if we're a guest (not host) and disconnected
+    if (isHostRef.current) return
+    if (isReconnectingRef.current) return // Already reconnecting
+
+    const hostPeerId = localStorage.getItem('webrtc_host_peer_id')
+    const hasCredentials = hostPeerId && localStorage.getItem('player_token')
+
+    if (hasCredentials && connectionStatus === 'Disconnected') {
+      isReconnectingRef.current = true
+      setIsReconnecting(true)
+      setReconnectProgress({ attempt: 1, maxAttempts: 5, timeRemaining: 30 })
+
+      joinGameViaModal(hostPeerId)
+        .then(() => {
+          setIsReconnecting(false)
+          setReconnectProgress(null)
+          isReconnectingRef.current = false
+        })
+        .catch(() => {
+          setIsReconnecting(false)
+          setReconnectProgress(null)
+          isReconnectingRef.current = false
+        })
+    }
+  }, [connectionStatus, joinGameViaModal])
+
+  // ============================================================================
+  // Monitor gameState for local player disconnection
+  // ============================================================================
+  useEffect(() => {
+    if (!gameState || !gameState.players || localPlayerId === 0) return
+    if (isReconnectingRef.current) return // Already reconnecting
+    if (isHostRef.current) return // Host doesn't need to reconnect
+
+    const localPlayer = gameState.players.find(p => p.id === localPlayerId)
+    if (!localPlayer) return
+
+    // If local player is disconnected, start reconnection
+    if (localPlayer.isDisconnected) {
+      const deadline = localPlayer.reconnectionDeadline
+      if (deadline && deadline > Date.now()) {
+        isReconnectingRef.current = true
+        setIsReconnecting(true)
+        const timeRemaining = Math.ceil((deadline - Date.now()) / 1000)
+        setReconnectProgress({ attempt: 1, maxAttempts: 5, timeRemaining })
+
+        // Attempt auto-reconnect
+        const hostPeerId = localStorage.getItem('webrtc_host_peer_id')
+        if (hostPeerId) {
+          joinGameViaModal(hostPeerId)
+            .then(() => {
+              setIsReconnecting(false)
+              setReconnectProgress(null)
+              isReconnectingRef.current = false
+            })
+            .catch(() => {
+              setIsReconnecting(false)
+              setReconnectProgress(null)
+              isReconnectingRef.current = false
+            })
+        }
+      }
+    } else if (!localPlayer.isDisconnected && isReconnecting) {
+      // Player reconnected successfully
+      setIsReconnecting(false)
+      setReconnectProgress(null)
+    }
+  }, [gameState, localPlayerId, isReconnecting, joinGameViaModal])
+
+  // ============================================================================
+  // Countdown timer for reconnection progress
+  // ============================================================================
+  useEffect(() => {
+    if (!reconnectProgress) return
+
+    const interval = setInterval(() => {
+      setReconnectProgress(prev => {
+        if (!prev || prev.timeRemaining <= 1) {
+          clearInterval(interval)
+          return null
+        }
+        return { ...prev, timeRemaining: prev.timeRemaining - 1 }
+      })
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [reconnectProgress?.timeRemaining])
 
   // ============================================================================
   // Отправка действий
@@ -1156,13 +1271,31 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   const requestGamesList = useCallback(() => {}, [])
 
   const exitGame = useCallback(() => {
+    // Clear saved credentials to prevent auto-reconnect
+    localStorage.removeItem('webrtc_host_peer_id')
+    localStorage.removeItem('player_token')
+
+    // Send EXIT message to host if we're a guest
+    if (guestRef.current && !isHostRef.current) {
+      try {
+        guestRef.current.sendAction('EXIT_GAME', {})
+      } catch (e) {
+        logger.warn('[useGameState] Failed to send EXIT message:', e)
+      }
+    }
+
+    // Destroy connections
     hostRef.current?.destroy()
     guestRef.current?.destroy()
     hostRef.current = null
     guestRef.current = null
     isHostRef.current = false
+
+    // Reset state
     setGameState(createInitialState())
     setConnectionStatus('Disconnected')
+    setIsReconnecting(false)
+    setReconnectProgress(null)
   }, [])
 
   // ============================================================================
@@ -1309,8 +1442,8 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     // Additional WebRTC compatibility props (stubs for now)
     sendFullDeckToHost: (_playerId: number, _deck: any[], _deckLength: number) => {},
     shareHostDeckWithGuests: (_deck: any[], _deckLength: number) => {},
-    isReconnecting: false,
-    reconnectProgress: null,
+    isReconnecting,
+    reconnectProgress,
   }
 }
 

@@ -689,7 +689,15 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
           const themeColor = ownerColorData
             ? ownerColorData.border
             : DECK_THEMES[card.deck]?.color || 'border-gray-300'
-          const cardBg = card.deck === DeckType.Tokens ? (typeof card.color === 'string' ? card.color : 'bg-gray-500') : 'bg-card-face'
+
+          // Background priority:
+          // 1. Token cards use their color
+          // 2. Placeholder cards (with card.color set) use player's color for fill
+          // 3. Regular cards use bg-card-face
+          const cardBg = card.deck === DeckType.Tokens
+            ? (typeof card.color === 'string' ? card.color : 'bg-gray-500')
+            : (typeof card.color === 'string' ? card.color : 'bg-card-face')
+
           const textColor = card.deck === DeckType.Tokens ? 'text-black' : 'text-black'
 
           const positiveStatusTypesList = ['Support', 'Shield']

@@ -360,18 +360,34 @@ export function handlePlayerLeave(
   cancelPlayerDisconnectTimer(gameId, playerId);
 
   if (isManualExit) {
-    // Manual exit: remove player immediately and transfer host if needed
-    logToGame(gameId, `Player ${playerId} (${player.name}) manually exited the game.`, gameLogs);
-    logger.info(`Player ${playerId} manually exited game ${gameId}.`);
+    // Manual exit: convert player to dummy instead of removing
+    logToGame(gameId, `Player ${playerId} (${player.name}) manually exited - converting to dummy.`, gameLogs);
+    logger.info(`Player ${playerId} manually exited game ${gameId} - becoming dummy.`);
 
     const wasHost = gameState.hostId === playerId;
 
-    // Remove player from game
-    gameState.players = gameState.players.filter((p: any) => p.id !== playerId);
+    // Convert player to dummy (stay in game, can be controlled by anyone)
+    const updatedPlayers = gameState.players.map((p: any) =>
+      p.id === playerId
+        ? {
+            ...p,
+            isDummy: true,
+            isDisconnected: false,
+            disconnectTimestamp: undefined,
+            // Clear token so they can't auto-reconnect as this player
+            playerToken: undefined
+          }
+        : p
+    )
 
-    // Transfer host if needed
-    if (wasHost && gameState.players.length > 0) {
-      transferHost(gameId, playerId, gameLogs);
+    gameState.players = updatedPlayers;
+
+    // Transfer host if needed (if this was host and there are other active players)
+    if (wasHost) {
+      const otherActivePlayers = updatedPlayers.filter((p: any) => !p.isDummy && !p.isDisconnected);
+      if (otherActivePlayers.length > 0) {
+        transferHost(gameId, playerId, gameLogs);
+      }
     }
   } else {
     // Disconnect: set timestamp and schedule timers

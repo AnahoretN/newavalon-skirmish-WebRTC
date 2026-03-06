@@ -1013,6 +1013,19 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
             </div>
           </DropZone>
         </div>
+
+        {/* Reconnection Overlay */}
+        {isDisconnected && player.reconnectionDeadline && (
+          <div className="absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center z-40 rounded-lg">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent mx-auto mb-2"></div>
+              <div className="text-white font-bold">{t('reconnecting')}</div>
+              <div className="text-gray-300 text-sm">
+                {Math.max(0, Math.ceil((player.reconnectionDeadline - Date.now()) / 1000))}s
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -1500,6 +1513,19 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
           </div>
           </div>
         </div>
+
+        {/* Reconnection Overlay */}
+        {isDisconnected && player.reconnectionDeadline && (
+          <div className="absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center z-40 rounded-lg">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-10 w-10 border-4 border-white border-t-transparent mx-auto mb-1"></div>
+              <div className="text-white font-bold text-sm">{t('reconnecting')}</div>
+              <div className="text-gray-300 text-xs">
+                {Math.max(0, Math.ceil((player.reconnectionDeadline - Date.now()) / 1000))}s
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }

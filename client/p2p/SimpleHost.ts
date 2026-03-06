@@ -21,6 +21,9 @@ import { getDecksData } from '../content'
 import type { DeckType } from '../types'
 import { getRandomHostColor, assignUniqueRandomColor } from '../utils/colorAssigner'
 
+// Reconnection timeout: 30 seconds for a disconnected player to reconnect
+const RECONNECT_TIMEOUT_MS = 30000
+
 /**
  * SimpleHost - simplified host
  */
@@ -33,6 +36,9 @@ export class SimpleHost {
   // Game state
   private state: GameState
   private version: number = 0
+
+  // Reconnection timers: playerId -> timer ID
+  private reconnectTimers: Map<number, NodeJS.Timeout> = new Map()
 
   // Configuration
   private config: SimpleHostConfig
@@ -227,6 +233,55 @@ export class SimpleHost {
       return
     }
 
+    // Handle EXIT_GAME - intentional player exit (becomes dummy, no reconnection)
+    // @ts-ignore - EXIT_GAME is not in standard action types
+    if (action === 'EXIT_GAME') {
+      logger.info('[SimpleHost] Player', playerId, 'intentionally exited - converting to dummy')
+
+      // Cancel reconnection timer if exists
+      const timer = this.reconnectTimers.get(playerId)
+      if (timer) {
+        clearTimeout(timer)
+        this.reconnectTimers.delete(playerId)
+      }
+
+      // Convert player to dummy (stay in game, don't reconnect)
+      this.state = {
+        ...this.state,
+        players: this.state.players.map(p =>
+          p.id === playerId
+            ? {
+                ...p,
+                isDummy: true,
+                isDisconnected: false,
+                disconnectTimestamp: undefined,
+                reconnectionDeadline: undefined,
+                // Clear token so they can't auto-reconnect as this player
+                playerToken: undefined
+              }
+            : p
+        )
+      }
+
+      // Close and remove connection (don't keep connection open for dummy)
+      const peerId = this.getPeerIdForPlayer(playerId)
+      if (peerId) {
+        const conn = this.connections.get(peerId)
+        if (conn) {
+          conn.close()
+        }
+        this.connections.delete(peerId)
+        this.peerIdToPlayerId.delete(peerId)
+      }
+
+      // Increment version and broadcast
+      this.version++
+      this.broadcastAll()
+
+      this.config.onPlayerLeave?.(playerId)
+      return
+    }
+
     // Special handling for SELECT_SCORING_LINE - need to send floating texts BEFORE passing turn
     if (action === 'SELECT_SCORING_LINE') {
       const oldState = this.state
@@ -361,10 +416,44 @@ export class SimpleHost {
     if (playerToken) {
       const existingPlayerId = this.findPlayerByToken(playerToken)
       if (existingPlayerId) {
-        // Reconnection
-        this.peerIdToPlayerId.set(fromPeerId, existingPlayerId)
-        const conn = this.connections.get(fromPeerId)
+        logger.info('[SimpleHost] Reconnection request for player', existingPlayerId, 'from peer', fromPeerId)
 
+        // Cancel reconnection timer if exists
+        const timer = this.reconnectTimers.get(existingPlayerId)
+        if (timer) {
+          clearTimeout(timer)
+          this.reconnectTimers.delete(existingPlayerId)
+          logger.info('[SimpleHost] Cancelled reconnection timer for player', existingPlayerId)
+        }
+
+        // Remove old connection for this player (if any)
+        const oldPeerId = this.getPeerIdForPlayer(existingPlayerId)
+        if (oldPeerId && oldPeerId !== fromPeerId) {
+          const oldConn = this.connections.get(oldPeerId)
+          if (oldConn) {
+            oldConn.close()
+            this.connections.delete(oldPeerId)
+            logger.info('[SimpleHost] Closed old connection', oldPeerId, 'for player', existingPlayerId)
+          }
+        }
+
+        // Update peerId mapping
+        this.peerIdToPlayerId.set(fromPeerId, existingPlayerId)
+
+        // Mark player as connected and clear reconnection fields
+        this.state = {
+          ...this.state,
+          players: this.state.players.map(p =>
+            p.id === existingPlayerId
+              ? { ...p, isDisconnected: false, disconnectTimestamp: undefined, reconnectionDeadline: undefined }
+              : p
+          )
+        }
+
+        // Increment version so guests know state changed
+        this.version++
+
+        const conn = this.connections.get(fromPeerId)
         conn?.send({
           type: 'JOIN_ACCEPT',
           playerId: existingPlayerId,
@@ -372,17 +461,10 @@ export class SimpleHost {
           version: this.version
         })
 
-        // Mark player as connected
-        this.state = {
-          ...this.state,
-          players: this.state.players.map(p =>
-            p.id === existingPlayerId
-              ? { ...p, isDisconnected: false }
-              : p
-          )
-        }
+        // Broadcast updated state to all players
+        this.broadcastAll()
 
-        logger.info('[SimpleHost] Player reconnected:', existingPlayerId)
+        logger.info('[SimpleHost] Player reconnected successfully:', existingPlayerId)
         return
       }
     }
@@ -460,20 +542,28 @@ export class SimpleHost {
   }
 
   /**
-   * Handle reconnection
+   * Handle reconnection - cancel timer and restore player
    */
   private handleReconnect(data: any, fromPeerId: string): void {
     const { playerId } = data
 
-    // Update _peerId -> playerId mapping
+    // Cancel reconnection timer if exists
+    const timer = this.reconnectTimers.get(playerId)
+    if (timer) {
+      clearTimeout(timer)
+      this.reconnectTimers.delete(playerId)
+      logger.info('[SimpleHost] Cancelled reconnection timer for player', playerId)
+    }
+
+    // Update _peerId -> playerId mapping (in case of new peerId)
     this.peerIdToPlayerId.set(fromPeerId, playerId)
 
-    // Mark as connected
+    // Mark as connected and clear reconnection fields
     this.state = {
       ...this.state,
       players: this.state.players.map(p =>
         p.id === playerId
-          ? { ...p, isDisconnected: false }
+          ? { ...p, isDisconnected: false, disconnectTimestamp: undefined, reconnectionDeadline: undefined }
           : p
       )
     }
@@ -490,25 +580,32 @@ export class SimpleHost {
       timestamp: Date.now()
     })
 
-    // Broadcast to all
+    // Broadcast to all (including reconnected player)
     this.broadcastAll()
 
-    logger.info('[SimpleHost] Player reconnected:', playerId)
+    logger.info('[SimpleHost] Player reconnected successfully:', playerId)
   }
 
   /**
-   * Handle disconnect
+   * Handle disconnect - start reconnection timer
    */
   private handleDisconnect(_peerId: string): void {
     const playerId = this.peerIdToPlayerId.get(_peerId)
 
+    // Remove connection and peerId mapping FIRST
+    // This prevents broadcastAll from trying to send to closed connection
+    this.connections.delete(_peerId)
+    this.peerIdToPlayerId.delete(_peerId)
+
     if (playerId) {
-      // Mark as disconnected
+      const deadline = Date.now() + RECONNECT_TIMEOUT_MS
+
+      // Mark as disconnected with deadline
       this.state = {
         ...this.state,
         players: this.state.players.map(p =>
           p.id === playerId
-            ? { ...p, isDisconnected: true, disconnectTimestamp: Date.now() }
+            ? { ...p, isDisconnected: true, disconnectTimestamp: Date.now(), reconnectionDeadline: deadline }
             : p
         )
       }
@@ -516,14 +613,56 @@ export class SimpleHost {
       // Increment version so guests know state changed
       this.version++
 
-      // Broadcast
+      // Broadcast updated state (now that old peerId is removed from map)
       this.broadcastAll()
+
+      // Start reconnection timer - after 30s, convert to dummy
+      const timer = setTimeout(() => {
+        this.convertToDummy(playerId)
+      }, RECONNECT_TIMEOUT_MS)
+
+      this.reconnectTimers.set(playerId, timer)
+
+      logger.info('[SimpleHost] Player disconnected, reconnection window open until:', new Date(deadline).toISOString())
 
       this.config.onPlayerLeave?.(playerId)
     }
+  }
 
-    this.connections.delete(_peerId)
-    this.peerIdToPlayerId.delete(_peerId)
+  /**
+   * Convert disconnected player to dummy after timeout
+   */
+  private convertToDummy(playerId: number): void {
+    // Clear timer
+    const timer = this.reconnectTimers.get(playerId)
+    if (timer) {
+      clearTimeout(timer)
+      this.reconnectTimers.delete(playerId)
+    }
+
+    // Check if player has reconnected in the meantime
+    const player = this.state.players.find(p => p.id === playerId)
+    if (!player || player.isDummy || !player.isDisconnected) {
+      return // Player no longer exists, is already dummy, or has reconnected
+    }
+
+    logger.warn('[SimpleHost] Converting player', playerId, 'to dummy after reconnection timeout')
+
+    // Convert to dummy
+    this.state = {
+      ...this.state,
+      players: this.state.players.map(p =>
+        p.id === playerId
+          ? { ...p, isDummy: true, isDisconnected: false, disconnectTimestamp: undefined, reconnectionDeadline: undefined }
+          : p
+      )
+    }
+
+    // Increment version and broadcast
+    this.version++
+    this.broadcastAll()
+
+    this.config.onPlayerLeave?.(playerId)
   }
 
   /**
@@ -543,23 +682,31 @@ export class SimpleHost {
       const playerId = this.peerIdToPlayerId.get(_peerId)
 
       if (playerId) {
-        // Personalize state for this player
-        const personalized = this.personalizeForPlayer(playerId)
+        // Check if connection is still open before sending
+        // @ts-ignore - PeerJS connection has open property
+        if (conn.open !== false) {
+          // Personalize state for this player
+          const personalized = this.personalizeForPlayer(playerId)
 
-        // Log all announcedCard for debugging
-        const announcedCards = personalized.players
-          .filter((p: any) => p.announcedCard)
-          .map((p: any) => `Player${p.id}:${p.announcedCard.name}`)
-          .join(', ')
-        if (announcedCards) {
-          logger.info(`[SimpleHost] Broadcasting to player ${playerId} with announcedCards: [${announcedCards}]`)
+          // Log all announcedCard for debugging
+          const announcedCards = personalized.players
+            .filter((p: any) => p.announcedCard)
+            .map((p: any) => `Player${p.id}:${p.announcedCard.name}`)
+            .join(', ')
+          if (announcedCards) {
+            logger.info(`[SimpleHost] Broadcasting to player ${playerId} with announcedCards: [${announcedCards}]`)
+          }
+
+          try {
+            conn.send({
+              ...message,
+              state: personalized,
+              timestamp: Date.now()
+            })
+          } catch (e) {
+            logger.warn('[SimpleHost] Failed to send to player', playerId, 'peer', _peerId, e)
+          }
         }
-
-        conn.send({
-          ...message,
-          state: personalized,
-          timestamp: Date.now()
-        })
       }
     })
   }
@@ -746,6 +893,21 @@ export class SimpleHost {
       }
     }
 
+    // Helper to get Tailwind background class from color name
+    const getColorBgClass = (colorName: string): string => {
+      const colorMap: Record<string, string> = {
+        blue: 'bg-blue-600',
+        purple: 'bg-purple-600',
+        red: 'bg-red-600',
+        green: 'bg-green-600',
+        yellow: 'bg-yellow-500',
+        orange: 'bg-orange-500',
+        pink: 'bg-pink-500',
+        brown: 'bg-[#8B4513]'
+      }
+      return colorMap[colorName] || 'bg-gray-600'
+    }
+
     const result = {
       ...baseState,
       // Replace Map with object
@@ -753,6 +915,7 @@ export class SimpleHost {
       players: baseState.players.map(player => {
         const isLocalPlayer = player.id === localPlayerId
         const isDummy = player.isDummy
+        const playerBgClass = getColorBgClass(player.color)
         const isDeckViewTarget = isDeckViewRequest && player.id === deckViewRequest!.targetPlayerId
 
         // For local player and dummy - full data (hand, deck, discard)
@@ -778,7 +941,9 @@ export class SimpleHost {
             boardHistory: player.boardHistory,
             lastPlayedCardId: player.lastPlayedCardId || null,
             hasMulliganed: player.hasMulliganed,
-            mulliganAttempts: player.mulliganAttempts
+            mulliganAttempts: player.mulliganAttempts,
+            disconnectTimestamp: player.disconnectTimestamp,
+            reconnectionDeadline: player.reconnectionDeadline
           }
         }
 
@@ -814,7 +979,7 @@ export class SimpleHost {
               types: [],
               imageUrl: '',
               fallbackImage: '',
-              color: ''
+              color: playerBgClass  // Use Tailwind background class
             }
           })
 
@@ -845,7 +1010,9 @@ export class SimpleHost {
             announcedCard: player.announcedCard ? { ...player.announcedCard } : null,
             lastPlayedCardId: player.lastPlayedCardId || null,
             hasMulliganed: player.hasMulliganed,
-            mulliganAttempts: player.mulliganAttempts
+            mulliganAttempts: player.mulliganAttempts,
+            disconnectTimestamp: player.disconnectTimestamp,
+            reconnectionDeadline: player.reconnectionDeadline
           }
         }
 
@@ -886,7 +1053,7 @@ export class SimpleHost {
             types: [],
             imageUrl: '',
             fallbackImage: '',
-            color: ''
+            color: playerBgClass  // Use Tailwind background class
           }
         })
 
@@ -911,7 +1078,9 @@ export class SimpleHost {
           announcedCard: player.announcedCard ? { ...player.announcedCard } : null,
           lastPlayedCardId: player.lastPlayedCardId || null,
           hasMulliganed: player.hasMulliganed,
-          mulliganAttempts: player.mulliganAttempts
+          mulliganAttempts: player.mulliganAttempts,
+          disconnectTimestamp: player.disconnectTimestamp,
+          reconnectionDeadline: player.reconnectionDeadline
         }
         // DEBUG: Log player color being sent
         if (!isLocalPlayer && !isDummy) {

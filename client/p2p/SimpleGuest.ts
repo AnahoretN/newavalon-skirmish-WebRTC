@@ -120,6 +120,9 @@ export class SimpleGuest {
     conn.on('open', () => {
       logger.info('[SimpleGuest] Connected to host')
 
+      // Save host peer ID for auto-reconnect
+      localStorage.setItem('webrtc_host_peer_id', this.hostPeerId || '')
+
       // Send join request
       conn.send({
         type: 'JOIN_REQUEST',
@@ -409,9 +412,40 @@ export class SimpleGuest {
   }
 
   /**
+   * Check if there are saved credentials for auto-reconnect
+   */
+  hasSavedCredentials(): boolean {
+    const hostPeerId = localStorage.getItem('webrtc_host_peer_id')
+    const playerToken = localStorage.getItem('player_token')
+    return !!(hostPeerId && playerToken)
+  }
+
+  /**
+   * Auto-reconnect using saved credentials
+   */
+  async autoReconnect(): Promise<boolean> {
+    const hostPeerId = localStorage.getItem('webrtc_host_peer_id')
+
+    if (!hostPeerId) {
+      throw new Error('No saved host peer ID')
+    }
+
+    logger.info('[SimpleGuest] Auto-reconnecting to saved host:', hostPeerId)
+
+    try {
+      await this.reconnect(hostPeerId)
+      return true
+    } catch (e) {
+      logger.error('[SimpleGuest] Auto-reconnect failed:', e)
+      return false
+    }
+  }
+
+  /**
    * Shutdown
    */
   destroy(): void {
+    // Clear reconnect timer
     if (this.hostConnection) {
       this.hostConnection.close()
     }
