@@ -38,6 +38,9 @@ jobs:
         env:
           BASE_URL: /newavalon-skirmish-WebRTC/
 
+      - name: Create .nojekyll
+        run: touch docs/.nojekyll
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
