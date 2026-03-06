@@ -1786,13 +1786,6 @@ function handleSelectUnitForMove(
   // For other abilities, it might be at the top level. Check both.
   const actualChainedAction = directChainedAction || payload?.chainedAction
 
-  console.log('[handleSelectUnitForMove] chainedAction check', {
-    hasDirectChainedAction: !!directChainedAction,
-    hasPayloadChainedAction: !!payload?.chainedAction,
-    actualChainedAction: actualChainedAction,
-    sourceCardName: sourceCard?.name,
-  })
-
   if (sourceCard && sourceCard.id === card.id) {
     return false
   }
@@ -2655,7 +2648,9 @@ function handleSelectDiagonal(
   // Use functional state update to avoid stale closure issues
   if (!payload?.firstCoords) {
     setAbilityMode(prev => {
-      if (!prev || prev.mode !== 'SELECT_DIAGONAL') return prev
+      if (!prev || prev.mode !== 'SELECT_DIAGONAL') {
+        return prev
+      }
       return { ...prev, payload: { ...(prev.payload || {}), firstCoords: boardCoords } }
     })
     return true

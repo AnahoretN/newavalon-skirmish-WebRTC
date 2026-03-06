@@ -184,6 +184,7 @@ const enUI = {
   youLabel: '(You)',
   readyToStart: 'Ready to Start?',
   gameWillBegin: 'The game will begin once all players are ready. You can still change your name and deck.',
+  mulliganInstruction: 'Click on a card to send it to the bottom of the deck and draw another card in its place.',
   dragCardsReorder: 'Drag cards to reorder. Drag outside to move card to another zone.',
   dragOutsideAnotherZone: 'Drag outside to move card to another zone.',
   dropHere: 'Drop here',
@@ -241,6 +242,8 @@ const enUI = {
   hostDisconnected: 'Host disconnected',
   guestDisconnected: 'Guest disconnected',
   guestConnected: 'Guest connected',
+  mulligan: 'Mulligan',
+  confirmHand: 'Confirm Hand',
 }
 
 const enRules = {
@@ -290,7 +293,9 @@ const enCounters: Record<string, CounterTranslation> = new Proxy({} as Record<st
   get(_target, prop) {
     const db = getCountersDatabase()
     const def = db[prop as string]
-    if (!def) return undefined
+    if (!def) {
+      return undefined
+    }
     return {
       name: def.name,
       description: def.description,
@@ -305,7 +310,9 @@ const enCounters: Record<string, CounterTranslation> = new Proxy({} as Record<st
   getOwnPropertyDescriptor(_target, prop) {
     const db = getCountersDatabase()
     const def = db[prop as string]
-    if (!def) return undefined
+    if (!def) {
+      return undefined
+    }
     return { enumerable: true, configurable: true, value: { name: def.name, description: def.description } }
   }
 })

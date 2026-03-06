@@ -15,7 +15,7 @@ import { RoundEndModal } from './components/RoundEndModal'
 import { CounterSelectionModal } from './components/CounterSelectionModal'
 import { TopDeckView } from './components/TopDeckView'
 import { ReconnectingModal } from './components/ReconnectingModal'
-import { ModalsRenderer, ModalsProvider } from './components/ModalsRenderer'
+import { ModalsRenderer, ModalsProvider, useModals } from './components/ModalsRenderer'
 import { logger } from './utils/logger'
 import { useGameState } from './hooks/useGameState'
 import { useAppAbilities } from './hooks/useAppAbilities'
@@ -136,6 +136,8 @@ const AppInner = function AppInner() {
     scoreLine,
     closeRoundEndModal,
     closeRoundEndModalOnly,
+    confirmMulligan,
+    exchangeMulliganCard,
     resetGame,
     resetDeployStatus,
     scoreDiagonal,
@@ -169,6 +171,8 @@ const AppInner = function AppInner() {
     isTeamAssignOpen: false,
   })
 
+  // Mulligan modal control
+  const { open: openMulliganModal, close: closeMulliganModal } = useModals()
 
   const [commandModalCard, setCommandModalCard] = useState<Card | null>(null)
   const [counterSelectionData, setCounterSelectionData] = useState<CounterSelectionData | null>(null)
@@ -222,6 +226,30 @@ const AppInner = function AppInner() {
     localStorage.setItem('image_refresh_data', JSON.stringify({ version: newVersion, timestamp: newVersion }))
     return newVersion
   })
+
+  // Mulligan modal control - Handle mulligan modal open/close based on gameState
+  useEffect(() => {
+    if (gameState.isMulliganActive && gameState.isGameStarted) {
+      const localPlayer = gameState.players.find(p => p.id === localPlayerId)
+      // Check if local player hasn't confirmed yet
+      if (localPlayer && !localPlayer.hasMulliganed) {
+        openMulliganModal('mulligan', {
+          players: gameState.players,
+          localPlayerId,
+          playerColorMap: new Map(gameState.players.map(p => [p.id, p.color])),
+          imageRefreshVersion,
+          onConfirm: confirmMulligan,
+          onExchangeCard: exchangeMulliganCard,
+          // Pass gameState for fresh data access
+          gameState: gameState,
+        }, 'xl')
+      } else {
+        closeMulliganModal()
+      }
+    } else {
+      closeMulliganModal()
+    }
+  }, [gameState.isMulliganActive, gameState.isGameStarted, gameState, localPlayerId, imageRefreshVersion, openMulliganModal, closeMulliganModal, confirmMulligan])
 
   const [contextMenuProps, setContextMenuProps] = useState<ContextMenuParams | null>(null)
   const [playMode, setPlayMode] = useState<{ card: Card; sourceItem: DragItem; faceDown?: boolean } | null>(null)
@@ -1054,7 +1082,9 @@ const AppInner = function AppInner() {
   // Handle command card from token panel - open modal when card appears in announced
   const pendingCommandFromTokenPanelRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!localPlayerId || !gameState?.players) return
+    if (!localPlayerId || !gameState?.players) {
+      return
+    }
 
     const localPlayer = gameState.players.find(p => p.id === localPlayerId)
     if (!localPlayer?.announcedCard) {

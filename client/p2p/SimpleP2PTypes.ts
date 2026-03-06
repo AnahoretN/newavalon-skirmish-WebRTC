@@ -69,6 +69,10 @@ export type ActionType =
   // Ready check
   | 'PLAYER_READY'
 
+  // Mulligan
+  | 'CONFIRM_MULLIGAN'
+  | 'EXCHANGE_MULLIGAN_CARD'
+
   // Game reset
   | 'RESET_GAME'
 

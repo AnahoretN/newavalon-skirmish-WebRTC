@@ -264,77 +264,70 @@ export class SimpleHost {
       }
     }
 
-    // Special handling for SCORE_DIAGONAL - send floating texts for Logistics Chain
+    // Special handling for SCORE_DIAGONAL - apply action first, then send floating texts
     if (action === 'SCORE_DIAGONAL') {
       const oldState = this.state
-      const { r1, c1, r2, c2, playerId: scoringPlayerId, bonusType = 'point_per_support' } = data || {}
+      const { playerId: scoringPlayerId, bonusType = 'point_per_support' } = data || {}
 
-      logger.info(`[SimpleHost] SCORE_DIAGONAL: player=${scoringPlayerId} bonusType=${bonusType} diagonal=(${r1},${c1}) to (${r2},${c2})`)
+      // Apply action to get new state with scoring data
+      const resultState = applyAction(oldState, playerId, action, data)
+      const scoringData = (resultState as any)._diagonalScoringEvents
 
-      // Calculate which cards are on the diagonal and send floating texts
-      const gridSize = oldState.activeGridSize
-      const offset = Math.floor((oldState.board.length - gridSize) / 2)
-      const diagonalCells: { row: number; col: number }[] = []
+      if (scoringData) {
+        const { powerScoreEvents, supportBonusEvents, powerScore, supportCount, totalScoreGain } = scoringData
 
-      // Determine diagonal type and collect cells
-      const isMainDiagonal = (r1 - c1) === (r2 - c2)
-      const isAntiDiagonal = (r1 + c1) === (r2 + c2)
+        logger.info(`[SimpleHost] SCORE_DIAGONAL: power=${powerScore} support=${supportCount} total=${totalScoreGain}`)
 
-      if (isMainDiagonal) {
-        const start = Math.max(r1, r2)
-        const end = Math.min(r1, r2)
-        for (let i = Math.min(start, end); i <= Math.max(start, end); i++) {
-          if (i >= 0 && i < gridSize) {
-            diagonalCells.push({ row: i + offset, col: i + offset })
-          }
+        // Create floating text events
+        const scoreEvents: { row: number; col: number; text: string; playerId: number }[] = []
+
+        // Add floating texts for power contribution from each card
+        for (const event of powerScoreEvents) {
+          scoreEvents.push({
+            row: event.row,
+            col: event.col,
+            text: `+${event.power}`,
+            playerId: scoringPlayerId
+          })
         }
-      } else if (isAntiDiagonal) {
-        for (let i = 0; i < gridSize; i++) {
-          const row = i + offset
-          const col = (gridSize - 1 - i) + offset
-          const minR = Math.min(r1, r2) + offset
-          const maxR = Math.max(r1, r2) + offset
-          if (row >= minR && row <= maxR) {
-            diagonalCells.push({ row, col })
-          }
-        }
-      }
 
-      // Count Support tokens and send floating texts
-      const scoreEvents: { row: number; col: number; text: string; playerId: number }[] = []
-      let supportCount = 0
-
-      for (const { row, col } of diagonalCells) {
-        const cell = oldState.board[row]?.[col]
-        if (!cell.card) {continue}
-
-        const card = cell.card
-        const hasSupport = card.ownerId === scoringPlayerId && card.statuses?.some((s: any) =>
-          s.type === 'Support' && s.addedByPlayerId === scoringPlayerId
-        )
-
-        if (hasSupport) {
-          supportCount++
-          if (bonusType === 'point_per_support') {
+        // Add floating texts for Support bonus (+1 per Support)
+        if (bonusType === 'point_per_support') {
+          for (const event of supportBonusEvents) {
             scoreEvents.push({
-              row,
-              col,
+              row: event.row,
+              col: event.col,
               text: '+1',
               playerId: scoringPlayerId
             })
           }
         }
+
+        // Send floating texts as batch (with slight delays for visual effect)
+        if (scoreEvents.length > 0) {
+          this.broadcast({
+            type: 'FLOATING_TEXT',
+            data: { batch: scoreEvents.map((item, i) => ({ ...item, timestamp: Date.now() + (i * 100) })) }
+          })
+        }
+
+        // Clean up temporary data from result state
+        delete (resultState as any)._diagonalScoringEvents
       }
 
-      // Send floating texts
-      if (scoreEvents.length > 0) {
-        this.broadcast({
-          type: 'FLOATING_TEXT',
-          data: { batch: scoreEvents.map((item, i) => ({ ...item, timestamp: Date.now() + i })) }
-        })
+      // Update state with result from applyAction
+      if (resultState !== oldState) {
+        this.state = resultState
+        const maxPlayerId = resultState.players.length > 0
+          ? Math.max(...resultState.players.map(p => p.id))
+          : 0
+        if (maxPlayerId >= this.playerIdCounter) {
+          this.playerIdCounter = maxPlayerId + 1
+        }
+        this.version++
+        this.broadcastAll()
       }
-
-      logger.info(`[SimpleHost] SCORE_DIAGONAL: found ${supportCount} Support tokens, sent ${scoreEvents.length} floating texts`)
+      return
     }
 
     // Apply action to state (normal flow for all other actions)
@@ -783,7 +776,9 @@ export class SimpleHost {
             discard: player.discard,
             announcedCard: player.announcedCard ? { ...player.announcedCard } : null,
             boardHistory: player.boardHistory,
-            lastPlayedCardId: player.lastPlayedCardId || null
+            lastPlayedCardId: player.lastPlayedCardId || null,
+            hasMulliganed: player.hasMulliganed,
+            mulliganAttempts: player.mulliganAttempts
           }
         }
 
@@ -848,7 +843,9 @@ export class SimpleHost {
             discard: [],
             discardSize: player.discard?.length || 0,
             announcedCard: player.announcedCard ? { ...player.announcedCard } : null,
-            lastPlayedCardId: player.lastPlayedCardId || null
+            lastPlayedCardId: player.lastPlayedCardId || null,
+            hasMulliganed: player.hasMulliganed,
+            mulliganAttempts: player.mulliganAttempts
           }
         }
 
@@ -912,7 +909,9 @@ export class SimpleHost {
           discardSize: player.discard?.length || 0,
           // Make deep copy of announcedCard to avoid reference issues
           announcedCard: player.announcedCard ? { ...player.announcedCard } : null,
-          lastPlayedCardId: player.lastPlayedCardId || null
+          lastPlayedCardId: player.lastPlayedCardId || null,
+          hasMulliganed: player.hasMulliganed,
+          mulliganAttempts: player.mulliganAttempts
         }
         // DEBUG: Log player color being sent
         if (!isLocalPlayer && !isDummy) {

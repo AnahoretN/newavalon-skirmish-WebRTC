@@ -40,6 +40,10 @@ import {
   handlePlayerReady
 } from '../handlers/readyCheck.js';
 import {
+  handleConfirmMulligan,
+  handleExchangeMulliganCard
+} from '../handlers/mulligan.js';
+import {
   handleSetGameMode,
   handleSetGamePrivacy,
   handleAssignTeams,
@@ -175,6 +179,8 @@ function routeMessage(ws, data) {
     'UPDATE_DECK_DATA': handleUpdateDeckData,
     'UPDATE_STATE': handleUpdateState,
     'PLAYER_READY': handlePlayerReady,
+    'CONFIRM_MULLIGAN': handleConfirmMulligan,
+    'EXCHANGE_MULLIGAN_CARD': handleExchangeMulliganCard,
     'ASSIGN_TEAMS': handleAssignTeams,
     'SET_GAME_MODE': handleSetGameMode,
     'SET_GAME_PRIVACY': handleSetGamePrivacy,

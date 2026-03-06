@@ -83,6 +83,8 @@ export function createGameState(gameId: string, options: GameOptions = {}): Game
     gameMode: (options && options.gameMode) || 'skirmish',
     activeGridSize: { rows: 8, cols: 8 },
     isReadyCheckActive: false,
+    isMulliganActive: false,
+    mulliganCompletePlayers: [],
     created: Date.now(),
     lastActivity: Date.now(),
     hostId: 1, // First player (creator) is initially the host

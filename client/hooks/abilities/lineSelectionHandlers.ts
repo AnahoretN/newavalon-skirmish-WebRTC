@@ -447,7 +447,9 @@ export function handleLineSelection(
     // Use functional state update to avoid stale closure issues
     if (!payload?.firstCoords) {
       setAbilityMode(prev => {
-        if (!prev || prev.mode !== 'SELECT_DIAGONAL') return prev
+        if (!prev || prev.mode !== 'SELECT_DIAGONAL') {
+          return prev
+        }
         return { ...prev, payload: { ...(prev.payload || {}), firstCoords: coords } }
       })
       return true

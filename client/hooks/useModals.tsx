@@ -23,6 +23,7 @@ export type ModalType =
   | 'roundEnd'
   | 'joinGame'
   | 'deckBuilder'
+  | 'mulligan'
 
 // Modal size options
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full'
@@ -303,4 +304,25 @@ export interface RevealRequestModalData {
 export interface RoundEndModalData {
   gameState: any
   localPlayerId: number | null
+}
+
+export interface MulliganModalData {
+  players: any[]
+  localPlayerId: number | null
+  playerColorMap?: Map<number, string>
+  imageRefreshVersion?: number
+  onConfirm?: (newHand: any[]) => void
+  onExchangeCard?: (cardIndex: number) => void
+  gameState?: any  // Pass entire gameState for fresh data access
+}
+
+export const useMulliganModal = () => {
+  const { open, close, isOpen, getData } = useModals()
+
+  return {
+    isOpen: isOpen('mulligan'),
+    open: (data?: MulliganModalData) => open('mulligan', data, 'xl'),
+    close,
+    getData: () => getData<MulliganModalData>(),
+  }
 }

@@ -224,6 +224,7 @@ export interface TranslationResource {
     youLabel: string;
     readyToStart: string;
     gameWillBegin: string;
+    mulliganInstruction: string;
     dragCardsReorder: string;
     dragOutsideAnotherZone: string;
     dropHere: string;
@@ -281,6 +282,8 @@ export interface TranslationResource {
     hostDisconnected: string;
     guestDisconnected: string;
     guestConnected: string;
+    mulligan: string;
+    confirmHand: string;
   };
   rules: {
     title: string;

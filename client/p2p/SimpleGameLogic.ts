@@ -121,7 +121,7 @@ function removeStunFromLucius(state: GameState): GameState {
  */
 function processResurrectedTokens(state: GameState): GameState {
   let modified = false
-  let newState = { ...state }
+  const newState = { ...state }
   let resurrectedCount = 0
 
   // First pass: Add 2 Stun tokens to cards with Resurrected
@@ -495,6 +495,14 @@ export function applyAction(
       newState = GameSettingsHandlers.handlePlayerReady(newState, playerId, GameSettingsHandlers.startGame)
       break
 
+    case 'CONFIRM_MULLIGAN':
+      newState = GameSettingsHandlers.handleConfirmMulligan(newState, playerId, data?.newHand)
+      break
+
+    case 'EXCHANGE_MULLIGAN_CARD':
+      newState = GameSettingsHandlers.handleExchangeMulliganCard(newState, playerId, data?.cardIndex)
+      break
+
     case 'RESET_GAME':
       newState = GameSettingsHandlers.handleResetGame(newState)
       break
@@ -618,6 +626,11 @@ function canPlayerAct(
             'ANNOUNCE_CARD'].includes(action)
   }
 
+  // Mulligan phase actions
+  if (state.isMulliganActive) {
+    return action === 'CONFIRM_MULLIGAN' || action === 'EXCHANGE_MULLIGAN_CARD'
+  }
+
   // Players can change their settings
   if (action === 'CHANGE_PLAYER_NAME' || action === 'CHANGE_PLAYER_COLOR') {
     return true
@@ -642,7 +655,7 @@ function canPlayerAct(
 function handleNextPhase(state: GameState, playerId: number): GameState {
   // RESURRECTED TOKEN: Process before phase change
   // All cards with Resurrected receive 2 Stun, then Resurrected is removed
-  let stateAfterResurrected = processResurrectedTokens(state)
+  const stateAfterResurrected = processResurrectedTokens(state)
 
   const phase = stateAfterResurrected.currentPhase
 
@@ -1080,16 +1093,6 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
 function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): GameState {
   const { fromCoords, toCoords, faceDown, targetingMode, contextCardId: directContextCardId } = data || {}
 
-  console.log('[WebRTC handleMoveCardOnBoard] START', {
-    fromCoords,
-    toCoords,
-    faceDown,
-    hasTargetingMode: !!targetingMode,
-    targetingMode,
-    hasDirectContextCardId: !!directContextCardId,
-    contextCardId: directContextCardId,
-  })
-
   if (!fromCoords || !toCoords) {return state}
 
   const fromRow = fromCoords.row
@@ -1139,26 +1142,7 @@ function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): G
   const count = payload?.count
   const ownerId = payload?.ownerId
 
-  console.log('[WebRTC handleMoveCardOnBoard] Checking token placement conditions', {
-    hasDirectContextCardId: !!directContextCardId,
-    directContextCardId,
-    hasChainedPayload: !!payload,
-    hasToken: !!tokenType,
-    tokenType,
-    hasCount: !!count,
-    count,
-    hasContextCardId: !!contextCardId,
-    contextCardId,
-    fullData: data,
-  })
-
   if (tokenType && count && contextCardId) {
-    console.log('[WebRTC handleMoveCardOnBoard] Placing tokens on moved card', {
-      tokenType,
-      count,
-      contextCardId,
-      ownerId: ownerId || playerId,
-    })
 
     // Find the moved card by ID
     let targetCoords: { row: number; col: number } | null = null
@@ -1170,7 +1154,9 @@ function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): G
           break
         }
       }
-      if (targetCoords) break
+      if (targetCoords) {
+        break
+      }
     }
 
     if (!targetCoords && sourceCard) {
@@ -1183,7 +1169,9 @@ function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): G
             break
           }
         }
-        if (targetCoords) break
+        if (targetCoords) {
+          break
+        }
       }
     }
 
@@ -1197,9 +1185,6 @@ function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): G
           count: 1,
         })
       }
-      console.log('[WebRTC handleMoveCardOnBoard] Tokens placed successfully at', targetCoords)
-    } else {
-      console.log('[WebRTC handleMoveCardOnBoard] Card not found for token placement', { contextCardId, sourceCardId: sourceCard?.id })
     }
   }
 
@@ -1208,28 +1193,8 @@ function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): G
   if (!contextCardId && targetingMode) {
     const chainedAction = targetingMode?.chainedAction || targetingMode?.action?.chainedAction || targetingMode?.action?.payload?.chainedAction
 
-    console.log('[WebRTC handleMoveCardOnBoard] Checking for chainedAction', {
-      hasTargetingMode: !!targetingMode,
-      hasDirectChainedAction: !!targetingMode?.chainedAction,
-      hasActionChainedAction: !!targetingMode?.action?.chainedAction,
-      hasPayloadChainedAction: !!targetingMode?.action?.payload?.chainedAction,
-      foundChainedAction: !!chainedAction,
-    })
-
     if (chainedAction) {
       const chainedPayload = chainedAction.payload
-
-      console.log('[WebRTC handleMoveCardOnBoard] Has chainedAction', {
-        type: chainedAction.type,
-        payloadKeys: chainedAction.payload ? Object.keys(chainedAction.payload) : [],
-        contextReward: chainedPayload?.contextReward,
-        tokenType: chainedPayload?.tokenType,
-        count: chainedPayload?.count,
-        contextCardId: chainedPayload?.contextCardId,
-        sourceCard: chainedAction.sourceCard,
-        sourceCardName: chainedAction.sourceCard?.name,
-        fullPayload: chainedAction.payload,
-      })
 
       // Handle context rewards (Tactical Maneuver draw/score)
       if (chainedPayload?.contextReward && chainedAction.sourceCard) {
@@ -1244,17 +1209,11 @@ function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): G
           sourceCard: chainedAction.sourceCard,
         }
 
-        console.log('[WebRTC handleMoveCardOnBoard] Executing context reward', rewardData)
         newState = handleContextReward(newState, playerId, rewardData)
       }
 
       // Handle token placement from chainedAction (fallback if not handled above)
       if (chainedPayload?.tokenType && chainedPayload?.count && chainedPayload?.contextCardId && !contextCardId) {
-        console.log('[WebRTC handleMoveCardOnBoard] Placing tokens from chainedAction fallback', {
-          tokenType: chainedPayload.tokenType,
-          count: chainedPayload.count,
-          contextCardId: chainedPayload.contextCardId,
-        })
 
         // Find the moved card by ID
         let targetCoords: { row: number; col: number } | null = null
@@ -1266,7 +1225,9 @@ function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): G
               break
             }
           }
-          if (targetCoords) break
+          if (targetCoords) {
+            break
+          }
         }
 
         if (targetCoords) {
@@ -1279,7 +1240,6 @@ function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): G
               count: 1,
             })
           }
-          console.log('[WebRTC handleMoveCardOnBoard] Tokens placed from chainedAction fallback')
         }
       }
     }
@@ -2054,20 +2014,6 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
     return state
   }
 
-  // Log card properties for debugging announced zone display issue
-  console.log('[ANNOUNCE_CARD] Moving card to announced:', {
-    source,
-    cardId: cardToAnnounce.id,
-    baseId: cardToAnnounce.baseId,
-    name: cardToAnnounce.name,
-    hasImageUrl: !!cardToAnnounce.imageUrl,
-    imageUrl: cardToAnnounce.imageUrl?.substring(0, 50) + '...',
-    hasFallbackImage: !!cardToAnnounce.fallbackImage,
-    deck: cardToAnnounce.deck,
-    types: cardToAnnounce.types,
-    isCommandCard: cardToAnnounce.deck === 'Command' || cardToAnnounce.types?.includes('Command') || cardToAnnounce.faction === 'Command',
-  })
-
   // Check if this is a Command card from deck - use PLAY_COMMAND_FROM_DECK instead
   const isCommandCard = cardToAnnounce.deck === 'Command' || cardToAnnounce.types?.includes('Command') || cardToAnnounce.faction === 'Command'
 
@@ -2697,12 +2643,6 @@ function handleGlobalAutoApply(state: GameState, playerId: number, data: any): G
 
   // Handle token placement on moved card (False Orders Option 1: Stun x2)
   if (payload.tokenType && payload.count && payload.contextCardId) {
-    console.log('[WebRTC handleGlobalAutoApply] Placing tokens on moved card', {
-      tokenType: payload.tokenType,
-      count: payload.count,
-      contextCardId: payload.contextCardId,
-      ownerId: payload.ownerId,
-    })
 
     // Find the moved card by ID
     let targetCoords: { row: number; col: number } | null = null
@@ -2714,11 +2654,12 @@ function handleGlobalAutoApply(state: GameState, playerId: number, data: any): G
           break
         }
       }
-      if (targetCoords) break
+      if (targetCoords) {
+        break
+      }
     }
 
     if (!targetCoords) {
-      console.log('[WebRTC handleGlobalAutoApply] Card not found for token placement')
       return state
     }
 
@@ -2733,7 +2674,6 @@ function handleGlobalAutoApply(state: GameState, playerId: number, data: any): G
       })
     }
 
-    console.log('[WebRTC handleGlobalAutoApply] Tokens placed successfully')
     return newState
   }
 
@@ -2753,15 +2693,6 @@ function handleContextReward(state: GameState, playerId: number, data: any): Gam
   const { payload, sourceCard } = data || {}
   const rewardType = payload?.contextReward
 
-  console.log('[WebRTC handleContextReward] START', {
-    rewardType,
-    sourceCardName: sourceCard?.name,
-    sourceCardOwnerId: sourceCard?.ownerId,
-    _sourceCoordsBeforeMove: payload?._sourceCoordsBeforeMove,
-    _tempContextId: payload?._tempContextId,
-    lastMovedCardCoords: payload?.lastMovedCardCoords,
-  })
-
   if (!rewardType || !sourceCard) {return state}
 
   // CRITICAL: Use _sourceCoordsBeforeMove first (where card IS now), not destination
@@ -2770,24 +2701,16 @@ function handleContextReward(state: GameState, playerId: number, data: any): Gam
   const coords = sourceBeforeMove || payload?.lastMovedCardCoords
   if (!coords || coords.row < 0) {return state}
 
-  console.log('[WebRTC handleContextReward] Looking for card at coords', {
-    sourceBeforeMove,
-    lastMovedCardCoords: payload?.lastMovedCardCoords,
-    finalCoords: coords,
-  })
-
   // Find the card at coords
   let card = state.board[coords.row][coords.col]?.card
 
   // Handle stale state - search by card ID if needed
   const searchId = payload?._tempContextId
   if ((!card || (searchId && card.id !== searchId)) && searchId) {
-    console.log('[WebRTC handleContextReward] Card not at coords, searching by ID', { searchId })
     for (let r = 0; r < state.board.length; r++) {
       for (let c = 0; c < state.board[r].length; c++) {
         if (state.board[r][c].card?.id === searchId) {
           card = state.board[r][c].card
-          console.log('[WebRTC handleContextReward] Found card at', { row: r, col: c })
           break
         }
       }
@@ -2804,20 +2727,8 @@ function handleContextReward(state: GameState, playerId: number, data: any): Gam
   const amount = Math.max(0, card.power + (card.powerModifier || 0) + (card.bonusPower || 0))
   const rewardOwnerId = sourceCard.ownerId || playerId
 
-  console.log('[WebRTC handleContextReward] Found card, applying reward', {
-    cardName: card.name,
-    cardId: card.id,
-    cardPower: card.power,
-    powerModifier: card.powerModifier,
-    bonusPower: card.bonusPower,
-    amount,
-    rewardOwnerId,
-    rewardType,
-  })
-
   if (rewardType === 'DRAW_MOVED_POWER' || rewardType === 'DRAW_EQUAL_POWER') {
     // Draw cards for the reward owner
-    console.log('[WebRTC handleContextReward] DRAW_MOVED_POWER', { rewardOwnerId, amount })
     const newPlayers = state.players.map(p => {
       if (p.id === rewardOwnerId && p.deck && p.hand) {
         const cardsToDraw = Math.min(amount, p.deck.length)
@@ -2828,11 +2739,6 @@ function handleContextReward(state: GameState, playerId: number, data: any): Gam
             drawnCards.push(cardDrawn)
           }
         }
-        console.log('[WebRTC handleContextReward] Drew cards', {
-          playerId: rewardOwnerId,
-          count: drawnCards.length,
-          deckSize: p.deck.length,
-        })
         return {
           ...p,
           deck: p.deck,
@@ -2846,7 +2752,6 @@ function handleContextReward(state: GameState, playerId: number, data: any): Gam
     return { ...state, players: newPlayers }
   } else if (rewardType === 'SCORE_MOVED_POWER') {
     // Add score for the reward owner
-    console.log('[WebRTC handleContextReward] SCORE_MOVED_POWER', { rewardOwnerId, amount })
     const newPlayers = state.players.map(p => {
       if (p.id === rewardOwnerId) {
         return { ...p, score: (p.score || 0) + amount }
@@ -3596,19 +3501,6 @@ function handlePlayCommandFromDeck(state: GameState, playerId: number, data: any
     return state
   }
 
-  // Log card properties for debugging announced zone display issue
-  console.log('[PLAY_COMMAND_FROM_DECK] Moving card to announced:', {
-    cardId: actualCard.id,
-    baseId: actualCard.baseId,
-    name: actualCard.name,
-    hasImageUrl: !!actualCard.imageUrl,
-    imageUrl: actualCard.imageUrl,
-    hasFallbackImage: !!actualCard.fallbackImage,
-    fallbackImage: actualCard.fallbackImage,
-    deck: actualCard.deck,
-    types: actualCard.types,
-  })
-
   // Move card from deck to announced (showcase)
   const updatedPlayers = state.players.map(p => {
     if (p.id === cardOwner.id) {
@@ -3666,19 +3558,6 @@ function handlePlayCommandFromDiscard(state: GameState, playerId: number, data: 
   if (!actualCard) {
     return state
   }
-
-  // Log card properties for debugging
-  console.log('[PLAY_COMMAND_FROM_DISCARD] Moving card to announced:', {
-    cardId: actualCard.id,
-    baseId: actualCard.baseId,
-    name: actualCard.name,
-    hasImageUrl: !!actualCard.imageUrl,
-    imageUrl: actualCard.imageUrl,
-    hasFallbackImage: !!actualCard.fallbackImage,
-    fallbackImage: actualCard.fallbackImage,
-    deck: actualCard.deck,
-    types: actualCard.types,
-  })
 
   // Move card from discard to announced (showcase)
   const updatedPlayers = state.players.map(p => {

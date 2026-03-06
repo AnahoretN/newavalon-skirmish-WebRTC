@@ -211,6 +211,7 @@ export const sr: TranslationResource = {
     youLabel: '(Vi)',
     readyToStart: 'Spremni za početak?',
     gameWillBegin: 'Igra će početi kada svi igrači budu spremni. I dalje možete promeniti ime i špil.',
+    mulliganInstruction: 'Kliknite na kartu da biste je poslali na dno špila i izvukli drugu kartu umesto nje.',
     dragCardsReorder: 'Prevucite karte za ređanje. Prevucite napolje da biste premestili kartu u drugu zonu.',
     dragOutsideAnotherZone: 'Prevucite napolje da biste premestili kartu u drugu zonu.',
     dropHere: 'Spusti ovde',
@@ -268,6 +269,8 @@ export const sr: TranslationResource = {
     hostDisconnected: 'Domaćin se odjavio',
     guestDisconnected: 'Gost se odjavio',
     guestConnected: 'Gost povezan',
+    mulligan: 'Mulingan',
+    confirmHand: 'Potvrdi',
   },
   rules: {
     title: 'Pravila igre "New Avalon: Skirmish"',

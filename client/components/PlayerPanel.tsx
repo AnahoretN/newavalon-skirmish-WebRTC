@@ -381,7 +381,6 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   imageRefreshVersion,
   layoutMode,
   onCardClick,
-  validHandTargets,
   onAnnouncedCardDoubleClick,
   currentPhase,
   disableActiveHighlights,
@@ -390,7 +389,6 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   startingPlayerId,
   onDeckClick,
   isDeckSelectable,
-  hideDummyCards = false,
   deckSelections = [],
   handCardSelections = [],
   cursorStack = null,
@@ -453,7 +451,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   const isPlayerActive = activePlayerId === player.id
   // FIX: Check localPlayerTeamId is NOT null/undefined to avoid treating all players as teammates in FFA
   // In FFA mode, all players have teamId: undefined, which would make isTeammate true for everyone
-  const isTeammate = localPlayerTeamId != null && player.teamId === localPlayerTeamId && !isLocalPlayer
+  const isTeammate = localPlayerTeamId !== null && player.teamId === localPlayerTeamId && !isLocalPlayer
   const isDisconnected = !!player.isDisconnected
 
   // deckFiles dependency is intentional - re-renders when deck database loads
@@ -1365,26 +1363,6 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                 // CRITICAL: Cards with Revealed status are shown FACE-DOWN with colored back + Revealed icon
                 // The card face is only shown to the player who placed the Revealed token (isRevealedByStatus)
                 const isVisible: boolean = isOwner || isTeammate || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
-
-                // DIAGNOSTIC: Log card visibility for host viewing remote panels
-                if (player.id !== localPlayerId && index === 0) {
-                  console.log('[HOST VIEWING GUEST CARD DIAGNOSTIC]', {
-                    'player.id': player.id,
-                    'localPlayerId': localPlayerId,
-                    'player.teamId': player.teamId,
-                    'localPlayerTeamId': localPlayerTeamId,
-                    'card.ownerId': realCard.ownerId,
-                    'isPlaceholder': isPlaceholder,
-                    'isLocalPlayer': isLocalPlayer,
-                    'isOwner': isOwner,
-                    'isTeammate': isTeammate,
-                    'isRevealedToAll': isRevealedToAll,
-                    'isRevealedToMe': isRevealedToMe,
-                    'isRevealedByStatus': isRevealedByStatus,
-                    'isVisible FINAL': isVisible,
-                    'card.name': realCard.name?.substring(0, 20),
-                  })
-                }
 
                 return (
                   <div

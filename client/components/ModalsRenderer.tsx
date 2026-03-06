@@ -12,8 +12,8 @@ import { lazy, Suspense } from 'react'
 import { useModals } from '../hooks/useModals.tsx'
 import { BaseModal } from './BaseModal'
 
-// Re-export ModalsProvider for convenience
-export { ModalsProvider } from '../hooks/useModals.tsx'
+// Re-export ModalsProvider and useModals for convenience
+export { ModalsProvider, useModals } from '../hooks/useModals.tsx'
 
 // Lazy load all modal components for code splitting
 // Using wrapper functions for components with named exports
@@ -30,6 +30,7 @@ const RevealRequestModal = lazy(() => import('./RevealRequestModal').then(m => (
 const RoundEndModal = lazy(() => import('./RoundEndModal').then(m => ({ default: m.RoundEndModal })))
 const JoinGameModal = lazy(() => import('./JoinGameModal').then(m => ({ default: m.JoinGameModal })))
 const DeckBuilderModal = lazy(() => import('./DeckBuilderModal').then(m => ({ default: m.DeckBuilderModal })))
+const MulliganModal = lazy(() => import('./MulliganModal').then(m => ({ default: m.MulliganModal })))
 
 // Loading fallback component
 const ModalLoader = () => (
@@ -199,6 +200,18 @@ export const ModalsRenderer = () => {
 
       {openModal === 'deckBuilder' && (
         <DeckBuilderModal isOpen={true} onClose={close} setViewingCard={restData.setViewingCard} />
+      )}
+
+      {openModal === 'mulligan' && (
+        <MulliganModal
+          players={restData.players ?? []}
+          localPlayerId={restData.localPlayerId ?? null}
+          onConfirm={onConfirm || (() => {})}
+          onExchangeCard={restData.onExchangeCard}
+          playerColorMap={restData.playerColorMap ?? new Map()}
+          imageRefreshVersion={restData.imageRefreshVersion}
+          gameState={restData.gameState}
+        />
       )}
     </Suspense>
   )

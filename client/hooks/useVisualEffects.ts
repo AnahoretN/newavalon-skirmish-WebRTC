@@ -273,13 +273,6 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
       originalOwnerId: action.originalOwnerId,
     }
 
-    console.log('[setTargetingMode]', {
-      mode: action.mode,
-      hasDirectChainedAction: !!action.chainedAction,
-      hasPayloadChainedAction: !!action.payload?.chainedAction,
-      actualChainedAction,
-    })
-
     // Update local state immediately
     setGameState((prev: any) => ({
       ...prev,

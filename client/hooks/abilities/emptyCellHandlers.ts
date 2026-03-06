@@ -350,14 +350,6 @@ export function handleEmptyCellClick(
       if (!nextAction.payload.contextCardId) {
         if (movedCard) {
           nextAction.payload.contextCardId = movedCard.id
-          console.log('[SELECT_CELL] Setting contextCardId in chainedAction', {
-            contextCardId: movedCard.id,
-            cardName: movedCard.name,
-            tokenType: nextAction.payload?.tokenType,
-            count: nextAction.payload?.count,
-            sourceCardName: sourceCard.name,
-            isSelfMove,
-          })
         } else {
           console.warn('[SELECT_CELL] Could not set contextCardId - movedCard is undefined', {
             currentCardCoords,

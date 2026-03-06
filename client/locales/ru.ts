@@ -211,6 +211,7 @@ export const ru: TranslationResource = {
     youLabel: '(Вы)',
     readyToStart: 'Готовы начать?',
     gameWillBegin: 'Игра начнется, когда все игроки будут готовы. Вы всё ещё можете изменить имя и колоду.',
+    mulliganInstruction: 'Нажмите на карту, чтобы отправить её в низ колоды и вытянуть другую карту вместо неё.',
     dragCardsReorder: 'Перетаскивайте карты для изменения порядка. Перетащите наружу, чтобы переместить карту в другую зону.',
     dragOutsideAnotherZone: 'Перетащите наружу, чтобы переместить карту в другую зону.',
     dropHere: 'Сбросьте сюда',
@@ -268,6 +269,8 @@ export const ru: TranslationResource = {
     hostDisconnected: 'Хост отключился',
     guestDisconnected: 'Гость отключился',
     guestConnected: 'Гость подключился',
+    mulligan: 'Муллиган',
+    confirmHand: 'Подтвердить',
   },
   rules: {
     title: 'Правила Игры "New Avalon: Skirmish"',

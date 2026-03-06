@@ -621,27 +621,6 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
 
   const powerPositionClass = extraPowerSpacing ? 'bottom-[10px] right-[10px]' : 'bottom-[5px] right-[5px]'
 
-  // DIAGNOSTIC: Log card rendering for remote cards
-  if (card._isPlaceholder && isFaceUp) {
-    console.log('[CARD RENDER - WHITE FACE UP]', {
-      'card.name': card.name?.substring(0, 20),
-      'card.ownerId': card.ownerId,
-      'isFaceUp': isFaceUp,
-      'playerColor': playerColor,
-      'playerColorMap size': playerColorMap.size,
-      'playerColorMap entries': Array.from(playerColorMap.entries()),
-    })
-  }
-  if (card._isPlaceholder && !isFaceUp) {
-    const ownerColorName = playerColorMap.get(card.ownerId ?? -1)
-    console.log('[CARD RENDER - COLORED BACK]', {
-      'card.name': card.name?.substring(0, 20),
-      'card.ownerId': card.ownerId,
-      'isFaceUp': isFaceUp,
-      'ownerColorName': ownerColorName,
-    })
-  }
-
   return (
     <>
       {!isFaceUp ? (

@@ -112,6 +112,8 @@ export interface Player {
   isDisconnected?: boolean; // True if the player has disconnected but can rejoin.
   playerToken?: string; // A secret token for reconnecting to this player slot.
   isReady?: boolean; // For the pre-game ready check.
+  hasMulliganed?: boolean; // True if player has confirmed their mulligan hand arrangement.
+  mulliganAttempts?: number; // Number of mulligan card exchange attempts remaining (starts at 3).
   teamId?: number; // The team this player belongs to.
   boardHistory: string[]; // Stack of card IDs currently on the board, used to track 'LastPlayed' status fallback.
   lastPlayedCardId?: string | null; // The most recent card this player played from hand to board (for scoring phase).
@@ -228,6 +230,8 @@ export interface GameState {
   gameMode: GameMode;
   isPrivate: boolean;
   isReadyCheckActive: boolean;
+  isMulliganActive: boolean; // True when mulligan/reorder initial hand is available
+  mulliganCompletePlayers: number[]; // Player IDs who have confirmed their mulligan
   revealRequests: RevealRequest[];
   activePlayerId: number | null; // Aligned with server: null when no active player
   startingPlayerId: number | null; // The ID of the player who started the game (Turn 1 Player 1)

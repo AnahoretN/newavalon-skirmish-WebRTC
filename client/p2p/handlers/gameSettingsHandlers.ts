@@ -141,6 +141,125 @@ export function handlePlayerReady(state: GameState, playerId: number, startGameF
 }
 
 /**
+ * CONFIRM_MULLIGAN - player confirms their mulligan hand arrangement
+ * When all non-dummy players have confirmed, the mulligan phase ends
+ */
+export function handleConfirmMulligan(state: GameState, playerId: number, newHand?: any[]): GameState {
+  const newPlayers = state.players.map(p => {
+    if (p.id === playerId) {
+      return {
+        ...p,
+        hasMulliganed: true,
+        hand: newHand || p.hand, // Update hand if new order provided
+        handSize: (newHand || p.hand).length,
+      }
+    }
+    return p
+  })
+
+  // Check if all non-dummy players have confirmed
+  const realPlayers = newPlayers.filter(p => !p.isDummy && !p.isDisconnected && !p.isSpectator)
+  const allConfirmed = realPlayers.length > 0 && realPlayers.every(p => p.hasMulliganed)
+
+  // If all confirmed - end mulligan phase and start Setup phase
+  if (allConfirmed) {
+    // Draw 7th card for starting player (first turn advantage)
+    const startingPlayerIndex = newPlayers.findIndex(p => p.id === state.startingPlayerId)
+    if (startingPlayerIndex >= 0) {
+      const sp = { ...newPlayers[startingPlayerIndex] }
+      if (sp.deck && sp.deck.length > 0) {
+        const seventhCard = sp.deck.shift()
+        if (seventhCard) {
+          sp.hand.push(seventhCard)
+        }
+        sp.handSize = sp.hand.length
+        sp.deckSize = sp.deck.length
+        newPlayers[startingPlayerIndex] = sp
+      }
+    }
+
+    return {
+      ...state,
+      players: newPlayers,
+      isMulliganActive: false,
+      mulliganCompletePlayers: [],
+      currentPhase: 1, // Setup phase
+    }
+  }
+
+  return { ...state, players: newPlayers }
+}
+
+/**
+ * EXCHANGE_MULLIGAN_CARD - player exchanges a card from their mulligan hand
+ * Removes card at index, puts it at bottom of deck, and draws a new card
+ */
+export function handleExchangeMulliganCard(state: GameState, playerId: number, cardIndex?: number): GameState {
+  const MAX_MULLIGAN_ATTEMPTS = 3
+
+  if (cardIndex === undefined || cardIndex < 0) {
+    return state // Invalid index
+  }
+
+  const playerIndex = state.players.findIndex(p => p.id === playerId)
+  if (playerIndex === -1) {
+    return state // Player not found
+  }
+
+  const player = state.players[playerIndex]
+
+  // Check if player already confirmed mulligan
+  if (player.hasMulliganed) {
+    return state // Cannot exchange after confirming
+  }
+
+  // Check if player has attempts left
+  const attemptsLeft = player.mulliganAttempts ?? MAX_MULLIGAN_ATTEMPTS
+  if (attemptsLeft <= 0) {
+    return state // No attempts left
+  }
+
+  // Validate card index
+  if (cardIndex >= player.hand.length) {
+    return state // Invalid index
+  }
+
+  // Check if deck has cards
+  if (!player.deck || player.deck.length === 0) {
+    return state // Cannot exchange - deck is empty
+  }
+
+  // Create new arrays to avoid mutation
+  const newHand = [...player.hand]
+  const newDeck = [...player.deck]
+
+  // Remove the card from hand
+  const [exchangedCard] = newHand.splice(cardIndex, 1)
+
+  // Put exchanged card at bottom of deck
+  newDeck.push(exchangedCard)
+
+  // Draw new card from top of deck
+  const newCard = newDeck.shift()
+  if (newCard) {
+    newHand.push(newCard)
+  }
+
+  // Update player with new hand, deck, and decremented attempts
+  const newPlayers = [...state.players]
+  newPlayers[playerIndex] = {
+    ...player,
+    hand: newHand,
+    deck: newDeck,
+    handSize: newHand.length,
+    deckSize: newDeck.length,
+    mulliganAttempts: attemptsLeft - 1,
+  }
+
+  return { ...state, players: newPlayers }
+}
+
+/**
  * RESET_GAME - reset game to initial state (lobby)
  * Preserves players and their deck choices, but resets everything else
  */
@@ -236,30 +355,23 @@ export function startGame(state: GameState): GameState {
       hand,
       deck,
       handSize: hand.length,
-      deckSize: deck.length
+      deckSize: deck.length,
+      mulliganAttempts: 3, // Initialize mulligan attempts
     }
   })
 
-  // Starting player gets 7th card (first turn advantage)
-  const startingPlayerIndex = newPlayers.findIndex(p => p.id === startingPlayer.id)
-  if (startingPlayerIndex >= 0 && newPlayers[startingPlayerIndex].deck.length > 0) {
-    const sp = newPlayers[startingPlayerIndex]
-    const card = sp.deck.shift()
-    if (card) {
-      sp.hand.push(card)
-      sp.handSize = sp.hand.length
-      sp.deckSize = sp.deck.length
-    }
-  }
+  // Note: 7th card for starting player will be drawn after mulligan phase completes
 
   return {
     ...state,
     players: newPlayers,
     isGameStarted: true,
     isReadyCheckActive: false,
+    isMulliganActive: true,  // Activate mulligan phase
+    mulliganCompletePlayers: [],
     startingPlayerId: startingPlayer.id,
     activePlayerId: startingPlayer.id,
-    currentPhase: 1,  // Setup - can play cards immediately
+    currentPhase: 0,  // Stay at phase 0 during mulligan (will be set to 1 after all confirm)
     turnNumber: 1
   }
 }

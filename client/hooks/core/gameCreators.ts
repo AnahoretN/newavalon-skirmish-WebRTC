@@ -131,6 +131,8 @@ export function createInitialState(): GameState {
     gameMode: GameModeEnum.FreeForAll,
     isPrivate: true,
     isReadyCheckActive: false,
+    isMulliganActive: false,
+    mulliganCompletePlayers: [],
     revealRequests: [],
     activePlayerId: null, // Aligned with server default (null)
     startingPlayerId: null, // Aligned with server default (null)

@@ -126,6 +126,10 @@ interface UseGameStateResult {
   closeRoundEndModal: () => void
   closeRoundEndModalOnly: () => void
 
+  // Mulligan
+  confirmMulligan: (newHand: any[]) => void
+  exchangeMulliganCard: (cardIndex: number) => void
+
   // Card manipulation
   destroyCard: (card: Card, boardCoords: { row: number; col: number }) => void
   applyGlobalEffect: (source: any, targets: any[], type: string, playerId: number, isDeploy: boolean) => void
@@ -549,8 +553,6 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   const drawCardsBatch = useCallback((playerId: number, count: number) => {
     // Draw multiple cards for a player
     // Used by Tactical Maneuver, Inspiration, and other abilities
-    console.log('[drawCardsBatch] Drawing cards', { playerId, count })
-    logger.info('[drawCardsBatch] Drawing cards', { playerId, count })
     sendAction('DRAW_CARDS_BATCH', { count, targetPlayerId: playerId })
   }, [sendAction])
 
@@ -821,10 +823,6 @@ export function useGameState(_props: any = {}): UseGameStateResult {
         // Add contextCardId if available in target.chainedAction.payload
         if (target.chainedAction?.payload?.contextCardId) {
           extraData.contextCardId = target.chainedAction.payload.contextCardId
-          console.log('[moveItem] Adding contextCardId to actionData', {
-            contextCardId: target.chainedAction.payload.contextCardId,
-            cardId: item.card?.id,
-          })
         }
 
         actionData = extraData
@@ -980,6 +978,14 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   const closeRoundEndModalOnly = useCallback(() => {
     // TODO
   }, [])
+
+  const confirmMulligan = useCallback((newHand: any[]) => {
+    sendAction('CONFIRM_MULLIGAN', { newHand })
+  }, [sendAction])
+
+  const exchangeMulliganCard = useCallback((cardIndex: number) => {
+    sendAction('EXCHANGE_MULLIGAN_CARD', { cardIndex })
+  }, [sendAction])
 
   // ============================================================================
   // Visual effects - using useVisualEffects hook
@@ -1268,6 +1274,8 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     selectScoringLine,
     closeRoundEndModal,
     closeRoundEndModalOnly,
+    confirmMulligan,
+    exchangeMulliganCard,
     resetGame,
     resetDeployStatus,
     removeStatusByType,

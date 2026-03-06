@@ -7,6 +7,7 @@ import { logger } from '../utils/logger.js';
 import { getGameState } from '../services/gameState.js';
 import { broadcastToGame } from '../services/websocket.js';
 import { logGameAction as logAction, GameActions } from '../utils/gameLogger.js';
+import { initializeMulliganAttempts } from './mulligan.js';
 
 /**
  * Handle START_READY_CHECK message
@@ -203,8 +204,14 @@ export function handlePlayerReady(ws, data) {
         }).catch();
       }
 
-      // Set phase to Setup - preparation logic removed
-      gameState.currentPhase = 1;
+      // Activate mulligan phase instead of going directly to Setup
+      gameState.isMulliganActive = true;
+      gameState.mulliganCompletePlayers = [];
+      // Phase will be set to Setup after all players confirm mulligan
+      gameState.currentPhase = 0; // Stay at phase 0 during mulligan
+
+      // Initialize mulligan attempts for all players
+      initializeMulliganAttempts(gameState);
     }
 
     broadcastToGame(data.gameId, gameState);

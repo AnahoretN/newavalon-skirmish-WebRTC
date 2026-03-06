@@ -801,8 +801,9 @@ export const GameBoard = memo<GameBoardProps>(({
     // A cell is valid if it's in GLOBAL targeting mode targets OR line selection mode
     // NO LOCAL effects - all highlights must be synchronized across all players
     const isValidTargetCell = (row: number, col: number) => {
-      // Check GLOBAL targeting mode targets only
-      if (targetingModeTargetsSet.has(`${row}-${col}`)) {
+      // For line selection modes (including SELECT_DIAGONAL), skip GLOBAL targeting mode check
+      // because these modes have their own highlighting logic
+      if (!isLineSelectionModeAbility && targetingModeTargetsSet.has(`${row}-${col}`)) {
         return true
       }
 
@@ -827,17 +828,25 @@ export const GameBoard = memo<GameBoardProps>(({
         }
 
         // For SELECT_DIAGONAL:
-        // - First click: all cells are valid (to select center)
-        // - After first click: highlight diagonals through the selected center (payload.firstCoords)
+        // - First click: all cells in ACTIVE GRID are valid (to select center)
+        // - After first click: highlight only diagonals through the selected center (payload.firstCoords)
+        //   within the ACTIVE GRID bounds
         if (abilityMode?.mode === 'SELECT_DIAGONAL') {
-          // If firstCoords exists, highlight diagonals through it
+          // First, check if current cell is within active grid bounds
+          const inActiveGrid = row >= offset && row < offset + activeGridSize &&
+                               col >= offset && col < offset + activeGridSize
+          if (!inActiveGrid) {
+            return false
+          }
+
+          // If firstCoords exists, highlight only diagonals through it
           if (abilityMode?.payload?.firstCoords) {
             const firstCoords = abilityMode.payload.firstCoords
             const onMainDiagonal = (row - firstCoords.row) === (col - firstCoords.col)
             const onAntiDiagonal = (row + col) === (firstCoords.row + firstCoords.col)
             return onMainDiagonal || onAntiDiagonal
           }
-          // First click - all cells are valid to select as center
+          // First click - all cells in active grid are valid to select as center
           return true
         }
 
@@ -901,7 +910,7 @@ export const GameBoard = memo<GameBoardProps>(({
         }
       }),
     )
-  }, [activeBoard, board.length, activeGridSize, validTargetsSet, targetingModeTargetsSet, targetingMode?.action?.mode, noTargetOverlay, floatingTextsMap, visualEffectsArray, abilityMode])
+  }, [activeBoard, board.length, activeGridSize, validTargetsSet, targetingModeTargetsSet, targetingMode?.action?.mode, noTargetOverlay, floatingTextsMap, visualEffectsArray, abilityMode, abilityMode?.payload?.firstCoords])
 
   return (
     <div className="relative p-2 bg-board-bg rounded-xl h-full aspect-square transition-all duration-300">
