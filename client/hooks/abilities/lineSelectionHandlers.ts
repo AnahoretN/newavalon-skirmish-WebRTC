@@ -440,29 +440,49 @@ export function handleLineSelection(
     return true
   }
 
-  // SELECT_DIAGONAL
-  if (mode === 'SELECT_DIAGONAL' && payload.actionType === 'SCORE_DIAGONAL') {
-    const actorId = sourceCard?.ownerId ?? (gameState.players.find((p: any) => p.id === gameState.activePlayerId)?.isDummy ? gameState.activePlayerId : (localPlayerId || gameState.activePlayerId))
-    if (!payload.firstCoords) {
-      setAbilityMode({ ...abilityMode, payload: { ...payload, firstCoords: coords } })
-      return true
-    } else {
-      const { row: r1, col: c1 } = payload.firstCoords
-      const { row: r2, col: c2 } = coords
-
-      if (Math.abs(r1 - r2) !== Math.abs(c1 - c2)) {
-        setAbilityMode(null)
-        return true
-      }
-
-      scoreDiagonal(r1, c1, r2, c2, actorId!, payload.bonusType)
-      // Advance phase after scoring, unless skipNextPhase is set (e.g., Logistics Chain)
-      if (!payload.skipNextPhase) {
-        nextPhase()
-      }
-      setAbilityMode(null)  // Clear immediately to prevent duplicate processing
+  // SELECT_DIAGONAL (Logistics Chain)
+  // Two-step selection: first click selects center, second click selects diagonal endpoint
+  if (mode === 'SELECT_DIAGONAL') {
+    // Step 1: First click - select center point
+    // Use functional state update to avoid stale closure issues
+    if (!payload?.firstCoords) {
+      setAbilityMode(prev => {
+        if (!prev || prev.mode !== 'SELECT_DIAGONAL') return prev
+        return { ...prev, payload: { ...(prev.payload || {}), firstCoords: coords } }
+      })
       return true
     }
+
+    // Second click - validate diagonal and execute
+    const { row: r1, col: c1 } = payload.firstCoords
+    const { row: r2, col: c2 } = coords
+
+    // Check if second point is on either diagonal through first point
+    const onMainDiagonal = (r1 - c1) === (r2 - c2)
+    const onAntiDiagonal = (r1 + c1) === (r2 + c2)
+
+    if (!onMainDiagonal && !onAntiDiagonal) {
+      // Invalid selection - clicked cell not on diagonal through center
+      // Don't reset firstCoords, let player try again
+      return true
+    }
+
+    // Execute diagonal scoring via scoreDiagonal action
+    const ownerId = payload?.playerId ?? localPlayerId ?? 0
+    const bonusType = payload?.bonusType || 'point_per_support'
+
+    if (scoreDiagonal) {
+      scoreDiagonal(r1, c1, r2, c2, ownerId, bonusType)
+    }
+
+    // Advance phase after scoring, unless skipNextPhase is set (e.g., Logistics Chain)
+    if (!payload.skipNextPhase) {
+      nextPhase()
+    }
+
+    // Clear ability mode
+    setAbilityMode(null)
+    return true
   }
 
   // SELECT_LINE_FOR_EXPLOIT_SCORING (Zius Setup second step, Unwavering Integrator Setup)

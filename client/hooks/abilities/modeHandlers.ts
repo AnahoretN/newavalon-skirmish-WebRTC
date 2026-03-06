@@ -249,7 +249,9 @@ export function handleModeCardClick(
       abilityMode.mode !== 'PUSH_MOVE' &&
       abilityMode.mode !== 'REVEREND_DOUBLE_EXPLOIT' &&
       abilityMode.mode !== 'SHIELD_SELF_THEN_PUSH' &&
-      abilityMode.mode !== 'SELECT_LINE_FOR_SUPPORT_COUNTERS'
+      abilityMode.mode !== 'SELECT_LINE_FOR_SUPPORT_COUNTERS' &&
+      abilityMode.mode !== 'SELECT_LINE_FOR_THREAT_COUNTERS' &&
+      abilityMode.mode !== 'SELECT_DIAGONAL'  // Allow clicking any card for diagonal selection
   ) {
     return false
   }
@@ -2631,30 +2633,35 @@ function handleZiusLineSelect(
  * Handle SELECT_DIAGONAL (Logistics Chain)
  *
  * Two-step selection:
- * 1. First click: select center cell (any cell on board)
- * 2. Second click: select diagonal (any cell on either diagonal through center)
+ * 1. First click: select center cell (any cell in active grid)
+ * 2. Second click: select any cell on either diagonal through the center
  */
 function handleSelectDiagonal(
   _card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, gameState, markAbilityUsed, updatePlayerScore, triggerFloatingText, setAbilityMode } = props
+  const { abilityMode: currentAbilityMode, scoreDiagonal, nextPhase, setAbilityMode } = props
 
-  if (!abilityMode || abilityMode.mode !== 'SELECT_DIAGONAL') {
+  if (!currentAbilityMode || currentAbilityMode.mode !== 'SELECT_DIAGONAL') {
     return false
   }
 
-  const { payload } = abilityMode
+  const { payload } = currentAbilityMode
   const ownerId = payload?.playerId ?? 0
+  const bonusType = payload?.bonusType || 'point_per_support'
 
-  // Step 1: First click - select center
+  // Step 1: First click - select center point
+  // Use functional state update to avoid stale closure issues
   if (!payload?.firstCoords) {
-    setAbilityMode({ ...abilityMode, payload: { ...payload, firstCoords: boardCoords } })
+    setAbilityMode(prev => {
+      if (!prev || prev.mode !== 'SELECT_DIAGONAL') return prev
+      return { ...prev, payload: { ...(prev.payload || {}), firstCoords: boardCoords } }
+    })
     return true
   }
 
-  // Step 2: Second click - validate diagonal and execute
+  // Step 2: Second click - validate and execute diagonal scoring
   const { row: r1, col: c1 } = payload.firstCoords
   const { row: r2, col: c2 } = boardCoords
 
@@ -2664,75 +2671,20 @@ function handleSelectDiagonal(
 
   if (!onMainDiagonal && !onAntiDiagonal) {
     // Invalid selection - clicked cell not on diagonal through center
-    // Reset to first click state
-    setAbilityMode({ ...abilityMode, payload: { ...payload, firstCoords: undefined } })
+    // Don't reset firstCoords, let player try again
     return true
   }
 
-  // Calculate diagonal cells
-  const gridSize = gameState.activeGridSize
-  const offset = Math.floor((gameState.board.length - gridSize) / 2)
-  const diagonalCells: { row: number; col: number }[] = []
-
-  // Determine which diagonal and collect cells
-  if (onMainDiagonal) {
-    // Main diagonal: cells where (row - col) is constant
-    const diff = r1 - c1
-    for (let i = Math.min(r1, r2); i <= Math.max(r1, r2); i++) {
-      const row = i
-      const col = row - diff
-      if (row >= 0 && row < gridSize && col >= 0 && col < gridSize) {
-        diagonalCells.push({ row: row + offset, col: col + offset })
-      }
-    }
-  } else {
-    // Anti-diagonal: cells where (row + col) is constant
-    const sum = r1 + c1
-    for (let i = Math.min(r1, r2); i <= Math.max(r1, r2); i++) {
-      const row = i
-      const col = sum - row
-      if (row >= 0 && row < gridSize && col >= 0 && col < gridSize) {
-        diagonalCells.push({ row: row + offset, col: col + offset })
-      }
-    }
+  // Execute diagonal scoring via scoreDiagonal action
+  // This handles both WebSocket and WebRTC modes
+  if (scoreDiagonal) {
+    scoreDiagonal(r1, c1, r2, c2, ownerId, bonusType)
   }
 
-  // Count Support tokens from player on the diagonal
-  let supportCount = 0
-  const bonusType = payload?.bonusType || 'point_per_support'
-
-  for (const { row, col } of diagonalCells) {
-    const cell = gameState.board[row]?.[col]
-    if (!cell.card) {continue}
-
-    const card = cell.card
-    // Check if card belongs to player and has Support from them
-    const hasSupport = card.ownerId === ownerId && card.statuses?.some((s: any) =>
-      s.type === 'Support' && s.addedByPlayerId === ownerId
-    )
-
-    if (hasSupport) {
-      supportCount++
-      if (bonusType === 'point_per_support') {
-        triggerFloatingText({
-          row,
-          col,
-          text: '+1',
-          playerId: ownerId,
-        })
-      }
-    }
+  // Advance phase after scoring, unless skipNextPhase is set (e.g., Logistics Chain)
+  if (!payload.skipNextPhase && nextPhase) {
+    nextPhase()
   }
-
-  // Apply effect
-  if (bonusType === 'point_per_support') {
-    updatePlayerScore(ownerId, supportCount)
-  } else if (bonusType === 'draw_per_support') {
-    // Draw cards - handled by scoreDiagonal action
-    // Just trigger visual feedback here
-  }
-
-  console.log(`[handleSelectDiagonal] Scored diagonal: ${supportCount} Support tokens, bonusType: ${bonusType}`)
 
   // Clear ability mode
   setAbilityMode(null)

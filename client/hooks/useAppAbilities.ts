@@ -130,6 +130,13 @@ export const useAppAbilities = ({
   // Store handleLineSelection ref to avoid circular dependency
   const lineSelectionRef = useRef<(coords: { row: number; col: number }) => void>(() => {})
 
+  // Store abilityMode in ref to always have access to current value
+  // This avoids stale closure issues in event handlers
+  const abilityModeRef = useRef<AbilityAction | null>(abilityMode)
+  useEffect(() => {
+    abilityModeRef.current = abilityMode
+  }, [abilityMode])
+
   /**
    * Handle line selection for scoring abilities
    * Defined BEFORE handleActionExecution to avoid circular dependency
@@ -356,10 +363,15 @@ export const useAppAbilities = ({
       }
     }
 
-    // 3. Handle line selection modes
-    // CRITICAL: Only the active player with scoring mode can click to score
-    if (abilityMode && (abilityMode.mode === 'SCORE_LAST_PLAYED_LINE' || abilityMode.mode === 'SELECT_LINE_END')) {
-      // Check if local player is the active player (only active player can score)
+    // 3. Handle line selection modes that use handleLineSelection directly
+    // NOTE: SELECT_DIAGONAL is NOT included here - it's handled by handleModeCardClickModule below
+    // This ensures consistent behavior for both empty and occupied cells
+    // CRITICAL: Only the active player can click to select lines
+    if (abilityMode && (
+      abilityMode.mode === 'SCORE_LAST_PLAYED_LINE' ||
+      abilityMode.mode === 'SELECT_LINE_END'
+    )) {
+      // Check if local player is the active player
       const canScore = localPlayerId === gameState.activePlayerId
 
       if (canScore) {
@@ -373,10 +385,12 @@ export const useAppAbilities = ({
     // 4. Handle ability modes with modular handler
     if (abilityMode?.type === 'ENTER_MODE') {
       const isWebRTCMode = getWebRTCEnabled()
+      // Use ref to get current abilityMode value, avoiding stale closure issues
+      const currentAbilityMode = abilityModeRef.current
       const handled = handleModeCardClickModule(card, boardCoords, {
         gameState,
         localPlayerId,
-        abilityMode,
+        abilityMode: currentAbilityMode,
         setAbilityMode,
         cursorStack,
         setCursorStack,
