@@ -36,7 +36,7 @@ jobs:
       - name: Build
         run: npm run build:gh-pages
         env:
-          BASE_URL: /newavalon-skirmish-tunnel/
+          BASE_URL: /newavalon-skirmish-WebRTC/
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -44,7 +44,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './dist'
+          path: './docs'
 
       - name: Deploy to GitHub Pages
         id: deployment
