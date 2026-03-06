@@ -264,6 +264,79 @@ export class SimpleHost {
       }
     }
 
+    // Special handling for SCORE_DIAGONAL - send floating texts for Logistics Chain
+    if (action === 'SCORE_DIAGONAL') {
+      const oldState = this.state
+      const { r1, c1, r2, c2, playerId: scoringPlayerId, bonusType = 'point_per_support' } = data || {}
+
+      logger.info(`[SimpleHost] SCORE_DIAGONAL: player=${scoringPlayerId} bonusType=${bonusType} diagonal=(${r1},${c1}) to (${r2},${c2})`)
+
+      // Calculate which cards are on the diagonal and send floating texts
+      const gridSize = oldState.activeGridSize
+      const offset = Math.floor((oldState.board.length - gridSize) / 2)
+      const diagonalCells: { row: number; col: number }[] = []
+
+      // Determine diagonal type and collect cells
+      const isMainDiagonal = (r1 - c1) === (r2 - c2)
+      const isAntiDiagonal = (r1 + c1) === (r2 + c2)
+
+      if (isMainDiagonal) {
+        const start = Math.max(r1, r2)
+        const end = Math.min(r1, r2)
+        for (let i = Math.min(start, end); i <= Math.max(start, end); i++) {
+          if (i >= 0 && i < gridSize) {
+            diagonalCells.push({ row: i + offset, col: i + offset })
+          }
+        }
+      } else if (isAntiDiagonal) {
+        for (let i = 0; i < gridSize; i++) {
+          const row = i + offset
+          const col = (gridSize - 1 - i) + offset
+          const minR = Math.min(r1, r2) + offset
+          const maxR = Math.max(r1, r2) + offset
+          if (row >= minR && row <= maxR) {
+            diagonalCells.push({ row, col })
+          }
+        }
+      }
+
+      // Count Support tokens and send floating texts
+      const scoreEvents: { row: number; col: number; text: string; playerId: number }[] = []
+      let supportCount = 0
+
+      for (const { row, col } of diagonalCells) {
+        const cell = oldState.board[row]?.[col]
+        if (!cell.card) {continue}
+
+        const card = cell.card
+        const hasSupport = card.ownerId === scoringPlayerId && card.statuses?.some((s: any) =>
+          s.type === 'Support' && s.addedByPlayerId === scoringPlayerId
+        )
+
+        if (hasSupport) {
+          supportCount++
+          if (bonusType === 'point_per_support') {
+            scoreEvents.push({
+              row,
+              col,
+              text: '+1',
+              playerId: scoringPlayerId
+            })
+          }
+        }
+      }
+
+      // Send floating texts
+      if (scoreEvents.length > 0) {
+        this.broadcast({
+          type: 'FLOATING_TEXT',
+          data: { batch: scoreEvents.map((item, i) => ({ ...item, timestamp: Date.now() + i })) }
+        })
+      }
+
+      logger.info(`[SimpleHost] SCORE_DIAGONAL: found ${supportCount} Support tokens, sent ${scoreEvents.length} floating texts`)
+    }
+
     // Apply action to state (normal flow for all other actions)
     const oldState = this.state
     const newState = applyAction(oldState, playerId, action, data)

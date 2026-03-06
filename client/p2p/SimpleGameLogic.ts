@@ -475,6 +475,10 @@ export function applyAction(
       newState = ScoringHandlers.handleSelectScoringLine(newState, playerId, data)
       break
 
+    case 'SCORE_DIAGONAL':
+      newState = ScoringHandlers.handleScoreDiagonal(newState, playerId, data)
+      break
+
     case 'COMPLETE_ROUND':
       newState = ScoringHandlers.handleCompleteRound(newState)
       break
@@ -2025,7 +2029,7 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
  * - The existing announced card returns to player's hand
  * - The new card becomes the announced card
  *
- * Supports sources: 'hand', 'deck'
+ * Supports sources: 'hand', 'deck', 'discard'
  */
 function handleAnnounceCard(state: GameState, playerId: number, data: any): GameState {
   const { cardIndex, playerId: targetPlayerId, source } = data || {}
@@ -2035,7 +2039,15 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
   if (!player || cardIndex === undefined) {return state}
 
   // Determine source array
-  const sourceArray = source === 'deck' ? player.deck : player.hand
+  let sourceArray: Card[]
+  if (source === 'deck') {
+    sourceArray = player.deck || []
+  } else if (source === 'discard') {
+    sourceArray = player.discard || []
+  } else {
+    sourceArray = player.hand
+  }
+
   const cardToAnnounce = sourceArray[cardIndex]
 
   if (!cardToAnnounce) {
@@ -2067,19 +2079,37 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
     })
   }
 
+  // Command cards from discard also use special handling
+  if (source === 'discard' && isCommandCard) {
+    return handlePlayCommandFromDiscard(state, playerId, {
+      card: cardToAnnounce,
+      cardIndex,
+      ownerId: actualPlayerId
+    })
+  }
+
   // Build new arrays based on source
   const existingAnnouncedCard = player.announcedCard
   let newHand = [...player.hand]
-  let newDeck = source === 'deck' ? [...player.deck] : player.deck
+  let newDeck = player.deck || []
+  let newDiscard = player.discard || []
 
   if (source === 'deck') {
-    // Remove from deck
+    // Remove from deck, existing announced goes to hand
+    newDeck = [...newDeck]
     if (existingAnnouncedCard) {
       newHand = [...newHand, existingAnnouncedCard]
     }
     newDeck.splice(cardIndex, 1)
+  } else if (source === 'discard') {
+    // Remove from discard, existing announced goes to discard
+    newDiscard = [...newDiscard]
+    if (existingAnnouncedCard) {
+      newDiscard = [...newDiscard, existingAnnouncedCard]
+    }
+    newDiscard.splice(cardIndex, 1)
   } else {
-    // Remove from hand
+    // Remove from hand, existing announced goes to hand
     if (existingAnnouncedCard) {
       newHand = [...newHand, existingAnnouncedCard]
     }
@@ -2104,6 +2134,8 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
         handSize: newHand.length,
         deck: newDeck,
         deckSize: newDeck.length,
+        discard: newDiscard,
+        discardSize: newDiscard.length,
         announcedCard: announcedCard
         // Do NOT update boardHistory or lastPlayedCardId - card hasn't entered battlefield yet
       }
@@ -3596,6 +3628,77 @@ function handlePlayCommandFromDeck(state: GameState, playerId: number, data: any
         ...p,
         deck: newDeck,
         deckSize: newDeck.length,
+        announcedCard,
+      }
+    }
+    return p
+  })
+
+  return { ...state, players: updatedPlayers }
+}
+
+/**
+ * PLAY_COMMAND_FROM_DISCARD - play command card from discard view
+ * Moves command card from discard to announced (showcase)
+ * Modal opening is handled client-side after receiving updated state
+ */
+function handlePlayCommandFromDiscard(state: GameState, playerId: number, data: any): GameState {
+  const { cardIndex, ownerId } = data || {}
+
+  if (cardIndex === undefined) {
+    return state
+  }
+
+  // Find the player who owns this card
+  const cardOwner = state.players.find(p => p.id === (ownerId ?? playerId))
+  if (!cardOwner) {
+    return state
+  }
+
+  // Always get the actual card from discard to ensure all properties (imageUrl, etc.) are preserved
+  // The passed 'card' object might only have cardId, so we get the full card from discard
+  const discard = cardOwner.discard || []
+  if (cardIndex < 0 || cardIndex >= discard.length) {
+    return state
+  }
+
+  const actualCard = discard[cardIndex]
+  if (!actualCard) {
+    return state
+  }
+
+  // Log card properties for debugging
+  console.log('[PLAY_COMMAND_FROM_DISCARD] Moving card to announced:', {
+    cardId: actualCard.id,
+    baseId: actualCard.baseId,
+    name: actualCard.name,
+    hasImageUrl: !!actualCard.imageUrl,
+    imageUrl: actualCard.imageUrl,
+    hasFallbackImage: !!actualCard.fallbackImage,
+    fallbackImage: actualCard.fallbackImage,
+    deck: actualCard.deck,
+    types: actualCard.types,
+  })
+
+  // Move card from discard to announced (showcase)
+  const updatedPlayers = state.players.map(p => {
+    if (p.id === cardOwner.id) {
+      // Remove card from discard by index
+      const newDiscard = [...discard]
+      newDiscard.splice(cardIndex, 1)
+
+      // Add to announced - preserve all card properties including image
+      const announcedCard = {
+        ...actualCard,
+        isFaceUp: true,
+        revealedTo: 'all' as const,
+        revealedToPlayerIds: [],
+      }
+
+      return {
+        ...p,
+        discard: newDiscard,
+        discardSize: newDiscard.length,
         announcedCard,
       }
     }

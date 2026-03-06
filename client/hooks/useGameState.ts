@@ -617,9 +617,20 @@ export function useGameState(_props: any = {}): UseGameStateResult {
         actionData.cardIndex = item.cardIndex ?? 0
         actionData.playerId = item.playerId
       } else if (item.source === 'discard') {
-        action = 'PLAY_CARD_FROM_DISCARD'
-        actionData.cardIndex = item.cardIndex
-        actionData.playerId = item.playerId
+        // Check if this is a command card - command cards go to announced (showcase) first
+        const isCommandCard = item.card?.deck === 'Command' || item.card?.types?.includes('Command') || item.card?.faction === 'Command'
+        if (isCommandCard) {
+          action = 'ANNOUNCE_CARD'
+          actionData = {
+            cardIndex: item.cardIndex,
+            source: 'discard',
+            playerId: item.playerId,
+          }
+        } else {
+          action = 'PLAY_CARD_FROM_DISCARD'
+          actionData.cardIndex = item.cardIndex
+          actionData.playerId = item.playerId
+        }
       } else if (item.source === 'announced') {
         // Перетаскивание из витрины на поле боя
         action = 'PLAY_ANNOUNCED_TO_BOARD'
@@ -772,9 +783,20 @@ export function useGameState(_props: any = {}): UseGameStateResult {
         actionData.cardIndex = item.cardIndex ?? 0
         actionData.playerId = item.playerId
       } else if (item.source === 'discard') {
-        action = 'PLAY_CARD_FROM_DISCARD'
-        actionData.cardIndex = item.cardIndex
-        actionData.playerId = item.playerId
+        // Check if this is a command card - command cards go to announced (showcase) first
+        const isCommandCard = item.card?.deck === 'Command' || item.card?.types?.includes('Command') || item.card?.faction === 'Command'
+        if (isCommandCard) {
+          action = 'ANNOUNCE_CARD'
+          actionData = {
+            cardIndex: item.cardIndex,
+            source: 'discard',
+            playerId: item.playerId,
+          }
+        } else {
+          action = 'PLAY_CARD_FROM_DISCARD'
+          actionData.cardIndex = item.cardIndex
+          actionData.playerId = item.playerId
+        }
       } else if (item.source === 'announced') {
         action = 'PLAY_ANNOUNCED_TO_BOARD'
         actionData = {

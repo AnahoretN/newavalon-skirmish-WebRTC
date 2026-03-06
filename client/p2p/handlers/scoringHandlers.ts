@@ -414,3 +414,123 @@ function checkMatchWinner(existingWins: Record<number, number[]>, newWinners: nu
 
   return null
 }
+
+/**
+ * SCORE_DIAGONAL - score a diagonal line for Logistics Chain ability
+ * Used by Logistics Chain command card to score points or draw cards based on Support tokens
+ *
+ * data: { r1, c1, r2, c2, playerId, bonusType }
+ * - r1, c1: First point on diagonal
+ * - r2, c2: Second point on diagonal (must be on same diagonal: |r1-r2| == |c1-c2|)
+ * - playerId: Player scoring the diagonal
+ * - bonusType: 'point_per_support' (Logistics Chain option 1) or 'draw_per_support' (option 2)
+ */
+export function handleScoreDiagonal(state: GameState, playerId: number, data: any): GameState {
+  const { r1, c1, r2, c2, playerId: scoringPlayerId, bonusType = 'point_per_support' } = data || {}
+
+  // Validate that points are on same diagonal
+  if (Math.abs(r1 - r2) !== Math.abs(c1 - c2)) {
+    console.warn('[handleScoreDiagonal] Points not on same diagonal:', { r1, c1, r2, c2 })
+    return state
+  }
+
+  // Determine which diagonal (main or anti)
+  const isMainDiagonal = r1 === c1 || r2 === c2 || (r1 - c1 === r2 - c2)
+  const isAntiDiagonal = r1 + c1 === (state.activeGridSize - 1) || r2 + c2 === (state.activeGridSize - 1) || (r1 + c1 === r2 + c2)
+
+  if (!isMainDiagonal && !isAntiDiagonal) {
+    console.warn('[handleScoreDiagonal] Not a valid diagonal:', { r1, c1, r2, c2 })
+    return state
+  }
+
+  // Get all cells on the diagonal
+  const gridSize = state.activeGridSize
+  const offset = Math.floor((state.board.length - gridSize) / 2)
+  const diagonalCells: { row: number; col: number }[] = []
+
+  if (isMainDiagonal) {
+    // Main diagonal: cells where row == col
+    const start = Math.max(r1, r2)
+    const end = Math.min(r1, r2)
+    for (let i = Math.min(start, end); i <= Math.max(start, end); i++) {
+      if (i >= 0 && i < gridSize) {
+        diagonalCells.push({ row: i + offset, col: i + offset })
+      }
+    }
+  } else {
+    // Anti-diagonal: cells where row + col == gridSize - 1
+    for (let i = 0; i < gridSize; i++) {
+      const row = i + offset
+      const col = (gridSize - 1 - i) + offset
+      // Only include cells between the two points
+      const minR = Math.min(r1, r2) + offset
+      const maxR = Math.max(r1, r2) + offset
+      if (row >= minR && row <= maxR) {
+        diagonalCells.push({ row, col })
+      }
+    }
+  }
+
+  // Count Support tokens from scoring player and apply effect
+  let supportCount = 0
+  const newPlayers = [...state.players]
+  const playerIndex = newPlayers.findIndex(p => p.id === scoringPlayerId)
+
+  if (playerIndex === -1) {
+    console.warn('[handleScoreDiagonal] Player not found:', scoringPlayerId)
+    return state
+  }
+
+  for (const { row, col } of diagonalCells) {
+    const cell = state.board[row]?.[col]
+    if (!cell.card) {continue}
+
+    const card = cell.card
+    // Check if card belongs to scoring player and has Support from them
+    const hasSupport = card.ownerId === scoringPlayerId && card.statuses?.some((s: any) =>
+      s.type === 'Support' && s.addedByPlayerId === scoringPlayerId
+    )
+
+    if (hasSupport) {
+      supportCount++
+    }
+  }
+
+  console.log('[handleScoreDiagonal] Found Support tokens:', supportCount, 'bonusType:', bonusType)
+
+  if (bonusType === 'point_per_support') {
+    // Option 1: Gain +1 point for each of your cards with Support in that diagonal
+    newPlayers[playerIndex] = {
+      ...newPlayers[playerIndex],
+      score: newPlayers[playerIndex].score + supportCount
+    }
+  } else if (bonusType === 'draw_per_support') {
+    // Option 2: Draw 1 card for each of your cards with Support in that diagonal
+    // Add cards to player's hand from their deck
+    const player = newPlayers[playerIndex]
+    const deck = [...(player.deck || [])]
+    const hand = [...(player.hand || [])]
+    const drawnCards: any[] = []
+
+    for (let i = 0; i < supportCount && deck.length > 0; i++) {
+      const card = deck.shift()!
+      hand.push(card)
+      drawnCards.push(card)
+    }
+
+    newPlayers[playerIndex] = {
+      ...player,
+      deck,
+      hand,
+      deckSize: deck.length,
+      handSize: hand.length
+    }
+
+    console.log('[handleScoreDiagonal] Drew', drawnCards.length, 'cards')
+  }
+
+  return {
+    ...state,
+    players: newPlayers
+  }
+}

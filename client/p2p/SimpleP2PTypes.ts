@@ -59,6 +59,7 @@ export type ActionType =
   // Scoring
   | 'START_SCORING'
   | 'SELECT_SCORING_LINE'
+  | 'SCORE_DIAGONAL'
 
   // Round and match
   | 'COMPLETE_ROUND'

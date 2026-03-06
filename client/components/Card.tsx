@@ -559,14 +559,26 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
 
   // Memoized values (must be called before any conditional returns)
   const ownerColorData = useMemo(() => {
-    // If playerColor is provided directly (from PlayerPanel), use it
-    // Otherwise look up from playerColorMap using card.ownerId
+    // Priority: playerColor (from PlayerPanel) > playerColorMap lookup by card.ownerId
+    // This ensures guest/remote player cards get correct color from their player.color
+    let colorData: typeof PLAYER_COLORS[keyof typeof PLAYER_COLORS] | null = null
+
+    // First try: playerColor from props (direct from PlayerPanel)
     if (playerColor) {
-      const colorData = PLAYER_COLORS[playerColor]
-      return colorData || null
+      colorData = PLAYER_COLORS[playerColor]
     }
-    const ownerColorName = card.ownerId ? playerColorMap.get(card.ownerId) : null
-    return (ownerColorName && PLAYER_COLORS[ownerColorName]) ? PLAYER_COLORS[ownerColorName] : null
+
+    // Second try: lookup by card.ownerId in playerColorMap
+    if (!colorData && card.ownerId) {
+      const ownerColorName = playerColorMap.get(card.ownerId)
+      if (ownerColorName) {
+        colorData = PLAYER_COLORS[ownerColorName]
+      }
+    }
+
+    // Debug: log if colorData is still null (for troubleshooting)
+    // This should rarely happen as all players should have colors assigned
+    return colorData
   }, [card.ownerId, playerColorMap, playerColor])
 
   const uniqueStatusGroups = useMemo(() => {
@@ -609,13 +621,61 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
 
   const powerPositionClass = extraPowerSpacing ? 'bottom-[10px] right-[10px]' : 'bottom-[5px] right-[5px]'
 
+  // DIAGNOSTIC: Log card rendering for remote cards
+  if (card._isPlaceholder && isFaceUp) {
+    console.log('[CARD RENDER - WHITE FACE UP]', {
+      'card.name': card.name?.substring(0, 20),
+      'card.ownerId': card.ownerId,
+      'isFaceUp': isFaceUp,
+      'playerColor': playerColor,
+      'playerColorMap size': playerColorMap.size,
+      'playerColorMap entries': Array.from(playerColorMap.entries()),
+    })
+  }
+  if (card._isPlaceholder && !isFaceUp) {
+    const ownerColorName = playerColorMap.get(card.ownerId ?? -1)
+    console.log('[CARD RENDER - COLORED BACK]', {
+      'card.name': card.name?.substring(0, 20),
+      'card.ownerId': card.ownerId,
+      'isFaceUp': isFaceUp,
+      'ownerColorName': ownerColorName,
+    })
+  }
+
   return (
     <>
       {!isFaceUp ? (
         // --- CARD BACK ---
         (() => {
-          const backColorClass = ownerColorData ? ownerColorData.bg : 'bg-gray-600'
-          const borderColorClass = ownerColorData ? ownerColorData.border : 'border-blue-300'
+          // CRITICAL: Card back color MUST come from playerColorMap by card.ownerId
+          // This ensures guest player cards have correct colored back for all viewers
+          let backColorClass = 'bg-gray-600'  // Default fallback
+          let borderColorClass = 'border-blue-300'  // Default border
+
+          // PRIMARY: Get color from playerColorMap by card owner ID
+          if (card.ownerId) {
+            const ownerColorName = playerColorMap.get(card.ownerId)
+            if (ownerColorName) {
+              const colorData = PLAYER_COLORS[ownerColorName]
+              if (colorData) {
+                backColorClass = colorData.bg
+                borderColorClass = colorData.border
+              } else {
+                // DEBUG: ownerColorName exists but not in PLAYER_COLORS
+                backColorClass = 'bg-red-600'  // RED means ownerColorName not found!
+              }
+            } else {
+              // DEBUG: ownerId not in playerColorMap
+              backColorClass = 'bg-blue-600'  // BLUE means playerColorMap doesn't have ownerId!
+            }
+          }
+
+          // FALLBACK: Try ownerColorData if playerColorMap didn't work
+          if (backColorClass === 'bg-gray-600' && ownerColorData) {
+            backColorClass = ownerColorData.bg
+            borderColorClass = ownerColorData.border
+          }
+
           const lastPlayedGroup = uniqueStatusGroups.find(g => g.type === 'LastPlayed')
           const revealedGroups = uniqueStatusGroups.filter(g => g.type === 'Revealed')
 

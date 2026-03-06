@@ -101,7 +101,7 @@ export function activateAbility(
           range: action.payload.range || 'adjacent',
           // Only apply filter to discard for non-SEARCH_DECK abilities
           // For Lucius (SEARCH_DECK), discard ANY card, filter applies to search only
-          filter: isSearchDeckAbility ? undefined : action.payload.filter
+          filter: isSearchDeckAbility ? undefined : (action.payload.filter || ((targetCard: Card) => targetCard.ownerId === card.ownerId))
         }
       }
       // Remove ready status (but not for AUTO_STEPS - they handle it themselves)

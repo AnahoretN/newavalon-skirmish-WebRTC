@@ -451,8 +451,9 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   const canDrag: boolean = canPerformActions && !cursorStack
 
   const isPlayerActive = activePlayerId === player.id
-  // FIX: Check localPlayerTeamId is not null (not just !== undefined) to avoid treating null teams as teammates
-  const isTeammate = localPlayerTeamId !== null && player.teamId === localPlayerTeamId && !isLocalPlayer
+  // FIX: Check localPlayerTeamId is NOT null/undefined to avoid treating all players as teammates in FFA
+  // In FFA mode, all players have teamId: undefined, which would make isTeammate true for everyone
+  const isTeammate = localPlayerTeamId != null && player.teamId === localPlayerTeamId && !isLocalPlayer
   const isDisconnected = !!player.isDisconnected
 
   // deckFiles dependency is intentional - re-renders when deck database loads
@@ -832,10 +833,9 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                 }
 
                 return cardsToRender.map((card, index) => {
-                  // Check if this card is a valid target (from local validHandTargets or targetingMode)
-                  const isLocalTarget = validHandTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-                  const isTargetingModeTarget = targetingMode?.handTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-                  const isTarget = isLocalTarget || isTargetingModeTarget
+                  // Check if this card is a valid target from GLOBAL targetingMode only
+                  // NO LOCAL effects - all highlights must be synchronized across all players
+                  const isTarget = targetingMode?.handTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
 
                   // Use targeting player's color for the highlight
                   // If targetingMode is active, use that player's color, otherwise use highlightOwnerId or activePlayerId
@@ -871,12 +871,13 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   const isRevealedByStatus = isRealCard && localPlayerId !== null &&
                     realCard.statuses?.some((s: any) => s.type === 'Revealed' && s.addedByPlayerId === localPlayerId)
 
-                  const owner = allPlayers.find(p => p.id === card.ownerId)
-                  const isOwnerDummy = owner?.isDummy
                   const isOwner = isLocalPlayer || localPlayerId === card.ownerId
 
-                  const isDummyVisible = !hideDummyCards || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
-                  const isVisible: boolean = isOwner || (!!isOwnerDummy && isDummyVisible) || isTeammate || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
+                  // Visibility rules:
+                  // - Owner sees their own cards face-up
+                  // - Player who placed Revealed token sees the card face-up
+                  // - Everyone else sees card back (colored by card owner)
+                  const isVisible: boolean = isOwner || isTeammate || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
 
                   return (
                     <div
@@ -949,15 +950,14 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                           <div data-card-image="true" className="w-full h-full">
                             {isPlaceholder ? (
                               // Show card back for placeholder cards (remote players in WebRTC)
-                              // Use isVisible to determine if card should be face-up (e.g. with Revealed status)
+                              // CRITICAL: Preserve card.ownerId so Card component can get correct color from playerColorMap
                               <CardComponent
                               card={{
                                 ...card,
                                 id: card.id,
                                 baseId: card.baseId,
                                 name: card.name || '',  // Use placeholder name (empty string), not 'Hidden Card'
-                                ownerId: player.id,
-                                ownerName: player.name,
+                                ownerId: card.ownerId || player.id,  // Preserve real card owner, fallback to player id
                                 deck: card.deck || (DeckTypeEnum.Random as const),
                                 imageUrl: card.imageUrl || '',
                                 abilityText: card.abilityText || '',
@@ -1313,10 +1313,9 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
               }
 
               return cardsToRender.map((card, index) => {
-                // Check if this card is a valid target (from local validHandTargets or targetingMode)
-                const isLocalTarget = validHandTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-                const isTargetingModeTarget = targetingMode?.handTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-                const isTarget = isLocalTarget || isTargetingModeTarget
+                // Check if this card is a valid target from GLOBAL targetingMode only
+                // NO LOCAL effects - all highlights must be synchronized across all players
+                const isTarget = targetingMode?.handTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
 
                 // Use targeting player's color for the highlight
                 const targetPlayerId = targetingMode?.playerId ?? (highlightOwnerId ?? activePlayerId)
@@ -1356,15 +1355,36 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                 const isRevealedByStatus = isRealCard && localPlayerId !== null &&
                   realCard.statuses?.some((s: any) => s.type === 'Revealed' && s.addedByPlayerId === localPlayerId)
 
-                const owner = allPlayers.find(p => p.id === realCard.ownerId)
-                const isOwnerDummy = owner?.isDummy
-                // Card belongs to local player if it's in their hand (player.id === localPlayerId)
-                // OR if it's their own card (card.ownerId === localPlayerId)
-                const isOwner = isLocalPlayer || localPlayerId === realCard.ownerId || localPlayerId === player.id
+                // Card belongs to local player if they are the card owner (card.ownerId === localPlayerId)
+                // OR if this is the local player's own panel (isLocalPlayer)
+                // CRITICAL: Do NOT include `localPlayerId === player.id` - that causes host to see white cards in remote panels
+                const isOwner = isLocalPlayer || localPlayerId === realCard.ownerId
 
                 // CARDS IN OTHER PLAYERS' HANDS should be FACE-DOWN by default
-                // Only exceptions: owner, dummy (if not hidden), teammate (rare), or Revealed
-                const isVisible: boolean = isOwner || (!!isOwnerDummy && !hideDummyCards) || isTeammate || isRevealedToAll || isRevealedToMe || (isRevealedByStatus ?? false)
+                // Only exceptions: owner, teammate (rare), Revealed to all, or Revealed by token owner
+                // CRITICAL: Cards with Revealed status are shown FACE-DOWN with colored back + Revealed icon
+                // The card face is only shown to the player who placed the Revealed token (isRevealedByStatus)
+                const isVisible: boolean = isOwner || isTeammate || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
+
+                // DIAGNOSTIC: Log card visibility for host viewing remote panels
+                if (player.id !== localPlayerId && index === 0) {
+                  console.log('[HOST VIEWING GUEST CARD DIAGNOSTIC]', {
+                    'player.id': player.id,
+                    'localPlayerId': localPlayerId,
+                    'player.teamId': player.teamId,
+                    'localPlayerTeamId': localPlayerTeamId,
+                    'card.ownerId': realCard.ownerId,
+                    'isPlaceholder': isPlaceholder,
+                    'isLocalPlayer': isLocalPlayer,
+                    'isOwner': isOwner,
+                    'isTeammate': isTeammate,
+                    'isRevealedToAll': isRevealedToAll,
+                    'isRevealedToMe': isRevealedToMe,
+                    'isRevealedByStatus': isRevealedByStatus,
+                    'isVisible FINAL': isVisible,
+                    'card.name': realCard.name?.substring(0, 20),
+                  })
+                }
 
                 return (
                   <div
@@ -1445,15 +1465,14 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       <div data-card-image="true" className="w-full h-full">
                         {isPlaceholder ? (
                           // Show card back for placeholder cards (remote players in WebRTC)
-                          // Use isVisible to determine if card should be face-up (e.g. with Revealed status)
+                          // CRITICAL: Preserve card.ownerId so Card component can get correct color from playerColorMap
                           <CardComponent
                             card={{
                               ...card,
                               id: card.id,
                               baseId: card.baseId,
                               name: card.name || '',
-                              ownerId: player.id,
-                              ownerName: player.name,
+                              ownerId: card.ownerId || player.id,  // Preserve real card owner, fallback to player id
                               deck: card.deck || (DeckTypeEnum.Random as const),
                               imageUrl: card.imageUrl || '',
                               abilityText: card.abilityText || '',

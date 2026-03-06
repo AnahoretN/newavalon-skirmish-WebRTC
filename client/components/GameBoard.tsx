@@ -798,10 +798,11 @@ export const GameBoard = memo<GameBoardProps>(({
     // Get target coords from ability mode for line selection
     const lineSelectionTargetCoords = isLineSelectionModeAbility ? (abilityMode?.payload?.targetCoords || abilityMode?.payload?.firstCoords) : null
 
-    // A cell is valid if it's in either local targets OR targeting mode targets OR line selection mode
+    // A cell is valid if it's in GLOBAL targeting mode targets OR line selection mode
+    // NO LOCAL effects - all highlights must be synchronized across all players
     const isValidTargetCell = (row: number, col: number) => {
-      // Check regular valid targets
-      if (validTargetsSet.has(`${row}-${col}`) || targetingModeTargetsSet.has(`${row}-${col}`)) {
+      // Check GLOBAL targeting mode targets only
+      if (targetingModeTargetsSet.has(`${row}-${col}`)) {
         return true
       }
 
@@ -825,6 +826,21 @@ export const GameBoard = memo<GameBoardProps>(({
           return row === abilityMode.sourceCoords.row || col === abilityMode.sourceCoords.col
         }
 
+        // For SELECT_DIAGONAL:
+        // - First click: all cells are valid (to select center)
+        // - After first click: highlight diagonals through the selected center (payload.firstCoords)
+        if (abilityMode?.mode === 'SELECT_DIAGONAL') {
+          // If firstCoords exists, highlight diagonals through it
+          if (abilityMode?.payload?.firstCoords) {
+            const firstCoords = abilityMode.payload.firstCoords
+            const onMainDiagonal = (row - firstCoords.row) === (col - firstCoords.col)
+            const onAntiDiagonal = (row + col) === (firstCoords.row + firstCoords.col)
+            return onMainDiagonal || onAntiDiagonal
+          }
+          // First click - all cells are valid to select as center
+          return true
+        }
+
         // Other line selection modes need targetCoords
         if (!lineSelectionTargetCoords) {
           return false
@@ -843,14 +859,6 @@ export const GameBoard = memo<GameBoardProps>(({
         // For SELECT_LINE_START and similar, highlight row and column through source coords
         if (abilityMode?.mode === 'SELECT_LINE_START' && abilityMode?.sourceCoords) {
           return row === abilityMode.sourceCoords.row || col === abilityMode.sourceCoords.col
-        }
-
-        // For SELECT_DIAGONAL, check if on diagonal through source coords
-        if (abilityMode?.mode === 'SELECT_DIAGONAL' && abilityMode?.sourceCoords) {
-          const sourceCoords = abilityMode.sourceCoords
-          const onMainDiagonal = (row - sourceCoords.row) === (col - sourceCoords.col)
-          const onAntiDiagonal = (row + col) === (sourceCoords.row + sourceCoords.col)
-          return onMainDiagonal || onAntiDiagonal
         }
 
         // Default line selection: same row or column as target coords

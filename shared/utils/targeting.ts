@@ -1332,6 +1332,10 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
 
     // Only allow hand targeting for Revealed status or Power buffs (not targeting tokens)
     if (!isTargetingToken && (action.tokenType === 'Revealed' || action.tokenType?.startsWith('Power'))) {
+      // CRITICAL: Pass originalOwnerId as tokenOwnerId for proper onlyOpponents check
+      // This fixes Enhanced Interrogation highlighting owner's hand cards
+      const tokenOwnerId = action.originalOwnerId
+
       // We need to check if ANY hand card is valid
       for (const p of currentGameState.players) {
         for (let i = 0; i < p.hand.length; i++) {
@@ -1348,6 +1352,7 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
             constraints,
             playerId,
             currentGameState.players,
+            tokenOwnerId,
           )
           if (isValid) {
             return true

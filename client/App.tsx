@@ -1280,28 +1280,9 @@ const AppInner = function AppInner() {
     // CRITICAL: abilityMode targets are ONLY calculated when cursorStack is NOT active
     // When tokens are being placed (cursorStack), abilityMode is suppressed visually
     // The ability may still modify cursorStack parameters, but doesn't add its own targets
-    if (abilityMode?.type === 'ENTER_MODE' && abilityMode.mode === 'SELECT_TARGET' && !cursorStack) {
-      // Special logic for Quick Response Team Hand Selection highlight
-      if (abilityMode.payload.actionType === 'SELECT_HAND_FOR_DEPLOY' || abilityMode.payload.filter) {
-        gameState.players.forEach(p => {
-          p.hand.forEach((card, index) => {
-            // CRITICAL: Check that filter is a function before calling it
-            const filterFn = abilityMode.payload.filter
-            if (!filterFn || (typeof filterFn === 'function' && filterFn(card))) {
-              // For Deploy from Hand, only check owner
-              if (abilityMode.payload.actionType === 'SELECT_HAND_FOR_DEPLOY') {
-                if (p.id === actorId) {
-                  handTargets.push({ playerId: p.id, cardIndex: index })
-                }
-              } else {
-                // Generic destroy/select logic
-                handTargets.push({ playerId: p.id, cardIndex: index })
-              }
-            }
-          })
-        })
-      }
-    }
+    // NOTE: Hand targets for SELECT_TARGET modes are now handled via GLOBAL targetingMode only
+    // This is set in actionExecutionHandler.ts and synchronized across all players
+    // Local handTargets calculation has been removed to prevent unsynchronized highlights
 
     // Handle cursorStack - process BEFORE setting validHandTargets
     // Uses universal token targeting rules from countersDatabase
@@ -2584,18 +2565,24 @@ const AppInner = function AppInner() {
       }
 
       if (canControl) {
+        // Command cards: use playCommandCard (goes to announced + modal), no playFaceDown option
         if (card.deck === DeckType.Command) {
-          items.push({ label: t('play'), isBold: true, onClick: () => {
-            closeAllModals(); playCommandCard(card, sourceItem)
-          } })
+          // Only for hand and deck view, NOT for discard
+          if (!['discardCard'].includes(type)) {
+            items.push({ label: t('play'), isBold: true, onClick: () => {
+              closeAllModals(); playCommandCard(card, sourceItem)
+            } })
+          }
         } else if (type === 'handCard') {
+          // Non-command hand cards: play and playFaceDown
           items.push({ label: t('play'), isBold: true, onClick: () => {
             closeAllModals(); setPlayMode({ card, sourceItem, faceDown: false })
           } })
           items.push({ label: t('playFaceDown'), onClick: () => {
             closeAllModals(); setPlayMode({ card, sourceItem, faceDown: true })
           } })
-        } else if (isVisible && ['discardCard', 'deckCard'].includes(type)) {
+        } else if (isVisible && type === 'deckCard') {
+          // Non-command deck cards: play and playFaceDown
           items.push({ label: t('play'), isBold: true, onClick: () => {
             closeAllModals(); setPlayMode({ card, sourceItem, faceDown: false })
           } })

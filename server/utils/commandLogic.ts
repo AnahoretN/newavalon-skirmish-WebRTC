@@ -275,7 +275,7 @@ export const getCommandAction = (
         type: 'ENTER_MODE',
         mode: 'SELECT_DIAGONAL',
         sourceCard: card,
-        payload: { actionType: 'SCORE_DIAGONAL', bonusType: 'point_per_support', skipNextPhase: true },
+        payload: { actionType: 'SCORE_DIAGONAL', bonusType: 'point_per_support', skipNextPhase: true, playerId: localPlayerId },
       })
     }
     // Option 1: Score Diagonal + Draw 1 per Support
@@ -284,7 +284,7 @@ export const getCommandAction = (
         type: 'ENTER_MODE',
         mode: 'SELECT_DIAGONAL',
         sourceCard: card,
-        payload: { actionType: 'SCORE_DIAGONAL', bonusType: 'draw_per_support', skipNextPhase: true },
+        payload: { actionType: 'SCORE_DIAGONAL', bonusType: 'draw_per_support', skipNextPhase: true, playerId: localPlayerId },
       })
     }
   }
