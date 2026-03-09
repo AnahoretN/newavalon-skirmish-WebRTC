@@ -6,6 +6,7 @@
  */
 
 import { loadPeerJS } from './PeerJSLoader'
+import { getPeerJSOptions } from './rtcConfig'
 import type { PersonalizedState, SimpleGuestConfig, P2PMessage } from './SimpleP2PTypes'
 import { logger } from '../utils/logger'
 
@@ -61,7 +62,7 @@ export class SimpleGuest {
       }
 
       try {
-        this.peer = new Peer()
+        this.peer = new Peer(getPeerJSOptions())
 
         this.peer.on('open', (_peerId: string) => {
           logger.info('[SimpleGuest] Peer opened')

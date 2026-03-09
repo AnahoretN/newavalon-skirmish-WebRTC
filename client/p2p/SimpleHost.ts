@@ -6,6 +6,7 @@
  */
 
 import { loadPeerJS } from './PeerJSLoader'
+import { getPeerJSOptions } from './rtcConfig'
 import type { GameState } from '../types'
 import type {
   ActionMessage,
@@ -139,7 +140,7 @@ export class SimpleHost {
 
     return new Promise((resolve, reject) => {
       try {
-        this.peer = new Peer()
+        this.peer = new Peer(getPeerJSOptions())
 
         this.peer.on('open', (_peerId: string) => {
           logger.info('[SimpleHost] Peer opened with ID:', _peerId, 'gameId:', gameId)
