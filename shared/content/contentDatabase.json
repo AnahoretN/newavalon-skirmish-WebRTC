@@ -539,7 +539,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365251/OPT_CENTURION_grztbi.webp",
       "fallbackImage": "/images/cards/OPT_CENTURION.png",
       "power": 2,
-      "abilityText": "Commit: Sacrifice an allied unit ⇒ All allied cards in that unit's lines get +1 power.",
+      "abilityText": "Commit: Sacrifice an allied unit ⇒ All allied cards in Centurion's lines (horizontal and vertical) get +1 power.",
       "flavorText": "In the gilded halls of the Optimates, even the tools of war are works of art.",
       "types": ["Unit", "Optimates"],
       "faction": "Optimates",

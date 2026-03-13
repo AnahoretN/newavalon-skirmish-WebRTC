@@ -96,41 +96,37 @@ export function executeInstantAutoStep(
     }
 
     case 'BUFF_LINES_FROM_CONTEXT': {
-      // Buff all allies in the lines of a card from context
-      // Used by Centurion's multi-step ability
+      // Buff all allies in Centurion's lines (vertical and horizontal intersection)
+      // Centurion Commit: Sacrifice an allied unit ⇒ All allied cards in Centurion's lines get +1 power
       const amount = step.details?.amount || 1
-      const buffOriginCoords = context?.lastMovedCardCoords
 
-      if (!buffOriginCoords) {
-        console.warn('[executeInstantAutoStep] BUFF_LINES_FROM_CONTEXT: No coordinates in context')
+      // Use sourceCoords (Centurion's position), NOT lastMovedCardCoords (sacrificed card)
+      if (!sourceCoords) {
+        console.warn('[executeInstantAutoStep] BUFF_LINES_FROM_CONTEXT: No sourceCoords')
         return { success: false, shouldAdvance: true }
       }
 
       // Use sourceOwnerId (Centurion's owner) - this determines whose allies get buffed
-      // If not set, fall back to lastMovedCardId (sacrificed card's owner)
-      const buffOwnerId = context?.sourceOwnerId ?? parseInt(context?.lastMovedCardId || '0')
+      const buffOwnerId = context?.sourceOwnerId ?? ownerId
       const gridSize = gameState.board.length
-      const { row: r1, col: c1 } = buffOriginCoords
-      let buffedCount = 0
+      const { row: r1, col: c1 } = sourceCoords
 
-      // Buff all cards in the same row
+      // Buff all cards in the same row (horizontal line through Centurion)
       for (let c = 0; c < gridSize; c++) {
         const cell = gameState.board[r1]?.[c]
         const targetCard = cell?.card
         if (targetCard && targetCard.ownerId === buffOwnerId) {
           modifyBoardCardPower({ row: r1, col: c }, amount)
-          buffedCount++
         }
       }
 
-      // Buff all cards in the same column (excluding the already-processed row)
+      // Buff all cards in the same column (vertical line through Centurion, excluding intersection)
       for (let r = 0; r < gridSize; r++) {
-        if (r === r1) { continue }
+        if (r === r1) { continue } // Skip intersection (already processed in row loop)
         const cell = gameState.board[r]?.[c1]
         const targetCard = cell?.card
         if (targetCard && targetCard.ownerId === buffOwnerId) {
           modifyBoardCardPower({ row: r, col: c1 }, amount)
-          buffedCount++
         }
       }
 

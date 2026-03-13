@@ -125,8 +125,8 @@ export function handleStartNextRound(ws, data) {
     // Execute Preparation phase for active player (auto-draw if enabled)
     const activePlayerId = updatedState.activePlayerId;
     if (activePlayerId) {
-      const player = updatedState.players.find((p: any) => p.id === activePlayerId);
-      if (player && updatedState.autoDrawEnabled && player.deck && player.deck.length > 0) {
+      const player = updatedState.players.find((p: any) => p.id === activePlayerId) as any;
+      if (player && (updatedState as any).autoDrawEnabled && player.deck && player.deck.length > 0) {
         const drawnCard = player.deck.shift();
         if (drawnCard) {
           player.hand.push(drawnCard);
