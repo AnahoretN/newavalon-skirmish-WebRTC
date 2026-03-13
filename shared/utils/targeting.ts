@@ -95,7 +95,9 @@ export const validateTarget = (
 
     // Rule 2: If on board, must be physically face down OR revealed only to others
     if (location === 'board') {
-      if (!card.isFaceDown) {
+      // CRITICAL: Check for explicit face-down, not falsy value
+      // undefined means card was placed normally (face-up), not face-down
+      if (card.isFaceDown !== true) {
         return false
       }
     }

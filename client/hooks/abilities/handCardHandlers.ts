@@ -9,6 +9,7 @@ import { TIMING } from '@/utils/common'
 import { validateTarget } from '@shared/utils/targeting'
 import { READY_STATUS } from '@shared/abilities/readySystem.js'
 import { hasReadyStatus } from '@shared/abilities/readySystem.js'
+import { logger } from '@/utils/logger'
 
  
 
@@ -64,6 +65,13 @@ export function handleHandCardClick(
 
   // Handle cursorStack for hand cards (e.g., Revealed tokens from Threat Analyst)
   if (cursorStack) {
+    // DEBUG: Log cursorStack info
+    logger.info('[handCardHandlers] Processing hand card click with cursorStack', {
+      cursorStackType: cursorStack.type,
+      cursorStackCount: cursorStack.count,
+      targetOwnerId: cursorStack.targetOwnerId,
+      excludeOwnerId: cursorStack.excludeOwnerId,
+    })
     // RULE: Targeting tokens (Aim, Exploit, Stun, Shield) cannot be placed on cards in hand
     // Only Rule tokens (and Revealed status) can be placed on hand cards
     const targetingTokens = ['Aim', 'Exploit', 'Stun', 'Shield']
@@ -111,8 +119,16 @@ export function handleHandCardClick(
             count: 1,
           }, { target: 'hand', playerId: player.id, cardIndex })
 
+          // CRITICAL: Mark ability as used with proper readyStatusToRemove
           if (cursorStack.sourceCoords && cursorStack.sourceCoords.row >= 0) {
-            markAbilityUsed(cursorStack.sourceCoords, cursorStack.isDeployAbility, false, cursorStack.readyStatusToRemove)
+            const readyStatusToRemove = cursorStack.readyStatusToRemove || (cursorStack as any)._originalReadyStatusToRemove
+            logger.info('[handCardHandlers] Marking ability as used', {
+              sourceCoords: cursorStack.sourceCoords,
+              readyStatusToRemove,
+              cursorStackReadyStatusToRemove: cursorStack.readyStatusToRemove,
+              cursorStackOriginalReadyStatusToRemove: (cursorStack as any)._originalReadyStatusToRemove,
+            })
+            markAbilityUsed(cursorStack.sourceCoords, cursorStack.isDeployAbility, false, readyStatusToRemove)
           }
           if (cursorStack.count > 1) {
             setCursorStack(prev => prev ? ({ ...prev, count: prev.count - 1 }) : null)
@@ -124,6 +140,9 @@ export function handleHandCardClick(
             // The ability is already marked as used by markAbilityUsed above
             // chainedAction was only needed for intermediate steps, not final completion
             setCursorStack(null)
+            // CRITICAL: Clear abilityMode so the ability can complete
+            logger.info('[handCardHandlers] Clearing abilityMode after token placement')
+            setAbilityMode(null)
           }
         }
       }

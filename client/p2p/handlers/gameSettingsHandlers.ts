@@ -356,7 +356,8 @@ export function startGame(state: GameState): GameState {
       deck,
       handSize: hand.length,
       deckSize: deck.length,
-      mulliganAttempts: 3, // Initialize mulligan attempts
+      mulliganAttempts: p.isDummy ? 0 : 3, // Dummy players don't mulligan
+      hasMulliganed: p.isDummy, // Dummy players auto-confirm mulligan
     }
   })
 

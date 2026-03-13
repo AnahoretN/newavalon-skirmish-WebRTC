@@ -212,6 +212,13 @@ export function handlePlayerReady(ws, data) {
 
       // Initialize mulligan attempts for all players
       initializeMulliganAttempts(gameState);
+
+      // Dummy players don't need mulligan - mark them as confirmed immediately
+      gameState.players.forEach(player => {
+        if (player.isDummy) {
+          player.hasMulliganed = true;
+        }
+      });
     }
 
     broadcastToGame(data.gameId, gameState);

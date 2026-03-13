@@ -501,8 +501,8 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   // ============================================================================
   useEffect(() => {
     // Only attempt auto-reconnect if we're a guest (not host) and disconnected
-    if (isHostRef.current) return
-    if (isReconnectingRef.current) return // Already reconnecting
+    if (isHostRef.current) { return }
+    if (isReconnectingRef.current) { return } // Already reconnecting
 
     const hostPeerId = localStorage.getItem('webrtc_host_peer_id')
     const hasCredentials = hostPeerId && localStorage.getItem('player_token')
@@ -530,12 +530,12 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   // Monitor gameState for local player disconnection
   // ============================================================================
   useEffect(() => {
-    if (!gameState || !gameState.players || localPlayerId === 0) return
-    if (isReconnectingRef.current) return // Already reconnecting
-    if (isHostRef.current) return // Host doesn't need to reconnect
+    if (!gameState || !gameState.players || localPlayerId === 0) { return }
+    if (isReconnectingRef.current) { return } // Already reconnecting
+    if (isHostRef.current) { return } // Host doesn't need to reconnect
 
     const localPlayer = gameState.players.find(p => p.id === localPlayerId)
-    if (!localPlayer) return
+    if (!localPlayer) { return }
 
     // If local player is disconnected, start reconnection
     if (localPlayer.isDisconnected) {
@@ -573,7 +573,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   // Countdown timer for reconnection progress
   // ============================================================================
   useEffect(() => {
-    if (!reconnectProgress) return
+    if (!reconnectProgress) { return }
 
     const interval = setInterval(() => {
       setReconnectProgress(prev => {

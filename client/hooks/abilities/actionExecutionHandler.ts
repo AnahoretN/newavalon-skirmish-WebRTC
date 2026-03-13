@@ -551,8 +551,6 @@ function handleCreateStack(
   }
 
   if (count > 0) {
-    setAbilityMode(null)
-
     // Determine token owner: tokens always belong to the card owner (even if it's a dummy player)
     // This ensures dummy player's tokens belong to the dummy, not the controlling player
     let tokenOwnerId = action.sourceCard?.ownerId ?? localPlayerId ?? 0
@@ -588,9 +586,17 @@ function handleCreateStack(
       // CRITICAL: Pass _autoStepsContext for AUTO_STEPS continuation after cursorStack completes
       // This enables abilities like Centurion Commit to continue after CREATE_STACK step
       _autoStepsContext: action.payload?._autoStepsContext,
+      // CRITICAL: Store the original readyStatusToRemove explicitly for token placement completion
+      _originalReadyStatusToRemove: action.readyStatusToRemove,
     }
 
     const tokenType = action.tokenType || 'Aim'
+
+    logger.info('[handleCreateStack] Creating cursorStack with readyStatusToRemove', {
+      tokenType,
+      readyStatusToRemove: action.readyStatusToRemove,
+      sourceCoords: action.sourceCoords || sourceCoords,
+    })
 
     // Special handling for Revealed token - include hand targets for opponents
     // Case 1: Specific target owner (e.g., "reveal cards from player X's hand")
@@ -620,7 +626,15 @@ function handleCreateStack(
       }
 
       // Create cursorStack
-      setCursorStack(createTokenCursorStack(tokenType, tokenOwnerId, null, modifications))
+      const newCursorStack = createTokenCursorStack(tokenType, tokenOwnerId, null, modifications)
+      logger.info('[handleCreateStack] Creating cursorStack for Revealed token', {
+        tokenType,
+        tokenOwnerId,
+        targetOwnerId: action.targetOwnerId,
+        handTargetsCount: handTargets.length,
+        handTargets: handTargets,
+      })
+      setCursorStack(newCursorStack)
 
       // Create a dummy action for setTargetingMode (required parameter)
       const dummyAction: AbilityAction = {
@@ -636,7 +650,12 @@ function handleCreateStack(
       }
 
       // Activate targeting mode so all players see the valid hand targets highlighted
+      logger.info('[handleCreateStack] Calling setTargetingMode with handTargets', {
+        handTargetsCount: handTargets.length,
+        handTargets: handTargets,
+      })
       setTargetingMode(dummyAction, tokenOwnerId, sourceCoords, undefined, undefined, handTargets)
+      // Don't clear abilityMode here - it will be cleared when cursorStack is depleted (in useAppAbilities.ts)
     }
     // Case 2: Revealed with onlyOpponents (e.g., False Orders Option 0 - reveal any opponent's cards)
     else if (tokenType === 'Revealed' && (action.onlyOpponents || action.excludeOwnerId)) {
@@ -696,9 +715,11 @@ function handleCreateStack(
 
       // Activate targeting mode so all players see the valid hand targets highlighted
       setTargetingMode(dummyAction, tokenOwnerId, sourceCoords, undefined, undefined, handTargets)
+      // Don't clear abilityMode here - it will be cleared when cursorStack is depleted (in useAppAbilities.ts)
     } else {
       // Normal token placement (board only)
       setCursorStack(createTokenCursorStack(tokenType, tokenOwnerId, null, modifications))
+      // Don't clear abilityMode here - it will be cleared when cursorStack is depleted (in useAppAbilities.ts)
     }
   } else {
     triggerNoTarget(sourceCoords)
@@ -1372,7 +1393,9 @@ function handleEnterMode(
           readyStatusToRemove: action.readyStatusToRemove,
           payload: {
             ...nextStep.details,
-            actionType: nextStep.action,  // Set actionType so handlers know how to process this
+            // Only set actionType from nextStep.action if not already in details
+            // This preserves actionType: 'DESTROY' from details for multi-step abilities
+            ...(nextStep.details?.actionType ? {} : { actionType: nextStep.action }),
             tokenType: nextStep.details?.tokenType,
             count: nextStep.details?.count,
             mustBeInLineWithSource: nextStep.mode === 'LINE_TARGET' ? true : undefined,
@@ -1513,7 +1536,9 @@ function handleEnterMode(
           readyStatusToRemove: action.readyStatusToRemove,
           payload: {
             ...firstStep.details,
-            actionType: firstStep.action,  // Set actionType so handlers know how to process this
+            // Only set actionType from firstStep.action if not already in details
+            // This preserves actionType: 'DESTROY' from details for Centurion Commit
+            ...(firstStep.details?.actionType ? {} : { actionType: firstStep.action }),
             tokenType: firstStep.details?.tokenType,
             count: firstStep.details?.count,
             mustBeInLineWithSource: firstStep.mode === 'LINE_TARGET' ? true : undefined,

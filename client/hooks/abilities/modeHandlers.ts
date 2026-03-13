@@ -225,6 +225,7 @@ export function handleModeCardClick(
     gameState,
     localPlayerId: _localPlayerId,
     abilityMode,
+    cursorStack,
     interactionLock,
     handleLineSelection: _handleLineSelection,
   } = props
@@ -234,6 +235,14 @@ export function handleModeCardClick(
   }
 
   if (interactionLock.current) {
+    return false
+  }
+
+  // CRITICAL: If cursorStack is active, do NOT process abilityMode handlers
+  // The cursorStack handler in handleBoardCardClick already validated if this card is a valid target
+  // If we're here, it means the card is NOT a valid target for the token, so ignore the click
+  // This prevents REVEAL_ENEMY_CHAINED from being re-triggered when clicking invalid board cards
+  if (cursorStack) {
     return false
   }
 
@@ -818,7 +827,7 @@ function handleSelectTargetActionType(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, markAbilityUsed, setAbilityMode, moveItem, modifyBoardCardPower, addBoardCardStatus, removeBoardCardStatus, removeBoardCardStatusByOwner, removeStatusByType, resetDeployStatus, setCounterSelectionData, handleActionExecution, gameState, destroyCard, setCommandContext, updatePlayerScore, triggerFloatingText } = props
+  const { abilityMode, markAbilityUsed, setAbilityMode, moveItem, modifyBoardCardPower, addBoardCardStatus, removeBoardCardStatus, removeBoardCardStatusByOwner, removeStatusByType, resetDeployStatus, setCounterSelectionData, handleActionExecution, gameState, destroyCard, setCommandContext, updatePlayerScore, triggerFloatingText, clearTargetingMode } = props
   const { payload, sourceCoords, isDeployAbility, readyStatusToRemove, sourceCard } = abilityMode!
 
   const actorId = abilityMode!.sourceCard?.ownerId ?? (gameState.players.find(p => p.id === gameState.activePlayerId)?.isDummy ? gameState.activePlayerId : props.localPlayerId || gameState.activePlayerId)
@@ -1173,10 +1182,22 @@ function handleSelectTargetActionType(
         sourceCard: abilityMode.sourceCard, // Pass the source card (Recon Drone) for token ownership
         isDeployAbility: abilityMode.isDeployAbility,
         readyStatusToRemove: readyStatusToRemove,
+        // CRITICAL: Revealed token should only apply to face-down cards on the battlefield
+        // Face-up cards are already revealed, so they shouldn't be valid targets
+        onlyFaceDown: true,
       }
+      // CRITICAL: Clear board targeting mode BEFORE handleActionExecution
+      // This clears the board card highlights, then handleCreateStack will set hand card highlights
+      // Order is important: we don't want to clear the hand targeting that handleCreateStack sets
+      clearTargetingMode()
       handleActionExecution(chainedAction, boardCoords)
-      // Chained action will set up the token placement mode and handle completion
-      // Don't clear mode here - let the chained action's flow complete
+      // CRITICAL: Mark ability as used immediately after chained action executes
+      // This removes the readyCommit status so the card can't be activated again
+      markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
+      // CRITICAL: Clear abilityMode immediately after chained action
+      // The cursorStack will handle the hand targeting phase
+      // Keeping abilityMode active was causing the board targeting to re-appear after token placement
+      setAbilityMode(null)
       return true
     }
 

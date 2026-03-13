@@ -86,7 +86,7 @@ export function createTokenCursorStack(
   // in the validation function, not via cursorStack properties
 
   // Merge: base state < token rules < modifications < existing preserved props
-  return {
+  const result = {
     ...baseState,
     ...tokenRules,
     ...modifications,
@@ -97,6 +97,8 @@ export function createTokenCursorStack(
       readyStatusToRemove: existingStack.readyStatusToRemove,
     }),
   }
+
+  return result
 }
 
 /**

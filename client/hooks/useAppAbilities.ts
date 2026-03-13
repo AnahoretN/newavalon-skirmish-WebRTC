@@ -345,6 +345,8 @@ export const useAppAbilities = ({
             handleActionExecution(cursorStack.chainedAction, cursorStack.sourceCoords || { row: -1, col: -1 })
           }
           setCursorStack(null)
+          // Clear abilityMode when cursorStack is depleted (e.g., REVEAL_ENEMY_CHAINED)
+          setAbilityMode(null)
         }
       }
       return

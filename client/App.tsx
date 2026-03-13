@@ -231,8 +231,9 @@ const AppInner = function AppInner() {
   useEffect(() => {
     if (gameState.isMulliganActive && gameState.isGameStarted) {
       const localPlayer = gameState.players.find(p => p.id === localPlayerId)
-      // Check if local player hasn't confirmed yet
-      if (localPlayer && !localPlayer.hasMulliganed) {
+      // Check if local player hasn't confirmed yet AND is not a dummy player
+      // Dummy players don't get mulligan phase
+      if (localPlayer && !localPlayer.hasMulliganed && !localPlayer.isDummy) {
         openMulliganModal('mulligan', {
           players: gameState.players,
           localPlayerId,
@@ -794,8 +795,47 @@ const AppInner = function AppInner() {
       // This ensures remote players see targeting highlights cleared when token is placed
       // Note: Local cursorStack/abilityMode will re-populate validHandTargets in the next useEffect cycle
       setValidHandTargets([])
+    } else if (hasLocalActiveMode) {
+      // CRITICAL: When we have a local active mode (cursorStack, abilityMode, etc.),
+      // populate validHandTargets from cursorStack if targeting hand cards
+      // This fixes the issue where REVEAL_ENEMY_CHAINED creates cursorStack but validHandTargets is not populated
+      if (cursorStack && getTokenTargetingRules(cursorStack.type).allowHand) {
+        // Validate targets based on cursorStack constraints
+        const actorId = gameState.activePlayerId ?? localPlayerId ?? 0
+        const freshHandTargets: {playerId: number, cardIndex: number}[] = []
+
+        gameState.players.forEach(p => {
+          p.hand.forEach((card, index) => {
+            const constraints = {
+              ...(cursorStack.targetOwnerId !== undefined && { targetOwnerId: cursorStack.targetOwnerId }),
+              ...(cursorStack.excludeOwnerId !== undefined && { excludeOwnerId: cursorStack.excludeOwnerId }),
+              onlyOpponents: cursorStack.onlyOpponents || (cursorStack.targetOwnerId === -1),
+              ...(cursorStack.onlyFaceDown !== undefined && { onlyFaceDown: cursorStack.onlyFaceDown }),
+              ...(cursorStack.targetType && { targetType: cursorStack.targetType }),
+              ...(cursorStack.requiredTargetStatus && { requiredTargetStatus: cursorStack.requiredTargetStatus }),
+              tokenType: cursorStack.type,
+            }
+
+            const isValid = validateTarget(
+              { card, ownerId: p.id, location: 'hand' },
+              constraints,
+              actorId,
+              gameState.players,
+              cursorStack.originalOwnerId,
+            )
+
+            if (isValid) {
+              freshHandTargets.push({ playerId: p.id, cardIndex: index })
+            }
+          })
+        })
+
+        setValidHandTargets(freshHandTargets)
+      } else if (!cursorStack && !abilityMode && !playMode && !commandModalCard) {
+        // No local active mode - clear validHandTargets
+        setValidHandTargets([])
+      }
     }
-    // If hasLocalActiveMode is true, we skip syncing - let the other useEffect handle it
   }, [
     gameState.targetingMode?.handTargets,
     gameState.targetingMode?.timestamp,
@@ -1378,6 +1418,16 @@ const AppInner = function AppInner() {
       setValidHandTargets(handTargets)
     }
 
+    // DEBUG: Log handTargets calculation for cursorStack with targetOwnerId
+    if (cursorStack?.targetOwnerId !== undefined) {
+      logger.info('[App.tsx] cursorStack with targetOwnerId', {
+        targetOwnerId: cursorStack.targetOwnerId,
+        handTargetsCount: handTargets.length,
+        handTargets: handTargets,
+        tokenType: cursorStack.type,
+      })
+    }
+
     // Use universal targeting mode system to sync targets to all players
     // This ensures all players see the same visual highlights
     //
@@ -1394,6 +1444,18 @@ const AppInner = function AppInner() {
     const hasCommandModal = !!commandModalCard
     const hasActiveMode = cursorStack || abilityMode || hasPlayMode || hasCommandModal
     const isDeckSelectableMode = abilityMode?.mode === 'SELECT_DECK'
+
+    // DEBUG: Log why targeting mode is not being set
+    if (hasActiveMode && cursorStack?.targetOwnerId !== undefined) {
+      logger.info('[App.tsx] Active mode with cursorStack.targetOwnerId', {
+        hasActiveMode,
+        boardTargetsCount: boardTargets.length,
+        handTargetsCount: handTargets.length,
+        isDeckSelectableMode,
+        actorId,
+        willCallSetTargetingMode: boardTargets.length > 0 || handTargets.length > 0 || isDeckSelectableMode,
+      })
+    }
 
     if (hasActiveMode && (boardTargets.length > 0 || handTargets.length > 0 || isDeckSelectableMode)) {
       // Determine the action to use for targeting mode

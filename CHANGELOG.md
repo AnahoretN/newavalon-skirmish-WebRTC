@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.12] - 2026-03-13
+
+### Fixed
+- **Recon Drone Commit Ability**: Fixed multi-step targeting flow for Recon Drone's Commit ability
+  - Board targeting mode now properly clears when selecting adjacent opponent card
+  - Hand card targeting correctly activates after board card selection
+  - Ability properly completes after placing Revealed token (readyCommit status removed)
+  - Revealed token now correctly targets only face-down cards on battlefield
+  - Fixed face-down card validation logic to properly handle undefined values
+
 ## [0.2.11] - 2026-03-06
 
 ### Added
