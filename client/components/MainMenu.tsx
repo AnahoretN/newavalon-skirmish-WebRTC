@@ -111,36 +111,85 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white relative overflow-hidden">
       <div className="z-10 text-center p-8 bg-black bg-opacity-60 rounded-xl shadow-2xl border border-gray-700 max-w-md w-full">
-        <h1 className="text-5xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-b from-purple-600 to-blue-400 drop-shadow-lg">
-                    New Avalon
-        </h1>
-        <div className="flex items-center justify-center gap-3 mb-6">
-          <h2 className="text-2xl font-light text-gray-300 tracking-widest">SKIRMISH</h2>
-          <span className={`relative flex h-3 w-3`}>
-            {/* WebRTC P2P mode - blue indicator */}
-            {actualWebrtcEnabled && (
-              <>
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
-              </>
-            )}
-            {/* Standard server mode - green/yellow/red based on status */}
-            {!actualWebrtcEnabled && connectionStatus === 'Connected' && (
-              <>
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-              </>
-            )}
-            {!actualWebrtcEnabled && connectionStatus === 'Connecting' && (
-              <>
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
-              </>
-            )}
-            {!actualWebrtcEnabled && connectionStatus === 'Disconnected' && (
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-            )}
-          </span>
+        {/* Cyberpunk Neon Title */}
+        <div className="mb-6">
+          <h1
+            className="font-black tracking-wider"
+            style={{
+              fontFamily: "'Orbitron', sans-serif",
+              fontSize: '3.5rem',
+              lineHeight: '0.9',
+              color: '#FFFFFF',
+              textShadow: `
+                0 0 7px #A300FF,
+                0 0 13px #A300FF,
+                0 0 27px #A300FF,
+                0 0 53px #A300FF,
+                -2px -2px 0 #000033,
+                2px -2px 0 #000033,
+                -2px 2px 0 #000033,
+                2px 2px 0 #000033,
+                -2px 0 0 #000033,
+                2px 0 0 #000033,
+                0 -2px 0 #000033,
+                0 2px 0 #000033
+              `,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              WebkitFontSmoothing: 'antialiased',
+              MozOsxFontSmoothing: 'grayscale'
+            }}
+          >
+            NEW AVALON
+          </h1>
+          <div className="flex items-center justify-center gap-3 mt-2">
+            <h2
+              className="font-bold tracking-[0.3em]"
+              style={{
+                fontFamily: "'Orbitron', sans-serif",
+                fontSize: '1.5rem',
+                color: '#FFFFFF',
+                textShadow: `
+                  0 0 3px #A300FF,
+                  0 0 7px #A300FF,
+                  0 0 13px #A300FF,
+                  -1px -1px 0 #000033,
+                  1px -1px 0 #000033,
+                  -1px 1px 0 #000033,
+                  1px 1px 0 #000033
+                `,
+                textTransform: 'uppercase'
+              }}
+            >
+                SKIRMISH
+            </h2>
+            {/* Connection Status Indicator */}
+            <span className={`relative flex h-3 w-3`}>
+              {/* WebRTC P2P mode - magenta indicator (same as title glow) */}
+              {actualWebrtcEnabled && (
+                <>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: '#A300FF' }}></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3" style={{ backgroundColor: '#A300FF' }}></span>
+                </>
+              )}
+              {/* Standard server mode - green/yellow/red based on status */}
+              {!actualWebrtcEnabled && connectionStatus === 'Connected' && (
+                <>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                </>
+              )}
+              {!actualWebrtcEnabled && connectionStatus === 'Connecting' && (
+                <>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
+                </>
+              )}
+              {!actualWebrtcEnabled && connectionStatus === 'Disconnected' && (
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+              )}
+            </span>
+          </div>
         </div>
 
         <div className="space-y-4 w-full">
@@ -152,13 +201,30 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
             }
             className={`w-full font-bold py-3 px-6 rounded-lg shadow-lg transition-all transform flex items-center justify-center gap-2 ${
               (actualWebrtcEnabled && !isInitializingHost) || (!actualWebrtcEnabled && connectionStatus === 'Connected')
-                ? 'bg-indigo-600 hover:bg-indigo-700 text-white hover:scale-105'
+                ? 'text-white hover:scale-105'
                 : 'bg-gray-800 text-gray-500 cursor-not-allowed'
             }`}
+            style={
+              (actualWebrtcEnabled && !isInitializingHost) || (!actualWebrtcEnabled && connectionStatus === 'Connected')
+                ? {
+                    backgroundColor: '#A300FF'
+                  }
+                : {}
+            }
+            onMouseEnter={(e) => {
+              if ((actualWebrtcEnabled && !isInitializingHost) || (!actualWebrtcEnabled && connectionStatus === 'Connected')) {
+                e.currentTarget.style.backgroundColor = '#8A00D6'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if ((actualWebrtcEnabled && !isInitializingHost) || (!actualWebrtcEnabled && connectionStatus === 'Connected')) {
+                e.currentTarget.style.backgroundColor = '#A300FF'
+              }
+            }}
           >
             {actualWebrtcEnabled ? (
               <>
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" /></svg>
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
                 {isInitializingHost ? t('connecting') + '...' : t('hostGame')}
               </>
             ) : (
