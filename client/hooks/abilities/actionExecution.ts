@@ -6,7 +6,6 @@
  */
 
 import type { AbilityAction, GameState } from '@/types'
-import { logger } from '@/utils/logger'
 
 export interface ActionCompletionProps {
   gameState: GameState
@@ -94,7 +93,6 @@ export function handleFinnScoring(
   const finnOwnerId = action.sourceCard?.ownerId
 
   if (finnOwnerId === undefined) {
-    logger.warn('[FINN_SCORING] Source card missing ownerId, skipping scoring')
     markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
     return true
   }

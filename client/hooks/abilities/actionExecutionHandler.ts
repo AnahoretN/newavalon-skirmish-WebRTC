@@ -7,7 +7,6 @@
 
 import type { AbilityAction, GameState, CommandContext, DragItem } from '@/types'
 import { checkActionHasTargets, calculateValidTargets } from '@shared/utils/targeting'
-import { logger } from '@/utils/logger'
 import { TIMING } from '@/utils/common'
 import { createTokenCursorStack } from '@/utils/tokenTargeting'
 import { executeInstantAutoStep, advanceToNextStepWithCoords, type AutoStep } from './modeHandlers.js'
@@ -130,7 +129,6 @@ export function handleActionExecution(
     const hasTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
 
     if (!hasTargets) {
-      logger.info('[handleActionExecution] No valid targets for action', { type: action.type, mode: action.mode, payloadFilter: !!action.payload?.filter, payloadFilterString: action.payload?.filterString })
       triggerNoTarget(sourceCoords)
       // Only execute chained action if skipChainedActionOnNoTargets is not set
       // This prevents abilities like Recon Drone Commit from creating token stacks when no valid targets exist
@@ -160,8 +158,6 @@ export function handleActionExecution(
     handleEnterMode(action, sourceCoords, props)
     return
   }
-
-  logger.warn('[handleActionExecution] Unknown action type:', action.type)
 }
 
 /**
@@ -214,7 +210,6 @@ function handleContinueAutoSteps(
 
   const autoStepsContext = action.payload?._autoStepsContext
   if (!autoStepsContext || !autoStepsContext.steps) {
-    logger.warn('[handleContinueAutoSteps] No _autoStepsContext found')
     markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
     return
   }
@@ -277,29 +272,9 @@ function handleGlobalAutoApply(
   props: ActionHandlerProps
 ): void {
   const { gameState, localPlayerId, commandContext, markAbilityUsed, triggerNoTarget, triggerFloatingText, updatePlayerScore, applyGlobalEffect, addBoardCardStatus, removeStatusByType, handleActionExecution: execAction, sendAction } = props
-
-  logger.info('[handleGlobalAutoApply] START', {
-    customAction: action.payload?.customAction,
-    contextReward: action.payload?.contextReward,
-    tokenType: action.payload?.tokenType,
-    hasFilter: !!action.payload?.filter,
-    sourceCardName: action.sourceCard?.name,
-    sourceCardOwnerId: action.sourceCard?.ownerId,
-    hasContextCardId: !!action.payload?.contextCardId,
-    contextCardId: action.payload?.contextCardId,
-  })
-
   // P2P: Token placement on moved card (False Orders Option 1: Stun x2)
   // Send to host for processing since client can't directly modify shared state
   if (action.payload?.contextCardId && action.payload?.tokenType && action.payload?.count && sendAction) {
-    logger.info('[handleGlobalAutoApply] Sending token placement to P2P host', {
-      contextCardId: action.payload.contextCardId,
-      tokenType: action.payload.tokenType,
-      count: action.payload.count,
-      ownerId: action.payload.ownerId,
-      sourceCardId: action.sourceCard?.id,
-      sourceCardName: action.sourceCard?.name,
-    })
     // Send action to host with full payload
     sendAction('GLOBAL_AUTO_APPLY', {
       payload: action.payload,
@@ -310,13 +285,6 @@ function handleGlobalAutoApply(
   } else {
     // Debug log to help diagnose issues
     if (action.payload?.tokenType && action.payload?.count) {
-      logger.warn('[handleGlobalAutoApply] Token data present but missing contextCardId or sendAction', {
-        hasContextCardId: !!action.payload?.contextCardId,
-        hasSendAction: !!sendAction,
-        contextCardId: action.payload?.contextCardId,
-        tokenType: action.payload?.tokenType,
-        count: action.payload?.count,
-      })
     }
   }
 
@@ -324,7 +292,6 @@ function handleGlobalAutoApply(
   if (action.payload?.customAction === 'FINN_SCORING') {
     const finnOwnerId = action.sourceCard?.ownerId
     if (finnOwnerId === undefined) {
-      logger.warn('[FINN_SCORING] Source card missing ownerId')
       markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
       return
     }
@@ -591,23 +558,9 @@ function handleCreateStack(
     }
 
     const tokenType = action.tokenType || 'Aim'
-
-    logger.info('[handleCreateStack] Creating cursorStack with readyStatusToRemove', {
-      tokenType,
-      readyStatusToRemove: action.readyStatusToRemove,
-      sourceCoords: action.sourceCoords || sourceCoords,
-    })
-
     // Special handling for Revealed token - include hand targets for opponents
     // Case 1: Specific target owner (e.g., "reveal cards from player X's hand")
     if (tokenType === 'Revealed' && action.targetOwnerId) {
-      logger.info('[handleCreateStack] Revealed token with targetOwnerId', {
-        targetOwnerId: action.targetOwnerId,
-        excludeOwnerId: action.excludeOwnerId,
-        onlyOpponents: action.onlyOpponents,
-        onlyFaceDown: action.onlyFaceDown,
-        willCreateHandTargets: true,
-      })
       // Collect hand targets for the specific opponent
       const handTargets: {playerId: number, cardIndex: number}[] = []
       const targetPlayer = gameState.players.find(p => p.id === action.targetOwnerId)
@@ -627,13 +580,6 @@ function handleCreateStack(
 
       // Create cursorStack
       const newCursorStack = createTokenCursorStack(tokenType, tokenOwnerId, null, modifications)
-      logger.info('[handleCreateStack] Creating cursorStack for Revealed token', {
-        tokenType,
-        tokenOwnerId,
-        targetOwnerId: action.targetOwnerId,
-        handTargetsCount: handTargets.length,
-        handTargets: handTargets,
-      })
       setCursorStack(newCursorStack)
 
       // Create a dummy action for setTargetingMode (required parameter)
@@ -650,21 +596,11 @@ function handleCreateStack(
       }
 
       // Activate targeting mode so all players see the valid hand targets highlighted
-      logger.info('[handleCreateStack] Calling setTargetingMode with handTargets', {
-        handTargetsCount: handTargets.length,
-        handTargets: handTargets,
-      })
       setTargetingMode(dummyAction, tokenOwnerId, sourceCoords, undefined, undefined, handTargets)
       // Don't clear abilityMode here - it will be cleared when cursorStack is depleted (in useAppAbilities.ts)
     }
     // Case 2: Revealed with onlyOpponents (e.g., False Orders Option 0 - reveal any opponent's cards)
     else if (tokenType === 'Revealed' && (action.onlyOpponents || action.excludeOwnerId)) {
-      logger.info('[handleCreateStack] Revealed token with onlyOpponents/excludeOwnerId', {
-        excludeOwnerId: action.excludeOwnerId,
-        onlyOpponents: action.onlyOpponents,
-        onlyFaceDown: action.onlyFaceDown,
-        willCreateHandTargets: true,
-      })
       // Collect hand targets for ALL opponents (excluding excluded owner)
       const handTargets: {playerId: number, cardIndex: number}[] = []
       const excludedId = action.excludeOwnerId ?? tokenOwnerId
@@ -914,7 +850,6 @@ function handleEnterMode(
 
     // If no valid targets, complete the ability
     if (targets.length === 0) {
-      logger.info('[handleEnterMode] PUSH mode: No valid targets - completing ability')
       triggerNoTarget(sourceCoords)
       markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
       setAbilityMode(null)
@@ -1322,7 +1257,6 @@ function handleEnterMode(
 
           // If no valid targets for CREATE_STACK, skip this step
           if (targets.length === 0) {
-            logger.info('[handleEnterMode] AUTO_STEPS: No valid targets for CREATE_STACK step - skipping')
             props.clearTargetingMode?.()
             // If this was the last step, mark ability as used and clear ability mode
             if (nextStepIndex + 1 >= steps.length) {
@@ -1363,7 +1297,6 @@ function handleEnterMode(
 
           // If no valid targets, skip this step and complete the ability
           if (targets.length === 0) {
-            logger.info('[handleEnterMode] AUTO_STEPS: No valid targets for PUSH step - skipping and completing ability')
             props.clearTargetingMode?.()
             // This was the last step, mark ability as used and clear ability mode
             markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
@@ -1415,7 +1348,6 @@ function handleEnterMode(
 
         // If no valid targets, skip this step and continue to the next one
         if (targets.length === 0) {
-          logger.info('[handleEnterMode] AUTO_STEPS: No valid targets for step', nextStep.action, '- skipping and continuing')
           // Clear targeting mode if set
           props.clearTargetingMode?.()
 
@@ -1507,7 +1439,6 @@ function handleEnterMode(
 
           // If no valid targets for CREATE_STACK, skip this step
           if (targets.length === 0) {
-            logger.info('[handleEnterMode] AUTO_STEPS: No valid targets for CREATE_STACK step - skipping')
             props.clearTargetingMode?.()
             // If this was the only step, mark ability as used and clear ability mode
             if (steps.length === 1) {
@@ -1559,7 +1490,6 @@ function handleEnterMode(
 
         // If no valid targets, skip this step and check if there are more steps
         if (targets.length === 0) {
-          logger.info('[handleEnterMode] AUTO_STEPS: No valid targets for first step - skipping')
           props.clearTargetingMode?.()
           // If this was the only step, mark ability as used and clear ability mode
           if (steps.length === 1) {
@@ -1626,30 +1556,11 @@ function handleContextReward(
   const { gameState, commandContext, updatePlayerScore, triggerFloatingText, drawCardsBatch, removeBoardCardStatus, addBoardCardStatus, modifyBoardCardPower, markAbilityUsed } = props
 
   const rewardType = action.payload?.contextReward
-
-  logger.info('[handleContextReward] START', {
-    rewardType,
-    sourceCardName: action.sourceCard?.name,
-    sourceCardOwnerId: action.sourceCard?.ownerId,
-    sourceCoords,
-    _sourceCoordsBeforeMove: action.payload?._sourceCoordsBeforeMove,
-    _tempContextId: action.payload?._tempContextId,
-    commandContext,
-  })
-
   // CRITICAL: Use _sourceCoordsBeforeMove first (where card IS now), not destination
   // This fixes timing issue where moveItem is async and card hasn't moved yet
   const sourceBeforeMove = action.payload?._sourceCoordsBeforeMove
   const coords = sourceBeforeMove || commandContext.lastMovedCardCoords || sourceCoords
-
-  logger.info('[handleContextReward] Looking for card at coords', {
-    sourceBeforeMove,
-    lastMovedCardCoords: commandContext.lastMovedCardCoords,
-    finalCoords: coords,
-  })
-
   if (!coords || coords.row < 0) {
-    logger.warn('[handleContextReward] No valid coords')
     return
   }
 
@@ -1659,12 +1570,10 @@ function handleContextReward(
   // Handle stale state - search by ID if card not at expected coords
   const searchId = action.payload?._tempContextId || commandContext.lastMovedCardId
   if ((!card || (searchId && card.id !== searchId)) && searchId) {
-    logger.info('[handleContextReward] Card not at expected coords, searching by ID', { searchId })
     for (let r = 0; r < gameState.board.length; r++) {
       for (let c = 0; c < gameState.board[r].length; c++) {
         if (gameState.board[r][c].card?.id === searchId) {
           card = gameState.board[r][c].card
-          logger.info('[handleContextReward] Found card at', { row: r, col: c })
           break
         }
       }
@@ -1675,37 +1584,13 @@ function handleContextReward(
   }
 
   if (!card) {
-    logger.warn('[handleContextReward] No card found', {
-      coords,
-      searchId,
-      lastMovedCardId: commandContext.lastMovedCardId,
-    })
     return
   }
 
   const amount = Math.max(0, card.power + (card.powerModifier || 0) + (card.bonusPower || 0))
-
-  logger.info('[handleContextReward] Found card, applying reward', {
-    cardName: card.name,
-    cardId: card.id,
-    cardPower: card.power,
-    powerModifier: card.powerModifier,
-    bonusPower: card.bonusPower,
-    amount,
-    rewardOwnerId: action.sourceCard?.ownerId,
-  })
-
   if (rewardType === 'DRAW_MOVED_POWER' || rewardType === 'DRAW_EQUAL_POWER') {
-    logger.info('[handleContextReward] DRAW_MOVED_POWER', {
-      ownerId: action.sourceCard?.ownerId,
-      amount,
-    })
     drawCardsBatch(action.sourceCard?.ownerId || 0, amount)
   } else if (rewardType === 'SCORE_MOVED_POWER') {
-    logger.info('[handleContextReward] SCORE_MOVED_POWER', {
-      ownerId: action.sourceCard?.ownerId,
-      amount,
-    })
     triggerFloatingText({
       row: coords.row,
       col: coords.col,

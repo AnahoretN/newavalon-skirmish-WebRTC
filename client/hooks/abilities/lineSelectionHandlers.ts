@@ -6,7 +6,6 @@
 
 import type { AbilityAction, FloatingTextData } from '@/types'
 import { TIMING } from '@/utils/common'
-import { logger } from '@/utils/logger'
 
 export interface LineSelectionProps {
   gameState: any
@@ -56,15 +55,6 @@ export function handleLineSelection(
 
   const { mode, sourceCard, sourceCoords, payload, isDeployAbility, readyStatusToRemove } = abilityMode
 
-  // Log for debugging
-  logger.info('[lineSelectionHandlers] handleLineSelection called', {
-    mode,
-    hasSourceCoords: !!sourceCoords,
-    sourceCoords,
-    clickedCoords: coords,
-    isWebRTCMode
-  })
-
   // SCORE_LAST_PLAYED_LINE (Integrator)
   if (mode === 'SCORE_LAST_PLAYED_LINE' && abilityMode.sourceCoords) {
     // Prevent multiple clicks
@@ -85,15 +75,6 @@ export function handleLineSelection(
     const hasWebrtcGlobal = typeof window !== 'undefined' && (window as any).webrtcManager
     const isHostFlag = hasWebrtcGlobal ? (window as any).webrtcIsHost : true
     const isWebRTCGuest = isWebRTCMode && hasWebrtcGlobal && !isHostFlag
-
-    logger.info('[lineSelectionHandlers] Checking WebRTC mode', {
-      isWebRTCMode,
-      hasWebrtcGlobal,
-      isHostFlag,
-      isWebRTCGuest,
-      mode,
-      r1, c1, r2, c2
-    })
 
     if (isWebRTCGuest) {
       // Guest: Calculate score locally, then send result to host
@@ -141,8 +122,6 @@ export function handleLineSelection(
           }
         }
       }
-
-      logger.info('[lineSelectionHandlers] Guest calculated score', { totalScore, scoreEventsCount: scoreEvents.length })
 
       // Show floating texts locally (guest sees them immediately)
       if (scoreEvents.length > 0) {

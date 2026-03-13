@@ -10,7 +10,6 @@ import type { Card, AbilityAction, CommandContext, DragItem, CursorStackState, C
 import { TIMING } from '@/utils/common'
 import { createTokenCursorStack } from '@/utils/tokenTargeting'
 import { handleLineSelection as handleLineSelectionModule } from './lineSelectionHandlers.js'
-import { logger } from '@/utils/logger'
 
 // Track cards that are transitioning from AUTO_STEPS to actual mode
 // Prevents infinite re-processing due to asynchronous React state updates
@@ -2154,19 +2153,6 @@ function handleSelectCell(
   // For other abilities, it might be at the top level. Check both.
   const actualChainedAction = directChainedAction || payload?.chainedAction
 
-  logger.info('[handleSelectCell] SELECT_CELL triggered', {
-    boardCoords,
-    sourceCoords,
-    sourceCardName: sourceCard?.name,
-    sourceCardId: sourceCard?.id,
-    sourceCardOwnerId: sourceCard?.ownerId,
-    hasDirectChainedAction: !!directChainedAction,
-    hasPayloadChainedAction: !!payload?.chainedAction,
-    chainedActionType: actualChainedAction?.type,
-    contextReward: actualChainedAction?.payload?.contextReward,
-    recordContext: payload?.recordContext,
-  })
-
   if (payload?.filter && !payload.filter(null, boardCoords.row, boardCoords.col)) {
     return false
   }
@@ -2184,15 +2170,6 @@ function handleSelectCell(
       bypassOwnershipCheck: true,
     }, { target: 'board', boardCoords })
   } else if (sourceCoords && sourceCoords.row >= 0 && sourceCard) {
-    logger.info('[handleSelectCell] Moving card from board', {
-      from: sourceCoords,
-      to: boardCoords,
-      cardId: movedCardId,
-      cardName: movedCard?.name,
-      hasChainedAction: !!actualChainedAction,
-      chainedActionType: actualChainedAction?.type,
-    })
-
     // CRITICAL: For False Orders Stun x2, pass enriched chainedAction via target
     // This ensures contextCardId is included in the MOVE_CARD_ON_BOARD action sent to host
     const target: DropTarget = { target: 'board', boardCoords }
@@ -2204,10 +2181,6 @@ function handleSelectCell(
           contextCardId: movedCardId, // Add moved card ID for token placement
         }
       }
-      logger.info('[handleSelectCell] Enriched chainedAction with contextCardId', {
-        contextCardId: movedCardId,
-        tokenType: actualChainedAction.payload?.tokenType,
-      })
     }
 
     moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, target)
@@ -2222,7 +2195,6 @@ function handleSelectCell(
       // Also track source location (where card IS now) for finding it before move completes
       _sourceCoordsBeforeMove: sourceCoords
     }
-    logger.info('[handleSelectCell] Setting commandContext', context)
     setCommandContext(context)
   }
 
@@ -2248,15 +2220,6 @@ function handleSelectCell(
         contextCardId: movedCardId,
       }
     }
-    logger.info('[handleSelectCell] Executing chainedAction', {
-      type: actualChainedAction.type,
-      contextReward: actualChainedAction.payload?.contextReward,
-      tokenType: actualChainedAction.payload?.tokenType,
-      movedCardId,
-      sourceCoords,
-      boardCoords,
-      _sourceCoordsBeforeMove: sourceCoords,
-    })
     // For False Orders and similar commands, use the new boardCoords as sourceCoords
     // This ensures the chained action (like CREATE_STACK for Reveal tokens) originates from the moved card's new location
     setTimeout(() => {
