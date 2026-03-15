@@ -789,13 +789,13 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                 <button onClick={handleLoadDeckClick} className="bg-transparent border border-gray-500 hover:bg-gray-700 px-4 py-1.5 rounded font-bold">{t('loadDeck')}</button>
                 <select value={player.selectedDeck} onChange={handleDeckSelectChange} className="flex-grow bg-gray-700 border border-gray-600 rounded p-1">
                   {selectableDecks.map((deck: { id: DeckTypeEnum; name: string; isSelectable: boolean }) => <option key={deck.id} value={deck.id}>{resources.deckNames[deck.id as keyof typeof resources.deckNames] || deck.name}</option>)}
-                  <option value={DeckTypeEnum.Custom}>{t('customDeck')}</option>
+                  <option value={DeckTypeEnum.Custom}>{player.customDeckName || t('customDeck')}</option>
                 </select>
               </div>
             ) : (
               <select value={player.selectedDeck} onChange={handleDeckSelectChange} className="w-full bg-gray-700 border border-gray-600 rounded p-2 mb-2">
                 {selectableDecks.map((deck: { id: DeckTypeEnum; name: string; isSelectable: boolean }) => <option key={deck.id} value={deck.id}>{resources.deckNames[deck.id as keyof typeof resources.deckNames] || deck.name}</option>)}
-                <option value={DeckTypeEnum.Custom}>{t('customDeck')}</option>
+                <option value={DeckTypeEnum.Custom}>{player.customDeckName || t('customDeck')}</option>
               </select>
             )}
           </div>
@@ -1054,7 +1054,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     className="text-[11px] bg-gray-700 text-white border border-gray-600 rounded px-1 py-0 h-5 w-[90px] focus:outline-none truncate flex-shrink-0"
                   >
                     {selectableDecks.map((deck: { id: DeckTypeEnum; name: string; isSelectable: boolean }) => <option key={deck.id} value={deck.id}>{resources.deckNames[deck.id as keyof typeof resources.deckNames] || deck.name}</option>)}
-                    <option value={DeckTypeEnum.Custom}>{t('customDeck')}</option>
+                    <option value={DeckTypeEnum.Custom}>{player.customDeckName || t('customDeck')}</option>
                   </select>
                 </>
               ) : (
@@ -1064,7 +1064,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   className="text-[11px] bg-gray-700 text-white border border-gray-600 rounded px-1 py-0 h-5 w-[110px] focus:outline-none truncate flex-shrink-0"
                 >
                   {selectableDecks.map((deck: { id: DeckTypeEnum; name: string; isSelectable: boolean }) => <option key={deck.id} value={deck.id}>{resources.deckNames[deck.id as keyof typeof resources.deckNames] || deck.name}</option>)}
-                  <option value={DeckTypeEnum.Custom}>{t('customDeck')}</option>
+                  <option value={DeckTypeEnum.Custom}>{player.customDeckName || t('customDeck')}</option>
                 </select>
               )
             )}

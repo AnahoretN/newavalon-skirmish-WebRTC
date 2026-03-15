@@ -126,6 +126,7 @@ export interface Player {
   handSize?: number; // Hand size (used when hand array is optimized out)
   deckSize?: number; // Deck size (used when deck array is optimized out)
   discardSize?: number; // Discard size (used when discard array is optimized out)
+  customDeckName?: string; // Name of the custom deck if selected (for display in dropdown)
 }
 
 /**

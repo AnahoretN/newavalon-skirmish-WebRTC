@@ -9,6 +9,7 @@ import { sanitizePlayerName } from '../utils/security.js';
 import { broadcastToGame } from '../services/websocket.js';
 import { createNewPlayer, generatePlayerToken } from '../utils/deckUtils.js';
 import { logGameAction as logAction, GameActions } from '../utils/gameLogger.js';
+import { getCardDefinition } from '../services/content.js';
 
 /**
  * Handle UPDATE_PLAYER_NAME message
@@ -301,7 +302,7 @@ export function handleChangePlayerDeck(ws, data) {
  */
 export function handleLoadCustomDeck(ws, data) {
   try {
-    const { gameId, playerId } = data;
+    const { gameId, playerId, deckFile } = data;
     const gameState = getGameState(gameId);
 
     if (!gameState) {
@@ -320,15 +321,75 @@ export function handleLoadCustomDeck(ws, data) {
       return;
     }
 
-    // Custom deck loading is handled primarily on the client side
-    // This handler just acknowledges the request
+    const player = gameState.players.find(p => p.id === playerId);
+    if (!player) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Player not found'
+      }));
+      return;
+    }
+
+    // Build the deck from the custom deck file
+    const newDeck: any[] = [];
+    for (const deckCard of deckFile.cards) {
+      const cardDef = getCardDefinition(deckCard.cardId);
+      if (!cardDef) {
+        logger.warn(`Card ${deckCard.cardId} not found in database, skipping`);
+        continue;
+      }
+
+      // Add the specified quantity of this card
+      for (let i = 0; i < deckCard.quantity; i++) {
+        newDeck.push({
+          id: `${deckCard.cardId}_${player.id}_${Date.now()}_${i}`,
+          baseId: deckCard.cardId,
+          name: cardDef.name,
+          types: cardDef.types || [],
+          faction: cardDef.faction,
+          power: cardDef.power || 0,
+          abilities: cardDef.abilities || [],
+          imageUrl: cardDef.imageUrl,
+          fallbackImage: cardDef.fallbackImage,
+          deck: 'Custom',
+          ownerId: player.id,
+          location: 'deck',
+          isFaceDown: false,
+          statuses: []
+        });
+      }
+    }
+
+    // Update player's deck with the custom deck
+    player.deck = newDeck;
+    player.selectedDeck = 'Custom';
+    player.customDeckName = deckFile.deckName;
+
+    // Clear hand and discard to prevent issues
+    player.hand = [];
+    player.discard = [];
+
+    logAction(gameId, GameActions.LOAD_CUSTOM_DECK, {
+      playerId,
+      deckName: deckFile.deckName,
+      cardCount: newDeck.length
+    }).catch();
+
+    broadcastToGame(gameId, gameState);
+
     ws.send(JSON.stringify({
       type: 'CUSTOM_DECK_LOADED',
       playerId,
+      deckName: deckFile.deckName,
+      cardCount: newDeck.length,
       success: true
     }));
-  } catch {
-    // Error handling - client already notified
+  } catch (error) {
+    logger.error('Failed to load custom deck:', error);
+    ws.send(JSON.stringify({
+      type: 'ERROR',
+      message: 'Failed to load custom deck'
+    }));
   }
 }
 

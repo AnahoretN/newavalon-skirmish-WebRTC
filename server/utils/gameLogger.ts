@@ -173,6 +173,7 @@ export const GameActions = {
 
   // Settings
   DECK_CHANGED: 'deck_changed',
+  LOAD_CUSTOM_DECK: 'load_custom_deck',
   COLOR_CHANGED: 'color_changed',
   NAME_CHANGED: 'name_changed',
   TEAM_ASSIGNED: 'team_assigned',

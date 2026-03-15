@@ -10,7 +10,7 @@
  * - handlers/gameSettingsHandlers.ts - game configuration
  */
 
-import type { GameState, Card, Player, ScoringLineData, CardStatus } from '../types'
+import type { GameState, Card, Player, ScoringLineData, CardStatus, CustomDeckFile } from '../types'
 import { DeckType } from '../types'
 import type { ActionType } from './SimpleP2PTypes'
 import { shuffleDeck } from '../../shared/utils/array'
@@ -467,6 +467,10 @@ export function applyAction(
       newState = handleChangePlayerDeck(newState, data?.playerId ?? playerId, data?.deck)
       break
 
+    case 'LOAD_CUSTOM_DECK':
+      newState = handleLoadCustomDeck(newState, data?.playerId ?? playerId, data?.deckFile)
+      break
+
     case 'START_SCORING':
       newState = ScoringHandlers.handleStartScoring(newState, playerId, enterScoringPhase)
       break
@@ -621,7 +625,7 @@ function canPlayerAct(
   // Any player can do game settings in lobby
   if (!state.isGameStarted) {
     return ['PLAYER_READY', 'CHANGE_PLAYER_NAME', 'CHANGE_PLAYER_COLOR',
-            'CHANGE_PLAYER_DECK', 'SET_GAME_MODE', 'SET_GRID_SIZE',
+            'CHANGE_PLAYER_DECK', 'LOAD_CUSTOM_DECK', 'SET_GAME_MODE', 'SET_GRID_SIZE',
             'SET_PRIVACY', 'ASSIGN_TEAMS', 'SET_DUMMY_PLAYER_COUNT',
             'ANNOUNCE_CARD'].includes(action)
   }
@@ -2562,6 +2566,56 @@ function handleChangePlayerDeck(state: GameState, playerId: number, deckType: De
 
   return { ...state, players: newPlayers }
 }
+
+/**
+ * LOAD_CUSTOM_DECK - load a custom deck file
+ * Builds deck from custom deck file and sets it as player's deck
+ */
+function handleLoadCustomDeck(state: GameState, playerId: number, deckFile: CustomDeckFile): GameState {
+  const player = state.players.find(p => p.id === playerId)
+  if (!player) {return state}
+
+  // Build the deck from the custom deck file
+  const newDeck: Card[] = []
+  for (const deckCard of deckFile.cards) {
+    const cardDef = getCardDefinition(deckCard.cardId)
+    if (!cardDef) {
+      logger.warn(`Card ${deckCard.cardId} not found in database, skipping`)
+      continue
+    }
+
+    // Add the specified quantity of this card
+    for (let i = 0; i < deckCard.quantity; i++) {
+      newDeck.push({
+        ...cardDef,  // Spread the full card definition
+        id: `${deckCard.cardId}_${playerId}_${Date.now()}_${i}`,
+        baseId: deckCard.cardId,
+        deck: DeckType.Custom,
+        ownerId: playerId,
+        ownerName: player.name,
+        isFaceDown: false,
+        statuses: []
+      })
+    }
+  }
+
+  const newPlayers = state.players.map(p =>
+    p.id === playerId
+      ? {
+          ...p,
+          selectedDeck: DeckType.Custom,
+          deck: newDeck,
+          deckSize: newDeck.length,
+          customDeckName: deckFile.deckName,
+          hand: [],
+          discard: []
+        }
+      : p
+  )
+
+  return { ...state, players: newPlayers }
+}
+
 /**
  * MARK_ABILITY_USED - mark ability as used
  * Removes ready status, adds usage marker, and updates ready statuses for phase-specific abilities

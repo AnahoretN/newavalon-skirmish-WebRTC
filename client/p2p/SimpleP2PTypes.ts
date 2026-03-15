@@ -55,6 +55,7 @@ export type ActionType =
   | 'CHANGE_PLAYER_NAME'
   | 'CHANGE_PLAYER_COLOR'
   | 'CHANGE_PLAYER_DECK'
+  | 'LOAD_CUSTOM_DECK'
 
   // Scoring
   | 'START_SCORING'

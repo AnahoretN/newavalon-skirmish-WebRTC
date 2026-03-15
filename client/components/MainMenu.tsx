@@ -117,8 +117,8 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
             className="font-black tracking-wider"
             style={{
               fontFamily: "'Orbitron', sans-serif",
-              fontSize: '3.5rem',
-              lineHeight: '0.9',
+              fontSize: '2.5rem',
+              lineHeight: '1',
               color: '#FFFFFF',
               textShadow: `
                 0 0 7px #A300FF,
