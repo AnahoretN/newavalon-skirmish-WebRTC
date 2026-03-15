@@ -7,7 +7,7 @@ import { logger } from '../utils/logger.js';
 import { getGameState } from '../services/gameState.js';
 import { sanitizePlayerName } from '../utils/security.js';
 import { broadcastToGame } from '../services/websocket.js';
-import { createNewPlayer, generatePlayerToken } from '../utils/deckUtils.js';
+import { createNewPlayer, generatePlayerToken, shuffleDeck } from '../utils/deckUtils.js';
 import { logGameAction as logAction, GameActions } from '../utils/gameLogger.js';
 import { getCardDefinition } from '../services/content.js';
 
@@ -360,8 +360,11 @@ export function handleLoadCustomDeck(ws, data) {
       }
     }
 
-    // Update player's deck with the custom deck
-    player.deck = newDeck;
+    // Shuffle the custom deck before assigning it
+    const shuffledDeck = shuffleDeck(newDeck);
+
+    // Update player's deck with the shuffled custom deck
+    player.deck = shuffledDeck;
     player.selectedDeck = 'Custom';
     player.customDeckName = deckFile.deckName;
 

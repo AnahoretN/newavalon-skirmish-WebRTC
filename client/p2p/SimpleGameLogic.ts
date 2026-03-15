@@ -2599,12 +2599,15 @@ function handleLoadCustomDeck(state: GameState, playerId: number, deckFile: Cust
     }
   }
 
+  // Shuffle the custom deck before assigning it
+  const shuffledDeck = shuffleDeck(newDeck)
+
   const newPlayers = state.players.map(p =>
     p.id === playerId
       ? {
           ...p,
           selectedDeck: DeckType.Custom,
-          deck: newDeck,
+          deck: shuffledDeck,
           deckSize: newDeck.length,
           customDeckName: deckFile.deckName,
           hand: [],
