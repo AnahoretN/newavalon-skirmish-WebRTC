@@ -10,7 +10,7 @@
  * - handlers/gameSettingsHandlers.ts - game configuration
  */
 
-import type { GameState, Card, Player, ScoringLineData, CardStatus, CustomDeckFile } from '../types'
+import type { GameState, Card, Player, ScoringLineData, CardStatus, CustomDeckFile, FloatingTextData } from '../types'
 import { DeckType } from '../types'
 import type { ActionType } from './SimpleP2PTypes'
 import { shuffleDeck } from '../../shared/utils/array'
@@ -310,15 +310,33 @@ function checkAndApplyTriggers(
   }
 
   // Apply trigger effects (modify scores, etc.)
-  const newState = state
+  const newState = { ...state }
+  const floatingTextsToAdd: FloatingTextData[] = []
+
   triggerResults.forEach(result => {
     if (result.points && result.points > 0) {
       const playerToUpdate = newState.players.find(p => p.id === result.triggerOwnerId)
       if (playerToUpdate) {
         playerToUpdate.score = (playerToUpdate.score || 0) + result.points
+
+        // Add floating text at trigger card location
+        if (result.triggerCardCoords && result.triggerCardCoords.row >= 0) {
+          floatingTextsToAdd.push({
+            row: result.triggerCardCoords.row,
+            col: result.triggerCardCoords.col,
+            text: `+${result.points}`,
+            playerId: result.triggerOwnerId,
+            timestamp: Date.now()
+          })
+        }
       }
     }
   })
+
+  // Add floating texts to state
+  if (floatingTextsToAdd.length > 0) {
+    newState.floatingTexts = [...(newState.floatingTexts || []), ...floatingTextsToAdd]
+  }
 
   return newState
 }

@@ -61,6 +61,7 @@ export interface TriggerResult {
   points?: number
   cardsToDraw?: number
   message?: string
+  triggerCardCoords?: { row: number; col: number } // Coordinates of the card that triggered the effect
 }
 
 /**
@@ -254,7 +255,8 @@ function executeTriggerEffect(trigger: ActiveTrigger): TriggerResult {
   const { effect } = trigger.trigger
   const result: TriggerResult = {
     triggerOwnerId: trigger.ownerId,
-    effectType: effect.type
+    effectType: effect.type,
+    triggerCardCoords: trigger.coords
   }
 
   switch (effect.type) {
