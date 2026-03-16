@@ -27,13 +27,10 @@ let serverGetCardAbilities: ((baseId: string) => ContentAbility[]) | null = null
 
 // Try to import from server content service (only works in Node.js environment)
 try {
-
   const contentModule = require('../services/content.js')
   serverGetCardAbilities = contentModule.getCardAbilities
-  console.log('[autoAbilities] Server getCardAbilities loaded from content service')
 } catch (e) {
   // Not in Node.js environment, will use client-side provider
-  console.log('[autoAbilities] Not in Node.js, using client provider:', e)
 }
 
 // Client-side provider for getCardAbilities (set by client code)
@@ -52,20 +49,12 @@ export function setClientGetCardAbilitiesProvider(provider: (baseId: string) => 
  * Uses server implementation in Node.js, client implementation in browser
  */
 function getCardAbilities(baseId: string): ContentAbility[] {
-  console.log(`[autoAbilities] getCardAbilities called for: ${baseId}`)
-  console.log(`[autoAbilities] serverGetCardAbilities: ${!!serverGetCardAbilities}, clientGetCardAbilitiesProvider: ${!!clientGetCardAbilitiesProvider}`)
-
   if (serverGetCardAbilities) {
-    const result = serverGetCardAbilities(baseId)
-    console.log(`[autoAbilities] Server returned ${result.length} abilities`)
-    return result
+    return serverGetCardAbilities(baseId)
   }
   if (clientGetCardAbilitiesProvider) {
-    const result = clientGetCardAbilitiesProvider(baseId)
-    console.log(`[autoAbilities] Client provider returned ${result.length} abilities`)
-    return result
+    return clientGetCardAbilitiesProvider(baseId)
   }
-  console.warn(`[autoAbilities] No getCardAbilities provider available for card: ${baseId}`)
   return []
 }
 
@@ -131,8 +120,6 @@ interface CardAbilityDefinition {
 export const getAbilitiesForCard = (card: Card): CardAbilityDefinition[] => {
   const baseId = card.baseId || ''
   const contentAbilities = getCardAbilities(baseId)
-
-  console.log(`[getAbilitiesForCard] Card ${baseId} has ${contentAbilities.length} abilities:`, contentAbilities.map(a => ({ type: a.type, action: a.action, mode: a.mode })))
 
   // Convert ContentAbility to CardAbilityDefinition with dynamic getAction
   return contentAbilities.map((contentAbility): CardAbilityDefinition => ({

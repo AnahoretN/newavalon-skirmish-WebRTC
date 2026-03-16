@@ -1021,8 +1021,6 @@ const AppInner = function AppInner() {
       if (mounted && Object.keys(getCountersDatabase()).length > 0) {
         setImageRefreshVersion(prev => prev + 1)
       }
-
-      logger.info('[App] Content loaded successfully')
     }).catch(err => {
       logger.error('Failed to load content database:', err)
     })
@@ -2096,22 +2094,12 @@ const AppInner = function AppInner() {
 
     // Only log if there's actually an invite to process
     if (inviteHostId && autoJoinFlag && typeof connectAsGuest === 'function') {
-      logger.info('[App] WebRTC Invite - auto-connecting to host:', inviteHostId)
-      logger.info('[App] Auto-connecting to WebRTC host:', inviteHostId)
       // Clear the stored invite data
       sessionStorage.removeItem('invite_host_id')
       sessionStorage.removeItem('invite_auto_join')
 
       // Connect to host (async, but we don't need to wait for it here)
-      connectAsGuest(inviteHostId).then(success => {
-        if (success) {
-          logger.info('[App] Successfully connected to WebRTC host')
-        } else {
-          logger.error('[App] Failed to connect to WebRTC host')
-        }
-      }).catch(err => {
-        logger.error('[App] Error connecting to WebRTC host:', err)
-      })
+      connectAsGuest(inviteHostId)
     }
   }, [connectAsGuest]) // Run when connectAsGuest is available
 
@@ -2129,7 +2117,6 @@ const AppInner = function AppInner() {
       const shouldJoinAsInvite = !gameState.gameId || gameState.gameId !== inviteGameId
 
       if (shouldJoinAsInvite) {
-        logger.warn('[App] Auto-joining game from invite link:', inviteGameId)
         // Clear the stored invite data so we don't try again
         sessionStorage.removeItem('invite_game_id')
         sessionStorage.removeItem('invite_auto_join')

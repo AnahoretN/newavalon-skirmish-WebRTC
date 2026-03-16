@@ -11,27 +11,17 @@ import { logger } from './utils/logger'
 const urlParams = new URLSearchParams(window.location.search)
 const hashParams = new URLSearchParams(window.location.hash.slice(1))
 
-logger.info('[index.tsx] URL params:', {
-  search: window.location.search,
-  hash: window.location.hash,
-  urlParams: Object.fromEntries(urlParams.entries()),
-  hashParams: Object.fromEntries(hashParams.entries())
-})
-
 const inviteGameId = urlParams.get('game') || hashParams.get('game')
 const inviteServerUrl = urlParams.get('server') || hashParams.get('server')
 const encodedServerUrl = urlParams.get('s') || hashParams.get('s')
 const inviteHostId = urlParams.get('hostId') || hashParams.get('hostId')
 // const autoJoin = urlParams.get('autojoin') || hashParams.get('autojoin') // Reserved for future auto-join functionality
 
-logger.info('[index.tsx] Parsed invite params:', { inviteGameId, inviteServerUrl, encodedServerUrl, inviteHostId })
-
 // Store invite data in sessionStorage for App to use
 if (inviteGameId) {
   sessionStorage.setItem('invite_game_id', inviteGameId)
   // Set auto-join flag
   sessionStorage.setItem('invite_auto_join', 'true')
-  logger.info('[index.tsx] Stored invite_game_id:', inviteGameId)
 }
 
 // Handle WebRTC hostId invite link
@@ -40,7 +30,6 @@ if (inviteHostId) {
   sessionStorage.setItem('invite_auto_join', 'true')
   // Enable WebRTC mode if not already enabled
   localStorage.setItem('webrtc_enabled', 'true')
-  logger.info('[index.tsx] Stored invite_host_id:', inviteHostId)
 }
 
 if (inviteServerUrl) {

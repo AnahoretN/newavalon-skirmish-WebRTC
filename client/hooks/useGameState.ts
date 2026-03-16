@@ -578,7 +578,6 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     const interval = setInterval(() => {
       setReconnectProgress(prev => {
         if (!prev || prev.timeRemaining <= 1) {
-          clearInterval(interval)
           return null
         }
         return { ...prev, timeRemaining: prev.timeRemaining - 1 }
@@ -586,7 +585,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [reconnectProgress?.timeRemaining])
+  }, [reconnectProgress ? reconnectProgress.attempt : 0])
 
   // ============================================================================
   // Отправка действий

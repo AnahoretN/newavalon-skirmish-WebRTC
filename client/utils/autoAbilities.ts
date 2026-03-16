@@ -226,8 +226,6 @@ export function recalculateAllReadyStatuses(gameState: GameState): void {
     return
   }
 
-  logger.info(`[recalculateAllReadyStatuses] Phase ${gameState.currentPhase}, activePlayerId=${activePlayerId}`)
-
   // Call updateReadyStatuses in ALL phases
   // - Phase 0 (Preparation): Set up ready statuses for new active player
   // - Phase 1 (Setup): Add readySetup, keep readyDeploy
