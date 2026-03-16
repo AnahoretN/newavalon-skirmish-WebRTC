@@ -1369,8 +1369,8 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
             ownerIdFromBoard = foundCard.ownerId || playerId
             targetPlayerId = foundCard.ownerId || playerId
             sourcePlayerId = foundCard.ownerId || playerId
-            // Clear ALL statuses including Revealed when card leaves battlefield to hand
-            clearAllStatuses(foundCard)
+            // Clear all statuses except Revealed when card leaves battlefield to hand
+            clearAllStatusesExceptRevealed(foundCard)
           }
           return { card: null }
         }
