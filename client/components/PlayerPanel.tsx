@@ -397,6 +397,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   onCancelAllModes,
   clickWaves = [],
   triggerClickWave,
+  hideDummyCards = false,
 }) => {
   const { t, resources } = useLanguage()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -875,7 +876,9 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   // - Owner sees their own cards face-up
                   // - Player who placed Revealed token sees the card face-up
                   // - Everyone else sees card back (colored by card owner)
-                  const isVisible: boolean = isOwner || isTeammate || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
+                  // - Dummy player cards: visible to all players when hideDummyCards setting is off
+                  const isVisible: boolean = isOwner || isTeammate || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus ||
+                    (!hideDummyCards && !!player.isDummy)
 
                   return (
                     <div
@@ -1375,7 +1378,9 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                 // Only exceptions: owner, teammate (rare), Revealed to all, or Revealed by token owner
                 // CRITICAL: Cards with Revealed status are shown FACE-DOWN with colored back + Revealed icon
                 // The card face is only shown to the player who placed the Revealed token (isRevealedByStatus)
-                const isVisible: boolean = isOwner || isTeammate || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus
+                // Dummy player cards: visible to all players when hideDummyCards setting is off (all players control dummies)
+                const isVisible: boolean = isOwner || isTeammate || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus ||
+                  (!hideDummyCards && !!player.isDummy)
 
                 return (
                   <div

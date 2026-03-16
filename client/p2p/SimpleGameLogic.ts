@@ -351,7 +351,9 @@ export function applyAction(
       break
 
     case 'PASS_TURN':
-      newState = handlePassTurn(newState, playerId, data?.reason || 'manual')
+      // Always use activePlayerId for Stun removal, not who clicked the button
+      const activeId = newState.activePlayerId ?? playerId
+      newState = handlePassTurn(newState, activeId, data?.reason || 'manual')
       break
 
     case 'SET_PHASE':
@@ -656,7 +658,7 @@ function canPlayerAct(
 /**
  * NEXT_PHASE - transition to next phase
  */
-function handleNextPhase(state: GameState, playerId: number): GameState {
+function handleNextPhase(state: GameState, _playerId: number): GameState {
   // RESURRECTED TOKEN: Process before phase change
   // All cards with Resurrected receive 2 Stun, then Resurrected is removed
   const stateAfterResurrected = processResurrectedTokens(state)
@@ -730,7 +732,10 @@ function handleNextPhase(state: GameState, playerId: number): GameState {
 
   // Scoring (4) → PassTurn
   if (phase === 4) {
-    return handlePassTurn(stateAfterResurrected, playerId, 'scoring_complete')
+    // IMPORTANT: Use activePlayerId, not playerId (who clicked the button)
+    // This ensures Stun is removed from the correct player's cards
+    const activePlayerId = state.activePlayerId
+    return handlePassTurn(stateAfterResurrected, activePlayerId ?? 0, 'scoring_complete')
   }
 
   return stateAfterResurrected

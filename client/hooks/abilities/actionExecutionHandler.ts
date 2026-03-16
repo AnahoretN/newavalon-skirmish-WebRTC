@@ -842,13 +842,14 @@ function handleEnterMode(
     return
   }
 
-  // PUSH (Reclaimed Gawain Deploy - step 2 of AUTO_STEPS)
-  // Sets targeting mode for pushing adjacent opponent card
-  if (mode === 'PUSH') {
+  // PUSH within AUTO_STEPS (Reclaimed Gawain Deploy - step 2)
+  // Only use this handler when PUSH is part of AUTO_STEPS
+  // Direct PUSH abilities (Riot Agent) use the handler below which preserves ready status
+  if (mode === 'PUSH' && action.payload?._autoStepsContext) {
     const actorId = getSafePlayerId(action, localPlayerId)
     const targets = calculateValidTargets(action, gameState, actorId, commandContext)
 
-    // If no valid targets, complete the ability
+    // If no valid targets, complete the AUTO_STEPS ability
     if (targets.length === 0) {
       triggerNoTarget(sourceCoords)
       markAbilityUsed(sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
