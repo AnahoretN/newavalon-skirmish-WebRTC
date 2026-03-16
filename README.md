@@ -8,7 +8,7 @@ A dynamic tactical duel card game played on a limited grid field. Deploy Units a
 
 ## Play Online
 
-The game is available at: **[anahoretn.github.io/newavalon-skirmish-tunnel](https://anahoretn.github.io/newavalon-skirmish-tunnel/)**
+The game is available at: **[anahoretN.github.io/newavalon-skirmish-WebRTC](https://anahoretN.github.io/newavalon-skirmish-WebRTC/)**
 
 ## Quick Start (P2P Multiplayer)
 
