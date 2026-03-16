@@ -1,6 +1,8 @@
 import type { TranslationResource, LanguageCode, CardTranslation, CounterTranslation } from '@/locales/types'
 import { ru } from '@/locales/ru'
 import { sr } from '@/locales/sr'
+import { uk } from '@/locales/uk'
+import { be } from '@/locales/be'
 import { cardDatabase, tokenDatabase, getCountersDatabase } from '@/content'
 
 // --- Static English UI & Rules Definitions ---
@@ -376,11 +378,13 @@ export const resources: Record<LanguageCode, TranslationResource> = {
   en,
   ru,
   sr,
-  de: en, fr: en, it: en, pt: en, zh: en, hi: en, es: en, ar: en, uk: en, be: en, tt: en,
+  uk,
+  be,
+  de: en, fr: en, it: en, pt: en, zh: en, hi: en, es: en, ar: en, tt: en,
 }
 
 // Only languages with complete translations
-export const AVAILABLE_LANGUAGES: LanguageCode[] = ['en', 'ru', 'sr']
+export const AVAILABLE_LANGUAGES: LanguageCode[] = ['en', 'ru', 'sr', 'uk', 'be']
 
 export const LANGUAGE_NAMES: Record<LanguageCode, string> = {
   en: 'English',
