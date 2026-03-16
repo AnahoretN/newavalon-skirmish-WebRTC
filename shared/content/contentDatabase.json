@@ -951,31 +951,21 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771367432/HERO_Michael_Falk_sv5i5c.webp",
       "fallbackImage": "/images/cards/HOO_VIGILANT_SPOTTER.png",
       "power": 3,
-      "abilityText": "Deploy: Find any card in your deck. Put it into your hand and shuffle.\nCommit: Reveal 1 card from an opponent's hand.",
+      "abilityText": "Commit: Look at the top 2 cards of any deck. Put any number of them on the bottom of that deck.",
       "flavorText": "He finds things. Sometimes things that should stay lost.",
       "types": ["Unit", "Hero"],
       "faction": "Neutral",
       "allowedPanels": ["DECK_BUILDER"],
       "ABILITIES": [
         {
-          "type": "deploy",
-          "supportRequired": false,
-          "action": "SEARCH_DECK",
-          "mode": null,
-          "details": {
-            "filter": "any",
-            "target": "hand",
-            "shuffleOnClose": true
-          }
-        },
-        {
           "type": "commit",
           "supportRequired": false,
-          "action": "REVEAL_HAND",
+          "action": "LOOK_AT_TOP_DECK",
           "mode": null,
           "details": {
-            "count": 1,
-            "selectFrom": "opponent"
+            "count": 3,
+            "putOnBottom": true,
+            "thenDraw": 0
           }
         }
       ]

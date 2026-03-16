@@ -376,6 +376,24 @@ const TopDeckView: React.FC<TopDeckViewProps> = memo(({
                       imageRefreshVersion={imageRefreshVersion}
                     />
                   </div>
+
+                  {/* Move to bottom button - positioned at bottom center */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onMoveToBottom(deckIndex)
+                      // Decrease view count by 1 after moving card to bottom (same as context menu)
+                      if (viewCount > 0) {
+                        setViewCount(prev => Math.max(0, prev - 1))
+                      }
+                    }}
+                    className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 border-2 border-white shadow-lg flex items-center justify-center z-30 transition-colors"
+                    title={t('moveToBottom')}
+                  >
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    </svg>
+                  </button>
                 </div>
               )
             })

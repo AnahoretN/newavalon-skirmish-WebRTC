@@ -184,6 +184,7 @@ const AppInner = function AppInner() {
     isDeployAbility?: boolean;
     sourceCoords?: {row: number, col: number};
     shuffleOnClose?: boolean;  // If true, shuffle deck after closing (for search abilities)
+    thenDraw?: number;  // Number of cards to draw after closing (for LOOK_AT_TOP_DECK)
   } | null>(null)
 
   const [modalAnchors, setModalAnchors] = useState({
@@ -717,14 +718,23 @@ const AppInner = function AppInner() {
 
       // Trigger deck selection effect visible to all players via WebSocket
       triggerDeckSelection(targetPlayerId, gameState.activePlayerId ?? localPlayerId ?? 1)
+      // Get count from payload (for abilityMode) or from action.payload (for targetingMode)
+      const cardCount = abilityMode?.payload?.count ||
+                        gameState.targetingMode?.action?.payload?.count ||
+                        3
+      // Get thenDraw from payload (for LOOK_AT_TOP_DECK)
+      const thenDraw = abilityMode?.payload?.thenDraw ??
+                       gameState.targetingMode?.action?.payload?.thenDraw
+
       setTopDeckViewState({
         targetPlayerId,
         isLocked: true,
-        initialCount: 3,
+        initialCount: cardCount,
         ...(sourceCard && { sourceCard }),
         ...(isDeployAbility !== undefined && { isDeployAbility }),
         ...(sourceCoords && { sourceCoords }),
         ...(abilityMode?.payload?.shuffleOnClose && { shuffleOnClose: true }),
+        ...(thenDraw !== undefined && { thenDraw }),
       })
 
       // Clear modes
@@ -963,7 +973,11 @@ const AppInner = function AppInner() {
 
       if (topDeckViewState.isLocked && topDeckViewState.sourceCard) {
         if (topDeckViewState.sourceCard.ownerId !== undefined) {
-          drawCard(topDeckViewState.sourceCard.ownerId)
+          // Use thenDraw if specified, otherwise draw 1 card (default behavior)
+          const drawCount = topDeckViewState.thenDraw ?? 1
+          for (let i = 0; i < drawCount; i++) {
+            drawCard(topDeckViewState.sourceCard.ownerId)
+          }
         }
         if (topDeckViewState.sourceCoords) {
           markAbilityUsed(topDeckViewState.sourceCoords, topDeckViewState.isDeployAbility)
@@ -2762,10 +2776,10 @@ const AppInner = function AppInner() {
 
   useEffect(() => {
     window.addEventListener('click', closeContextMenu)
-    const handleContextMenu = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest('[data-interactive]')) {
-        closeContextMenu()
-      }
+    const handleContextMenu = () => {
+      // Always close existing context menu when a new contextmenu event occurs
+      // This allows right-clicking on another item to replace the current menu
+      closeContextMenu()
     }
     window.addEventListener('contextmenu', handleContextMenu)
     return () => {
