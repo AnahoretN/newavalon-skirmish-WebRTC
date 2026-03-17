@@ -313,21 +313,11 @@ function checkAndApplyTriggers(
   const newState = { ...state }
   const floatingTextsToAdd: FloatingTextData[] = []
 
-  console.log('[checkAndApplyTriggers] Processing triggerResults:', triggerResults)
-
   triggerResults.forEach(result => {
-    console.log('[checkAndApplyTriggers] Processing result:', {
-      triggerOwnerId: result.triggerOwnerId,
-      effectType: result.effectType,
-      points: result.points,
-      triggerCardCoords: result.triggerCardCoords
-    })
-
     if (result.points && result.points > 0) {
       const playerToUpdate = newState.players.find(p => p.id === result.triggerOwnerId)
       if (playerToUpdate) {
         playerToUpdate.score = (playerToUpdate.score || 0) + result.points
-        console.log('[checkAndApplyTriggers] Added points to player', result.triggerOwnerId, 'new score:', playerToUpdate.score)
 
         // Add floating text at trigger card location
         if (result.triggerCardCoords && result.triggerCardCoords.row >= 0) {
@@ -338,19 +328,10 @@ function checkAndApplyTriggers(
             playerId: result.triggerOwnerId,
             timestamp: Date.now()
           })
-          console.log('[checkAndApplyTriggers] Added floating text:', floatingTextsToAdd[floatingTextsToAdd.length - 1])
-        } else {
-          console.log('[checkAndApplyTriggers] No floating text - invalid coords:', result.triggerCardCoords)
         }
-      } else {
-        console.log('[checkAndApplyTriggers] Player not found:', result.triggerOwnerId)
       }
-    } else {
-      console.log('[checkAndApplyTriggers] No points to add (points:', result.points, ')')
     }
   })
-
-  console.log('[checkAndApplyTriggers] Total floating texts to add:', floatingTextsToAdd.length)
 
   // Add floating texts to state
   if (floatingTextsToAdd.length > 0) {

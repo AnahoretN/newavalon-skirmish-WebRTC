@@ -1647,10 +1647,7 @@ const AppInner = function AppInner() {
   // Sync gameState.floatingTexts with activeFloatingTexts for P2P mode
   // This handles floating texts from trigger abilities (like Vigilant Spotter)
   useEffect(() => {
-    console.log('[App.tsx floatingTexts useEffect] gameState.floatingTexts:', gameState.floatingTexts)
     if (gameState.floatingTexts && gameState.floatingTexts.length > 0) {
-      console.log('[App.tsx floatingTexts useEffect] Adding floating texts to activeFloatingTexts:', gameState.floatingTexts)
-
       // Generate unique IDs for the new floating texts
       const newTextsWithIds = gameState.floatingTexts.map(ft => ({
         ...ft,
@@ -1665,7 +1662,6 @@ const AppInner = function AppInner() {
 
       // Clear floating texts from gameState after processing
       gameState.floatingTexts = []
-      console.log('[App.tsx floatingTexts useEffect] Cleared gameState.floatingTexts')
 
       // Remove floating texts after animation completes (2 seconds)
       const timer = setTimeout(() => {
