@@ -1644,6 +1644,38 @@ const AppInner = function AppInner() {
     return undefined
   }, [latestFloatingTexts])
 
+  // Sync gameState.floatingTexts with activeFloatingTexts for P2P mode
+  // This handles floating texts from trigger abilities (like Vigilant Spotter)
+  useEffect(() => {
+    console.log('[App.tsx floatingTexts useEffect] gameState.floatingTexts:', gameState.floatingTexts)
+    if (gameState.floatingTexts && gameState.floatingTexts.length > 0) {
+      console.log('[App.tsx floatingTexts useEffect] Adding floating texts to activeFloatingTexts:', gameState.floatingTexts)
+
+      // Generate unique IDs for the new floating texts
+      const newTextsWithIds = gameState.floatingTexts.map(ft => ({
+        ...ft,
+        id: ft.id || `ft-${ft.timestamp}-${Math.random().toString(36).substr(2, 9)}`
+      }))
+
+      // Add new floating texts from gameState
+      setActiveFloatingTexts((prev: any) => {
+        const existing = prev as FloatingTextData[]
+        return [...existing, ...newTextsWithIds]
+      })
+
+      // Clear floating texts from gameState after processing
+      gameState.floatingTexts = []
+      console.log('[App.tsx floatingTexts useEffect] Cleared gameState.floatingTexts')
+
+      // Remove floating texts after animation completes (2 seconds)
+      const timer = setTimeout(() => {
+        setActiveFloatingTexts((prev: any) => (prev as any[]).filter((item: any) => !newTextsWithIds.find((nt: any) => nt.id === item.id)))
+      }, 2000)
+
+      return () => clearTimeout(timer)
+    }
+  }, [gameState.floatingTexts])
+
   // Sync validTargets with gameState.targetingMode for WebRTC P2P mode
   // When gameState.targetingMode changes, update validTargets to show highlights
   useEffect(() => {

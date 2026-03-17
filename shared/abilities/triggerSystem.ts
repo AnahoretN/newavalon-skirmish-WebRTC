@@ -259,10 +259,13 @@ function executeTriggerEffect(trigger: ActiveTrigger): TriggerResult {
     triggerCardCoords: trigger.coords
   }
 
+  console.log('[executeTriggerEffect] trigger.cardBaseId:', trigger.cardBaseId, 'effect:', effect, 'coords:', trigger.coords)
+
   switch (effect.type) {
     case 'MODIFY_SCORE':
       result.points = effect.points || 0
       result.message = `${trigger.cardBaseId} triggered: +${effect.points} points`
+      console.log('[executeTriggerEffect] MODIFY_SCORE: result.points =', result.points)
       break
 
     case 'DRAW_CARD':

@@ -273,7 +273,7 @@ function restoreLastPlayedToPreviousCard(
  * @param coords - Where the card was placed
  * @param playerId - The player who placed the card
  * @param source - Where the card came from ('hand', 'deck', 'discard', 'announced', 'board')
- * @returns Updated game state with trigger effects applied
+ * @returns Updated game state with trigger effects applied, plus any floating texts to display
  */
 function checkAndApplyTriggers(
   state: GameState,
@@ -281,7 +281,7 @@ function checkAndApplyTriggers(
   coords: { row: number; col: number },
   playerId: number,
   source: 'hand' | 'deck' | 'discard' | 'announced' | 'board'
-): GameState {
+): { state: GameState; floatingTexts: FloatingTextData[] } {
   // Create the card lookup function - use contentDatabase directly
   const cardLookup: CardLookupFn = (baseId: string) => {
     // Try contentDatabase first (most reliable)
@@ -306,18 +306,28 @@ function checkAndApplyTriggers(
   const triggerResults = checkTriggersOnCardPlaced(state, event, cardLookup)
 
   if (triggerResults.length === 0) {
-    return state
+    return { state, floatingTexts: [] }
   }
 
   // Apply trigger effects (modify scores, etc.)
   const newState = { ...state }
   const floatingTextsToAdd: FloatingTextData[] = []
 
+  console.log('[checkAndApplyTriggers] Processing triggerResults:', triggerResults)
+
   triggerResults.forEach(result => {
+    console.log('[checkAndApplyTriggers] Processing result:', {
+      triggerOwnerId: result.triggerOwnerId,
+      effectType: result.effectType,
+      points: result.points,
+      triggerCardCoords: result.triggerCardCoords
+    })
+
     if (result.points && result.points > 0) {
       const playerToUpdate = newState.players.find(p => p.id === result.triggerOwnerId)
       if (playerToUpdate) {
         playerToUpdate.score = (playerToUpdate.score || 0) + result.points
+        console.log('[checkAndApplyTriggers] Added points to player', result.triggerOwnerId, 'new score:', playerToUpdate.score)
 
         // Add floating text at trigger card location
         if (result.triggerCardCoords && result.triggerCardCoords.row >= 0) {
@@ -328,17 +338,26 @@ function checkAndApplyTriggers(
             playerId: result.triggerOwnerId,
             timestamp: Date.now()
           })
+          console.log('[checkAndApplyTriggers] Added floating text:', floatingTextsToAdd[floatingTextsToAdd.length - 1])
+        } else {
+          console.log('[checkAndApplyTriggers] No floating text - invalid coords:', result.triggerCardCoords)
         }
+      } else {
+        console.log('[checkAndApplyTriggers] Player not found:', result.triggerOwnerId)
       }
+    } else {
+      console.log('[checkAndApplyTriggers] No points to add (points:', result.points, ')')
     }
   })
+
+  console.log('[checkAndApplyTriggers] Total floating texts to add:', floatingTextsToAdd.length)
 
   // Add floating texts to state
   if (floatingTextsToAdd.length > 0) {
     newState.floatingTexts = [...(newState.floatingTexts || []), ...floatingTextsToAdd]
   }
 
-  return newState
+  return { state: newState, floatingTexts: floatingTextsToAdd }
 }
 
 /**
@@ -1089,7 +1108,7 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
   )
 
   // Switch to Main phase (2) - this should happen before ready status recalculation
-  const newState: GameState = {
+  let newState: GameState = {
     ...state,
     board: newBoard,
     players: newPlayers,
@@ -1104,11 +1123,15 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
   // This ensures cards get correct ready statuses for the new phase
   recalculateAllReadyStatuses(newState)
 
-  // Check and apply triggers when a card with Revealed status is played from hand
-  // This handles the drag-and-drop case where ANNOUNCE_CARD is not used
-  if (isFromHand && cardToPlay.statuses?.some((s: any) => s.type === 'Revealed')) {
-    const triggerState = checkAndApplyTriggers(newState, cardToPlay, boardCoords, actualPlayerId, 'hand')
-    return triggerState
+  // Check triggers for cards with Revealed status played from hand
+  // This handles Vigilant Spotter: "When your opponent plays a revealed card, gain 2 points"
+  // NOTE: Skip command cards - they trigger in MOVE_ANNOUNCED_TO_DISCARD instead
+  const isCommandCard = cardToPlay.deck === 'Command' || cardToPlay.types?.includes('Command') || cardToPlay.faction === 'Command'
+  if (isFromHand && !isCommandCard && cardToPlay.statuses?.some((s: any) => s.type === 'Revealed')) {
+    const triggerResult = checkAndApplyTriggers(newState, cardToPlay, boardCoords, actualPlayerId, 'hand')
+    newState = triggerResult.state
+    // Note: floatingTexts are not broadcast here since we don't have access to visualEffects
+    // They will be handled by the host's visual effects system
   }
 
   return newState
@@ -1915,18 +1938,42 @@ function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, data: 
     return { ...state, players: newPlayers }
   }
 
+  // Check if this is a Command card with Revealed status BEFORE clearing statuses
+  // This is where Vigilant Spotter trigger should fire for Command cards
+  const isCommandCard = cardToMove.deck === 'Command' || cardToMove.types?.includes('Command') || cardToMove.faction === 'Command'
+  const hasRevealedStatus = cardToMove.statuses?.some((s: any) => s.type === 'Revealed')
+
+  let newState = state
+  if (isCommandCard && hasRevealedStatus) {
+    // Find Vigilant Spotter coordinates for floating text display
+    let triggerCoords = { row: -1, col: -1 }
+    for (let r = 0; r < state.board.length; r++) {
+      for (let c = 0; c < state.board[r].length; c++) {
+        const card = state.board[r]?.[c]?.card
+        if (card && card.baseId?.toLowerCase().includes('vigilantspotter')) {
+          triggerCoords = { row: r, col: c }
+          break
+        }
+      }
+      if (triggerCoords.row >= 0) break
+    }
+
+    const triggerResult = checkAndApplyTriggers(newState, cardToMove, triggerCoords, actualPlayerId, 'announced')
+    newState = triggerResult.state
+  }
+
   // Clear ALL statuses including Revealed when card goes to discard
   clearAllStatuses(cardToMove)
 
   const newDiscard = [...player.discard, cardToMove]
 
-  const newPlayers = state.players.map(p =>
+  const newPlayers = newState.players.map(p =>
     p.id === actualPlayerId
       ? { ...p, discard: newDiscard, discardSize: newDiscard.length, announcedCard: null }
       : p
   )
 
-  return { ...state, players: newPlayers }
+  return { ...newState, players: newPlayers }
 }
 
 /**
@@ -2006,6 +2053,15 @@ function handlePlayAnnouncedToBoard(state: GameState, playerId: number, data: an
   // Recalculate ready statuses AFTER phase switch
   // This ensures cards get correct ready statuses for the new phase
   recalculateAllReadyStatuses(newState)
+
+  // Check triggers for announced cards with Revealed status
+  // This handles Vigilant Spotter: "When your opponent plays a revealed card, gain 2 points"
+  // NOTE: Skip command cards here - they trigger in MOVE_ANNOUNCED_TO_DISCARD instead
+  const isCommandCard = cardToPlay.deck === 'Command' || cardToPlay.types?.includes('Command') || cardToPlay.faction === 'Command'
+  if (!wasFaceDown && !isCommandCard && cardToPlay.statuses?.some((s: any) => s.type === 'Revealed')) {
+    const triggerResult = checkAndApplyTriggers(newState, cardToPlay, { row, col }, actualPlayerId, 'announced')
+    newState = triggerResult.state
+  }
 
   return newState
 }
@@ -2094,6 +2150,7 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
   // Remove any existing LastPlayed status from this card
   const existingStatuses = cardToAnnounce.statuses || []
   const filteredStatuses = existingStatuses.filter(s => !(s.type === 'LastPlayed' && s.addedByPlayerId === actualPlayerId))
+
   const announcedCard = {
     ...cardToAnnounce,
     statuses: filteredStatuses
@@ -2120,7 +2177,12 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
 
   // Check and apply triggers when a card is announced (played)
   // This is where Vigilant Spotter trigger should fire - when opponent plays a revealed card
-  newState = checkAndApplyTriggers(newState, announcedCard, { row: -1, col: -1 }, actualPlayerId, source || 'hand')
+  // NOTE: Skip trigger check for Command cards - trigger should fire after command mode is selected, not on announce
+  // Reuse isCommandCard variable from above (line 2097)
+  if (!isCommandCard) {
+    const triggerResult = checkAndApplyTriggers(newState, announcedCard, { row: -1, col: -1 }, actualPlayerId, source || 'hand')
+    newState = triggerResult.state
+  }
 
   return newState
 }

@@ -297,7 +297,6 @@ export function updateCardReadyStatuses(
   // Face-down cards on battlefield do not receive ready statuses
   // They will get ready statuses when flipped face-up
   if (card.isFaceDown) {
-    console.log('[updateCardReadyStatuses]', cardId, 'is face-down, skipping ready statuses')
     // Remove any existing ready statuses from face-down cards
     syncCardStatuses(card, new Set()) // Empty set = remove all ready statuses
     return
@@ -345,23 +344,6 @@ export function updateCardReadyStatuses(
     if (canCommit && currentPhase === 3 && !hasUsedAbilityThisTurn(card, 'commit')) {
       shouldHave.add(READY_STATUS.COMMIT)
     }
-  }
-
-  // Log for cards with Setup ability (like Finn)
-  if (abilityInfo.hasSetupAbility) {
-    console.log('[updateCardReadyStatuses]', cardId, {
-      cardOwnerId: card.ownerId,
-      activePlayerId,
-      currentPhase,
-      isActivePlayer,
-      isStunned: isStunned(card),
-      hasSetupAbility: abilityInfo.hasSetupAbility,
-      setupRequiresSupport: abilityInfo.setupRequiresSupport,
-      usedSetupThisTurn: hasUsedAbilityThisTurn(card, 'setup'),
-      shouldHaveSetup: shouldHave.has(READY_STATUS.SETUP),
-      shouldHaveDeploy: shouldHave.has(READY_STATUS.DEPLOY),
-      currentReadyStatuses: card.statuses?.filter((s: CardStatus) => isReadyStatus(s.type)).map((s: CardStatus) => s.type)
-    })
   }
 
   // Sync statuses to match what should exist

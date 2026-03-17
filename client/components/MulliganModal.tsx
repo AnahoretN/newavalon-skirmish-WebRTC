@@ -170,10 +170,6 @@ export const MulliganModal: React.FC<MulliganModalProps> = ({
             </button>
           </div>
         )}
-
-        {allConfirmed && (
-          <p className="text-center text-green-400 mt-4">{tt('readyToStart')}</p>
-        )}
       </div>
     </div>
   )

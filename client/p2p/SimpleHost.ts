@@ -710,6 +710,15 @@ export class SimpleHost {
         }
       }
     })
+
+    // CRITICAL: Clear floatingTexts after broadcasting to prevent them from persisting
+    // This ensures floating texts are only shown once when triggered
+    if (this.state.floatingTexts && this.state.floatingTexts.length > 0) {
+      this.state = {
+        ...this.state,
+        floatingTexts: []
+      }
+    }
   }
 
   /**
