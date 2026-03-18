@@ -1525,7 +1525,17 @@ function handleEnterMode(
   // SELECT_LINE_FOR_EXPLOIT_SCORING (Zius Setup, Unwavering Integrator Setup)
   // CRITICAL: Do NOT call setTargetingMode - line selection modes use abilityMode only!
   if (mode === 'SELECT_LINE_FOR_EXPLOIT_SCORING') {
-    setAbilityMode(action)
+    // CRITICAL: Add sourceRow and sourceCol to payload for line selection handler
+    // This fixes Unwavering Integrator line selection not working when clicking empty cells
+    const targetingAction: AbilityAction = {
+      ...action,
+      payload: {
+        ...action.payload,
+        sourceRow: sourceCoords.row,
+        sourceCol: sourceCoords.col,
+      }
+    }
+    setAbilityMode(targetingAction)
     return
   }
 

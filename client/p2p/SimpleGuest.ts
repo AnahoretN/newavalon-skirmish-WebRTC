@@ -174,6 +174,8 @@ export class SimpleGuest {
       this.handleHandCardSelection(data)
     } else if (data.type === 'CLICK_WAVE') {
       this.handleClickWave(data)
+    } else if (data.type === 'RECONNECT_REJECTED') {
+      this.handleReconnectRejected(data)
     } else {
       logger.warn('[SimpleGuest] Unknown message type:', data.type)
     }
@@ -410,6 +412,21 @@ export class SimpleGuest {
   private handleClickWave(data: any): void {
     const wave = data.data
     this.config.onClickWave?.(wave)
+  }
+
+  /**
+   * Handle reconnect rejected - player was converted to dummy or removed
+   */
+  private handleReconnectRejected(data: any): void {
+    const { reason } = data
+    logger.warn('[SimpleGuest] Reconnect rejected:', reason)
+
+    // Clear saved credentials to prevent further auto-reconnect attempts
+    localStorage.removeItem('webrtc_host_peer_id')
+    localStorage.removeItem('player_token')
+
+    // Notify app to show appropriate UI (return to main menu)
+    this.config.onReconnectRejected?.(reason)
   }
 
   /**

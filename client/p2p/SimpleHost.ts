@@ -17,7 +17,7 @@ import type {
 } from './SimpleP2PTypes'
 import { applyAction } from './SimpleGameLogic'
 import { logger } from '../utils/logger'
-import { createDeck } from '../hooks/core/gameCreators'
+import { createDeck, createInitialState } from '../hooks/core/gameCreators'
 import { getDecksData } from '../content'
 import type { DeckType } from '../types'
 import { getRandomHostColor, assignUniqueRandomColor } from '../utils/colorAssigner'
@@ -95,55 +95,67 @@ export class SimpleHost {
 
   /**
    * Initialize host
+   * @param customPeerId - Optional custom peer ID for session restoration (same ID after page refresh)
    */
-  async initialize(): Promise<string> {
+  async initialize(customPeerId?: string): Promise<string> {
     const { Peer } = await loadPeerJS()
 
-    // Generate gameId and add host player
-    const gameId = this.generateGameId()
-    const hostToken = this.generatePlayerToken()
-    const hostDeckType = this.getRandomDeckType()
-    const hostDeck = this.createPlayerDeck(1, localStorage.getItem('player_name') || 'Host', hostDeckType)
+    // Generate gameId and add host player (only if not restoring from saved state)
+    const isRestoring = !!customPeerId && this.state.gameId
 
-    // Assign random unique color for host
-    const hostColor = getRandomHostColor()
-    logger.info('[SimpleHost] Host assigned random color:', hostColor)
+    if (!isRestoring) {
+      const gameId = this.generateGameId()
+      const hostToken = this.generatePlayerToken()
+      const hostDeckType = this.getRandomDeckType()
+      const hostDeck = this.createPlayerDeck(1, localStorage.getItem('player_name') || 'Host', hostDeckType)
 
-    this.state = {
-      ...this.state,
-      gameId,
-      players: [
-        {
-          id: 1,
-          name: localStorage.getItem('player_name') || 'Host',
-          score: 0,
-          hand: [],
-          deck: hostDeck,
-          discard: [],
-          announcedCard: null,
+      // Assign random unique color for host
+      const hostColor = getRandomHostColor()
+      logger.info('[SimpleHost] Host assigned random color:', hostColor)
+
+      this.state = {
+        ...this.state,
+        gameId,
+        players: [
+          {
+            id: 1,
+            name: localStorage.getItem('player_name') || 'Host',
+            score: 0,
+            hand: [],
+            deck: hostDeck,
+            discard: [],
+            announcedCard: null,
           selectedDeck: hostDeckType,
-          color: hostColor,
-          isDummy: false,
-          isDisconnected: false,
-          isReady: false,
-          boardHistory: [],
-          autoDrawEnabled: true,
-          playerToken: hostToken
-        }
-      ]
+            color: hostColor,
+            isDummy: false,
+            isDisconnected: false,
+            isReady: false,
+            boardHistory: [],
+            autoDrawEnabled: true,
+            playerToken: hostToken
+          }
+        ]
+      }
+
+      logger.info('[SimpleHost] Host deck:', hostDeckType, 'cards:', hostDeck.length)
+
+      // Save host token
+      localStorage.setItem('player_token', hostToken)
+    } else {
+      logger.info('[SimpleHost] Restoring host session with gameId:', this.state.gameId)
+      // Restore host token from saved state
+      const hostPlayer = this.state.players.find(p => p.id === 1)
+      if (hostPlayer?.playerToken) {
+        localStorage.setItem('player_token', hostPlayer.playerToken)
+      }
     }
-
-    logger.info('[SimpleHost] Host deck:', hostDeckType, 'cards:', hostDeck.length)
-
-    // Save host token
-    localStorage.setItem('player_token', hostToken)
 
     return new Promise((resolve, reject) => {
       try {
-        this.peer = new Peer(getPeerJSOptions())
+        this.peer = new Peer(getPeerJSOptions(customPeerId))
 
         this.peer.on('open', (_peerId: string) => {
-          logger.info('[SimpleHost] Peer opened with ID:', _peerId, 'gameId:', gameId)
+          logger.info('[SimpleHost] Peer opened with ID:', _peerId, 'gameId:', this.state.gameId)
           // Notify about initial state
           this.notifyStateUpdate()
           resolve(_peerId)
@@ -548,6 +560,22 @@ export class SimpleHost {
   private handleReconnect(data: any, fromPeerId: string): void {
     const { playerId } = data
 
+    // Check if player still exists and is not already a dummy
+    const player = this.state.players.find(p => p.id === playerId)
+    if (!player) {
+      logger.warn('[SimpleHost] Reconnect failed: player', playerId, 'does not exist')
+      const conn = this.connections.get(fromPeerId)
+      conn?.send({ type: 'RECONNECT_REJECTED', reason: 'Player not found' })
+      return
+    }
+
+    if (player.isDummy) {
+      logger.warn('[SimpleHost] Reconnect failed: player', playerId, 'is already a dummy')
+      const conn = this.connections.get(fromPeerId)
+      conn?.send({ type: 'RECONNECT_REJECTED', reason: 'Player converted to dummy' })
+      return
+    }
+
     // Cancel reconnection timer if exists
     const timer = this.reconnectTimers.get(playerId)
     if (timer) {
@@ -599,6 +627,14 @@ export class SimpleHost {
     this.peerIdToPlayerId.delete(_peerId)
 
     if (playerId) {
+      // Check if player is already a dummy - if so, do nothing
+      // This handles the case where EXIT_GAME converted player to dummy and then closed connection
+      const player = this.state.players.find(p => p.id === playerId)
+      if (player?.isDummy) {
+        logger.info('[SimpleHost] Dummy player connection closed, ignoring disconnect:', playerId)
+        return
+      }
+
       const deadline = Date.now() + RECONNECT_TIMEOUT_MS
 
       // Mark as disconnected with deadline
@@ -1203,6 +1239,31 @@ export class SimpleHost {
   }
 
   /**
+   * Export current state for session restoration
+   * Call this periodically or before page unload to save game state
+   */
+  exportSession(): { peerId: string; state: GameState; timestamp: number } | null {
+    const peerId = this.getPeerId()
+    if (!peerId) {
+      logger.warn('[SimpleHost] Cannot export session: no peer ID')
+      return null
+    }
+
+    return {
+      peerId,
+      state: JSON.parse(JSON.stringify(this.state)) as GameState,
+      timestamp: Date.now()
+    }
+  }
+
+  /**
+   * Get raw game state (for external access)
+   */
+  getRawState(): GameState {
+    return this.state
+  }
+
+  /**
    * Shutdown
    */
   destroy(): void {
@@ -1214,6 +1275,25 @@ export class SimpleHost {
       this.peer = null
     }
   }
+}
+
+/**
+ * Create SimpleHost from saved session data
+ * Use this to restore a host session after page refresh
+ */
+export function createHostFromSavedSession(
+  savedData: { peerId: string; state: GameState; timestamp: number },
+  config: SimpleHostConfig = {}
+): SimpleHost {
+  // Check if session is too old (more than 1 hour)
+  const maxAge = 60 * 60 * 1000 // 1 hour
+  if (Date.now() - savedData.timestamp > maxAge) {
+    logger.warn('[createHostFromSavedSession] Saved session is too old, creating fresh host')
+    return new SimpleHost(createInitialState(), config)
+  }
+
+  logger.info('[createHostFromSavedSession] Restoring host with peerId:', savedData.peerId)
+  return new SimpleHost(savedData.state, config)
 }
 
 export default SimpleHost

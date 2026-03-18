@@ -13,7 +13,7 @@ import type { GameState, Card, DragItem, HighlightData, FloatingTextData, DeckSe
 import { createInitialState } from './core/gameCreators'
 import { logger } from '../utils/logger'
 import type { PersonalizedState } from '../p2p/SimpleP2PTypes'
-import { SimpleHost, SimpleGuest } from '../p2p'
+import { SimpleHost, SimpleGuest, createHostFromSavedSession } from '../p2p'
 import { useVisualEffects } from './useVisualEffects'
 import { triggerDirectClickWave } from './useDirectClickWave'
 import { tokenDatabase } from '../content'
@@ -312,6 +312,12 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           const fullState = personalToGameState(personalState, 1)
           setGameState(fullState)
           setLocalPlayerId(1)
+
+          // Auto-save session on state updates
+          const sessionData = host.exportSession()
+          if (sessionData) {
+            localStorage.setItem('webrtc_host_session', JSON.stringify(sessionData))
+          }
         },
         onPlayerJoin: (playerId) => {
           logger.info('[useGameState] Player joined:', playerId)
@@ -350,6 +356,12 @@ export function useGameState(_props: any = {}): UseGameStateResult {
       hostRef.current = host
       isHostRef.current = true
       setConnectionStatus('Connected')
+
+      // Save initial session data
+      const sessionData = host.exportSession()
+      if (sessionData) {
+        localStorage.setItem('webrtc_host_session', JSON.stringify(sessionData))
+      }
 
       logger.info('[useGameState] Host created with peerId:', peerId)
       return peerId
@@ -473,6 +485,16 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           setTimeout(() => {
             setClickWaves(prev => prev.filter(w => w.timestamp !== wave.timestamp))
           }, 700)
+        },
+        onReconnectRejected: (reason) => {
+          logger.warn('[useGameState] Reconnect rejected:', reason)
+          // Clear reconnection state
+          setIsReconnecting(false)
+          setReconnectProgress(null)
+          isReconnectingRef.current = false
+          // Return to main menu
+          setGameState(createInitialState())
+          setConnectionStatus('Disconnected')
         }
       })
 
@@ -586,6 +608,104 @@ export function useGameState(_props: any = {}): UseGameStateResult {
 
     return () => clearInterval(interval)
   }, [reconnectProgress ? reconnectProgress.attempt : 0])
+
+  // ============================================================================
+  // Auto-restore host session on mount (if page was refreshed)
+  // ============================================================================
+  useEffect(() => {
+    // Check if there's a saved host session
+    const savedSessionStr = localStorage.getItem('webrtc_host_session')
+    if (!savedSessionStr) { return }
+    if (isReconnectingRef.current) { return } // Already reconnecting
+
+    try {
+      const savedSession = JSON.parse(savedSessionStr)
+
+      // Check if session is too old (more than 1 hour)
+      const maxAge = 60 * 60 * 1000 // 1 hour
+      if (Date.now() - savedSession.timestamp > maxAge) {
+        logger.info('[useGameState] Saved host session is too old, ignoring')
+        localStorage.removeItem('webrtc_host_session')
+        return
+      }
+
+      // Restore host session
+      isReconnectingRef.current = true
+      setIsReconnecting(true)
+      setReconnectProgress({ attempt: 1, maxAttempts: 1, timeRemaining: 30 })
+
+      logger.info('[useGameState] Restoring host session with peerId:', savedSession.peerId)
+
+      const restoreHostSession = async () => {
+        try {
+          const host = createHostFromSavedSession(savedSession, {
+            onStateUpdate: (personalState) => {
+              const fullState = personalToGameState(personalState, 1)
+              setGameState(fullState)
+              setLocalPlayerId(1)
+
+              // Continue saving session on state updates
+              const sessionData = host.exportSession()
+              if (sessionData) {
+                localStorage.setItem('webrtc_host_session', JSON.stringify(sessionData))
+              }
+            },
+            onPlayerJoin: (playerId) => {
+              logger.info('[useGameState] Player joined restored session:', playerId)
+            },
+            onPlayerLeave: (playerId) => {
+              logger.info('[useGameState] Player left restored session:', playerId)
+            },
+            onClickWave: (wave) => {
+              triggerDirectClickWave(wave as any)
+              flushSync(() => {
+                setClickWaves(prev => [...prev, wave])
+              })
+              setTimeout(() => {
+                setClickWaves(prev => prev.filter(w => w.timestamp !== wave.timestamp))
+              }, 700)
+            },
+            onFloatingTextBatch: (events) => {
+              const timestamp = Date.now()
+              const batch = events.map((item, i) => ({
+                row: item.row,
+                col: item.col,
+                text: item.text,
+                playerId: item.playerId,
+                timestamp: timestamp + i
+              }))
+              flushSync(() => {
+                setLatestFloatingTexts(batch)
+              })
+            }
+          })
+
+          // Initialize with saved peerId (important for guests to reconnect)
+          const peerId = await host.initialize(savedSession.peerId)
+          hostRef.current = host
+          isHostRef.current = true
+          setConnectionStatus('Connected')
+
+          logger.info('[useGameState] Host session restored with peerId:', peerId)
+        } catch (error) {
+          logger.error('[useGameState] Failed to restore host session:', error)
+          // Clear invalid session
+          localStorage.removeItem('webrtc_host_session')
+        } finally {
+          setIsReconnecting(false)
+          setReconnectProgress(null)
+          isReconnectingRef.current = false
+        }
+      }
+
+      restoreHostSession()
+    } catch (error) {
+      logger.error('[useGameState] Failed to parse saved host session:', error)
+      localStorage.removeItem('webrtc_host_session')
+      setIsReconnecting(false)
+      setReconnectProgress(null)
+    }
+  }, []) // Run once on mount
 
   // ============================================================================
   // Отправка действий
@@ -1270,9 +1390,10 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   const requestGamesList = useCallback(() => {}, [])
 
   const exitGame = useCallback(() => {
-    // Clear saved credentials to prevent auto-reconnect
+    // Clear saved credentials and session to prevent auto-reconnect
     localStorage.removeItem('webrtc_host_peer_id')
     localStorage.removeItem('player_token')
+    localStorage.removeItem('webrtc_host_session') // Clear host session data
 
     // Send EXIT message to host if we're a guest
     if (guestRef.current && !isHostRef.current) {

@@ -68,7 +68,9 @@ export const useAppCommand = ({
     // 2. Check type
     // If it's one of the complex commands, ALWAYS open the modal.
     if (complexCommands.some(id => baseId.includes(id))) {
-      setCommandModalCard(card)
+      // CRITICAL: Set ownerId on the card so handleCommandConfirm uses the correct player ID
+      // This fixes dummy player command cards not showing hand targeting effects
+      setCommandModalCard({ ...card, ownerId: source.playerId! })
     } else {
       // Simple Command (e.g. Mobilization)
       // Just execute Main Logic

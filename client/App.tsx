@@ -232,9 +232,14 @@ const AppInner = function AppInner() {
   useEffect(() => {
     if (gameState.isMulliganActive && gameState.isGameStarted) {
       const localPlayer = gameState.players.find(p => p.id === localPlayerId)
-      // Check if local player hasn't confirmed yet AND is not a dummy player
-      // Dummy players don't get mulligan phase
-      if (localPlayer && !localPlayer.hasMulliganed && !localPlayer.isDummy) {
+      // Check if all players have confirmed
+      const confirmedCount = gameState.players.filter(p => p.hasMulliganed).length
+      const totalPlayers = gameState.players.filter(p => !p.isDummy && !p.isSpectator).length
+      const allConfirmed = totalPlayers > 0 && confirmedCount === totalPlayers
+
+      // Keep modal open for non-dummy players until ALL players confirm
+      // Modal shows waiting state when local player confirmed but others haven't
+      if (localPlayer && !localPlayer.isDummy && !allConfirmed) {
         openMulliganModal('mulligan', {
           players: gameState.players,
           localPlayerId,
@@ -246,6 +251,7 @@ const AppInner = function AppInner() {
           gameState: gameState,
         }, 'xl')
       } else {
+        // Close only when all players confirmed or local player is dummy
         closeMulliganModal()
       }
     } else {
@@ -1168,7 +1174,8 @@ const AppInner = function AppInner() {
 
     if (isComplexCommand && !commandModalCard) {
       // Open modal for complex command
-      setCommandModalCard(card)
+      // CRITICAL: Set ownerId on the card so handleCommandConfirm uses the correct player ID
+      setCommandModalCard({ ...card, ownerId: localPlayerId })
     } else if (!isComplexCommand && !commandModalCard) {
       // Simple command - execute directly
       const actions = getCommandAction(card.id, -1, card as any, gameState as any, localPlayerId)
@@ -1670,6 +1677,7 @@ const AppInner = function AppInner() {
 
       return () => clearTimeout(timer)
     }
+    return undefined
   }, [gameState.floatingTexts])
 
   // Sync validTargets with gameState.targetingMode for WebRTC P2P mode
@@ -2049,8 +2057,11 @@ const AppInner = function AppInner() {
           // Handle custom actions like FINN_SCORING
           executeAction(actionToProcess, actionToProcess.sourceCoords || { row: -1, col: -1 })
         }
-      } else if (actionToProcess.type === 'CREATE_STACK' || actionToProcess.type === 'OPEN_MODAL') {
+      } else if (actionToProcess.type === 'CREATE_STACK' ||
+                 actionToProcess.type === 'OPEN_MODAL' ||
+                 actionToProcess.type === 'ENTER_MODE') {
         // DIRECTLY EXECUTE the action from the queue.
+        // This ensures setTargetingMode is called for hand targeting effects
         executeAction(actionToProcess, actionToProcess.sourceCoords || { row: -1, col: -1 })
       } else {
         // Ensure we check targets before blindly setting mode from queue

@@ -500,7 +500,11 @@ export function handleLineSelection(
       // Unwavering Integrator: Can select any row or column
       // The clicked cell determines which line to score
       // Use sourceCoords (Unwavering Integrator) as reference
-      const { row: sourceRow, col: sourceCol } = sourceCoords || { row: clickedRow, col: clickedCol }
+      // Fall back to payload.sourceRow/payload.sourceCol if sourceCoords is not set
+      const sourceRowFromCoords = sourceCoords?.row ?? payload?.sourceRow
+      const sourceColFromCoords = sourceCoords?.col ?? payload?.sourceCol
+      const sourceRow = sourceRowFromCoords ?? clickedRow
+      const sourceCol = sourceColFromCoords ?? clickedCol
       isSameRow = clickedRow === sourceRow
       isSameCol = clickedCol === sourceCol
 

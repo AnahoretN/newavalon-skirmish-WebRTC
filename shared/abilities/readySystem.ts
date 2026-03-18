@@ -292,8 +292,6 @@ export function updateCardReadyStatuses(
     return
   }
 
-  const cardId = card.baseId || 'unknown'
-
   // Face-down cards on battlefield do not receive ready statuses
   // They will get ready statuses when flipped face-up
   if (card.isFaceDown) {

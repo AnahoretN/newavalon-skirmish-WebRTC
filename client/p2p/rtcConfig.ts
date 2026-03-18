@@ -33,9 +33,18 @@ export const RTC_CONFIG: RTCConfiguration = {
 /**
  * Create PeerJS options with RTC configuration.
  * Pass this to the Peer constructor: new Peer(options)
+ * @param customPeerId - Optional custom peer ID for reconnection (same ID after page refresh)
  */
-export function getPeerJSOptions(): { config: RTCConfiguration } {
-  return {
-    config: RTC_CONFIG
+export function getPeerJSOptions(customPeerId?: string): { config: RTCConfiguration; debug?: number; id?: string } {
+  const options: { config: RTCConfiguration; debug?: number; id?: string } = {
+    config: RTC_CONFIG,
+    debug: 1 // Enable PeerJS debug logging
   }
+
+  // Add custom peer ID if provided (for session restoration after page refresh)
+  if (customPeerId) {
+    options.id = customPeerId
+  }
+
+  return options
 }

@@ -314,6 +314,14 @@ export interface ClickWaveMessage {
 }
 
 /**
+ * Reconnect rejected - sent by host when player cannot reconnect (converted to dummy)
+ */
+export interface ReconnectRejectedMessage {
+  type: 'RECONNECT_REJECTED'
+  reason: string
+}
+
+/**
  * Join accept - sent by host to accept guest connection
  */
 export interface JoinAcceptMessage {
@@ -339,6 +347,7 @@ export type P2PMessage =
   | HandCardSelectionMessage
   | ClickWaveMessage
   | JoinAcceptMessage
+  | ReconnectRejectedMessage
 
 /**
  * SimpleHost configuration
@@ -385,4 +394,5 @@ export interface SimpleGuestConfig {
     clickedByPlayerId: number
     playerColor: string
   }) => void
+  onReconnectRejected?: (reason: string) => void
 }

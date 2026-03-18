@@ -647,7 +647,12 @@ function canPlayerAct(
     return ['PLAYER_READY', 'CHANGE_PLAYER_NAME', 'CHANGE_PLAYER_COLOR',
             'CHANGE_PLAYER_DECK', 'LOAD_CUSTOM_DECK', 'SET_GAME_MODE', 'SET_GRID_SIZE',
             'SET_PRIVACY', 'ASSIGN_TEAMS', 'SET_DUMMY_PLAYER_COUNT',
-            'ANNOUNCE_CARD'].includes(action)
+            'ANNOUNCE_CARD', 'RESET_GAME'].includes(action)
+  }
+
+  // RESET_GAME can always be performed (for restarting game)
+  if (action === 'RESET_GAME') {
+    return true
   }
 
   // Mulligan phase actions
@@ -2134,7 +2139,8 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
 
   const announcedCard = {
     ...cardToAnnounce,
-    statuses: filteredStatuses
+    statuses: filteredStatuses,
+    ownerId: actualPlayerId  // CRITICAL: Set ownerId so command cards know which player owns them
   }
 
   const newPlayers = state.players.map(p => {
@@ -3579,6 +3585,7 @@ function handlePlayCommandFromTokenPanel(state: GameState, playerId: number, dat
         isFaceUp: true,
         revealedTo: 'all' as const,
         revealedToPlayerIds: [],
+        ownerId: cardOwner.id  // CRITICAL: Set ownerId so command cards know which player owns them
       }
 
       return {
@@ -3637,6 +3644,7 @@ function handlePlayCommandFromDeck(state: GameState, playerId: number, data: any
         isFaceUp: true,
         revealedTo: 'all' as const,
         revealedToPlayerIds: [],
+        ownerId: cardOwner.id  // CRITICAL: Set ownerId so command cards know which player owns them
       }
 
       return {
@@ -3695,6 +3703,7 @@ function handlePlayCommandFromDiscard(state: GameState, playerId: number, data: 
         isFaceUp: true,
         revealedTo: 'all' as const,
         revealedToPlayerIds: [],
+        ownerId: cardOwner.id  // CRITICAL: Set ownerId so command cards know which player owns them
       }
 
       return {

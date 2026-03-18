@@ -61,10 +61,9 @@ export const MulliganModal: React.FC<MulliganModalProps> = ({
 
   const canExchange = attempts > 0
 
-  // Check if all players have confirmed
+  // Check player confirmation status
   const confirmedCount = players.filter(p => p.hasMulliganed).length
   const totalPlayers = players.filter(p => !p.isDummy && !p.isSpectator).length
-  const allConfirmed = totalPlayers > 0 && confirmedCount === totalPlayers
 
   const handleCardClick = useCallback((index: number) => {
     if (exchangingIndex !== null) {
@@ -91,35 +90,6 @@ export const MulliganModal: React.FC<MulliganModalProps> = ({
   }, [hand, onConfirm])
 
   const canInteract = localPlayerId !== null && !freshPlayer?.hasMulliganed
-
-  // Show waiting message if local player has confirmed but not all players are ready
-  if (freshPlayer?.hasMulliganed && !allConfirmed) {
-    return (
-      <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-        <div className="bg-gray-800 rounded-lg p-8 max-w-md text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">{tt('mulligan')}</h2>
-          <p className="text-gray-300 mb-4">{tt('waitingForOthers')}</p>
-          <div className="flex flex-wrap gap-2 justify-center mb-4">
-            {players.filter(p => !p.isDummy && !p.isSpectator).map(p => (
-              <div
-                key={p.id}
-                className={`px-3 py-1 rounded-full text-sm ${
-                  p.hasMulliganed
-                    ? 'bg-green-600 text-white'
-                    : 'bg-gray-600 text-gray-300'
-                }`}
-              >
-                {p.name} {p.hasMulliganed ? '✓' : '...'}
-              </div>
-            ))}
-          </div>
-          <p className="text-gray-400 text-sm">
-            {confirmedCount}/{totalPlayers} {tt('ready')}
-          </p>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
@@ -159,17 +129,20 @@ export const MulliganModal: React.FC<MulliganModalProps> = ({
           })}
         </div>
 
-        {/* Confirm button */}
-        {canInteract && (
-          <div className="flex justify-center">
-            <button
-              onClick={handleConfirm}
-              className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-colors"
-            >
-              {tt('confirmHand')} [{confirmedCount}/{totalPlayers}]
-            </button>
-          </div>
-        )}
+        {/* Confirm button - always visible, updates with player count */}
+        <div className="flex justify-center">
+          <button
+            onClick={handleConfirm}
+            disabled={!canInteract}
+            className={`px-8 py-3 font-bold rounded-lg transition-colors ${
+              canInteract
+                ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+            }`}
+          >
+            {tt('confirmHand')} [{confirmedCount}/{totalPlayers}]
+          </button>
+        </div>
       </div>
     </div>
   )

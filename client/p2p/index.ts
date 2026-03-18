@@ -12,6 +12,7 @@ export { SimpleHost } from './SimpleHost'
 export { SimpleGuest } from './SimpleGuest'
 export { SimpleVisualEffects } from './SimpleVisualEffects'
 export { applyAction } from './SimpleGameLogic'
+export { createHostFromSavedSession } from './SimpleHost'
 
 export type {
   ActionMessage,

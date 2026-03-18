@@ -455,6 +455,35 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   const isTeammate = localPlayerTeamId !== null && player.teamId === localPlayerTeamId && !isLocalPlayer
   const isDisconnected = !!player.isDisconnected
 
+  // Reconnection countdown timer state
+  const [reconnectTimeLeft, setReconnectTimeLeft] = useState<number>(0)
+
+  // Update countdown timer every second when player is disconnected
+  useEffect(() => {
+    if (!isDisconnected || !player.reconnectionDeadline) {
+      setReconnectTimeLeft(0)
+      return
+    }
+
+    // Initial calculation
+    const calculateTimeLeft = () => {
+      return Math.max(0, Math.ceil((player.reconnectionDeadline! - Date.now()) / 1000))
+    }
+
+    setReconnectTimeLeft(calculateTimeLeft())
+
+    // Update every second
+    const interval = setInterval(() => {
+      const timeLeft = calculateTimeLeft()
+      setReconnectTimeLeft(timeLeft)
+      if (timeLeft <= 0) {
+        clearInterval(interval)
+      }
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [isDisconnected, player.reconnectionDeadline])
+
   // deckFiles dependency is intentional - re-renders when deck database loads
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const selectableDecks = useMemo(() => deckFiles.filter(df => df.isSelectable), [deckFiles])
@@ -1024,7 +1053,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
               <div className="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent mx-auto mb-2"></div>
               <div className="text-white font-bold">{t('reconnecting')}</div>
               <div className="text-gray-300 text-sm">
-                {Math.max(0, Math.ceil((player.reconnectionDeadline - Date.now()) / 1000))}s
+                {reconnectTimeLeft}s
               </div>
             </div>
           </div>
@@ -1526,7 +1555,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
               <div className="animate-spin rounded-full h-10 w-10 border-4 border-white border-t-transparent mx-auto mb-1"></div>
               <div className="text-white font-bold text-sm">{t('reconnecting')}</div>
               <div className="text-gray-300 text-xs">
-                {Math.max(0, Math.ceil((player.reconnectionDeadline - Date.now()) / 1000))}s
+                {reconnectTimeLeft}s
               </div>
             </div>
           </div>
