@@ -142,7 +142,8 @@ export function buildFilterFromString(
 export function buildDetailsFromContent(
   ability: ContentAbility,
   ownerId: number,
-  coords: { row: number; col: number }
+  coords: { row: number; col: number },
+  _gameState?: GameState
 ): Record<string, any> {
   const details: Record<string, any> = { ...ability.details }
 
@@ -181,6 +182,19 @@ export function buildDetailsFromContent(
       details.filter = mainFilter
     } else if (additionalFilter) {
       details.filter = additionalFilter
+    }
+  }
+
+  // Handle excludeSelf property - if true, wrap filter to exclude source card
+  if (details.excludeSelf && details.filter && _gameState) {
+    const originalFilter = details.filter
+    const sourceCard = _gameState.board[coords.row]?.[coords.col]?.card
+    details.filter = (card: Card, r?: number, c?: number) => {
+      // Exclude the source card itself from valid targets
+      if (sourceCard && card.id === sourceCard.id) {
+        return false
+      }
+      return originalFilter(card, r, c)
     }
   }
 
@@ -232,7 +246,7 @@ export function buildActionFromContentAbility(
 
   // Handle single action abilities
   const actionType = ability.action
-  const details = buildDetailsFromContent(ability, ownerId, coords)
+  const details = buildDetailsFromContent(ability, ownerId, coords, _gameState)
 
   // Build action based on type
   switch (actionType) {
@@ -326,7 +340,7 @@ export function buildActionFromContentAbility(
 
     case 'SEARCH_DECK': {
       // SEARCH_DECK allows searching deck and selecting a card
-      const processedDetails = buildDetailsFromContent(ability, ownerId, coords)
+      const processedDetails = buildDetailsFromContent(ability, ownerId, coords, _gameState)
       return {
         type: 'ENTER_MODE',
         mode: ability.mode || 'SEARCH_DECK',
@@ -358,7 +372,7 @@ export function buildActionFromContentAbility(
 
     case 'ENTER_MODE': {
       // Use buildDetailsFromContent to convert filter strings to functions
-      const processedDetails = buildDetailsFromContent(ability, ownerId, coords)
+      const processedDetails = buildDetailsFromContent(ability, ownerId, coords, _gameState)
 
       // Start with processedDetails, then ensure all critical properties from original details are preserved
       const payload: Record<string, any> = { ...processedDetails }
@@ -558,7 +572,7 @@ export function buildActionFromContentAbility(
     case 'MODIFY_POWER': {
       // MODIFY_POWER changes power of target cards by amount
       // Used by Walking Turret Setup: Give -1 power to a card with an Aim token
-      const processedDetails = buildDetailsFromContent(ability, ownerId, coords)
+      const processedDetails = buildDetailsFromContent(ability, ownerId, coords, _gameState)
       return {
         type: 'ENTER_MODE',
         mode: 'SELECT_TARGET',
@@ -609,7 +623,7 @@ export function buildActionFromContentAbility(
     case 'DOUBLE_TOKEN': {
       // DOUBLE_TOKEN doubles the number of tokens on a selected card
       // Used by Reverend of The Choir Deploy: Double Exploit tokens on any one card
-      const processedDetails = buildDetailsFromContent(ability, ownerId, coords)
+      const processedDetails = buildDetailsFromContent(ability, ownerId, coords, _gameState)
       const tokenType = details.tokenType || 'Exploit'
 
       return {

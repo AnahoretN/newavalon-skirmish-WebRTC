@@ -729,7 +729,7 @@
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365286/FUS_SIGNAL_PROPHET_rmk9me.webp",
       "fallbackImage": "/images/cards/FUS_SIGNAL_PROPHET.png",
       "power": 2,
-      "abilityText": "Deploy: Place 1 Exploit counter on each of your cards with Support in lines.\nCommit (requires Support): Move one of your cards with an Exploit counter 1 cell.",
+      "abilityText": "Deploy: Place 1 Exploit counter on each of your cards with Support in lines.\nCommit (requires Support): Move another allied card with an Exploit counter 1 cell.",
       "flavorText": "The Signal is truth. All else is noise.",
       "types": ["Unit", "Fusion"],
       "faction": "Fusion",
@@ -755,7 +755,9 @@
           "details": {
             "filter": "hasCounter_Exploit",
             "distance": 1,
-            "requireTokenFromSourceOwner": true
+            "requireTokenFromSourceOwner": true,
+            "excludeSelf": true,
+            "target": "ally"
           }
         }
       ]

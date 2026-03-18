@@ -558,18 +558,10 @@ export function handleLineSelection(
     // Award points with floating text
     if (exploitCount > 0 && actorId) {
       // Show only ONE total floating text over the card that performed the ability
-      // Zius: total over target card (where Exploit was placed)
+      // Zius: total over Zius card (sourceCoords)
       // Unwavering Integrator: total over source card (the card itself)
-      if (targetCoords) {
-        // Zius Setup: Show total over target card
-        triggerFloatingText({
-          row: targetCoords.row,
-          col: targetCoords.col,
-          text: `+${exploitCount}`,
-          playerId: actorId,
-        })
-      } else if (sourceCoords) {
-        // Unwavering Integrator: Show total over source card
+      if (sourceCoords) {
+        // Show total over the card that activated the ability (Zius or Unwavering Integrator)
         triggerFloatingText({
           row: sourceCoords.row,
           col: sourceCoords.col,

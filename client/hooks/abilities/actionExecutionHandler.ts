@@ -572,7 +572,11 @@ function handleCreateStack(
           const hasOurRevealed = card.statuses?.some(s =>
             s.type === 'Revealed' && s.addedByPlayerId === tokenOwnerId
           )
-          if (!hasOurRevealed) {
+          // ENHANCED INTERROGATION: Check onlyFaceDown - only target face-down cards
+          const isFaceDown = card.isFaceDown === true
+          const passesFaceDownCheck = !action.onlyFaceDown || isFaceDown
+
+          if (!hasOurRevealed && passesFaceDownCheck) {
             handTargets.push({ playerId: targetPlayer.id, cardIndex: i })
           }
         }
@@ -625,7 +629,11 @@ function handleCreateStack(
             const hasOurRevealed = card.statuses?.some(s =>
               s.type === 'Revealed' && s.addedByPlayerId === tokenOwnerId
             )
-            if (!hasOurRevealed) {
+            // ENHANCED INTERROGATION: Check onlyFaceDown - only target face-down cards
+            const isFaceDown = card.isFaceDown === true
+            const passesFaceDownCheck = !action.onlyFaceDown || isFaceDown
+
+            if (!hasOurRevealed && passesFaceDownCheck) {
               handTargets.push({ playerId: player.id, cardIndex: i })
             }
           }

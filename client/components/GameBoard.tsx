@@ -160,19 +160,29 @@ const GridCell = memo<{
       }, [draggedItem, handleDrop, row, col, setHoveredCell])
 
       const handleClick = useCallback(() => {
-        // Handle scoring line selection - clicking any cell in a scoring line selects it
-        if (showScoringHighlight && scoringLineInfo && onEmptyCellClick) {
-          onEmptyCellClick({ row, col })
-          return
-        }
-
-        // Check if we're in line selection mode (for abilities)
+        // Check if we're in line selection mode (for abilities) - check FIRST before other modes
+        // This ensures abilities like Zius, Unwavering Integrator, Logistics Chain work correctly
         const isInLineSelectionMode = abilityMode && isLineSelectionMode(abilityMode.mode)
 
         // Trigger click wave for empty cells
         if (!cell.card && triggerClickWave && localPlayerId !== null) {
           triggerClickWave('board', { row, col })
         }
+
+        // Priority 1: Line selection modes (abilities like Zius, Unwavering Integrator, Logistics Chain)
+        if (isInLineSelectionMode && onEmptyCellClick) {
+          // In line selection mode, treat any cell click as line selection (even if occupied)
+          onEmptyCellClick({ row, col })
+          return
+        }
+
+        // Priority 2: Scoring line selection (during Scoring phase)
+        if (showScoringHighlight && scoringLineInfo && onEmptyCellClick) {
+          onEmptyCellClick({ row, col })
+          return
+        }
+
+        // Priority 3: Play mode (dragging card from hand)
         if (playMode) {
           const itemToDrop: DragItem = {
             ...playMode.sourceItem,
@@ -181,12 +191,17 @@ const GridCell = memo<{
           itemToDrop.card.isFaceDown = !!playMode.faceDown
           handleDrop(itemToDrop, { target: 'board', boardCoords: { row, col } })
           setPlayMode(null)
-        } else if (isInLineSelectionMode && onEmptyCellClick) {
-          // In line selection mode, treat any cell click as line selection (even if occupied)
-          onEmptyCellClick({ row, col })
-        } else if (cell.card && onCardClick) {
+          return
+        }
+
+        // Priority 4: Card click
+        if (cell.card && onCardClick) {
           onCardClick(cell.card, { row, col })
-        } else if (!cell.card && onEmptyCellClick) {
+          return
+        }
+
+        // Priority 5: Empty cell click (default)
+        if (!cell.card && onEmptyCellClick) {
           onEmptyCellClick({ row, col })
         }
       }, [showScoringHighlight, scoringLineInfo, onEmptyCellClick, playMode, cell.card, onCardClick, handleDrop, setPlayMode, row, col, triggerClickWave, localPlayerId, abilityMode])

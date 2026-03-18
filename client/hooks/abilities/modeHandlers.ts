@@ -1834,7 +1834,8 @@ function handleSelectUnitForMove(
   setAbilityMode(newMode)
 
   // Calculate valid targets and set targeting mode for visual highlights
-  const actorId = originalOwnerId ?? localPlayerId ?? 0
+  // Use the selected card's owner as actorId for correct highlight color (important for dummy players)
+  const actorId = card.ownerId ?? originalOwnerId ?? localPlayerId ?? 0
   if (calculateValidTargets) {
     const targets = calculateValidTargets(newMode, gameState, localPlayerId || 0, commandContext)
     setTargetingMode(newMode, actorId, boardCoords, targets, commandContext)

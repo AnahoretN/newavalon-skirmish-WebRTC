@@ -232,9 +232,10 @@ const AppInner = function AppInner() {
   useEffect(() => {
     if (gameState.isMulliganActive && gameState.isGameStarted) {
       const localPlayer = gameState.players.find(p => p.id === localPlayerId)
-      // Check if all players have confirmed
-      const confirmedCount = gameState.players.filter(p => p.hasMulliganed).length
-      const totalPlayers = gameState.players.filter(p => !p.isDummy && !p.isSpectator).length
+      // Check if all REAL (non-dummy) players have confirmed - dummy players auto-confirm
+      const realPlayers = gameState.players.filter(p => !p.isDummy && !p.isSpectator)
+      const confirmedCount = realPlayers.filter(p => p.hasMulliganed).length
+      const totalPlayers = realPlayers.length
       const allConfirmed = totalPlayers > 0 && confirmedCount === totalPlayers
 
       // Keep modal open for non-dummy players until ALL players confirm

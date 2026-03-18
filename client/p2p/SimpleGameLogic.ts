@@ -943,8 +943,9 @@ function executePreparationPhase(state: GameState, activePlayerId: number): Game
     }
   }
 
-  // Check round end
-  if (shouldRoundEnd(newState)) {
+  // Check round end - ONLY for starting player, at the end of Preparation phase
+  // This ensures round only ends when starting player's turn comes back around
+  if (activePlayerId === newState.startingPlayerId && shouldRoundEnd(newState)) {
     newState = endRound(newState)
     return newState
   }
@@ -1149,6 +1150,44 @@ function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): G
   const targetCell = state.board[toRow]?.[toCol]
   if (!targetCell || targetCell.card) {return state}
 
+  // STUN RULE: If card is stunned and owner tries to move it, skip movement but apply other effects
+  const isStunned = sourceCard.statuses?.some((s: any) => s.type === 'Stun')
+  const isOwnedByMover = sourceCard.ownerId === playerId
+  const skipMovement = isStunned && isOwnedByMover
+
+  if (skipMovement) {
+    logger.info('[handleMoveCardOnBoard] Stunned card cannot be moved by owner:', sourceCard.name, 'owner:', sourceCard.ownerId, 'mover:', playerId)
+    // Skip movement but still process token placement (other effects) below
+    // We keep the original state.board since no movement occurred
+    let newState = { ...state }
+
+    // CRITICAL: Handle token placement on the (non-moved) card (False Orders Option 1: Stun x2)
+    // The card stays at fromCoords, not toCoords
+    const payload = targetingMode?.chainedAction?.payload || targetingMode?.action?.chainedAction?.payload || targetingMode?.action?.payload?.chainedAction?.payload
+    const contextCardId = directContextCardId || payload?.contextCardId
+    const tokenType = payload?.tokenType
+    const count = payload?.count
+    const ownerId = payload?.ownerId
+
+    if (tokenType && count && contextCardId) {
+      // Find the card by ID - it's at fromCoords since movement was skipped
+      const cardAtSource = state.board[fromRow]?.[fromCol]?.card
+      if (cardAtSource && cardAtSource.id === contextCardId) {
+        const targetCoords = { row: fromRow, col: fromCol }
+        for (let i = 0; i < count; i++) {
+          newState = handleAddStatusToBoardCard(newState, playerId, {
+            boardCoords: targetCoords,
+            statusType: tokenType,
+            ownerId: ownerId || playerId,
+            count: 1,
+          })
+        }
+      }
+    }
+
+    return newState
+  }
+
   // Move card
   const newBoard = state.board.map((row, r) =>
     row.map((cell, c) => {
@@ -1326,6 +1365,14 @@ function handleReturnCardToHand(state: GameState, playerId: number, data: any): 
 
   if (!cardToReturn || !sourceCoords) {return state}
 
+  // STUN RULE: If player tries to return THEIR OWN stunned card to hand, prevent it
+  const isStunned = (cardToReturn as Card).statuses?.some((s: any) => s.type === 'Stun')
+  const isOwned = (cardToReturn as Card).ownerId === playerId
+  if (isStunned && isOwned) {
+    logger.info('[handleReturnCardToHand] Stunned card cannot be returned to hand by owner:', (cardToReturn as Card).name)
+    return state
+  }
+
   // Add to owner's hand
   // cardToReturn is non-null here due to the check above
   const finalCard: Card = cardToReturn
@@ -1386,6 +1433,16 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
         return cell
       })
     )
+
+    // STUN RULE: If player tries to move THEIR OWN stunned card from board to hand, prevent it
+    if (cardFromBoard && ownerIdFromBoard !== null) {
+      const isStunned = (cardFromBoard as Card).statuses?.some((s: any) => s.type === 'Stun')
+      const isOwnedByMover = ownerIdFromBoard === playerId
+      if (isStunned && isOwnedByMover) {
+        logger.info('[handleMoveCardToHand] Stunned card cannot be moved from board to hand by owner:', (cardFromBoard as Card).name)
+        return state
+      }
+    }
   } else if (source === 'discard') {
     // Use data.playerId if provided, otherwise fall back to sender's playerId
     sourcePlayerId = dataPlayerId ?? playerId
@@ -2162,6 +2219,11 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
 
   let newState = { ...state, players: newPlayers }
 
+  // Set phase to Main when command card is announced from hand
+  if (isCommandCard) {
+    newState = { ...newState, currentPhase: 1 }
+  }
+
   // Check and apply triggers when a card is announced (played)
   // This is where Vigilant Spotter trigger should fire - when opponent plays a revealed card
   // NOTE: Skip trigger check for Command cards - trigger should fire after command mode is selected, not on announce
@@ -2237,7 +2299,7 @@ function handleDestroyCard(state: GameState, _playerId: number, data: any): Game
 /**
  * SWAP_CARDS - swap positions of two cards on board
  */
-function handleSwapCards(state: GameState, _playerId: number, data?: any): GameState {
+function handleSwapCards(state: GameState, playerId: number, data?: any): GameState {
   const { coords1, coords2 } = data || {}
 
   if (!coords1 || !coords2) { return state }
@@ -2256,6 +2318,19 @@ function handleSwapCards(state: GameState, _playerId: number, data?: any): GameS
 
   // Both cells must have cards
   if (!card1 || !card2) { return state }
+
+  // STUN RULE: If player tries to swap THEIR OWN stunned card, prevent the swap
+  const isCard1Stunned = card1.statuses?.some((s: any) => s.type === 'Stun')
+  const isCard1Owned = card1.ownerId === playerId
+  const isCard2Stunned = card2.statuses?.some((s: any) => s.type === 'Stun')
+  const isCard2Owned = card2.ownerId === playerId
+
+  // If either card is stunned and owned by the player, prevent swap
+  if ((isCard1Stunned && isCard1Owned) || (isCard2Stunned && isCard2Owned)) {
+    logger.info('[handleSwapCards] Swap prevented - stunned card cannot be moved by owner:',
+      isCard1Stunned && isCard1Owned ? card1.name : card2.name)
+    return state
+  }
 
   // Create new board with swapped cards
   const newBoard = state.board.map((row, r) =>
@@ -3205,6 +3280,19 @@ function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: a
     filteredStatuses = existingStatuses.filter(s => s.type !== replaceStatusType)
   }
 
+  // STUN RULE: When Stun is added to a card with readyDeploy, mark deploy as used
+  // This prevents readyDeploy from being restored when Stun is removed
+  if (statusType === 'Stun') {
+    const hasReadyDeploy = filteredStatuses.some(s => s.type === 'readyDeploy')
+    const alreadyHasDeployUsed = filteredStatuses.some(s => s.type === 'deployUsedThisTurn')
+    if (hasReadyDeploy && !alreadyHasDeployUsed) {
+      // Mark deploy ability as used (skip) so it doesn't come back after stun removal
+      filteredStatuses = filteredStatuses.filter(s => s.type !== 'readyDeploy')
+      filteredStatuses.push({ type: 'deployUsedThisTurn', addedByPlayerId: targetCard.ownerId || 0 })
+      logger.info(`[handleAddStatusToBoardCard] Stun added to card with readyDeploy - marking deploy as used to prevent restoration`)
+    }
+  }
+
   // Singleton statuses that cannot stack (only one instance allowed per owner)
   const SINGLETON_STATUSES = ['Threat', 'Support', 'Revealed']
 
@@ -3432,8 +3520,10 @@ function handleTransferAllStatuses(state: GameState, _playerId: number, data: an
   // Add all statuses to destination card
   const newToCardStatuses = [...(toCard.statuses || []), ...statusesToTransfer]
 
-  // Clear all statuses from source card
-  const newFromCardStatuses: any[] = []
+  // Clear all statuses from source card, BUT preserve deployUsedThisTurn
+  // This prevents the card from getting readyDeploy back when it already used deploy
+  const deployUsedStatus = (fromCard.statuses || []).find((s: any) => s.type === 'deployUsedThisTurn')
+  const newFromCardStatuses: any[] = deployUsedStatus ? [deployUsedStatus] : []
 
   // Update both cards
   const newBoard = state.board.map((row, rIdx) =>
@@ -3598,7 +3688,8 @@ function handlePlayCommandFromTokenPanel(state: GameState, playerId: number, dat
     return p
   })
 
-  return { ...state, players: updatedPlayers }
+  // Set phase to Main when command card is played
+  return { ...state, players: updatedPlayers, currentPhase: 1 }
 }
 
 /**
@@ -3657,7 +3748,8 @@ function handlePlayCommandFromDeck(state: GameState, playerId: number, data: any
     return p
   })
 
-  return { ...state, players: updatedPlayers }
+  // Set phase to Main when command card is played
+  return { ...state, players: updatedPlayers, currentPhase: 1 }
 }
 
 /**
@@ -3716,7 +3808,8 @@ function handlePlayCommandFromDiscard(state: GameState, playerId: number, data: 
     return p
   })
 
-  return { ...state, players: updatedPlayers }
+  // Set phase to Main when command card is played
+  return { ...state, players: updatedPlayers, currentPhase: 1 }
 }
 
 /**

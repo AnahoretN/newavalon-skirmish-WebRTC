@@ -747,10 +747,11 @@ export function handleEmptyCellClick(
     if (exploitCount > 0) {
       updatePlayerScore(ownerId, exploitCount)
 
-      // Show only ONE total floating text over the card where Exploit was placed
+      // Show only ONE total floating text over Zius card (the card that performed the ability)
+      const textCoords = sourceCoords || contextCoords
       triggerFloatingText({
-        row: contextCoords.row,
-        col: contextCoords.col,
+        row: textCoords.row,
+        col: textCoords.col,
         text: `+${exploitCount}`,
         playerId: ownerId,
       })

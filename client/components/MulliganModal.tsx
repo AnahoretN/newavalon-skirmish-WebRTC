@@ -61,9 +61,10 @@ export const MulliganModal: React.FC<MulliganModalProps> = ({
 
   const canExchange = attempts > 0
 
-  // Check player confirmation status
-  const confirmedCount = players.filter(p => p.hasMulliganed).length
-  const totalPlayers = players.filter(p => !p.isDummy && !p.isSpectator).length
+  // Check player confirmation status - only count REAL players (dummy auto-confirm)
+  const realPlayers = players.filter(p => !p.isDummy && !p.isSpectator)
+  const confirmedCount = realPlayers.filter(p => p.hasMulliganed).length
+  const totalPlayers = realPlayers.length
 
   const handleCardClick = useCallback((index: number) => {
     if (exchangingIndex !== null) {

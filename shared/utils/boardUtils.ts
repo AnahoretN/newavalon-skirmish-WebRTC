@@ -4,7 +4,6 @@
  *
  * Card IDs for Hero passives:
  * - Mr. Pearl (mrPearlDoF): +1 Power to other own units in lines
- * - Reverend of The Choir (reverendOfTheChoir): Support to all own units in lines
  *
  * Card IDs for conditional abilities:
  * - Threat Analyst (threatAnalyst): Units can threaten cards with owner's Exploit tokens
@@ -17,7 +16,6 @@ const GRID_MAX_SIZE = 7
 
 // Hero card baseIds for passive abilities (direct ID matching)
 const HERO_MR_PEARL_ID = 'mrPearlDoF'
-const HERO_REVEREND_ID = 'reverendOfTheChoir'
 const CARD_THREAT_ANALYST_ID = 'threatAnalyst'
 
 /**
@@ -60,7 +58,7 @@ export const createInitialBoard = (): Board =>
 
 /**
  * Recalculates "Support" and "Threat" statuses for all cards on board.
- * Also calculates passive buffs like Mr. Pearl's bonus power and Reverend's Support.
+ * Also calculates passive buffs like Mr. Pearl's bonus power.
  * This function is computationally intensive and should be called only when board changes.
  * @param {GameState} gameState The entire current game state.
  * @returns {Board} A new board object with updated statuses.
@@ -307,7 +305,7 @@ export const recalculateBoardStatuses = (gameState: GameState): Board => {
     }
   }
 
-  // 4. Hero Passives (Reverend & Mr. Pearl) - Optimized version
+  // 4. Hero Passives (Mr. Pearl) - Optimized version
   // Collect hero positions first, then apply effects row/column by row/column
   // to reduce redundant iterations
 
@@ -318,7 +316,6 @@ export const recalculateBoardStatuses = (gameState: GameState): Board => {
     baseId: string
   }
 
-  const reverends: HeroPosition[] = []
   const mrPearls: HeroPosition[] = []
 
   // Single pass to collect hero positions
@@ -328,52 +325,8 @@ export const recalculateBoardStatuses = (gameState: GameState): Board => {
       const isStunned = card?.statuses?.some((s: {type: string}) => s.type === 'Stun')
 
       if (card?.baseId && !card.isFaceDown && card.ownerId !== undefined && !isStunned) {
-        if (card.baseId === HERO_REVEREND_ID) {
-          reverends.push({ r, c, ownerId: card.ownerId, baseId: card.baseId })
-        } else if (card.baseId === HERO_MR_PEARL_ID) {
+        if (card.baseId === HERO_MR_PEARL_ID) {
           mrPearls.push({ r, c, ownerId: card.ownerId, baseId: card.baseId })
-        }
-      }
-    }
-  }
-
-  // Apply Reverend Support effects - process each affected row/col only once
-  const processedRowsForReverend = new Set<string>()
-  const processedColsForReverend = new Set<string>()
-
-  for (const hero of reverends) {
-    const { r, c, ownerId } = hero
-
-    // Process row if not already processed for this player
-    const rowKey = `${r}-${ownerId}`
-    if (!processedRowsForReverend.has(rowKey)) {
-      processedRowsForReverend.add(rowKey)
-      for (let i = 0; i < GRID_SIZE; i++) {
-        const target = newBoard[r][i].card
-        if (target && target.ownerId === ownerId && !target.isFaceDown) {
-          if (!target.statuses) {
-            target.statuses = []
-          }
-          if (!target.statuses.some((s: {type: string}) => s.type === 'Support')) {
-            target.statuses.push({ type: 'Support', addedByPlayerId: ownerId })
-          }
-        }
-      }
-    }
-
-    // Process column if not already processed for this player
-    const colKey = `${c}-${ownerId}`
-    if (!processedColsForReverend.has(colKey)) {
-      processedColsForReverend.add(colKey)
-      for (let i = 0; i < GRID_SIZE; i++) {
-        const target = newBoard[i][c].card
-        if (target && target.ownerId === ownerId && !target.isFaceDown) {
-          if (!target.statuses) {
-            target.statuses = []
-          }
-          if (!target.statuses.some((s: {type: string}) => s.type === 'Support')) {
-            target.statuses.push({ type: 'Support', addedByPlayerId: ownerId })
-          }
         }
       }
     }
