@@ -23,6 +23,7 @@ interface MainMenuProps {
     gameId?: string | null;
     isGameStarted?: boolean;
     isPrivate?: boolean;
+    onClearImageCache?: () => void;
     // WebRTC props
     initializeWebrtcHost?: () => Promise<string | null>;
     connectAsGuest?: (hostId: string) => Promise<boolean>;
@@ -44,6 +45,7 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
   gameId = null,
   isGameStarted = false,
   isPrivate = false,
+  onClearImageCache,
   initializeWebrtcHost,
 }) => {
   const [isInitializingHost, setIsInitializingHost] = useState(false)
@@ -75,7 +77,8 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
 
   const openDeckBuilder = () => {
     deckBuilderModal.open({
-      setViewingCard
+      setViewingCard,
+      imageRefreshVersion
     })
   }
 
@@ -86,7 +89,8 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
       onSave: handleSaveSettings,
       gameId,
       isGameStarted,
-      isPrivate
+      isPrivate,
+      onClearImageCache
     })
   }
 

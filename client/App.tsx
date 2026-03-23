@@ -2127,6 +2127,13 @@ const AppInner = function AppInner() {
     setModalsState(prev => ({ ...prev, isSettingsModalOpen: false }))
   }, [forceReconnect])
 
+  const handleClearImageCache = useCallback(() => {
+    // Increment image refresh version to force reload of all images
+    const newVersion = Date.now()
+    setImageRefreshVersion(newVersion)
+    localStorage.setItem('image_refresh_data', JSON.stringify({ version: newVersion, timestamp: newVersion }))
+  }, [])
+
   // Handle WebRTC host invite link - auto-connect to host
   useEffect(() => {
     const inviteHostId = sessionStorage.getItem('invite_host_id')
@@ -2869,6 +2876,7 @@ const AppInner = function AppInner() {
         gameId={gameState.gameId}
         isGameStarted={gameState.isGameStarted}
         isPrivate={gameState.isPrivate}
+        onClearImageCache={handleClearImageCache}
         initializeWebrtcHost={initializeWebrtcHost}
       />
       <ModalsRenderer />

@@ -10,9 +10,10 @@ interface DeckBuilderModalProps {
   isOpen: boolean;
   onClose: () => void;
   setViewingCard: React.Dispatch<React.SetStateAction<{ card: Card; player?: Player; } | null>>;
+  imageRefreshVersion?: number;
 }
 
-export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onClose, setViewingCard }) => {
+export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onClose, setViewingCard, imageRefreshVersion }) => {
   const { getCardTranslation, t } = useLanguage()
 
   // Get cards dynamically - they will be loaded from server
@@ -420,6 +421,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                           isFaceUp={true}
                           playerColorMap={new Map()}
                           extraPowerSpacing={true}
+                          imageRefreshVersion={imageRefreshVersion}
                         />
                       </div>
                       <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-white text-[10px] text-center py-0.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none truncate px-1">
@@ -482,7 +484,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
                         setViewingCard({ card: displayCard })
                       }}
                     >
-                      <CardComponent card={displayCard} isFaceUp={true} playerColorMap={new Map()} hidePower={true} />
+                      <CardComponent card={displayCard} isFaceUp={true} playerColorMap={new Map()} hidePower={true} imageRefreshVersion={imageRefreshVersion} />
                     </div>
                     <div className="flex-grow min-w-0">
                       <div className="font-bold text-sm text-white truncate">{displayName}</div>

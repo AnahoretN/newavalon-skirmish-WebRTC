@@ -144,6 +144,7 @@ export const ModalsRenderer = () => {
           gameId={restData.gameId}
           isGameStarted={restData.isGameStarted}
           isPrivate={restData.isPrivate}
+          onClearImageCache={restData.onClearImageCache}
         />
       )}
 
@@ -199,7 +200,12 @@ export const ModalsRenderer = () => {
       )}
 
       {openModal === 'deckBuilder' && (
-        <DeckBuilderModal isOpen={true} onClose={close} setViewingCard={restData.setViewingCard} />
+        <DeckBuilderModal
+          isOpen={true}
+          onClose={close}
+          setViewingCard={restData.setViewingCard}
+          imageRefreshVersion={restData.imageRefreshVersion}
+        />
       )}
 
       {openModal === 'mulligan' && (

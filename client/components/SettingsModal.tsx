@@ -18,6 +18,7 @@ interface SettingsModalProps {
   isPrivate?: boolean;
   webrtcEnabled?: boolean;
   onWebrtcToggle?: (enabled: boolean) => void;
+  onClearImageCache?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -31,6 +32,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   isPrivate = false,
   webrtcEnabled = false,
   onWebrtcToggle,
+  onClearImageCache,
 }) => {
   const { language, setLanguage, t } = useLanguage()
   const [serverUrl, setServerUrl] = useState('')
@@ -121,6 +123,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleClearCache = () => {
     setCacheClearing(true)
+
+    // Increment image refresh version FIRST (before reload)
+    if (onClearImageCache && typeof onClearImageCache === 'function') {
+      onClearImageCache()
+    }
 
     // Clear all localStorage and sessionStorage
     localStorage.clear()
