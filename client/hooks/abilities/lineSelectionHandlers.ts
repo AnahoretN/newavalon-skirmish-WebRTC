@@ -503,21 +503,58 @@ export function handleLineSelection(
       // Fall back to payload.sourceRow/payload.sourceCol if sourceCoords is not set
       const sourceRowFromCoords = sourceCoords?.row ?? payload?.sourceRow
       const sourceColFromCoords = sourceCoords?.col ?? payload?.sourceCol
-      const sourceRow = sourceRowFromCoords ?? clickedRow
-      const sourceCol = sourceColFromCoords ?? clickedCol
-      isSameRow = clickedRow === sourceRow
-      isSameCol = clickedCol === sourceCol
 
-      // If clicked on sourceCoords itself, default to row
-      if (isSameRow && isSameCol) {
-        // Clicked on Unwavering Integrator itself - default to row
+      console.log('[SELECT_LINE_FOR_EXPLOIT_SCORING] Unwavering Integrator', {
+        clickedRow,
+        clickedCol,
+        sourceCoords,
+        payloadSourceRow: payload?.sourceRow,
+        payloadSourceCol: payload?.sourceCol,
+        sourceRowFromCoords,
+        sourceColFromCoords
+      })
+
+      // CRITICAL FIX: Check if we have valid source coords before using them
+      // This fixes Unwavering Integrator line selection not working when clicking empty cells
+      const hasValidSourceCoords = sourceRowFromCoords !== undefined && sourceColFromCoords !== undefined
+
+      console.log('[SELECT_LINE_FOR_EXPLOIT_SCORING] hasValidSourceCoords', { hasValidSourceCoords })
+
+      if (hasValidSourceCoords) {
+        // We have valid source coords - check if clicked cell is in same row or column
+        isSameRow = clickedRow === sourceRowFromCoords
+        isSameCol = clickedCol === sourceColFromCoords
+
+        console.log('[SELECT_LINE_FOR_EXPLOIT_SCORING] Checking alignment', {
+          isSameRow,
+          isSameCol,
+          reason: isSameRow && isSameCol ? 'Clicked on source - default to row' : 'Use clicked line'
+        })
+
+        // If clicked on sourceCoords itself, default to row
+        if (isSameRow && isSameCol) {
+          // Clicked on Unwavering Integrator itself - default to row
+          isSameRow = true
+          isSameCol = false
+        }
+      } else {
+        // No valid source coords - first click determines the line (row or column)
+        // Default to row for consistency
         isSameRow = true
         isSameCol = false
+        console.log('[SELECT_LINE_FOR_EXPLOIT_SCORING] No valid source coords - default to row')
       }
 
       // Use the clicked row/col as the selected line
       selectedRow = clickedRow
       selectedCol = clickedCol
+
+      console.log('[SELECT_LINE_FOR_EXPLOIT_SCORING] Final selection', {
+        selectedRow,
+        selectedCol,
+        isSameRow,
+        isSameCol
+      })
     }
 
     // Lock interaction to prevent multiple clicks

@@ -1964,6 +1964,8 @@ function handleMoveAnnouncedToDeck(state: GameState, playerId: number, data: any
  * MOVE_ANNOUNCED_TO_DISCARD - move card from showcase to discard
  */
 function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, data: any): GameState {
+  console.log('[handleMoveAnnouncedToDiscard] START', { playerId, currentPhase: state.currentPhase })
+
   const { playerId: targetPlayerId } = data || {}
   const actualPlayerId = targetPlayerId ?? playerId
   const player = state.players.find(p => p.id === actualPlayerId)
@@ -1985,6 +1987,8 @@ function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, data: 
   // This is where Vigilant Spotter trigger should fire for Command cards
   const isCommandCard = cardToMove.deck === 'Command' || cardToMove.types?.includes('Command') || cardToMove.faction === 'Command'
   const hasRevealedStatus = cardToMove.statuses?.some((s: any) => s.type === 'Revealed')
+
+  console.log('[handleMoveAnnouncedToDiscard] Card check', { isCommandCard, hasRevealedStatus })
 
   let newState = state
   if (isCommandCard && hasRevealedStatus) {
@@ -2016,7 +2020,25 @@ function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, data: 
       : p
   )
 
-  return { ...newState, players: newPlayers }
+  newState = { ...newState, players: newPlayers }
+
+  // CRITICAL FIX: Switch to Main phase (2) if currently in Setup phase (1)
+  // This fixes Setup phase not transitioning to Main after playing dummy player commands
+  const wasSetupPhase = state.currentPhase === 1
+  console.log('[handleMoveAnnouncedToDiscard] Phase check', { wasSetupPhase, currentPhase: state.currentPhase, isCommandCard })
+  if (wasSetupPhase && isCommandCard) {
+    newState = {
+      ...newState,
+      currentPhase: 2
+    }
+    // Clear scoring mode if somehow active
+    newState.isScoringStep = false
+    newState.scoringLines = []
+    console.log('[handleMoveAnnouncedToDiscard] Switched to Main phase (2)', { newPhase: newState.currentPhase })
+  }
+
+  console.log('[handleMoveAnnouncedToDiscard] END', { newPhase: newState.currentPhase })
+  return newState
 }
 
 /**
@@ -2972,9 +2994,14 @@ function handleContextReward(state: GameState, playerId: number, data: any): Gam
  * Handle cleanup command - discard command card after use
  */
 function handleCleanupCommand(state: GameState, playerId: number, commandCard: Card): GameState {
+  console.log('[handleCleanupCommand] START', { playerId, commandCardName: commandCard.name, currentPhase: state.currentPhase })
+
   // Find the command card in the player's announced cards and move to discard
   const player = state.players.find(p => p.id === playerId)
-  if (!player || !player.announcedCard) {return state}
+  if (!player || !player.announcedCard) {
+    console.log('[handleCleanupCommand] No player or no announcedCard', { hasPlayer: !!player, hasAnnouncedCard: !!player?.announcedCard })
+    return state
+  }
 
   const newPlayers = state.players.map(p => {
     if (p.id === playerId) {
@@ -2989,7 +3016,25 @@ function handleCleanupCommand(state: GameState, playerId: number, commandCard: C
     return p
   })
 
-  return { ...state, players: newPlayers }
+  let newState: GameState = { ...state, players: newPlayers }
+
+  // CRITICAL FIX: Switch to Main phase (2) if currently in Setup phase (1)
+  // This fixes Setup phase not transitioning to Main after playing dummy player commands
+  const wasSetupPhase = state.currentPhase === 1
+  console.log('[handleCleanupCommand] Phase check', { wasSetupPhase, currentPhase: state.currentPhase })
+  if (wasSetupPhase) {
+    newState = {
+      ...newState,
+      currentPhase: 2
+    }
+    // Clear scoring mode if somehow active
+    newState.isScoringStep = false
+    newState.scoringLines = []
+    console.log('[handleCleanupCommand] Switched to Main phase (2)', { newPhase: newState.currentPhase })
+  }
+
+  console.log('[handleCleanupCommand] END', { newPhase: newState.currentPhase })
+  return newState
 }
 
 /**

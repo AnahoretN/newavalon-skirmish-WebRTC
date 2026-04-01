@@ -765,7 +765,18 @@ export function handleEmptyCellClick(
   // === ABILITY MODE - LINE SELECTION MODES ===
   if (abilityMode?.mode && ['SCORE_LAST_PLAYED_LINE', 'SELECT_LINE_END', 'SELECT_LINE_START', 'SELECT_DIAGONAL', 'SELECT_LINE_FOR_EXPLOIT_SCORING', 'SELECT_LINE_FOR_SUPPORT_COUNTERS', 'SELECT_LINE_FOR_THREAT_COUNTERS'].includes(abilityMode.mode)) {
     // CRITICAL: Only the active player can click to select lines
-    const canSelect = localPlayerId === gameState.activePlayerId
+    // EXCEPT: When active player is a dummy, any player can click (they're controlling the dummy)
+    const activePlayer = gameState.players.find(p => p.id === gameState.activePlayerId)
+    const isDummyActivePlayer = activePlayer?.isDummy
+    const canSelect = localPlayerId === gameState.activePlayerId || isDummyActivePlayer
+
+    console.log('[emptyCellHandlers] Line selection mode', {
+      mode: abilityMode.mode,
+      activePlayerId: gameState.activePlayerId,
+      localPlayerId,
+      isDummyActivePlayer,
+      canSelect
+    })
 
     if (canSelect) {
       handleLineSelectionModule(boardCoords, {
