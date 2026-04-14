@@ -106,7 +106,6 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
       // Note: initializeWebrtcHost already creates the game and sets localPlayerId
       // No need to call handleCreateGame again
     } catch (err) {
-      console.error('Failed to initialize host:', err)
     } finally {
       setIsInitializingHost(false)
     }

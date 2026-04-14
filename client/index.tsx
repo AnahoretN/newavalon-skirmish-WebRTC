@@ -48,7 +48,6 @@ if (encodedServerUrl) {
       localStorage.setItem('custom_ws_url', decodedServerUrl)
     }
   } catch (e) {
-    logger.error('Failed to decode server URL:', e)
   }
 }
 
@@ -73,7 +72,6 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
   }
 
   componentDidCatch(error: any, errorInfo: any) {
-    logger.error('Uncaught error:', error, errorInfo)
   }
 
   render() {

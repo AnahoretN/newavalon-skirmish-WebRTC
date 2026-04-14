@@ -432,7 +432,6 @@ export function handleScoreDiagonal(state: GameState, _playerId: number, data: a
 
   // Validate that points are on same diagonal
   if (Math.abs(r1 - r2) !== Math.abs(c1 - c2)) {
-    console.warn('[handleScoreDiagonal] Points not on same diagonal:', { r1, c1, r2, c2 })
     return state
   }
 
@@ -443,7 +442,6 @@ export function handleScoreDiagonal(state: GameState, _playerId: number, data: a
   const onAntiDiagonal = (r1 + c1) === (r2 + c2)
 
   if (!onMainDiagonal && !onAntiDiagonal) {
-    console.warn('[handleScoreDiagonal] Not a valid diagonal:', { r1, c1, r2, c2 })
     return state
   }
 
@@ -484,7 +482,6 @@ export function handleScoreDiagonal(state: GameState, _playerId: number, data: a
   const playerIndex = newPlayers.findIndex(p => p.id === scoringPlayerId)
 
   if (playerIndex === -1) {
-    console.warn('[handleScoreDiagonal] Player not found:', scoringPlayerId)
     return state
   }
 

@@ -372,7 +372,6 @@ const InvitePlayerMenu = memo<{
       setGameIdCopySuccess(true)
       setTimeout(() => setGameIdCopySuccess(false), 1500)
     }).catch(err => {
-      logger.error('Failed to copy:', err)
     })
   }, [gameId])
 
@@ -399,7 +398,6 @@ const InvitePlayerMenu = memo<{
       setLinkCopySuccess(true)
       setTimeout(() => setLinkCopySuccess(false), 2000)
     }).catch(err => {
-      logger.error('Failed to copy:', err)
     })
   }, [gameId, isGameStarted, isPrivate, hostId])
 

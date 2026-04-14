@@ -76,12 +76,10 @@ export class SimpleHost {
     })
 
     if (playableDeckKeys.length === 0) {
-      logger.warn('[SimpleHost] No playable decks found, using fallback')
       return 'SynchroTech' as DeckType // fallback
     }
 
     const randomDeck = playableDeckKeys[Math.floor(Math.random() * playableDeckKeys.length)]
-    logger.info('[SimpleHost] Random deck chosen from', playableDeckKeys.length, 'playable decks:', randomDeck)
 
     return randomDeck
   }
@@ -111,7 +109,6 @@ export class SimpleHost {
 
       // Assign random unique color for host
       const hostColor = getRandomHostColor()
-      logger.info('[SimpleHost] Host assigned random color:', hostColor)
 
       this.state = {
         ...this.state,
@@ -137,12 +134,9 @@ export class SimpleHost {
         ]
       }
 
-      logger.info('[SimpleHost] Host deck:', hostDeckType, 'cards:', hostDeck.length)
-
       // Save host token
       localStorage.setItem('player_token', hostToken)
     } else {
-      logger.info('[SimpleHost] Restoring host session with gameId:', this.state.gameId)
       // Restore host token from saved state
       const hostPlayer = this.state.players.find(p => p.id === 1)
       if (hostPlayer?.playerToken) {
@@ -155,7 +149,6 @@ export class SimpleHost {
         this.peer = new Peer(getPeerJSOptions(customPeerId))
 
         this.peer.on('open', (_peerId: string) => {
-          logger.info('[SimpleHost] Peer opened with ID:', _peerId, 'gameId:', this.state.gameId)
           // Notify about initial state
           this.notifyStateUpdate()
           resolve(_peerId)
@@ -166,7 +159,6 @@ export class SimpleHost {
         })
 
         this.peer.on('error', (err: any) => {
-          logger.error('[SimpleHost] Peer error:', err)
           reject(err)
         })
       } catch (e) {
@@ -181,8 +173,6 @@ export class SimpleHost {
   private handleNewConnection(conn: any): void {
     const _peerId = conn.peer
 
-    logger.info('[SimpleHost] New connection from:', _peerId)
-
     // Store connection
     this.connections.set(_peerId, conn)
 
@@ -192,16 +182,15 @@ export class SimpleHost {
     })
 
     conn.on('open', () => {
-      logger.info('[SimpleHost] Connection opened:', _peerId)
+      // Connection opened
     })
 
     conn.on('close', () => {
-      logger.warn('[SimpleHost] Connection closed:', _peerId)
       this.handleDisconnect(_peerId)
     })
 
     conn.on('error', (err: any) => {
-      logger.error('[SimpleHost] Connection error:', _peerId, err)
+      // Connection error
     })
   }
 
@@ -209,16 +198,12 @@ export class SimpleHost {
    * Handle incoming message
    */
   private handleMessage(data: any, fromPeerId: string): void {
-    logger.info('[SimpleHost] Received message:', data.type, 'from:', fromPeerId)
-
     if (data.type === 'ACTION') {
       this.handleAction(data as ActionMessage, fromPeerId)
     } else if (data.type === 'JOIN_REQUEST') {
       this.handleJoinRequest(data, fromPeerId)
     } else if (data.type === 'RECONNECT') {
       this.handleReconnect(data, fromPeerId)
-    } else {
-      logger.warn('[SimpleHost] Unknown message type:', data.type)
     }
   }
 
@@ -228,14 +213,11 @@ export class SimpleHost {
   private handleAction(actionMsg: ActionMessage, fromPeerId: string): void {
     const { playerId, action, data } = actionMsg
 
-    logger.info('[SimpleHost] Action:', playerId, action, data)
-
     // For actions from host (local), skip _peerId verification
     if (fromPeerId !== 'host') {
       // Verify playerId matches _peerId
       const expectedPeerId = this.getPeerIdForPlayer(playerId)
       if (expectedPeerId !== fromPeerId) {
-        logger.warn('[SimpleHost] PlayerId mismatch:', playerId, 'from', fromPeerId)
         return
       }
     }
@@ -249,8 +231,6 @@ export class SimpleHost {
     // Handle EXIT_GAME - intentional player exit (becomes dummy, no reconnection)
     // @ts-ignore - EXIT_GAME is not in standard action types
     if (action === 'EXIT_GAME') {
-      logger.info('[SimpleHost] Player', playerId, 'intentionally exited - converting to dummy')
-
       // Cancel reconnection timer if exists
       const timer = this.reconnectTimers.get(playerId)
       if (timer) {
@@ -305,7 +285,6 @@ export class SimpleHost {
         const scoringPlayerId = oldState?.activePlayerId ?? 0
         const clickingPlayer = oldState?.players.find((p: any) => p.id === playerId)
         const scoringPlayer = oldState?.players.find((p: any) => p.id === scoringPlayerId)
-        logger.info(`[SimpleHost] SELECT_SCORING_LINE: clickingPlayer=${playerId} (${clickingPlayer?.name}) scoringPlayer=${scoringPlayerId} (${scoringPlayer?.name}) line=${lineType} ${lineIndex}`)
 
         // CRITICAL: Send floating texts FIRST using current state (before turn pass)
         this.broadcastFloatingTextForScoring(oldState, scoringPlayerId, lineType, lineIndex, oldState)
@@ -343,8 +322,6 @@ export class SimpleHost {
 
       if (scoringData) {
         const { powerScoreEvents, supportBonusEvents, powerScore, supportCount, totalScoreGain } = scoringData
-
-        logger.info(`[SimpleHost] SCORE_DIAGONAL: power=${powerScore} support=${supportCount} total=${totalScoreGain}`)
 
         // Create floating text events
         const scoreEvents: { row: number; col: number; text: string; playerId: number }[] = []
@@ -429,14 +406,11 @@ export class SimpleHost {
     if (playerToken) {
       const existingPlayerId = this.findPlayerByToken(playerToken)
       if (existingPlayerId) {
-        logger.info('[SimpleHost] Reconnection request for player', existingPlayerId, 'from peer', fromPeerId)
-
         // Cancel reconnection timer if exists
         const timer = this.reconnectTimers.get(existingPlayerId)
         if (timer) {
           clearTimeout(timer)
           this.reconnectTimers.delete(existingPlayerId)
-          logger.info('[SimpleHost] Cancelled reconnection timer for player', existingPlayerId)
         }
 
         // Remove old connection for this player (if any)
@@ -446,7 +420,6 @@ export class SimpleHost {
           if (oldConn) {
             oldConn.close()
             this.connections.delete(oldPeerId)
-            logger.info('[SimpleHost] Closed old connection', oldPeerId, 'for player', existingPlayerId)
           }
         }
 
@@ -477,7 +450,6 @@ export class SimpleHost {
         // Broadcast updated state to all players
         this.broadcastAll()
 
-        logger.info('[SimpleHost] Player reconnected successfully:', existingPlayerId)
         return
       }
     }
@@ -496,7 +468,6 @@ export class SimpleHost {
     // Assign random unique color (not already used by existing players)
     const existingColors = this.state.players.map(p => p.color)
     const newPlayerColor = assignUniqueRandomColor(existingColors)
-    logger.info(`[SimpleHost] Creating player ${newPlayerId} with random unique color: ${newPlayerColor}`)
 
     this.state = {
       ...this.state,
@@ -520,7 +491,6 @@ export class SimpleHost {
     ]
     }
 
-    logger.info('[SimpleHost] Created player', newPlayerId, 'with deck:', randomDeckType, 'cards:', newPlayerDeck.length)
 
     this.peerIdToPlayerId.set(fromPeerId, newPlayerId)
 
@@ -529,11 +499,6 @@ export class SimpleHost {
 
     // Create personalized state
     const personalizedState = this.personalizeForPlayer(newPlayerId)
-    const myPlayer = personalizedState.players.find((p: any) => p.id === newPlayerId)
-
-    logger.info('[SimpleHost] Sending JOIN_ACCEPT to player', newPlayerId,
-      'with playerToken:', myPlayer?.playerToken ? 'YES' : 'NO',
-      'version:', this.version)
 
     // Send confirmation
     const conn = this.connections.get(fromPeerId)
@@ -550,7 +515,6 @@ export class SimpleHost {
     // Notify host about state change
     this.notifyStateUpdate()
 
-    logger.info('[SimpleHost] Player joined:', newPlayerId, playerName)
     this.config.onPlayerJoin?.(newPlayerId)
   }
 
@@ -563,14 +527,12 @@ export class SimpleHost {
     // Check if player still exists and is not already a dummy
     const player = this.state.players.find(p => p.id === playerId)
     if (!player) {
-      logger.warn('[SimpleHost] Reconnect failed: player', playerId, 'does not exist')
       const conn = this.connections.get(fromPeerId)
       conn?.send({ type: 'RECONNECT_REJECTED', reason: 'Player not found' })
       return
     }
 
     if (player.isDummy) {
-      logger.warn('[SimpleHost] Reconnect failed: player', playerId, 'is already a dummy')
       const conn = this.connections.get(fromPeerId)
       conn?.send({ type: 'RECONNECT_REJECTED', reason: 'Player converted to dummy' })
       return
@@ -581,7 +543,6 @@ export class SimpleHost {
     if (timer) {
       clearTimeout(timer)
       this.reconnectTimers.delete(playerId)
-      logger.info('[SimpleHost] Cancelled reconnection timer for player', playerId)
     }
 
     // Update _peerId -> playerId mapping (in case of new peerId)
@@ -611,8 +572,6 @@ export class SimpleHost {
 
     // Broadcast to all (including reconnected player)
     this.broadcastAll()
-
-    logger.info('[SimpleHost] Player reconnected successfully:', playerId)
   }
 
   /**
@@ -631,7 +590,6 @@ export class SimpleHost {
       // This handles the case where EXIT_GAME converted player to dummy and then closed connection
       const player = this.state.players.find(p => p.id === playerId)
       if (player?.isDummy) {
-        logger.info('[SimpleHost] Dummy player connection closed, ignoring disconnect:', playerId)
         return
       }
 
@@ -660,8 +618,6 @@ export class SimpleHost {
 
       this.reconnectTimers.set(playerId, timer)
 
-      logger.info('[SimpleHost] Player disconnected, reconnection window open until:', new Date(deadline).toISOString())
-
       this.config.onPlayerLeave?.(playerId)
     }
   }
@@ -682,8 +638,6 @@ export class SimpleHost {
     if (!player || player.isDummy || !player.isDisconnected) {
       return // Player no longer exists, is already dummy, or has reconnected
     }
-
-    logger.warn('[SimpleHost] Converting player', playerId, 'to dummy after reconnection timeout')
 
     // Convert to dummy
     this.state = {
@@ -730,9 +684,6 @@ export class SimpleHost {
             .filter((p: any) => p.announcedCard)
             .map((p: any) => `Player${p.id}:${p.announcedCard.name}`)
             .join(', ')
-          if (announcedCards) {
-            logger.info(`[SimpleHost] Broadcasting to player ${playerId} with announcedCards: [${announcedCards}]`)
-          }
 
           try {
             conn.send({
@@ -741,7 +692,7 @@ export class SimpleHost {
               timestamp: Date.now()
             })
           } catch (e) {
-            logger.warn('[SimpleHost] Failed to send to player', playerId, 'peer', _peerId, e)
+            // Failed to send to player
           }
         }
       }
@@ -786,7 +737,7 @@ export class SimpleHost {
       try {
         conn.send(message)
       } catch (e) {
-        logger.error('[SimpleHost] Failed to send click wave:', e)
+        // Failed to send click wave
       }
     })
 
@@ -856,8 +807,6 @@ export class SimpleHost {
       }
     }
 
-    logger.info(`[SimpleHost] broadcastFloatingTextForScoring: checking ${lineType} ${lineIndex}, ${cellsToCheck.length} cells for player ${playerId}, hasDataLiberator=${hasDataLiberatorWithSupport}`)
-
     // Generate floating text for each card that contributes to score in this line
     for (const { row, col } of cellsToCheck) {
       const cell = newState.board[row]?.[col]
@@ -872,18 +821,14 @@ export class SimpleHost {
           s.type === 'Exploit' && s.addedByPlayerId === playerId
         )
 
-        logger.info(`[SimpleHost]   Card at (${row},${col}): owner=${card.ownerId} (target=${playerId}) isTarget=${belongsToScoringPlayer} hasExploit=${hasExploitFromPlayer} stunned=${isStunned} power=${points} name=${card.name}`)
-
         // Add floating text for cards that:
         // Case 1: Player's own cards (not stunned, positive power)
         if (belongsToScoringPlayer && !isStunned && points > 0) {
           scoreEvents.push({ row, col, text: `+${points}`, playerId })
-          logger.info(`[SimpleHost]   -> Added score event at (${row},${col}): +${points} (own card)`)
         }
         // Case 2: Cards with Exploit from player (Data Liberator passive, not stunned, positive power)
         else if (hasDataLiberatorWithSupport && hasExploitFromPlayer && !isStunned && points > 0) {
           scoreEvents.push({ row, col, text: `+${points}`, playerId })
-          logger.info(`[SimpleHost]   -> Added score event at (${row},${col}): +${points} (Exploit card)`)
         }
       }
     }
@@ -891,7 +836,6 @@ export class SimpleHost {
     // Only send floating text if there are actual scoring cards
     if (scoreEvents.length > 0) {
       const calculatedScore = scoreEvents.reduce((sum, e) => sum + parseInt(e.text), 0)
-      logger.info(`[SimpleHost] Broadcasting ${scoreEvents.length} score events for player ${playerId} (${lineType} ${lineIndex}), total: ${calculatedScore}`)
 
       const message = {
         type: 'FLOATING_TEXT',
@@ -903,14 +847,12 @@ export class SimpleHost {
         try {
           conn.send(message)
         } catch (e) {
-          logger.error('[SimpleHost] Failed to send floating text:', e)
+          // Failed to send floating text
         }
       })
 
       // Notify host locally
       this.config.onFloatingTextBatch?.(scoreEvents)
-    } else {
-      logger.info(`[SimpleHost] No score events for player ${playerId} scoring ${lineType} ${lineIndex || ''}`)
     }
   }
 
@@ -926,10 +868,6 @@ export class SimpleHost {
     const deckViewRequest = baseState._deckViewRequest as { requestingPlayerId: number; targetPlayerId: number } | undefined
     const isDeckViewRequest = deckViewRequest &&
       deckViewRequest.requestingPlayerId === localPlayerId
-
-    if (deckViewRequest) {
-      logger.info(`[SimpleHost] Deck view request: requesting=${deckViewRequest.requestingPlayerId} target=${deckViewRequest.targetPlayerId} localPlayer=${localPlayerId} isMatch=${isDeckViewRequest}`)
-    }
 
     // Convert visualEffects Map to object for PeerJS
     const visualEffectsObj: Record<string, any> = {}
@@ -1029,9 +967,6 @@ export class SimpleHost {
             }
           })
 
-          // Log deck data for debugging
-          logger.info(`[SimpleHost] Deck view for ${localPlayerId}: viewing player ${player.id} deck, hasDeck: !!player.deck, deckLength: ${player.deck?.length || 0}`)
-
           return {
             id: player.id,
             name: player.name,
@@ -1128,10 +1063,6 @@ export class SimpleHost {
           disconnectTimestamp: player.disconnectTimestamp,
           reconnectionDeadline: player.reconnectionDeadline
         }
-        // DEBUG: Log player color being sent
-        if (!isLocalPlayer && !isDummy) {
-          logger.info(`[SimpleHost] Opponent player color for ${localPlayerId}: player ${player.id} color=${player.color} type=${typeof player.color}`)
-        }
         return pData
       }) as PersonalizedPlayer[]
     }
@@ -1176,15 +1107,6 @@ export class SimpleHost {
     if (this.config.onStateUpdate) {
       // For host - local player is always 1
       const hostState = this.personalizeForPlayer(1)
-
-      // Log all announcedCard for debugging
-      const announcedCards = hostState.players
-        .filter((p: any) => p.announcedCard)
-        .map((p: any) => `Player${p.id}:${p.announcedCard.name}`)
-        .join(', ')
-      if (announcedCards) {
-        logger.info(`[SimpleHost] Host (player1) receiving state with announcedCards: [${announcedCards}]`)
-      }
 
       this.config.onStateUpdate(hostState)
     }
@@ -1245,7 +1167,6 @@ export class SimpleHost {
   exportSession(): { peerId: string; state: GameState; timestamp: number } | null {
     const peerId = this.getPeerId()
     if (!peerId) {
-      logger.warn('[SimpleHost] Cannot export session: no peer ID')
       return null
     }
 

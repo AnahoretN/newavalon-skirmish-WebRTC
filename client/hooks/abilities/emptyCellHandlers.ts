@@ -350,14 +350,6 @@ export function handleEmptyCellClick(
       if (!nextAction.payload.contextCardId) {
         if (movedCard) {
           nextAction.payload.contextCardId = movedCard.id
-        } else {
-          console.warn('[SELECT_CELL] Could not set contextCardId - movedCard is undefined', {
-            currentCardCoords,
-            boardCoords,
-            sourceCardName: sourceCard.name,
-            tokenType: nextAction.payload?.tokenType,
-            count: nextAction.payload?.count,
-          })
         }
       }
       setAbilityMode(null)
@@ -769,14 +761,6 @@ export function handleEmptyCellClick(
     const activePlayer = gameState.players.find(p => p.id === gameState.activePlayerId)
     const isDummyActivePlayer = activePlayer?.isDummy
     const canSelect = localPlayerId === gameState.activePlayerId || isDummyActivePlayer
-
-    console.log('[emptyCellHandlers] Line selection mode', {
-      mode: abilityMode.mode,
-      activePlayerId: gameState.activePlayerId,
-      localPlayerId,
-      isDummyActivePlayer,
-      canSelect
-    })
 
     if (canSelect) {
       handleLineSelectionModule(boardCoords, {

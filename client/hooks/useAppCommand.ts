@@ -167,7 +167,6 @@ export const useAppCommand = ({
 
     // If card was not found on board, log and cleanup only
     if (!boardCoords) {
-      logger.warn(`Card ${data.card.id} not found on board during counter removal`)
       setCounterSelectionData(null)
       return
     }

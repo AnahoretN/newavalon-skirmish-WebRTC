@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.13] - 2026-04-14
+
+### Added
+- **Play Button for Command Cards**: Added play button functionality for command cards
+  - Command cards can now be played directly from hand using the new play button
+  - Improved user experience for command card activation
+
+- **Unified Line Selection System**: Created single file for line selection mechanics
+  - Consolidated line selection logic into dedicated module (`shared/utils/lineSelection.ts`)
+  - Improved code organization and maintainability
+  - Centralized line selection utilities for better consistency across abilities
+
+### Fixed
+- **Line Selection Bugs**: Fixed various bugs related to line selection abilities
+  - Improved targeting validation for line-based abilities
+  - Fixed edge cases in line selection logic
+  - Better handling of diagonal line selection
+
+### Changed
+- Version update to 0.2.13
+
 ## [0.2.12] - 2026-03-13
 
 ### Fixed

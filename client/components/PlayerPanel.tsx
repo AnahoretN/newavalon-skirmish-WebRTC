@@ -103,6 +103,7 @@ interface PlayerPanelProps {
   imageRefreshVersion: number;
   layoutMode: 'list-local' | 'list-remote';
   onCardClick?: (player: Player, card: CardType, index: number) => void;
+  onCommandPlayClick?: (player: Player, card: CardType, index: number) => void; // New handler for command Play button
   validHandTargets?: { playerId: number, cardIndex: number }[];
   onAnnouncedCardDoubleClick?: (player: Player, card: CardType) => void;
   currentPhase: number;
@@ -381,6 +382,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   imageRefreshVersion,
   layoutMode,
   onCardClick,
+  onCommandPlayClick,
   onAnnouncedCardDoubleClick,
   currentPhase,
   disableActiveHighlights,
@@ -454,6 +456,13 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   // In FFA mode, all players have teamId: undefined, which would make isTeammate true for everyone
   const isTeammate = localPlayerTeamId !== null && player.teamId === localPlayerTeamId && !isLocalPlayer
   const isDisconnected = !!player.isDisconnected
+
+  // Helper: Handle command Play button click
+  const handleCommandPlayClick = useCallback((card: CardType, index: number) => {
+    if (onCommandPlayClick && canPerformActions) {
+      onCommandPlayClick(player, card, index)
+    }
+  }, [onCommandPlayClick, player, canPerformActions])
 
   // Reconnection countdown timer state
   const [reconnectTimeLeft, setReconnectTimeLeft] = useState<number>(0)
@@ -555,7 +564,6 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
         // Try text deck format
         const validation = parseTextDeckFormat(text)
         if (!validation.isValid) {
-          logger.error('Failed to load deck:', validation.error)
           alert((validation as { error: string }).error)
           return
         }
@@ -564,7 +572,6 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
         onLoadCustomDeck(deckFile)
 
       } catch (err) {
-        logger.error('Failed to parse deck file', err)
         alert('Failed to parse deck file.')
       }
     }
@@ -593,7 +600,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
     const borderClass = isPlayerActive ? 'border-yellow-400' : 'border-gray-700'
 
     return (
-      <div className={`w-full h-full flex flex-col p-4 bg-panel-bg border-2 ${borderClass} rounded-lg shadow-2xl ${isDisconnected ? 'opacity-60' : ''} relative`}>
+      <div className={`w-full h-full flex flex-col p-[10px] bg-panel-bg border-2 ${borderClass} rounded-lg shadow-2xl ${isDisconnected ? 'opacity-60' : ''} relative`}>
         {/* Status Icons - absolute positioned in top-right corner */}
         {/* Order from left to right: win medals, first player star, checkbox (rightmost) */}
         <div className="absolute top-4 right-4 flex items-center gap-[2px] z-50">
@@ -1002,6 +1009,8 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                               preserveDeployAbilities={false}
                               disableImageTransition={true}
                               playerColor={player.color}
+                              showCommandPlayButton={false} // Never show for placeholder/remote cards
+                              onCommandPlayClick={() => handleCommandPlayClick(card, index)}
                             />
                           ) : (
                             <CardComponent
@@ -1016,6 +1025,8 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                               preserveDeployAbilities={preserveDeployAbilities}
                               disableImageTransition={true}
                               playerColor={player.color}
+                              showCommandPlayButton={isLocalPlayer} // Only show for local player's hand
+                              onCommandPlayClick={() => handleCommandPlayClick(card, index)}
                             />
                           )}
                           </div>

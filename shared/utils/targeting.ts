@@ -597,8 +597,27 @@ export const calculateValidTargets = (
 
         // Check basic filter
         let isValid = cell.card && filterFn(cell.card, r, c)
+
+        // Check onlyOpponents constraint for SELECT_UNIT_FOR_MOVE
+        if (isValid && payload.onlyOpponents && cell.card) {
+          const cardOwnerId = cell.card.ownerId
+          // Cannot be self
+          if (cardOwnerId === actorId) {
+            isValid = false
+          } else {
+            // Check if target is opponent (not teammate)
+            const actorPlayer = currentGameState.players.find(p => p.id === actorId)
+            const targetPlayer = currentGameState.players.find(p => p.id === cardOwnerId)
+            const isTeammate = actorPlayer?.teamId !== undefined && targetPlayer?.teamId !== undefined &&
+                              actorPlayer.teamId === targetPlayer.teamId
+            if (isTeammate) {
+              isValid = false
+            }
+          }
+        }
+
         if (cell.card && mode === 'SELECT_UNIT_FOR_MOVE') {
-          console.log('[calculateValidTargets] Checking cell', { r, c, cardId: cell.card.baseId, cardOwnerId: cell.card.ownerId, sourceOwnerId: actorId, isValid })
+          console.log('[calculateValidTargets] Checking cell', { r, c, cardId: cell.card.baseId, cardOwnerId: cell.card.ownerId, sourceOwnerId: actorId, isValid, onlyOpponents: payload.onlyOpponents })
         }
 
         // Check context requirements (e.g., Adjacent to last move)

@@ -253,7 +253,6 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
   ) => {
     const currentGameState = gameStateRef.current
     if (!currentGameState || !currentGameState.board) {
-      console.warn('[setTargetingMode] No game state or board available')
       return
     }
 

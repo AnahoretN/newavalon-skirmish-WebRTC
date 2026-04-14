@@ -21,6 +21,7 @@ interface CardCoreProps {
   loadPriority?: 'high' | 'low'; // Loading priority: high for visible cards, low for remote cards (default: high)
   disableImageTransition?: boolean; // Disable opacity transition for board cards (default: false)
   playerColor?: PlayerColor; // Direct player color (used in PlayerPanel to avoid lookup issues)
+  showCommandPlayButton?: boolean; // Show Play button for command cards (only for local player's hand)
 }
 
 interface CardInteractionProps {
@@ -34,6 +35,7 @@ interface CardInteractionProps {
   boardCoords?: { row: number, col: number } | null; // This card's position on board
   abilityCheckKey?: number; // Incremented to recheck ability readiness after ability completion
   onCardClick?: (card: CardType, boardCoords: { row: number, col: number }) => void; // Called when card is clicked
+  onCommandPlayClick?: (card: CardType) => void; // Called when command Play button is clicked
   targetingMode?: boolean; // Whether targeting mode is active (hides ready statuses)
   triggerClickWave?: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number, cardIndex: number }) => void; // Trigger click wave effect
   playerId?: number; // Player who owns this card (for wave triggering)
@@ -160,11 +162,13 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   loadPriority = 'high', // Default to high priority for immediate loading
   disableImageTransition = false, // Disable opacity transition for board cards
   playerColor, // Direct player color (used in PlayerPanel to avoid lookup issues)
+  showCommandPlayButton = false, // Only show Play button for local player's hand
   preserveDeployAbilities: _preserveDeployAbilities = false, // Used in arePropsEqual comparison
   activeAbilitySourceCoords = null,
   boardCoords = null,
   abilityCheckKey,
   onCardClick,
+  onCommandPlayClick,
   targetingMode = false,
   triggerClickWave,
   players,
@@ -319,7 +323,6 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     img.onload = handleLoad
     img.onerror = () => {
       // If target fails, keep preview visible
-      console.warn('Failed to load target image:', targetWithVersion)
       setImageLoadState('loaded')
     }
 
@@ -591,7 +594,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     })
   }, [statusGroups])
 
-  const { currentPower, powerTextColor } = useMemo(() => {
+  const { currentPower, powerTextColor, isCommandCard } = useMemo(() => {
     const modifier = (card.powerModifier || 0) + (card.bonusPower || 0)
     const power = Math.max(0, card.power + modifier)
     let textColor = 'text-white'
@@ -600,8 +603,10 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     } else if (modifier < 0) {
       textColor = 'text-red-500'
     }
-    return { currentPower: power, powerTextColor: textColor }
-  }, [card.power, card.powerModifier, card.bonusPower])
+    // Check if this is a Command card
+    const isCommand = card.deck === 'Command' || card.types?.includes('Command') || card.faction === 'Command'
+    return { currentPower: power, powerTextColor: textColor, isCommandCard: isCommand }
+  }, [card.power, card.powerModifier, card.bonusPower, card.deck, card.types, card.faction])
 
   const showTooltip = useMemo(() =>
     tooltipVisible && isFaceUp && !disableTooltip && (tooltipPos.x > 0 && tooltipPos.y > 0),
@@ -812,13 +817,37 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
                 </>
               )}
 
-              {card.power > 0 && !hidePower && (
+              {isCommandCard && showCommandPlayButton && !hidePower ? (
+                // Command card: Show Play button (rounded square with triangle) - ONLY for local player
+                <div
+                  className={`absolute ${powerPositionClass} w-8 h-8 rounded-lg ${ownerColorData ? ownerColorData.bg : 'bg-gray-600'} border-[3px] border-white flex items-center justify-center z-20 shadow-md cursor-pointer hover:scale-110 transition-transform`}
+                  onClick={(e) => {
+                    e.stopPropagation() // Prevent card click
+                    if (onCommandPlayClick) {
+                      onCommandPlayClick(card)
+                    }
+                  }}
+                  title="Play this command"
+                >
+                  {/* Play triangle icon */}
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="white"
+                    style={{ marginLeft: '2px' }} // Visual offset to center the triangle
+                  >
+                    <polygon points="5,3 19,12 5,21" />
+                  </svg>
+                </div>
+              ) : card.power > 0 && !hidePower ? (
+                // Regular card: Show power circle
                 <div
                   className={`absolute ${powerPositionClass} w-8 h-8 rounded-full ${ownerColorData ? ownerColorData.bg : 'bg-gray-600'} border-[3px] border-white flex items-center justify-center z-20 shadow-md`}
                 >
                   <span className={`${powerTextColor} font-bold text-lg leading-none`} style={{ textShadow: '0 0 2px black' }}>{currentPower}</span>
                 </div>
-              )}
+              ) : null}
             </div>
           )
         })()
@@ -890,6 +919,9 @@ const arePropsEqual = (prevProps: CardCoreProps & CardInteractionProps, nextProp
     return false
   }
   if (prevProps.disableImageTransition !== nextProps.disableImageTransition) {
+    return false
+  }
+  if (prevProps.showCommandPlayButton !== nextProps.showCommandPlayButton) {
     return false
   }
 

@@ -52,7 +52,7 @@ interface UseAppAbilitiesProps {
     scoreLine: (r1: number, c1: number, r2: number, c2: number, pid: number) => void;
     nextPhase: () => void;
     modifyBoardCardPower: (coords: any, delta: number) => void;
-    addBoardCardStatus: (coords: any, status: string, pid: number) => void;
+    addBoardCardStatus: (coords: any, status: string, pid: number, count?: number) => void;
     removeBoardCardStatus: (coords: any, status: string) => void;
     removeBoardCardStatusByOwner: (coords: any, status: string, pid: number) => void;
     resetDeployStatus: (coords: { row: number; col: number }) => void;
@@ -379,7 +379,6 @@ export const useAppAbilities = ({
       if (canScore) {
         handleLineSelection(boardCoords)
       } else {
-        logger.info(`[handleBoardCardClick] Ignoring click - local player ${localPlayerId} is not active player ${gameState.activePlayerId}`)
       }
       return
     }

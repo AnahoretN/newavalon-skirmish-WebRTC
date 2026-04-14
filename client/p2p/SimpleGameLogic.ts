@@ -353,7 +353,6 @@ export function applyAction(
 ): GameState {
   // Validation - can this player perform this action
   if (!canPlayerAct(state, playerId, action, data)) {
-    console.warn(`[SimpleGameLogic] Player ${playerId} cannot ${action}`)
     return state
   }
 
@@ -616,8 +615,7 @@ export function applyAction(
       break
 
     default:
-      console.warn(`[SimpleGameLogic] Unknown action: ${action}`)
-  }
+    }
 
   // Always recalculate board card statuses (Support, Threat, etc.)
   newState.board = recalculateBoardStatuses(newState)
@@ -1094,12 +1092,17 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
       : p
   )
 
+  // Check if this is a Command card - Command cards go through announce → discard flow
+  // and should NOT trigger phase switch here (phase switches when command goes to discard)
+  const isCommandCard = cardToPlay.deck === 'Command' || cardToPlay.types?.includes('Command') || cardToPlay.faction === 'Command'
+
   // Switch to Main phase (2) - this should happen before ready status recalculation
+  // CRITICAL: Command cards do NOT switch phase here - they switch when moved to discard
   let newState: GameState = {
     ...state,
     board: newBoard,
     players: newPlayers,
-    currentPhase: 2  // Main phase after playing card
+    currentPhase: isCommandCard ? state.currentPhase : 2  // Command cards keep current phase, others go to Main
   }
 
   // Clear scoring mode if somehow active
@@ -1113,7 +1116,7 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
   // Check triggers for cards with Revealed status played from hand
   // This handles Vigilant Spotter: "When your opponent plays a revealed card, gain 2 points"
   // NOTE: Skip command cards - they trigger in MOVE_ANNOUNCED_TO_DISCARD instead
-  const isCommandCard = cardToPlay.deck === 'Command' || cardToPlay.types?.includes('Command') || cardToPlay.faction === 'Command'
+  // isCommandCard is already declared above (line 1099)
   if (isFromHand && !isCommandCard && cardToPlay.statuses?.some((s: any) => s.type === 'Revealed')) {
     const triggerResult = checkAndApplyTriggers(newState, cardToPlay, boardCoords, actualPlayerId, 'hand')
     newState = triggerResult.state
@@ -1156,7 +1159,6 @@ function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): G
   const skipMovement = isStunned && isOwnedByMover
 
   if (skipMovement) {
-    logger.info('[handleMoveCardOnBoard] Stunned card cannot be moved by owner:', sourceCard.name, 'owner:', sourceCard.ownerId, 'mover:', playerId)
     // Skip movement but still process token placement (other effects) below
     // We keep the original state.board since no movement occurred
     let newState = { ...state }
@@ -1369,7 +1371,6 @@ function handleReturnCardToHand(state: GameState, playerId: number, data: any): 
   const isStunned = (cardToReturn as Card).statuses?.some((s: any) => s.type === 'Stun')
   const isOwned = (cardToReturn as Card).ownerId === playerId
   if (isStunned && isOwned) {
-    logger.info('[handleReturnCardToHand] Stunned card cannot be returned to hand by owner:', (cardToReturn as Card).name)
     return state
   }
 
@@ -1439,8 +1440,7 @@ function handleMoveCardToHand(state: GameState, playerId: number, data: any): Ga
       const isStunned = (cardFromBoard as Card).statuses?.some((s: any) => s.type === 'Stun')
       const isOwnedByMover = ownerIdFromBoard === playerId
       if (isStunned && isOwnedByMover) {
-        logger.info('[handleMoveCardToHand] Stunned card cannot be moved from board to hand by owner:', (cardFromBoard as Card).name)
-        return state
+            return state
       }
     }
   } else if (source === 'discard') {
@@ -1964,7 +1964,6 @@ function handleMoveAnnouncedToDeck(state: GameState, playerId: number, data: any
  * MOVE_ANNOUNCED_TO_DISCARD - move card from showcase to discard
  */
 function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, data: any): GameState {
-  console.log('[handleMoveAnnouncedToDiscard] START', { playerId, currentPhase: state.currentPhase })
 
   const { playerId: targetPlayerId } = data || {}
   const actualPlayerId = targetPlayerId ?? playerId
@@ -1988,7 +1987,6 @@ function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, data: 
   const isCommandCard = cardToMove.deck === 'Command' || cardToMove.types?.includes('Command') || cardToMove.faction === 'Command'
   const hasRevealedStatus = cardToMove.statuses?.some((s: any) => s.type === 'Revealed')
 
-  console.log('[handleMoveAnnouncedToDiscard] Card check', { isCommandCard, hasRevealedStatus })
 
   let newState = state
   if (isCommandCard && hasRevealedStatus) {
@@ -2022,22 +2020,9 @@ function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, data: 
 
   newState = { ...newState, players: newPlayers }
 
-  // CRITICAL FIX: Switch to Main phase (2) if currently in Setup phase (1)
-  // This fixes Setup phase not transitioning to Main after playing dummy player commands
-  const wasSetupPhase = state.currentPhase === 1
-  console.log('[handleMoveAnnouncedToDiscard] Phase check', { wasSetupPhase, currentPhase: state.currentPhase, isCommandCard })
-  if (wasSetupPhase && isCommandCard) {
-    newState = {
-      ...newState,
-      currentPhase: 2
-    }
-    // Clear scoring mode if somehow active
-    newState.isScoringStep = false
-    newState.scoringLines = []
-    console.log('[handleMoveAnnouncedToDiscard] Switched to Main phase (2)', { newPhase: newState.currentPhase })
-  }
+  // NOTE: Phase already switched when command was announced (in handleAnnounceCard)
+  // No need to switch phase here - command goes to discard without changing phase
 
-  console.log('[handleMoveAnnouncedToDiscard] END', { newPhase: newState.currentPhase })
   return newState
 }
 
@@ -2242,8 +2227,10 @@ function handleAnnounceCard(state: GameState, playerId: number, data: any): Game
   let newState = { ...state, players: newPlayers }
 
   // Set phase to Main when command card is announced from hand
+  // CRITICAL FIX: Change Setup (1) to Main (2), not to Setup!
   if (isCommandCard) {
-    newState = { ...newState, currentPhase: 1 }
+    const wasSetupPhase = state.currentPhase === 1
+    newState = { ...newState, currentPhase: wasSetupPhase ? 2 : state.currentPhase }
   }
 
   // Check and apply triggers when a card is announced (played)
@@ -2349,8 +2336,6 @@ function handleSwapCards(state: GameState, playerId: number, data?: any): GameSt
 
   // If either card is stunned and owned by the player, prevent swap
   if ((isCard1Stunned && isCard1Owned) || (isCard2Stunned && isCard2Owned)) {
-    logger.info('[handleSwapCards] Swap prevented - stunned card cannot be moved by owner:',
-      isCard1Stunned && isCard1Owned ? card1.name : card2.name)
     return state
   }
 
@@ -2749,7 +2734,6 @@ function handleLoadCustomDeck(state: GameState, playerId: number, deckFile: Cust
   for (const deckCard of deckFile.cards) {
     const cardDef = getCardDefinition(deckCard.cardId)
     if (!cardDef) {
-      logger.warn(`Card ${deckCard.cardId} not found in database, skipping`)
       continue
     }
 
@@ -2945,7 +2929,6 @@ function handleContextReward(state: GameState, playerId: number, data: any): Gam
   }
 
   if (!card) {
-    console.warn('[WebRTC handleContextReward] No card found')
     return state
   }
 
@@ -2994,12 +2977,10 @@ function handleContextReward(state: GameState, playerId: number, data: any): Gam
  * Handle cleanup command - discard command card after use
  */
 function handleCleanupCommand(state: GameState, playerId: number, commandCard: Card): GameState {
-  console.log('[handleCleanupCommand] START', { playerId, commandCardName: commandCard.name, currentPhase: state.currentPhase })
 
   // Find the command card in the player's announced cards and move to discard
   const player = state.players.find(p => p.id === playerId)
   if (!player || !player.announcedCard) {
-    console.log('[handleCleanupCommand] No player or no announcedCard', { hasPlayer: !!player, hasAnnouncedCard: !!player?.announcedCard })
     return state
   }
 
@@ -3018,22 +2999,9 @@ function handleCleanupCommand(state: GameState, playerId: number, commandCard: C
 
   let newState: GameState = { ...state, players: newPlayers }
 
-  // CRITICAL FIX: Switch to Main phase (2) if currently in Setup phase (1)
-  // This fixes Setup phase not transitioning to Main after playing dummy player commands
-  const wasSetupPhase = state.currentPhase === 1
-  console.log('[handleCleanupCommand] Phase check', { wasSetupPhase, currentPhase: state.currentPhase })
-  if (wasSetupPhase) {
-    newState = {
-      ...newState,
-      currentPhase: 2
-    }
-    // Clear scoring mode if somehow active
-    newState.isScoringStep = false
-    newState.scoringLines = []
-    console.log('[handleCleanupCommand] Switched to Main phase (2)', { newPhase: newState.currentPhase })
-  }
+  // NOTE: Phase already switched when command was announced (in handleAnnounceCard)
+  // No need to switch phase here - command goes to discard without changing phase
 
-  console.log('[handleCleanupCommand] END', { newPhase: newState.currentPhase })
   return newState
 }
 
@@ -3334,7 +3302,6 @@ function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: a
       // Mark deploy ability as used (skip) so it doesn't come back after stun removal
       filteredStatuses = filteredStatuses.filter(s => s.type !== 'readyDeploy')
       filteredStatuses.push({ type: 'deployUsedThisTurn', addedByPlayerId: targetCard.ownerId || 0 })
-      logger.info(`[handleAddStatusToBoardCard] Stun added to card with readyDeploy - marking deploy as used to prevent restoration`)
     }
   }
 
@@ -3349,7 +3316,6 @@ function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: a
     const alreadyHasStatus = filteredStatuses.some(s => s.type === statusType && s.addedByPlayerId === ownerId)
     if (alreadyHasStatus) {
       // Card already has this singleton status from this owner - don't add another
-      logger.info(`[handleAddStatusToBoardCard] Blocked duplicate ${statusType} from player ${ownerId} on card at [${row},${col}]`)
       return state
     }
   }
@@ -3370,7 +3336,6 @@ function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: a
 
       if (existingTokenCount >= MAX_TOKENS_PER_TYPE) {
         // Already at max capacity, don't add more
-        logger.info(`[handleAddStatusToBoardCard] Max capacity (${MAX_TOKENS_PER_TYPE}) reached for ${statusType} on card at [${row},${col}]`)
         break
       }
 
@@ -3378,8 +3343,6 @@ function handleAddStatusToBoardCard(state: GameState, _playerId: number, data: a
       newStatuses = [...newStatuses, newStatus]
     }
   }
-
-  logger.info(`[handleAddStatusToBoardCard] Adding ${count}x ${statusType} from player ${ownerId} to card at [${row},${col}]. Total statuses: ${newStatuses.length}`)
 
   // If adding Revealed status, the card becomes visible to the token owner
   let revealedTo = targetCard.revealedTo
@@ -3469,7 +3432,6 @@ function handleAddStatusToHandCard(state: GameState, _playerId: number, data: an
     const alreadyHasStatus = existingStatuses.some(s => s.type === statusType && s.addedByPlayerId === ownerId)
     if (alreadyHasStatus) {
       // Card already has this singleton status from this owner - don't add another
-      logger.info(`[handleAddStatusToHandCard] Blocked duplicate ${statusType} from player ${ownerId} on card at index ${cardIndex}`)
       return state
     }
   }
@@ -3489,16 +3451,13 @@ function handleAddStatusToHandCard(state: GameState, _playerId: number, data: an
     }
   }
 
-  logger.info(`[handleAddStatusToHandCard] Adding ${count}x ${statusType} from player ${ownerId} to player ${playerId} card at index ${cardIndex}`)
-
   // If adding Revealed status, the card becomes visible to the token owner
   let revealedTo = targetCard.revealedTo
   if (statusType === 'Revealed') {
     const currentRevealed = Array.isArray(revealedTo) ? revealedTo : []
     if (!currentRevealed.includes(ownerId)) {
       revealedTo = [...currentRevealed, ownerId]
-      logger.info(`[handleAddStatusToHandCard] Setting revealedTo for card ${targetCard.id}: ${JSON.stringify(revealedTo)}`)
-    }
+        }
   }
 
   const newCard = {
@@ -3556,11 +3515,9 @@ function handleTransferAllStatuses(state: GameState, _playerId: number, data: an
   const statusesToTransfer = fromCard.statuses || []
 
   if (statusesToTransfer.length === 0) {
-    logger.info('[handleTransferAllStatuses] No statuses to transfer')
     return state
   }
 
-  logger.info(`[handleTransferAllStatuses] Transferring ${statusesToTransfer.length} statuses from card ${fromCard.id} to ${toCard.id}`)
 
   // Add all statuses to destination card
   const newToCardStatuses = [...(toCard.statuses || []), ...statusesToTransfer]
@@ -3734,7 +3691,9 @@ function handlePlayCommandFromTokenPanel(state: GameState, playerId: number, dat
   })
 
   // Set phase to Main when command card is played
-  return { ...state, players: updatedPlayers, currentPhase: 1 }
+  // CRITICAL FIX: Only switch from Setup (1) to Main (2), never set to Setup
+  const wasSetupPhase = state.currentPhase === 1
+  return { ...state, players: updatedPlayers, currentPhase: wasSetupPhase ? 2 : state.currentPhase }
 }
 
 /**
@@ -3794,7 +3753,9 @@ function handlePlayCommandFromDeck(state: GameState, playerId: number, data: any
   })
 
   // Set phase to Main when command card is played
-  return { ...state, players: updatedPlayers, currentPhase: 1 }
+  // CRITICAL FIX: Only switch from Setup (1) to Main (2), never set to Setup
+  const wasSetupPhase = state.currentPhase === 1
+  return { ...state, players: updatedPlayers, currentPhase: wasSetupPhase ? 2 : state.currentPhase }
 }
 
 /**
@@ -3854,7 +3815,9 @@ function handlePlayCommandFromDiscard(state: GameState, playerId: number, data: 
   })
 
   // Set phase to Main when command card is played
-  return { ...state, players: updatedPlayers, currentPhase: 1 }
+  // CRITICAL FIX: Only switch from Setup (1) to Main (2), never set to Setup
+  const wasSetupPhase = state.currentPhase === 1
+  return { ...state, players: updatedPlayers, currentPhase: wasSetupPhase ? 2 : state.currentPhase }
 }
 
 /**
@@ -3916,8 +3879,7 @@ function handleFlipCard(state: GameState, _playerId: number, data: any): GameSta
               { type: READY_STATUS.DEPLOY, addedByPlayerId: targetCard.ownerId }
             ]
           }
-          logger.info(`[handleFlipCard] Added readyDeploy to flipped card at [${row},${col}]`)
-        }
+            }
       }
     }
   }
@@ -3931,7 +3893,6 @@ function handleFlipCard(state: GameState, _playerId: number, data: any): GameSta
     })
   )
 
-  logger.info(`[handleFlipCard] Flipped card at [${row},${col}] to faceDown=${faceDown}`)
   return { ...state, board: newBoard }
 }
 
@@ -4008,17 +3969,14 @@ function handleReorderTopDeck(state: GameState, _playerId: number, data: any): G
 function handleRequestDeckView(state: GameState, playerId: number, data: any): GameState {
   const { targetPlayerId } = data || {}
   if (targetPlayerId === undefined) {
-    logger.warn('[handleRequestDeckView] Missing targetPlayerId')
     return state
   }
 
   const targetPlayer = state.players.find(p => p.id === targetPlayerId)
   if (!targetPlayer) {
-    logger.warn(`[handleRequestDeckView] Target player ${targetPlayerId} not found`)
     return state
   }
 
-  logger.info(`[handleRequestDeckView] Player ${playerId} requesting deck view for player ${targetPlayerId}, deck size: ${targetPlayer.deck?.length || 0}`)
 
   // Add a temporary flag to the state that tells personalizeForPlayer
   // to include full deck data for this player's deck to the requesting player

@@ -648,9 +648,9 @@
           "action": "MOVE_CARD",
           "mode": "SELECT_TARGET",
           "details": {
-            "filter": "hasCounter_Exploit",
+            "filter": "hasCounterOwner_Exploit",
             "distance": 1,
-            "requireTokenFromSourceOwner": true
+            "onlyOpponents": true
           }
         }
       ]

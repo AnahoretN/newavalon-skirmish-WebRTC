@@ -207,7 +207,6 @@ export function triggerDirectClickWave(wave: ClickWaveData) {
 
   const targetElement = findTargetElement(wave)
   if (!targetElement) {
-    console.warn('[DirectClickWave] Target element not found:', wave)
     return
   }
 

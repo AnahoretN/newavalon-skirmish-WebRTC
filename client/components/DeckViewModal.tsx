@@ -64,7 +64,6 @@ const DeckViewCard: React.FC<{
     img.onload = handleLoad
     img.onerror = () => {
       // If target fails to load, keep preview
-      console.warn('Failed to load target image:', targetWithVersion)
     }
 
     // Set src first, then check if already loaded

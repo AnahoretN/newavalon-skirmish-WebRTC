@@ -23,7 +23,6 @@ export async function loadPeerJS(): Promise<any> {
       peerjsModule = await import('peerjs')
       return peerjsModule
     } catch (e) {
-      console.error('[PeerJSLoader] Failed to load PeerJS:', e)
       throw e
     }
   })()

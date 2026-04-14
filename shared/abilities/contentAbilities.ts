@@ -96,6 +96,16 @@ export function buildFilterFromString(
     return (_target: Card) => hasStatus(_target, counterType, ownerId)
   }
 
+  // hasCounterOwner_CounterName - checks if card has counter added by specific owner
+  // Used by Code Keeper Commit to find cards with YOUR Exploit counters
+  if (filter.startsWith('hasCounterOwner_')) {
+    const counterType = filter.replace('hasCounterOwner_', '')
+    return (_target: Card) => {
+      if (!_target.statuses) return false
+      return _target.statuses.some((s: any) => s.type === counterType && s.addedByPlayerId === ownerId)
+    }
+  }
+
   // isAdjacent
   if (filter === 'isAdjacent') {
     return (_target: Card, r?: number, c?: number) =>
@@ -510,7 +520,8 @@ export function buildActionFromContentAbility(
           range,
           moveFromHand: false,
           selectedCard: null,
-          allowSelf: false
+          allowSelf: false,
+          onlyOpponents: details.onlyOpponents
         }
       } as AbilityAction
       console.log('[buildActionFromContentAbility] MOVE_CARD for', card?.baseId || 'unknown', {

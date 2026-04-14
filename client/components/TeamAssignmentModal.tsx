@@ -66,7 +66,6 @@ export const TeamAssignmentModal: React.FC<TeamAssignmentModalProps> = ({ player
       return { team1Capacity: 3, team2Capacity: 1 }
     }
     // Unexpected gameMode - fall back to TwoVTwo capacities and log warning
-    logger.warn(`Unexpected gameMode: ${gameMode}, falling back to TwoVTwo capacities`)
     return { team1Capacity: 2, team2Capacity: 2 }
   }, [gameMode])
 

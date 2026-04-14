@@ -221,7 +221,6 @@ const AppInner = function AppInner() {
         }
       }
     } catch (e) {
-      logger.error('Error parsing image refresh data', e)
     }
     const newVersion = Date.now()
     localStorage.setItem('image_refresh_data', JSON.stringify({ version: newVersion, timestamp: newVersion }))
@@ -611,17 +610,17 @@ const AppInner = function AppInner() {
       const active = gameState?.gameId && (localPlayerExists || isSpectator)
 
       // Debug logging for WebRTC P2P restore
-      if (getWebRTCEnabled()) {
-        logger.debug('[isGameActive] Check:', {
-          hasGameId: !!gameState?.gameId,
-          gameId: gameState?.gameId,
-          localPlayerExists,
-          localPlayerId,
-          hasIsSpectator: isSpectator,
-          playersCount: gameState?.players?.length || 0,
-          isActive: active
-        })
-      }
+      // if (getWebRTCEnabled()) {
+      //   logger.debug('[isGameActive] Check:', {
+      //     hasGameId: !!gameState?.gameId,
+      //     gameId: gameState?.gameId,
+      //     localPlayerExists,
+      //     localPlayerId,
+      //     hasIsSpectator: isSpectator,
+      //     playersCount: gameState?.players?.length || 0,
+      //     isActive: active
+      //   })
+      // }
       return active
     },
     [gameState?.gameId, gameState?.players, localPlayerId, isSpectator],
@@ -1029,8 +1028,7 @@ const AppInner = function AppInner() {
         setImageRefreshVersion(prev => prev + 1)
       }
     }).catch(err => {
-      logger.error('Failed to load content database:', err)
-    })
+      })
 
     return () => { mounted = false }
   }, [])
@@ -1438,15 +1436,6 @@ const AppInner = function AppInner() {
       setValidHandTargets(handTargets)
     }
 
-    // DEBUG: Log handTargets calculation for cursorStack with targetOwnerId
-    if (cursorStack?.targetOwnerId !== undefined) {
-      logger.info('[App.tsx] cursorStack with targetOwnerId', {
-        targetOwnerId: cursorStack.targetOwnerId,
-        handTargetsCount: handTargets.length,
-        handTargets: handTargets,
-        tokenType: cursorStack.type,
-      })
-    }
 
     // Use universal targeting mode system to sync targets to all players
     // This ensures all players see the same visual highlights
@@ -1464,18 +1453,6 @@ const AppInner = function AppInner() {
     const hasCommandModal = !!commandModalCard
     const hasActiveMode = cursorStack || abilityMode || hasPlayMode || hasCommandModal
     const isDeckSelectableMode = abilityMode?.mode === 'SELECT_DECK'
-
-    // DEBUG: Log why targeting mode is not being set
-    if (hasActiveMode && cursorStack?.targetOwnerId !== undefined) {
-      logger.info('[App.tsx] Active mode with cursorStack.targetOwnerId', {
-        hasActiveMode,
-        boardTargetsCount: boardTargets.length,
-        handTargetsCount: handTargets.length,
-        isDeckSelectableMode,
-        actorId,
-        willCallSetTargetingMode: boardTargets.length > 0 || handTargets.length > 0 || isDeckSelectableMode,
-      })
-    }
 
     if (hasActiveMode && (boardTargets.length > 0 || handTargets.length > 0 || isDeckSelectableMode)) {
       // Determine the action to use for targeting mode
@@ -1517,18 +1494,6 @@ const AppInner = function AppInner() {
                                    targetingAction.mode === 'ZIUS_LINE_SELECT'
 
         if (!isLineSelectionMode) {
-          // Debug: log targeting mode setup (after targetingPlayerId is determined)
-          logger.info(`[App.tsx] Calling setTargetingMode`, {
-            mode: targetingAction.mode,
-            actionType: targetingAction.payload?.actionType,
-            hasFilter: !!targetingAction.payload?.filter,
-            targetingPlayerId,
-            boardTargetsCount: boardTargets.length,
-            handTargetsCount: handTargets.length,
-            hasCursorStack: !!cursorStack,
-            hasAbilityMode: !!abilityMode,
-          })
-
           // CRITICAL: For SELECT_CELL mode, never pass handTargets - only board targets
           // SELECT_CELL is for selecting empty cells on the board, NOT cards in hand
           const finalHandTargets = targetingAction.mode === 'SELECT_CELL' ? [] : handTargets
@@ -1538,7 +1503,6 @@ const AppInner = function AppInner() {
         } else {
           // For line selection modes, only set local validTargets - don't call setTargetingMode
           // The line selection is handled via handleLineSelection in lineSelectionHandlers.ts
-          logger.info(`[App.tsx] Line selection mode detected (${targetingAction.mode}) - setting local targets only, not calling setTargetingMode`)
         }
       }
     } else if (!hasActiveMode) {
@@ -1925,14 +1889,9 @@ const AppInner = function AppInner() {
       if (currentModeStr !== prevModeStr) {
         if (currentAbilityMode) {
           // gameState has abilityMode - sync it to local state
-          logger.info('[App.tsx] Host syncing abilityMode from gameState', {
-            mode: currentAbilityMode.mode,
-            sourceCoords: currentAbilityMode.sourceCoords,
-          })
           setAbilityMode(currentAbilityMode)
         } else if (abilityMode?.mode === 'SCORE_LAST_PLAYED_LINE') {
           // gameState doesn't have abilityMode but local does - clear it
-          logger.info('[App.tsx] Host clearing abilityMode - gameState has none')
           setAbilityMode(null)
         }
         // Update ref after handling
@@ -1944,7 +1903,6 @@ const AppInner = function AppInner() {
   // Close scoring mode when isScoringStep becomes false
   useEffect(() => {
     if (!gameState.isScoringStep && abilityMode?.mode === 'SCORE_LAST_PLAYED_LINE') {
-      logger.info('[App.tsx] Closing scoring mode - isScoringStep is false')
       setAbilityMode(null)
     }
   }, [gameState?.isScoringStep, abilityMode])
@@ -2337,6 +2295,22 @@ const AppInner = function AppInner() {
     }
   }
 
+  // Handler for command Play button click - same logic as double click
+  const handleCommandPlayClick = (player: Player, card: Card, cardIndex: number) => {
+    if (abilityMode || cursorStack) {
+      return
+    }
+    if (interactionLock.current) {
+      return
+    }
+
+    // Only allow card owner or dummy player cards to be played
+    if (player.id === localPlayerId || player.isDummy) {
+      closeAllModals()
+      playCommandCard(card, { card, source: 'hand', playerId: player.id, cardIndex })
+    }
+  }
+
 
   const handleViewDeck = useCallback((player: Player) => {
     // Check if WebRTC is enabled and we're viewing another player's deck
@@ -2348,21 +2322,18 @@ const AppInner = function AppInner() {
     if (isWebRTCMode && !webrtcIsHost && localPlayerId !== null) {
       const localPlayer = gameState.players.find(p => p.id === localPlayerId)
       if (localPlayer && localPlayer.deck.length > 0) {
-        logger.info(`[handleViewDeck] Sending full deck data to host (${localPlayer.deck.length} cards)`)
-        sendFullDeckToHost(localPlayerId, localPlayer.deck, localPlayer.deck.length)
+          sendFullDeckToHost(localPlayerId, localPlayer.deck, localPlayer.deck.length)
       }
     }
 
     // If we're the host viewing our own deck, share deck data with all guests
     // This ensures guests see the host's deck in the same order
     if (isWebRTCMode && webrtcIsHost && player.id === localPlayerId && player.deck.length > 0) {
-      logger.info(`[handleViewDeck] Host sharing deck with guests (${player.deck.length} cards)`)
       shareHostDeckWithGuests(player.deck, player.deck.length)
     }
 
     if (isWebRTCMode && isOtherPlayerDeck && player.deck.length === 0) {
       // Request full deck data from host
-      logger.info(`[handleViewDeck] Requesting deck data for player ${player.id}, localPlayerId: ${localPlayerId}`)
       requestDeckView(player.id)
     }
 
@@ -3157,6 +3128,7 @@ const AppInner = function AppInner() {
               imageRefreshVersion={imageRefreshVersion}
               layoutMode="list-local"
               onCardClick={handleHandCardClick}
+              onCommandPlayClick={handleCommandPlayClick}
               validHandTargets={validHandTargets}
               onAnnouncedCardDoubleClick={handleAnnouncedCardDoubleClick}
               currentPhase={gameState.currentPhase}
@@ -3263,6 +3235,7 @@ const AppInner = function AppInner() {
                     imageRefreshVersion={imageRefreshVersion}
                     layoutMode="list-remote"
                     onCardClick={handleHandCardClick}
+                    onCommandPlayClick={handleCommandPlayClick}
                     currentPhase={gameState.currentPhase}
                     validHandTargets={validHandTargets}
                     onAnnouncedCardDoubleClick={handleAnnouncedCardDoubleClick}

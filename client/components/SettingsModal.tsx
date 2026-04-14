@@ -117,7 +117,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setLinkCopySuccess(true)
       setTimeout(() => setLinkCopySuccess(false), 2000)
     }).catch(err => {
-      logger.error('Failed to copy:', err)
     })
   }
 

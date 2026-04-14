@@ -305,7 +305,6 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   const createGame = useCallback(async () => {
     try {
       setConnectionStatus('Connecting')
-      logger.info('[useGameState] Creating host...')
 
       const host = new SimpleHost(createInitialState(), {
         onStateUpdate: (personalState) => {
@@ -320,10 +319,10 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           }
         },
         onPlayerJoin: (playerId) => {
-          logger.info('[useGameState] Player joined:', playerId)
+          // Player joined
         },
         onPlayerLeave: (playerId) => {
-          logger.info('[useGameState] Player left:', playerId)
+          // Player left
         },
         onClickWave: (wave) => {
           // INSTANT: Show wave via direct DOM manipulation
@@ -363,10 +362,8 @@ export function useGameState(_props: any = {}): UseGameStateResult {
         localStorage.setItem('webrtc_host_session', JSON.stringify(sessionData))
       }
 
-      logger.info('[useGameState] Host created with peerId:', peerId)
       return peerId
     } catch (e) {
-      logger.error('[useGameState] Failed to create host:', e)
       setConnectionStatus('Disconnected')
       throw e
     }
@@ -378,7 +375,6 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   const joinGameViaModal = useCallback(async (hostPeerId: string) => {
     try {
       setConnectionStatus('Connecting')
-      logger.info('[useGameState] Connecting to host:', hostPeerId)
 
       // Сохраняем имя для поиска
       const myName = localStorage.getItem('player_name')
@@ -386,55 +382,37 @@ export function useGameState(_props: any = {}): UseGameStateResult {
       const guest = new SimpleGuest({
         localPlayerId: 0,
         onStateUpdate: (personalState) => {
-          logger.info('[useGameState] onStateUpdate, personalState.gameId:', personalState.gameId, 'players:', personalState.players?.length)
-
           // Определяем localPlayerId из состояния или токена
           const token = localStorage.getItem('player_token')
           let myId = 0
-
-          logger.info('[useGameState] Looking for token:', token?.substring(0, 8) + '...')
 
           if (token) {
             const player = personalState.players.find((p: any) => p.playerToken === token)
             if (player) {
               myId = player.id
-              logger.info('[useGameState] Found myId by token:', myId)
-            } else {
-              logger.warn('[useGameState] Token not found in state players')
             }
           }
 
           if (myId === 0) {
             // Пытаемся найти игрока с именем из localStorage
-            logger.info('[useGameState] Trying to find by name:', myName)
             const playerByName = personalState.players.find((p: any) => p.name === myName)
             if (playerByName) {
               myId = playerByName.id
-              logger.info('[useGameState] Found myId by name:', myId, 'name:', myName)
             }
           }
-
-          // Логируем всех игроков для отладки
-          personalState.players?.forEach((p: any) => {
-            logger.info('[useGameState] Player in state:', p.id, p.name, 'hasHand:', !!p.hand, 'hasToken:', !!p.playerToken)
-          })
 
           const fullState = personalToGameState(personalState, myId)
           setGameState(fullState)
           setLocalPlayerId(myId)
-
-          logger.info('[useGameState] Set localPlayerId to:', myId, 'gameState.gameId:', fullState.gameId)
         },
         onConnected: () => {
           setConnectionStatus('Connected')
-          logger.info('[useGameState] Connected to host')
         },
         onDisconnected: () => {
           setConnectionStatus('Disconnected')
-          logger.warn('[useGameState] Disconnected from host')
         },
         onError: (error) => {
-          logger.error('[useGameState] Guest error:', error)
+          // Guest error
         },
         // Visual effect callbacks
         onHighlight: (data) => {
@@ -487,7 +465,6 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           }, 700)
         },
         onReconnectRejected: (reason) => {
-          logger.warn('[useGameState] Reconnect rejected:', reason)
           // Clear reconnection state
           setIsReconnecting(false)
           setReconnectProgress(null)
@@ -504,7 +481,6 @@ export function useGameState(_props: any = {}): UseGameStateResult {
 
       return guest.getLocalPlayerId()
     } catch (e) {
-      logger.error('[useGameState] Failed to connect:', e)
       setConnectionStatus('Disconnected')
       throw e
     }
@@ -624,7 +600,6 @@ export function useGameState(_props: any = {}): UseGameStateResult {
       // Check if session is too old (more than 1 hour)
       const maxAge = 60 * 60 * 1000 // 1 hour
       if (Date.now() - savedSession.timestamp > maxAge) {
-        logger.info('[useGameState] Saved host session is too old, ignoring')
         localStorage.removeItem('webrtc_host_session')
         return
       }
@@ -633,8 +608,6 @@ export function useGameState(_props: any = {}): UseGameStateResult {
       isReconnectingRef.current = true
       setIsReconnecting(true)
       setReconnectProgress({ attempt: 1, maxAttempts: 1, timeRemaining: 30 })
-
-      logger.info('[useGameState] Restoring host session with peerId:', savedSession.peerId)
 
       const restoreHostSession = async () => {
         try {
@@ -651,10 +624,10 @@ export function useGameState(_props: any = {}): UseGameStateResult {
               }
             },
             onPlayerJoin: (playerId) => {
-              logger.info('[useGameState] Player joined restored session:', playerId)
+              // Player joined restored session
             },
             onPlayerLeave: (playerId) => {
-              logger.info('[useGameState] Player left restored session:', playerId)
+              // Player left restored session
             },
             onClickWave: (wave) => {
               triggerDirectClickWave(wave as any)
@@ -686,9 +659,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           isHostRef.current = true
           setConnectionStatus('Connected')
 
-          logger.info('[useGameState] Host session restored with peerId:', peerId)
         } catch (error) {
-          logger.error('[useGameState] Failed to restore host session:', error)
           // Clear invalid session
           localStorage.removeItem('webrtc_host_session')
         } finally {
@@ -700,7 +671,6 @@ export function useGameState(_props: any = {}): UseGameStateResult {
 
       restoreHostSession()
     } catch (error) {
-      logger.error('[useGameState] Failed to parse saved host session:', error)
       localStorage.removeItem('webrtc_host_session')
       setIsReconnecting(false)
       setReconnectProgress(null)
@@ -715,8 +685,6 @@ export function useGameState(_props: any = {}): UseGameStateResult {
       hostRef.current.hostAction(action, data)
     } else if (guestRef.current) {
       guestRef.current.sendAction(action, data)
-    } else {
-      logger.warn('[useGameState] No connection, cannot send action:', action)
     }
   }, [])
 
@@ -1258,12 +1226,13 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   // ============================================================================
   // Status effects
   // ============================================================================
-  const addBoardCardStatus = useCallback((coords: any, status: any, playerId?: number) => {
+  const addBoardCardStatus = useCallback((coords: any, status: any, playerId?: number, count?: number) => {
     // Map to P2P action format
     sendAction('ADD_STATUS_TO_BOARD_CARD', {
       boardCoords: coords,
       statusType: status,
-      ownerId: playerId ?? localPlayerId ?? 0
+      ownerId: playerId ?? localPlayerId ?? 0,
+      count: count || 1 // Support bulk adding for Reverend ability
     })
   }, [sendAction, localPlayerId])
   const removeBoardCardStatus = useCallback((coords: any, status: any) => {
@@ -1400,7 +1369,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
       try {
         guestRef.current.sendAction('EXIT_GAME', {})
       } catch (e) {
-        logger.warn('[useGameState] Failed to send EXIT message:', e)
+        // Failed to send EXIT message
       }
     }
 

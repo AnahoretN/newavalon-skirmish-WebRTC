@@ -312,7 +312,6 @@ export const useAppCounters = ({
                 if (!isValid) {
                   // Invalid target - keep cursor stack active to allow retry
                   // Don't close selection mode on invalid target
-                  console.warn('[useAppCounters] INVALID target for', cursorStack.type, 'on card', targetCard.name)
                   return
                 }
 

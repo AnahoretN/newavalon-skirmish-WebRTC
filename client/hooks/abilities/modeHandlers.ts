@@ -50,7 +50,7 @@ export interface InstantStepProps {
   gameState: GameState
   localPlayerId: number | null
   commandContext: CommandContext
-  addBoardCardStatus: (coords: {row: number, col: number}, status: string, pid: number) => void
+  addBoardCardStatus: (coords: {row: number, col: number}, status: string, pid: number, count?: number) => void
   modifyBoardCardPower: (coords: {row: number, col: number}, delta: number) => void
 }
 
@@ -82,11 +82,9 @@ export function executeInstantAutoStep(
       const tokenType = step.details?.tokenType
       const count = step.details?.count || 1
       if (!tokenType) {
-        console.warn('[executeInstantAutoStep] CREATE_STACK_SELF: missing tokenType')
         return { success: false, shouldAdvance: true }
       }
       if (!sourceCoords) {
-        console.warn('[executeInstantAutoStep] CREATE_STACK_SELF: missing sourceCoords')
         return { success: false, shouldAdvance: true }
       }
       for (let i = 0; i < count; i++) {
@@ -102,7 +100,6 @@ export function executeInstantAutoStep(
 
       // Use sourceCoords (Centurion's position), NOT lastMovedCardCoords (sacrificed card)
       if (!sourceCoords) {
-        console.warn('[executeInstantAutoStep] BUFF_LINES_FROM_CONTEXT: No sourceCoords')
         return { success: false, shouldAdvance: true }
       }
 
@@ -134,7 +131,6 @@ export function executeInstantAutoStep(
     }
 
     default:
-      console.warn('[executeInstantAutoStep] Unknown instant action:', step.action)
       // Unknown actions still advance to avoid getting stuck
       return { success: false, shouldAdvance: true, message: 'Unknown action: ' + step.action }
   }
@@ -514,10 +510,9 @@ function handleSelectTargetWithToken(
     ).length || 0
 
     if (currentCount > 0) {
-      // Double by adding same number of tokens
-      for (let i = 0; i < currentCount; i++) {
-        addBoardCardStatus(boardCoords, tokenType, ownerId)
-      }
+      // CRITICAL FIX: Use single call with count parameter instead of loop
+      // This prevents race conditions for guest players
+      addBoardCardStatus(boardCoords, tokenType, ownerId, currentCount)
 
       // Mark ability as used
       markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
@@ -647,7 +642,6 @@ export function advanceToNextStepWithCoords(
     )
 
     if (!result.success) {
-      console.warn('[advanceToNextStepWithCoords] Instant step failed:', result.message)
     }
 
     // Check if there are more steps after this instant step
@@ -1196,7 +1190,6 @@ function handleSelectTargetActionType(
       return true
     }
 
-    console.warn('[REVEAL_ENEMY_CHAINED] No chainedAction found in abilityMode!')
     // No chained action - mark ability as used and clear mode
     markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
     setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
@@ -1766,9 +1759,11 @@ function handleReverendDoubleExploit(
   const exploitCount = (card.statuses || []).filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId).length
 
   if (exploitCount > 0) {
-    for (let i = 0; i < exploitCount; i++) {
-      addBoardCardStatus(boardCoords, 'Exploit', ownerId)
-    }
+    // CRITICAL FIX: Use single call with count parameter instead of loop
+    // This prevents race conditions for guest players where each addBoardCardStatus
+    // call sends a separate message that may be processed out of order
+    addBoardCardStatus(boardCoords, 'Exploit', ownerId, exploitCount)
+
     triggerFloatingText({
       row: boardCoords.row,
       col: boardCoords.col,
@@ -2474,7 +2469,6 @@ function handleSelectLineForExploitScoring(
   const contextCoords = payload?.targetCoords || commandContext?.lastMovedCardCoords || sourceCoords
 
   if (!contextCoords) {
-    console.warn('[handleSelectLineForExploitScoring] No contextCoords found!')
     return false
   }
 
@@ -2885,7 +2879,6 @@ function handleSelectLineForSupportTokens(
   const ownerId = sourceCard?.ownerId ?? gameState.activePlayerId
 
   if (!sourceCoords) {
-    console.warn('[SELECT_LINE_FOR_SUPPORT_COUNTERS] No sourceCoords')
     return false
   }
 
@@ -2968,7 +2961,6 @@ function handleSelectLineForThreatCounters(
   const ownerId = sourceCard?.ownerId ?? gameState.activePlayerId
 
   if (!sourceCoords) {
-    console.warn('[SELECT_LINE_FOR_THREAT_COUNTERS] No sourceCoords')
     return false
   }
 
@@ -3125,7 +3117,6 @@ function handleAutoSteps(
 
   const { sourceCoords, payload, isDeployAbility, readyStatusToRemove, sourceCard } = abilityMode
   if (!payload || !payload.steps || payload.steps.length === 0) {
-    console.warn("[AUTO_STEPS] No steps defined")
     return false
   }
 
@@ -3282,7 +3273,6 @@ function advanceToNextStep(
   const steps = autoStepsContext?.steps || payload?.steps
 
   if (!steps) {
-    console.warn('[advanceToNextStep] No steps found in payload or _autoStepsContext')
     return
   }
 

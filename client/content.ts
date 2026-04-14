@@ -108,8 +108,7 @@ export async function fetchContentDatabase(): Promise<void> {
       localStorage.setItem('counters_database', JSON.stringify(_countersDatabase))
       localStorage.setItem('counters_timestamp', Date.now().toString())
     } catch (e) {
-      console.warn('Could not save counters database to localStorage:', e)
-    }
+      }
 
     // Update exported values (for backward compatibility)
     rawJsonData = _rawJsonData
@@ -122,7 +121,6 @@ export async function fetchContentDatabase(): Promise<void> {
     _decksData = buildDecksData()
     decksData = _decksData
   } catch (error) {
-    console.error('Failed to load content database:', error)
     throw error
   }
 }
@@ -143,8 +141,7 @@ function buildDecksData(): Record<string, Card[]> {
     for (const deckEntry of deckFile.cards) {
       const cardDef = _cardDatabase.get(deckEntry.cardId)
       if (!cardDef) {
-        console.warn(`Card definition not found for ID: ${deckEntry.cardId} in deck: ${deckFile.name}`)
-        continue
+            continue
       }
 
       const isCommandCard = _commandCardIds.has(deckEntry.cardId)
@@ -185,7 +182,6 @@ function buildDecksData(): Record<string, Card[]> {
       deckCardList.forEach(card => {
         // Check for duplicate IDs
         if (idSet.has(card.id)) {
-          logger.error(`[buildDecksData] DUPLICATE ID in Optimates: ${card.id}`)
           hasDuplicateIds = true
         }
         idSet.add(card.id)
@@ -196,7 +192,6 @@ function buildDecksData(): Record<string, Card[]> {
       })
 
       if (hasDuplicateIds) {
-        logger.warn('[buildDecksData] Optimates deck has duplicate IDs!')
       }
     }
   }

@@ -37,20 +37,16 @@ export function createDeck(deckType: DeckType, playerId: number, playerName: str
   if (deckType === 'Random' || !currentDecksData[deckType]) {
     const deckKeys = Object.keys(currentDecksData)
     if (deckKeys.length === 0) {
-      logger.error('[createDeck] No decks loaded yet!')
       return []
     }
     actualDeckType = deckKeys[0] as DeckType
     if (deckType === 'Random') {
-      logger.info(`[createDeck] Random deck selected, using ${actualDeckType} instead`)
     } else {
-      logger.warn(`[createDeck] Deck ${deckType} not found, using ${actualDeckType} instead`)
     }
   }
 
   const deck = currentDecksData[actualDeckType]
   if (!deck) {
-    logger.error(`Deck data for ${actualDeckType} not loaded! Returning empty deck. Available decks:`, Object.keys(currentDecksData))
     return []
   }
 
@@ -61,7 +57,6 @@ export function createDeck(deckType: DeckType, playerId: number, playerName: str
       const baseId = card.baseId || card.id
       cardCounts[baseId] = (cardCounts[baseId] || 0) + 1
     })
-    logger.info(`[createDeck] Optimates deck for player ${playerName} (${playerId}):`, cardCounts)
   }
 
   const deckWithOwner = [...deck].map(card => ({ ...card, ownerId: playerId, ownerName: playerName }))
@@ -76,7 +71,6 @@ export function createNewPlayer(id: number, isDummy = false): Player {
   const currentDecksData = getDecksData()
   const deckKeys = Object.keys(currentDecksData)
   if (deckKeys.length === 0) {
-    logger.error('[createNewPlayer] No decks loaded yet!')
     // Return minimal player without deck
     return {
       id,
