@@ -12,11 +12,12 @@
  * - IP Dept Agent (IP_AGENT_THREAT_SCORING)
  */
 
-import type { Card, Board } from '../types.js'
+import type { Card, Board } from '../../client/types.js'
 
 /**
  * Line types supported by the line selection system
  */
+/* eslint-disable no-unused-vars */
 export enum LineType {
   HORIZONTAL = 'HORIZONTAL',  // Same row
   VERTICAL = 'VERTICAL',      // Same column
@@ -24,6 +25,7 @@ export enum LineType {
   DIAGONAL_ANTI = 'DIAGONAL_ANTI',    // Top-right to bottom-left (r + c = constant)
   ANY = 'ANY'                 // Any of the above
 }
+/* eslint-enable no-unused-vars */
 
 /**
  * Line definition with boundaries
@@ -530,7 +532,6 @@ export function calculateValidLineTargets(
   requirePassThrough?: CellCoords
 ): CellCoords[] {
   const { minBound, maxBound } = calculateActiveBounds(gridSize, activeGridSize)
-  const validTargets: CellCoords[] = []
 
   const now = Date.now()
   const cacheKey = generateCacheKey(gridSize, activeGridSize, LineType.ANY, referenceCoords)
@@ -573,11 +574,13 @@ export function calculateValidLineTargets(
  * @param filterFn - Optional filter function
  * @returns Array of cards that match the filter
  */
+/* eslint-disable no-unused-vars */
 export function filterCardsInLine(
   line: LineDefinition,
   board: Board,
   filterFn?: (card: Card, coords: CellCoords) => boolean
 ): Array<{ card: Card; coords: CellCoords }> {
+/* eslint-enable no-unused-vars */
   const results: Array<{ card: Card; coords: CellCoords }> = []
   const cells = getCellsInLine(line)
 
@@ -647,7 +650,7 @@ export function calculateLinePower(
   const cards = filterCardsInLine(line, board)
   let totalPower = 0
 
-  for (const { card, coords } of cards) {
+  for (const { card } of cards) {
     // Skip stunned cards
     if (card.statuses?.some(s => s.type === 'Stun')) {
       continue

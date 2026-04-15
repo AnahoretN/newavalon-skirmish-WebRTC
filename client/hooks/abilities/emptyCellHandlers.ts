@@ -32,7 +32,7 @@ export interface EmptyCellClickProps {
   updatePlayerScore: (playerId: number, delta: number) => void
   triggerFloatingText: (data: any) => void
   handleLineSelection: (coords: {row: number, col: number}) => void
-  addBoardCardStatus: (coords: { row: number; col: number }, status: string, playerId: number) => void
+  addBoardCardStatus: (coords: { row: number; col: number }, status: string, playerId: number, count?: number) => void
   updateState?: (stateOrFn: any) => void
   nextPhase?: (forceTurnPass?: boolean) => void
   modifyBoardCardPower?: (coords: any, delta: number) => void
@@ -758,7 +758,7 @@ export function handleEmptyCellClick(
   if (abilityMode?.mode && ['SCORE_LAST_PLAYED_LINE', 'SELECT_LINE_END', 'SELECT_LINE_START', 'SELECT_DIAGONAL', 'SELECT_LINE_FOR_EXPLOIT_SCORING', 'SELECT_LINE_FOR_SUPPORT_COUNTERS', 'SELECT_LINE_FOR_THREAT_COUNTERS'].includes(abilityMode.mode)) {
     // CRITICAL: Only the active player can click to select lines
     // EXCEPT: When active player is a dummy, any player can click (they're controlling the dummy)
-    const activePlayer = gameState.players.find(p => p.id === gameState.activePlayerId)
+    const activePlayer = gameState.players.find((p: { id: number }) => p.id === gameState.activePlayerId)
     const isDummyActivePlayer = activePlayer?.isDummy
     const canSelect = localPlayerId === gameState.activePlayerId || isDummyActivePlayer
 

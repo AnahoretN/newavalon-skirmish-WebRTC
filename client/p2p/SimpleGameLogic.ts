@@ -367,11 +367,12 @@ export function applyAction(
       newState = handlePreviousPhase(newState, playerId)
       break
 
-    case 'PASS_TURN':
+    case 'PASS_TURN': {
       // Always use activePlayerId for Stun removal, not who clicked the button
       const activeId = newState.activePlayerId ?? playerId
       newState = handlePassTurn(newState, activeId, data?.reason || 'manual')
       break
+    }
 
     case 'SET_PHASE':
       newState = handleSetPhase(newState, data?.phase)
@@ -2000,7 +2001,9 @@ function handleMoveAnnouncedToDiscard(state: GameState, playerId: number, data: 
           break
         }
       }
-      if (triggerCoords.row >= 0) break
+      if (triggerCoords.row >= 0) {
+        break
+      }
     }
 
     const triggerResult = checkAndApplyTriggers(newState, cardToMove, triggerCoords, actualPlayerId, 'announced')
@@ -2997,7 +3000,7 @@ function handleCleanupCommand(state: GameState, playerId: number, commandCard: C
     return p
   })
 
-  let newState: GameState = { ...state, players: newPlayers }
+  const newState: GameState = { ...state, players: newPlayers }
 
   // NOTE: Phase already switched when command was announced (in handleAnnounceCard)
   // No need to switch phase here - command goes to discard without changing phase

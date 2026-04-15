@@ -121,18 +121,18 @@ function handleScoreLastPlayedLine(
 
   // Generate floating texts for each card
   const scoreEvents: Omit<FloatingTextData, 'timestamp'>[] = []
-  const cards = filterCardsInLine(line, gameState.board, (card) => {
+  const cards = filterCardsInLine(line, gameState.board, (card, _coords): boolean => {
     // Skip stunned cards
-    if (card.statuses?.some(s => s.type === 'Stun')) {
+    if (card.statuses?.some((s: { type: string }) => s.type === 'Stun')) {
       return false
     }
 
     const isOwner = card.ownerId === playerId
     const hasExploit = card.statuses?.some(
-      s => s.type === 'Exploit' && s.addedByPlayerId === playerId
+      (s: { type: string; addedByPlayerId?: number }) => s.type === 'Exploit' && s.addedByPlayerId === playerId
     )
 
-    return isOwner || hasExploit
+    return Boolean(isOwner || hasExploit)
   })
 
   for (const { card, coords: cardCoords } of cards) {
@@ -372,7 +372,7 @@ function handleTwoClickLineSelection(
       }
     } else if (actionType === 'CENTURION_BUFF' && abilityMode.sourceCard && abilityMode.sourceCoords) {
       // Buff all allied cards in line
-      const cards = filterCardsInLine(line, gameState.board, (card) => {
+      const cards = filterCardsInLine(line, gameState.board, (card, _coords): boolean => {
         if (card.id === abilityMode.sourceCard!.id) {
           return false // Skip self
         }

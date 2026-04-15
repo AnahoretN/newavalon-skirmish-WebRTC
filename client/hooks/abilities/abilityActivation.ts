@@ -16,7 +16,7 @@ export interface AbilityActivationProps {
   cursorStack: any
   handleActionExecution: (action: AbilityAction, sourceCoords: { row: number; col: number }) => void
   markAbilityUsed: (coords: { row: number; col: number }, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void
-  addBoardCardStatus?: (coords: {row: number, col: number}, status: string, pid: number) => void
+  addBoardCardStatus?: (coords: {row: number, col: number}, status: string, pid: number, count?: number) => void
   setAbilityMode?: React.Dispatch<React.SetStateAction<AbilityAction | null>>
 }
 

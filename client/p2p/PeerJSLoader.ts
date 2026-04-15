@@ -18,13 +18,9 @@ export async function loadPeerJS(): Promise<any> {
   }
 
   loadPromise = (async () => {
-    try {
-      // Try to import PeerJS
-      peerjsModule = await import('peerjs')
-      return peerjsModule
-    } catch (e) {
-      throw e
-    }
+    // Try to import PeerJS
+    peerjsModule = await import('peerjs')
+    return peerjsModule
   })()
 
   return loadPromise

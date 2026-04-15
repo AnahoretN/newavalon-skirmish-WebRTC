@@ -57,6 +57,7 @@ const _commandCardIds = new Set([
  * For local dev with server, can fetch from API.
  */
 export async function fetchContentDatabase(): Promise<void> {
+  // eslint-disable-next-line no-useless-catch
   try {
     let data: RawDecksJson
 

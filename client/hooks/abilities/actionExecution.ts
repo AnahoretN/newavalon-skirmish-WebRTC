@@ -13,7 +13,7 @@ export interface ActionCompletionProps {
   triggerFloatingText: (data: any) => void
   markAbilityUsed: (coords: { row: number; col: number }, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void
   removeStatusByType: (coords: { row: number; col: number }, type: string) => void
-  addBoardCardStatus: (coords: { row: number; col: number }, status: string, pid: number) => void
+  addBoardCardStatus: (coords: { row: number; col: number }, status: string, pid: number, count?: number) => void
   drawCardsBatch: (playerId: number, count: number) => void
   commandContext: any
 }

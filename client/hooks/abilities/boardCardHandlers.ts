@@ -27,7 +27,7 @@ export interface BoardCardClickProps {
   handleActionExecution: (action: AbilityAction, sourceCoords: { row: number; col: number }) => void
   interactionLock: React.MutableRefObject<boolean>
   triggerDeckSelection: (playerId: number) => void
-  addBoardCardStatus: (coords: { row: number; col: number }, status: string, pid: number) => void
+  addBoardCardStatus: (coords: { row: number; col: number }, status: string, pid: number, count?: number) => void
   resetDeployStatus: (coords: { row: number; col: number }) => void
   setCounterSelectionData: React.Dispatch<React.SetStateAction<CounterSelectionData | null>>
   onAbilityComplete?: () => void

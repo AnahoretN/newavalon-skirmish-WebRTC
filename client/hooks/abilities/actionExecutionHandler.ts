@@ -38,7 +38,7 @@ export interface ActionHandlerProps {
   destroyCard: (card: any, boardCoords: { row: number; col: number }) => void
   spawnToken: (coords: {row: number, col: number}, name: string, ownerId: number) => void
   modifyBoardCardPower: (coords: {row: number, col: number}, delta: number) => void
-  addBoardCardStatus: (coords: {row: number, col: number}, status: string, pid: number) => void
+  addBoardCardStatus: (coords: {row: number, col: number}, status: string, pid: number, count?: number) => void
   removeBoardCardStatus: (coords: {row: number, col: number}, status: string) => void
   removeBoardCardStatusByOwner: (coords: {row: number, col: number}, status: string, pid: number) => void
   removeStatusByType: (coords: {row: number; col: number}, type: string) => void
