@@ -47,6 +47,8 @@ interface GameBoardProps {
   onCancelAllModes?: () => void;
   // Players array for checking dummy status
   players?: Player[];
+  // Hide dummy cards setting
+  hideDummyCards?: boolean;
 }
 
 // Helper to check if an ability mode is a line selection mode
@@ -101,6 +103,7 @@ const GridCell = memo<{
   players?: Player[]; // Players array for checking dummy status
   hoveredCell: { row: number; col: number } | null; // State-based hover tracking for drag highlight
   setHoveredCell: (cell: { row: number; col: number } | null) => void; // Setter for hover state
+  hideDummyCards?: boolean; // Hide dummy cards setting
 }>((props) => {
   const {
       row, col, cell, isGameStarted, activeGridSize, handleDrop, draggedItem, setDraggedItem,
@@ -114,6 +117,7 @@ const GridCell = memo<{
       setCursorStack: _setCursorStack, onCancelAllModes,
       triggerClickWave, players,
       hoveredCell, setHoveredCell, // NEW: State-based hover tracking
+      hideDummyCards = false, // Hide dummy cards setting
   } = props
 
   // Track previous card state to detect when card is removed during ability
@@ -361,10 +365,10 @@ const GridCell = memo<{
         if (isRevealedToMeExplicitly) {
           return false // Explicitly revealed cards show tooltip
         }
-        // Check if owner is dummy player (dummy cards show tooltip to everyone)
+        // Check if owner is dummy player (dummy cards hide tooltip when hideDummyCards is true)
         const owner = players?.find(p => p.id === card.ownerId)
         if (owner?.isDummy) {
-          return false // Dummy cards show tooltip to all players
+          return hideDummyCards // Hide tooltip when hideDummyCards=true, show when false
         }
         // Check if local player is the owner (owner sees tooltip on their own face-down cards)
         const isOwner = card.ownerId === localPlayerId
@@ -373,7 +377,7 @@ const GridCell = memo<{
         }
         // Face-down cards hide tooltip for non-owners
         return true
-      }, [cell.card, localPlayerId, players])
+      }, [cell.card, localPlayerId, players, hideDummyCards])
 
       return (
         <div
@@ -698,6 +702,7 @@ export const GameBoard = memo<GameBoardProps>(({
   onCancelAllModes,
   triggerClickWave,
   players,
+  hideDummyCards = false,
 }) => {
 
   const activeBoard = useMemo(() => {
@@ -978,6 +983,7 @@ export const GameBoard = memo<GameBoardProps>(({
                 players={players}
                 hoveredCell={hoveredCell}
                 setHoveredCell={setHoveredCell}
+                hideDummyCards={hideDummyCards}
               />
               {/* Legacy floating texts (for backward compatibility) */}
               {cellFloatingTexts.map(ft => (

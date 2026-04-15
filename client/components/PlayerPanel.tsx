@@ -401,6 +401,17 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   triggerClickWave,
   hideDummyCards = false,
 }) => {
+  // Debug logging for prop changes
+  useEffect(() => {
+    console.log('[PlayerPanel] Component rendered/updated:', {
+      playerId: player.id,
+      playerName: player.name,
+      playerIsDummy: player.isDummy,
+      hideDummyCards,
+      timestamp: Date.now()
+    })
+  }, [hideDummyCards, player.id, player.isDummy, player.name])
+
   const { t, resources } = useLanguage()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -912,9 +923,28 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   // - Owner sees their own cards face-up
                   // - Player who placed Revealed token sees the card face-up
                   // - Everyone else sees card back (colored by card owner)
-                  // - Dummy player cards: visible to all players when hideDummyCards setting is off
-                  const isVisible: boolean = isOwner || isTeammate || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus ||
-                    (!hideDummyCards && !!player.isDummy)
+                  // - Dummy player cards: HIDDEN (face-down) when hideDummyCards is true, regardless of other rules
+                  //   Otherwise visible to all players when hideDummyCards setting is off
+                  const isVisible: boolean = (player.isDummy && hideDummyCards) ? false :
+                    (isOwner || isTeammate || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus ||
+                    (!hideDummyCards && !!player.isDummy))
+
+                  // Debug logging for dummy player cards
+                  if (player.isDummy) {
+                    console.log('[PlayerPanel] Dummy card visibility:', {
+                      cardId: card.id,
+                      isOwner,
+                      isTeammate,
+                      isRevealedToAll,
+                      isRevealedToMe,
+                      isRevealedByStatus,
+                      hideDummyCards,
+                      playerIsDummy: player.isDummy,
+                      isVisible,
+                      dummyOverride: (player.isDummy && hideDummyCards),
+                      visibleByDummyRule: (!hideDummyCards && !!player.isDummy)
+                    })
+                  }
 
                   return (
                     <div
@@ -1418,9 +1448,28 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                 // Only exceptions: owner, teammate (rare), Revealed to all, or Revealed by token owner
                 // CRITICAL: Cards with Revealed status are shown FACE-DOWN with colored back + Revealed icon
                 // The card face is only shown to the player who placed the Revealed token (isRevealedByStatus)
-                // Dummy player cards: visible to all players when hideDummyCards setting is off (all players control dummies)
-                const isVisible: boolean = isOwner || isTeammate || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus ||
-                  (!hideDummyCards && !!player.isDummy)
+                // Dummy player cards: HIDDEN (face-down) when hideDummyCards is true, regardless of other rules
+                //   Otherwise visible to all players when hideDummyCards setting is off (all players control dummies)
+                const isVisible: boolean = (player.isDummy && hideDummyCards) ? false :
+                  (isOwner || isTeammate || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus ||
+                  (!hideDummyCards && !!player.isDummy))
+
+                // Debug logging for dummy player cards (second location)
+                if (player.isDummy) {
+                  console.log('[PlayerPanel2] Dummy card visibility:', {
+                    cardId: card.id,
+                    isOwner,
+                    isTeammate,
+                    isRevealedToAll,
+                    isRevealedToMe,
+                    isRevealedByStatus,
+                    hideDummyCards,
+                    playerIsDummy: player.isDummy,
+                    isVisible,
+                    dummyOverride: (player.isDummy && hideDummyCards),
+                    visibleByDummyRule: (!hideDummyCards && !!player.isDummy)
+                  })
+                }
 
                 return (
                   <div

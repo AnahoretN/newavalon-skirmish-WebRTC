@@ -321,9 +321,20 @@ const AppInner = function AppInner() {
     }
   })
 
+  // Debug wrapper for setHideDummyCards
+  const handleToggleHideDummyCards = useCallback((newValue: boolean | ((prev: boolean) => boolean)) => {
+    console.log('[hideDummyCards] Toggling:', typeof newValue === 'function' ? 'function' : newValue)
+    setHideDummyCards(prev => {
+      const finalValue = typeof newValue === 'function' ? newValue(prev) : newValue
+      console.log('[hideDummyCards] Previous:', prev, 'New:', finalValue)
+      return finalValue
+    })
+  }, [])
+
   // Save hideDummyCards setting to localStorage when it changes
   useEffect(() => {
     try {
+      console.log('[hideDummyCards] Saving to localStorage:', hideDummyCards)
       localStorage.setItem('hide_dummy_cards', String(hideDummyCards))
     } catch {
       // Ignore localStorage errors
@@ -2896,7 +2907,7 @@ const AppInner = function AppInner() {
           }
         }}
         hideDummyCards={hideDummyCards}
-        onToggleHideDummyCards={setHideDummyCards}
+        onToggleHideDummyCards={handleToggleHideDummyCards}
         currentRound={gameState.currentRound}
         turnNumber={gameState.turnNumber}
         isScoringStep={gameState.isScoringStep}
@@ -3103,7 +3114,7 @@ const AppInner = function AppInner() {
             style={{ width: sidePanelWidth }}
           >
             <PlayerPanel
-              key={localPlayer.id}
+              key={`${localPlayer.id}-hideDummyCards-${hideDummyCards}`}
               player={localPlayer}
               isLocalPlayer={true}
               localPlayerId={localPlayerId}
@@ -3197,6 +3208,7 @@ const AppInner = function AppInner() {
               visualEffects={gameState.visualEffects}
               onCancelAllModes={handleCancelAllModes}
               players={gameState.players}
+              hideDummyCards={hideDummyCards}
             />
           </div>
         </div>
@@ -3211,6 +3223,7 @@ const AppInner = function AppInner() {
               .map(player => (
                 <div key={player.id} className="w-full flex-1 min-h-0 flex flex-col">
                   <PlayerPanel
+                    key={`${player.id}-hideDummyCards-${hideDummyCards}`}
                     player={player}
                     isLocalPlayer={false}
                     localPlayerId={localPlayerId}

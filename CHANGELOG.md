@@ -23,9 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed edge cases in line selection logic
   - Better handling of diagonal line selection
 
-### Changed
-- Version update to 0.2.13
-
 ## [0.2.12] - 2026-03-13
 
 ### Fixed
