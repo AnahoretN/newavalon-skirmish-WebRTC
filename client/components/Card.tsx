@@ -161,12 +161,6 @@ const StatusIcon: React.FC<StatusIconProps> = ({ type, playerId, count, refreshV
           onError={handleIconError}
           alt={type}
           className={`object-contain w-full h-full transition-all duration-150 ${iconPaddingClass}`}
-          ref={(img) => {
-            if (img) {
-              const rect = img.getBoundingClientRect()
-              console.log(`  Icon image (${type}): ${rect.width.toFixed(1)}x${rect.height.toFixed(1)}px`)
-            }
-          }}
         />
       ) : (
         <span className={`text-white font-black transition-all duration-150 ${fontSizeClass}`} style={{ textShadow: '0 0 2px black' }}>
