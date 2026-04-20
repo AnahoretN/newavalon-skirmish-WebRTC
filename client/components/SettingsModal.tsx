@@ -165,10 +165,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-      <div className="bg-gray-800 rounded-lg p-8 shadow-xl w-full max-w-xl">
-        <h2 className="text-2xl font-bold mb-6">{t('settings')}</h2>
-
-        <div className="space-y-6">
+      <div className="bg-gray-800 rounded-vu-2 p-8 shadow-xl w-full max-w-xl">
+        <div className="space-y-9">
           <div>
             <label htmlFor="language-select" className="block text-sm font-medium text-gray-300 mb-1">
               {t('language')}
@@ -177,7 +175,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               id="language-select"
               value={language}
               onChange={(e) => setLanguage(e.target.value as LanguageCode)}
-              className="w-full bg-gray-700 border border-gray-600 text-white font-sans rounded-lg p-2 focus:ring-indigo-500 focus:border-indigo-500"
+              className="w-full bg-gray-700 border border-gray-600 text-white font-sans rounded-vu-2 p-2 focus:ring-indigo-500 focus:border-indigo-500"
             >
               {AVAILABLE_LANGUAGES.map((code) => (
                 <option key={code} value={code}>{LANGUAGE_NAMES[code]}</option>
@@ -213,10 +211,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* Collapsible Server Settings Container */}
           <div
-            className={`rounded-lg border transition-all ${
+            className={`rounded-vu-2 transition-all ${
               localWebrtcEnabled
-                ? 'bg-gray-800 border-gray-700 opacity-50 cursor-not-allowed'
-                : 'bg-gray-750 border-gray-600'
+                ? 'bg-gray-800 opacity-50 cursor-not-allowed'
+                : 'bg-gray-750'
             }`}
           >
             <button
@@ -240,7 +238,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
 
             {serverSettingsExpanded && (
-              <div className="p-3 pt-0 space-y-4">
+              <div className="p-3 pt-0 space-y-6">
                 {/* Server URL input with reconnect button and connection status */}
                 <div>
                   <label htmlFor="server-url" className="block text-sm font-medium text-gray-300 mb-1">
@@ -253,7 +251,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       value={serverUrl}
                       onChange={(e) => handleUrlChange(e.target.value)}
                       placeholder="wss://your-server.ngrok-free.app"
-                      className="flex-1 bg-gray-700 border border-gray-600 text-white font-mono rounded-lg p-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      className="flex-1 bg-gray-700 border border-gray-600 text-white font-mono rounded-vu-2 p-2 focus:ring-indigo-500 focus:border-indigo-500"
                       onKeyDown={(e) => e.key === 'Enter' && handleSave()}
                     />
                     {/* Reconnect button */}
@@ -307,7 +305,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     onClick={handleCopyGameLink}
                     disabled={!canCopyLink}
-                    className={`w-full py-2 rounded text-sm font-bold transition-colors ${
+                    className={`w-full py-3 rounded text-sm font-bold transition-colors ${
                       !canCopyLink
                         ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
                         : linkCopySuccess
@@ -330,7 +328,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <button
               onClick={handleClearCache}
               disabled={cacheClearing}
-              className={`w-full py-2 rounded text-sm font-bold transition-colors ${
+              className={`w-full py-3 rounded text-sm font-bold transition-colors ${
                 cacheClearing
                   ? 'bg-orange-600 text-white'
                   : 'bg-red-700 hover:bg-red-600 text-white'
@@ -345,12 +343,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="flex justify-end mt-8 space-x-3">
-          <button type="button" onClick={onClose} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
+          <button type="button" onClick={onClose} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded">
             {t('cancel')}
           </button>
           <button
             onClick={handleSave}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition-colors"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded transition-colors"
           >
             {t('saveApply')}
           </button>

@@ -5,7 +5,12 @@
  * - Retry on failure with exponential backoff
  * - Fallback to alternate URLs
  * - Preloading for better performance
+ *
+ * VU Size Reference (based on 1080px window height):
+ * - TINY: 54px, SMALL: 69px, PREVIEW: 162px, NORMAL: 324px, LARGE: 432px
  */
+
+import { VU_IMAGE_SIZES } from './imageOptimization'
 
 export interface ImageLoadOptions {
   maxRetries?: number
@@ -111,6 +116,7 @@ export function preloadImages(
 
 /**
  * Generate URLs with different quality levels for progressive loading
+ * Uses VU-based sizes for consistency with the rest of the system
  */
 export function getProgressiveUrls(baseUrl: string): {
   low: string
@@ -123,11 +129,11 @@ export function getProgressiveUrls(baseUrl: string): {
   return {
     low: cleanUrl.replace(
       /\/image\/upload\//,
-      '/image/upload/q_30,w_200/'
+      `/image/upload/q_30,w_${VU_IMAGE_SIZES.PREVIEW}/`
     ),
     medium: cleanUrl.replace(
       /\/image\/upload\//,
-      '/image/upload/q_60,w_400/'
+      `/image/upload/q_60,w_${VU_IMAGE_SIZES.NORMAL}/`
     ),
     high: cleanUrl.replace(
       /\/image\/upload\//,

@@ -16,11 +16,13 @@ import { CounterSelectionModal } from './components/CounterSelectionModal'
 import { TopDeckView } from './components/TopDeckView'
 import { ReconnectingModal } from './components/ReconnectingModal'
 import { ModalsRenderer, ModalsProvider, useModals } from './components/ModalsRenderer'
+import { VUTestPanel } from './components/VUTestPanel'
 import { logger } from './utils/logger'
 import { useGameState } from './hooks/useGameState'
 import { useAppAbilities } from './hooks/useAppAbilities'
 import { useAppCommand } from './hooks/useAppCommand'
 import { useAppCounters } from './hooks/useAppCounters'
+import { initializeVUBasePixels } from './utils/virtualUnits'
 import type {
   Player,
   Card,
@@ -52,6 +54,18 @@ import { getCardAbilityTypes } from '@server/utils/autoAbilities'
 // Inner app component without ModalsProvider
 const AppInner = function AppInner() {
   const { t } = useLanguage()
+
+  // Initialize VU system with current viewport height
+  useEffect(() => {
+    initializeVUBasePixels()
+
+    const handleResize = () => {
+      initializeVUBasePixels()
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   // Declare ability state early (needed by useGameState)
   const [abilityMode, setAbilityMode] = useState<AbilityAction | null>(null)
@@ -2532,7 +2546,7 @@ const AppInner = function AppInner() {
     const { type, data, x, y } = contextMenuProps
     let items: ContextMenuItem[] = []
     if (type === 'emptyBoardCell') {
-      items.push({ label: t('highlightCell'), onClick: () => triggerClickWave('board', { row: data.boardCoords.row, col: data.boardCoords.col }) })
+      // Empty context menu for empty cells
     } else if (type === 'boardItem' || type === 'announcedCard') {
       const isBoardItem = type === 'boardItem'
       let card = isBoardItem ? gameState.board[data.boardCoords.row][data.boardCoords.col].card : data.card
@@ -2596,9 +2610,6 @@ const AppInner = function AppInner() {
       }
       if (isBoardItem) {
         items.push({ isDivider: true })
-        items.push({ label: t('highlightCell'), onClick: () => triggerClickWave('board', { row: data.boardCoords.row, col: data.boardCoords.col }) })
-        items.push({ label: t('highlightColumn'), onClick: () => triggerClickWave('board', { row: data.boardCoords.row, col: data.boardCoords.col }) })
-        items.push({ label: t('highlightRow'), onClick: () => triggerClickWave('board', { row: data.boardCoords.row, col: data.boardCoords.col }) })
       }
       if (isVisible && (canControl || isBoardItem)) {
         const allStatusTypes = ['Aim', 'Exploit', 'Stun', 'Shield', 'Support', 'Threat', 'Revealed']
@@ -3043,6 +3054,8 @@ const AppInner = function AppInner() {
         localPlayerId={localPlayerId}
         activePlayerId={gameState.activePlayerId}
         players={gameState.players}
+        playerColorMap={playerColorMap}
+        activeGridSize={gameState.activeGridSize}
       />
 
       <CountersModal
@@ -3080,14 +3093,19 @@ const AppInner = function AppInner() {
 
             return (
               <div
-                className="w-12 h-12 rounded-full border-2 border-white flex items-center justify-center relative shadow-lg"
-                style={{ backgroundColor: bgColor }}
+                className="rounded-full border-2 border-white flex items-center justify-center relative shadow-lg"
+                style={{
+                  backgroundColor: bgColor,
+                  width: 'calc(45 * var(--vu-base))',
+                  height: 'calc(45 * var(--vu-base))'
+                }}
               >
             {STATUS_ICONS[cursorStack.type] ? (
               <img
                 src={`${STATUS_ICONS[cursorStack.type]}${imageRefreshVersion ? `?v=${imageRefreshVersion}` : ''}`}
                 alt={cursorStack.type}
-                className="w-8 h-8 object-contain"
+                className="object-contain"
+                style={{ width: 'calc(35 * var(--vu-base))', height: 'calc(35 * var(--vu-base))' }}
               />
             ) : (
               <span className={`font-bold text-white drop-shadow-md ${cursorStack.type.startsWith('Power') ? 'text-sm' : 'text-lg'}`}>
@@ -3096,7 +3114,14 @@ const AppInner = function AppInner() {
             )}
 
             {cursorStack.count > 1 && (
-              <div className="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full border-2 border-white shadow-sm z-10">
+              <div className="absolute bg-red-600 text-white font-bold flex items-center justify-center rounded-full border-2 border-white shadow-sm z-10"
+                style={{
+                  top: 'calc(-12 * var(--vu-base))',
+                  right: 'calc(-12 * var(--vu-base))',
+                  width: 'calc(24 * var(--vu-base))',
+                  height: 'calc(24 * var(--vu-base))',
+                  fontSize: 'calc(12 * var(--vu-base))'
+                }}>
                 {cursorStack.count}
               </div>
             )}
@@ -3110,7 +3135,7 @@ const AppInner = function AppInner() {
         {localPlayer && (
           <div
             ref={leftPanelRef}
-            className="absolute left-0 top-14 bottom-[2px] z-30 bg-panel-bg shadow-xl flex flex-col w-fit min-w-0 pl-[2px] py-[2px] pr-0 transition-all duration-100 overflow-hidden"
+            className="absolute left-0 top-vu-header bottom-vu-min z-30 bg-panel-bg shadow-xl flex flex-col w-fit min-w-0 pl-vu-min py-vu-min pr-0 transition-all duration-100 overflow-hidden"
             style={{ width: sidePanelWidth }}
           >
             <PlayerPanel
@@ -3168,7 +3193,7 @@ const AppInner = function AppInner() {
         >
           <div
             ref={boardContainerRef}
-            className="pointer-events-auto h-full aspect-square flex items-center justify-center py-[2px]"
+            className="pointer-events-auto h-full aspect-square flex items-center justify-center py-vu-min"
           >
             <GameBoard
               board={gameState.board}
@@ -3214,7 +3239,7 @@ const AppInner = function AppInner() {
         </div>
 
         <div
-          className="absolute right-0 top-14 bottom-[2px] z-30 bg-panel-bg shadow-xl flex flex-col min-w-0 pr-[2px] py-[2px] pl-0 transition-all duration-100 overflow-hidden"
+          className="absolute right-0 top-vu-header bottom-vu-min z-30 bg-panel-bg shadow-xl flex flex-col min-w-0 pr-vu-min py-vu-min pl-0 transition-all duration-100 overflow-hidden"
           style={{ width: sidePanelWidth }}
         >
           <div className="flex flex-col h-full w-full">
@@ -3275,6 +3300,11 @@ const AppInner = function AppInner() {
         </div>
       </div>
     </div>
+
+    {/* VU Test Panel - Development only */}
+    {import.meta.env.DEV && (
+      <VUTestPanel enabled={import.meta.env.VITE_SHOW_VU_PANEL === 'true'} />
+    )}
     </>
   )
 }

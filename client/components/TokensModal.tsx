@@ -18,9 +18,10 @@ interface TokensModalProps {
   activePlayerId?: number | null; // The active player (may be dummy)
   players?: any[]; // All players to check if active is dummy
   playerColorMap?: Map<number, PlayerColor>; // Player colors for display
+  activeGridSize?: 4 | 5 | 6 | 7; // Grid size from game board
 }
 
-export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDraggedItem, openContextMenu, canInteract, anchorEl, imageRefreshVersion, localPlayerId, activePlayerId, players, playerColorMap }) => {
+export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDraggedItem, openContextMenu, canInteract, anchorEl, imageRefreshVersion, localPlayerId, activePlayerId, players, playerColorMap, activeGridSize = 6 }) => {
   const { t } = useLanguage()
   const [draggedTokenId, setDraggedTokenId] = useState<string | null>(null)
   const [droppedOutside, setDroppedOutside] = useState(false)
@@ -128,15 +129,22 @@ export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDr
       ref={modalRef}
       onDragLeave={handleDragLeave}
     >
-      <div className="bg-gray-800 rounded-lg p-4 shadow-xl w-96 max-w-[90vw] h-auto flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-2">
-          <h2 className="text-xl font-bold">{t('tokens')}</h2>
-          <button onClick={onClose} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 px-3 rounded text-sm">
-                {t('close')}
+      <div className="bg-gray-800 rounded-vu-5 p-vu-lg shadow-xl w-vu-modal-lg max-w-vu-modal-xl h-auto flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-vu-md">
+          <div className="flex flex-col">
+            <h2 className="text-vu-2xl font-bold">{t('tokens')}</h2>
+            <p className="text-gray-400 text-vu-13">{t('dragOutsideToPlaceToken')}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="py-vu-md px-vu-lg rounded-vu-2 font-bold transition-colors bg-indigo-600 text-white hover:bg-indigo-700"
+            style={{ fontSize: 'var(--vu-text-13)' }}
+          >
+            {t('close')}
           </button>
         </div>
-        <div className="flex-grow bg-gray-900 rounded p-2 overflow-y-auto">
-          <div className="grid grid-cols-3 gap-2">
+        <div className="flex-grow bg-gray-900 rounded p-vu-board overflow-y-auto">
+          <div className="grid grid-cols-3 gap-1 overflow-y-scroll custom-scrollbar flex-grow content-start">
             {tokenCards.map((token) => {
               const isBeingDragged = draggedTokenId === token.id
               const opacity = isBeingDragged ? 0.5 : 1
@@ -144,23 +152,22 @@ export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDr
               return (
                 <div
                   key={token.id}
+                  className="aspect-square relative"
                   style={{ opacity }}
                   draggable={canInteract}
                   onDragStart={() => handleDragStart(token)}
                   onDragEnd={handleDragEnd}
                   onContextMenu={(e) => canInteract && openContextMenu(e, 'token_panel_item', { card: token })}
                   data-interactive={canInteract}
-                  className={`w-24 h-24 transition-all rounded-lg ${canInteract ? 'cursor-grab active:cursor-grabbing hover:scale-105' : 'cursor-not-allowed'} ${isBeingDragged ? 'scale-95' : ''}`}
                 >
-                  <Card card={token} isFaceUp={true} playerColorMap={tokenColorMap} imageRefreshVersion={imageRefreshVersion} />
+                  <div className="w-full h-full rounded-vu-5" data-token-image="true">
+                    <Card card={token} isFaceUp={true} playerColorMap={tokenColorMap} imageRefreshVersion={imageRefreshVersion} />
+                  </div>
                 </div>
               )
             })}
           </div>
         </div>
-        <p className="text-gray-400 text-xs mt-2 text-center">
-          {t('dragOutsideToPlaceToken')}
-        </p>
       </div>
     </div>
   )

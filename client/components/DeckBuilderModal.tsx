@@ -255,7 +255,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
-      <div className="bg-gray-900 w-full h-full md:w-[95vw] md:h-[90vh] md:rounded-xl flex flex-col overflow-hidden shadow-2xl border border-gray-700">
+      <div className="bg-gray-900 w-full h-full md:w-[95vw] md:h-[90vh] md:rounded-vu-2 flex flex-col overflow-hidden shadow-2xl border border-gray-700">
         <div className="bg-gray-800 p-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
           <div className="flex items-center gap-4">
             <h2 className="text-2xl font-bold text-white">{t('deckBuilding')}</h2>
@@ -273,13 +273,19 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             <input type="file" ref={textFileInputRef} onChange={handleFileSelected} accept=".txt" className="hidden" />
             <button onClick={handleSaveAsText} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm font-bold transition-colors">{t('saveDeck')}</button>
             <div className="w-px h-8 bg-gray-600 mx-2"></div>
-            <button onClick={onClose} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm font-bold transition-colors">{t('close')}</button>
+            <button
+              onClick={onClose}
+              className="py-vu-md px-vu-lg rounded-vu-2 font-bold transition-colors bg-gray-700 hover:bg-gray-600 text-white"
+              style={{ fontSize: 'var(--vu-text-13)' }}
+            >
+              {t('close')}
+            </button>
           </div>
         </div>
 
         <div className="flex flex-grow overflow-hidden">
           <div className="flex-grow flex flex-col p-4 overflow-hidden border-r border-gray-700 bg-gray-900/50">
-            <div className="mb-4 flex flex-wrap items-center gap-4 bg-gray-800 p-2 rounded-lg border border-gray-700 relative z-40">
+            <div className="mb-4 flex flex-wrap items-center gap-4 bg-gray-800 p-2 rounded-vu-2 border border-gray-700 relative z-40">
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
                   <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>

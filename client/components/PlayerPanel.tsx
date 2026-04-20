@@ -70,6 +70,12 @@ import { parseTextDeckFormat } from '@/utils/textDeckFormat'
 import { calculateGlowColor, rgba, getPlayerColorRgbOrDefault, TIMING } from '@/utils/common'
 import { logger } from '@/utils/logger'
 
+// Вычисляем VU размер для шрифтов динамически
+const getVuSize = (vu: number) => {
+  const vuPixels = window.innerHeight / 1000
+  return vu * vuPixels
+}
+
 // Track deck change deltas for each player
 const deckChangeDeltas = new Map<number, { delta: number, timerId: NodeJS.Timeout }>()
 
@@ -145,8 +151,8 @@ const ColorPicker: React.FC<{ player: Player, canEditSettings: boolean, selected
     }
   }, [isOpen])
 
-  const sizeClass = compact ? 'w-4 h-4' : 'w-9 h-9'
-  const roundedClass = compact ? 'rounded-sm' : 'rounded-md'
+  const sizeClass = compact ? 'w-vu-btn-sm h-vu-btn-sm' : 'w-vu-icon-lg h-vu-icon-lg'
+  const roundedClass = compact ? 'rounded-vu-2' : 'rounded-vu-2'
   const borderClass = compact ? 'border' : 'border-2'
   const borderColorClass = compact ? 'border-white/40' : 'border-gray-600'
   const paddingClass = compact ? 'p-0' : 'p-0'
@@ -159,14 +165,14 @@ const ColorPicker: React.FC<{ player: Player, canEditSettings: boolean, selected
         title={canEditSettings ? "Change Color" : player.color}
       >
         {!compact && canEditSettings && (
-          <svg className={`w-4 h-4 text-white/60 group-hover:text-white transition-colors drop-shadow-md`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={`w-vu-btn-md h-vu-btn-md text-white/60 group-hover:text-white transition-colors drop-shadow-md`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
           </svg>
         )}
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 p-2 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 grid grid-cols-4 gap-2 w-max animate-fade-in">
+        <div className="absolute top-full left-0 mt-vu-md p-vu-md bg-gray-800 border border-gray-600 rounded-vu-2 shadow-xl z-50 grid grid-cols-4 gap-vu-md w-max animate-fade-in">
           {Object.keys(PLAYER_COLORS).map((colorKey) => {
             const color = colorKey as PlayerColor
             const isTaken = selectedColors.has(color) && player.color !== color
@@ -182,7 +188,7 @@ const ColorPicker: React.FC<{ player: Player, canEditSettings: boolean, selected
                   }
                 }}
                 disabled={isTaken}
-                className={`w-8 h-8 rounded-md ${PLAYER_COLORS[color].bg} border-2 ${
+                className={`w-vu-icon-lg h-vu-icon-lg rounded-vu-2 ${PLAYER_COLORS[color].bg} border-vu-base ${
                   isCurrent ? 'border-white ring-1 ring-white scale-110' :
                     isTaken ? 'border-transparent opacity-20 cursor-not-allowed' :
                       'border-transparent hover:border-white hover:scale-110 hover:shadow-lg'
@@ -306,28 +312,30 @@ const RemoteScore: React.FC<{ score: number, onChange: (delta: number) => void, 
   const isExternalEffect = externalDelta !== 0
 
   return (
-    <div className="w-full h-full aspect-square bg-gray-800 rounded flex flex-col items-center text-white select-none overflow-hidden">
+    <div className="w-full h-full aspect-square bg-gray-800 rounded-vu-5 flex flex-col items-center text-white select-none overflow-hidden">
       <button
         onClick={() => handleScoreChange(1)}
         disabled={!canEdit}
-        className="h-1/3 w-full flex items-center justify-center bg-gray-700 hover:bg-gray-600 active:bg-gray-500 transition-colors text-base sm:text-xl font-bold disabled:opacity-50 disabled:cursor-default leading-none"
+        className="h-1/3 w-full flex items-center justify-center bg-gray-700 hover:bg-gray-600 active:bg-gray-500 transition-colors font-bold disabled:opacity-50 disabled:cursor-default leading-none"
+        style={{ fontSize: `${getVuSize(20)}px` }}
       >
         +
       </button>
-      <div className="h-1/3 flex items-center justify-center font-bold text-base sm:text-xl w-full px-px relative">
-        {/* Main score - always centered, unchanged while clicking */}
-        <span className="absolute left-1/2 -translate-x-1/2">{score}</span>
-        {/* Delta effect - always on the right, no parentheses */}
-        {showDelta && (
-          <span key={effectKey} className={`absolute right-1 text-base sm:text-lg font-bold ${deltaToShow > 0 ? 'text-green-400' : 'text-red-400'} ${isExternalEffect ? 'animate-fade-out' : ''}`}>
-            {deltaToShow > 0 ? `+${deltaToShow}` : deltaToShow}
-          </span>
-        )}
+      <div className="h-1/3 flex items-center justify-center font-bold w-full px-px">
+        <div className="relative">
+          <span className="font-bold relative inline-block" style={{ fontSize: `${getVuSize(20)}px` }}>{score}</span>
+          {showDelta && (
+            <span className="absolute font-bold" style={{ fontSize: `${getVuSize(20)}px`, marginLeft: `${getVuSize(2)}px`, left: '100%', top: '0', bottom: '0', margin: 'auto 0 0 0' }}>
+              {deltaToShow > 0 ? `+${deltaToShow}` : deltaToShow}
+            </span>
+          )}
+        </div>
       </div>
       <button
         onClick={() => handleScoreChange(-1)}
         disabled={!canEdit}
-        className="h-1/3 w-full flex items-center justify-center bg-gray-700 hover:bg-gray-600 active:bg-gray-500 transition-colors text-base sm:text-xl font-bold disabled:opacity-50 disabled:cursor-default leading-none"
+        className="h-1/3 w-full flex items-center justify-center bg-gray-700 hover:bg-gray-600 active:bg-gray-500 transition-colors font-bold disabled:opacity-50 disabled:cursor-default leading-none"
+        style={{ fontSize: `${getVuSize(20)}px` }}
       >
         -
       </button>
@@ -339,21 +347,21 @@ const RemotePile: React.FC<{ label: string, count: number, onClick?: () => void,
   <div
     onClick={onClick}
     data-deck={dataDeck}
-    className={`w-full h-full rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-sm select-none text-white border border-gray-600 relative overflow-hidden ${className || ''}`}
+    className={`w-full h-full rounded flex items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-sm select-none text-white border border-gray-600 relative overflow-hidden ${className || ''}`}
     style={style}
   >
     {children ? children : (
-      <>
-        <span className="text-[9px] font-bold mb-0.5 opacity-80 uppercase tracking-tighter">{label}</span>
+      <div className="flex flex-col items-center">
+        <span className="font-bold mb-vu-3 opacity-80 uppercase tracking-tighter text-vu-15">{label}</span>
         <div className="relative">
-          <span className="text-base font-bold">{count}</span>
+          <span className="font-bold relative inline-block text-vu-20">{count}</span>
           {delta !== null && delta !== undefined && (
-            <span className={`absolute left-full top-0 ml-0.5 text-base font-bold animate-fade-out ${delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
+            <span className="absolute font-bold text-vu-20 ml-vu-min" style={{ left: '100%', top: '0', bottom: '0', margin: 'auto 0 0 0' }}>
               {delta > 0 ? `+${delta}` : delta}
             </span>
           )}
         </div>
-      </>
+      </div>
     )}
   </div>
 )
@@ -401,17 +409,6 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   triggerClickWave,
   hideDummyCards = false,
 }) => {
-  // Debug logging for prop changes
-  useEffect(() => {
-    console.log('[PlayerPanel] Component rendered/updated:', {
-      playerId: player.id,
-      playerName: player.name,
-      playerIsDummy: player.isDummy,
-      hideDummyCards,
-      timestamp: Date.now()
-    })
-  }, [hideDummyCards, player.id, player.isDummy, player.name])
-
   const { t, resources } = useLanguage()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -558,6 +555,16 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
     }
   }, [player.id])
 
+  // Force re-render on window resize to update VU-based sizes
+  const [, forceUpdate] = useState({})
+  useEffect(() => {
+    const handleResize = () => {
+      forceUpdate({})
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   const handleDeckSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     onDeckChange(e.target.value as DeckTypeEnum)
   }
@@ -611,33 +618,28 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
     const borderClass = isPlayerActive ? 'border-yellow-400' : 'border-gray-700'
 
     return (
-      <div className={`w-full h-full flex flex-col p-[10px] bg-panel-bg border-2 ${borderClass} rounded-lg shadow-2xl ${isDisconnected ? 'opacity-60' : ''} relative`}>
-        {/* Status Icons - absolute positioned in top-right corner */}
-        {/* Order from left to right: win medals, first player star, checkbox (rightmost) */}
-        <div className="absolute top-4 right-4 flex items-center gap-[2px] z-50">
-          {/* Win medals */}
+      <div className={`w-full h-full flex flex-col p-vu-panel bg-panel-bg border-2 ${borderClass} rounded-vu-5 shadow-2xl ${isDisconnected ? 'opacity-60' : ''} relative`}>
+        {/* Header: ColorPicker + Name + Win Medals + First Player Star + ActiveIndicator (name takes all available space) */}
+        <div className="flex items-center gap-vu-md mb-vu-min flex-shrink-0">
+          <ColorPicker player={player} canEditSettings={!isGameStarted && canPerformActions} selectedColors={selectedColors} onColorChange={onColorChange} />
+          <div className="flex-grow relative flex items-center min-w-0">
+            <input type="text" value={player.name} onChange={(e) => onNameChange(e.target.value)} readOnly={isGameStarted || !canPerformActions} className="bg-transparent font-bold text-vu-2xl p-vu-min flex-grow focus:bg-gray-800 rounded focus:outline-none border-b border-gray-600 text-white truncate" />
+          </div>
+          {/* Win medals - between name and first player star */}
           {winCount > 0 && Array.from({ length: winCount }).map((_, i) => (
-            <img key={`win-${i}`} src={ROUND_WIN_MEDAL_URL} alt="Round Winner" className="w-6 h-6 drop-shadow-md flex-shrink-0" title="Round Winner" />
+            <img key={`win-${i}`} src={ROUND_WIN_MEDAL_URL} alt="Round Winner" className="drop-shadow-md flex-shrink-0" title="Round Winner" style={{ width: `${getVuSize(32)}px`, height: `${getVuSize(32)}px` }} />
           ))}
-          {/* First player star */}
+          {/* First player star - between win medals and active indicator */}
           {isFirstPlayer && (
-            <img src={firstPlayerIconUrl} alt="First Player" className="w-6 h-6 drop-shadow-md flex-shrink-0" title="First Player" />
+            <img src={firstPlayerIconUrl} alt="First Player" className="drop-shadow-md flex-shrink-0" title="First Player" style={{ width: `${getVuSize(32)}px`, height: `${getVuSize(32)}px` }} />
           )}
-          {/* Active player indicator - clickable to toggle (DISABLED) */}
-          {/* <div
-            onClick={() => canPerformActions && onToggleActivePlayer(player.id)}
-            className={`flex-shrink-0 cursor-pointer transition-all duration-200 ${
-              !canPerformActions ? 'cursor-not-allowed' : ''
-            }`}
-            title={isPlayerActive ? "Active Player - Click to deactivate" : "Inactive Player - Click to activate"}
-          > */}
+          {/* Active Player Indicator */}
           <div
             className="flex-shrink-0 transition-all duration-200"
             title={isPlayerActive ? "Active Player" : "Inactive Player"}
           >
             <svg
-              width="28"
-              height="28"
+              style={{ width: `${getVuSize(32)}px`, height: `${getVuSize(32)}px` }}
               viewBox="0 0 28 28"
               className={`transition-all duration-200 ${
                 isPlayerActive
@@ -668,27 +670,19 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   cy="14"
                   r="9"
                   fill="none"
-                  strokeWidth="1"
+                  stroke="rgba(250, 204, 21, 0.5)"
+                  strokeWidth="2"
                   className="stroke-yellow-300 opacity-50 animate-pulse"
                 />
               )}
             </svg>
           </div>
-          {/* </div> */}
         </div>
 
-        {/* Header: ColorPicker + Name (name takes all available space) */}
-        <div className="flex items-center gap-2 mb-[3px] flex-shrink-0 pr-[100px]">
-          <ColorPicker player={player} canEditSettings={!isGameStarted && canPerformActions} selectedColors={selectedColors} onColorChange={onColorChange} />
-          <div className="flex-grow relative flex items-center min-w-0">
-            <input type="text" value={player.name} onChange={(e) => onNameChange(e.target.value)} readOnly={isGameStarted || !canPerformActions} className="bg-transparent font-bold text-xl p-1 flex-grow focus:bg-gray-800 rounded focus:outline-none border-b border-gray-600 text-white truncate" />
-          </div>
-        </div>
-
-        <div className="bg-gray-800 p-1 rounded-lg mb-1 flex-shrink-0">
-          <div className="grid grid-cols-4 gap-1 sm:gap-2">
+        <div className="bg-gray-800 p-vu-min rounded-vu-5 mb-1 flex-shrink-0">
+          <div className="grid grid-cols-4 gap-vu-min sm:gap-vu-md">
             {/* Deck */}
-            <DropZone className="relative" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => handleContextMenuWithCancel(e, 'deckPile', { player })} isOverClassName="rounded ring-2 ring-white">
+            <DropZone className="relative" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'deck', playerId: player.id, deckPosition: 'top' })} onContextMenu={(e) => handleContextMenuWithCancel(e, 'deckPile', { player })} isOverClassName="rounded-vu-5 ring-2 ring-white">
               {(() => {
                 // Check if deck is selectable (either from local player or from targetingMode)
                 const isLocalDeckSelectable = isDeckSelectable
@@ -721,7 +715,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     {/* Highlight overlay - doesn't interfere with deck visibility */}
                     {isDeckSelectableActive && (
                       <div
-                        className="absolute inset-0 rounded pointer-events-none animate-glow-pulse"
+                        className="absolute inset-0 rounded-vu-5 pointer-events-none animate-glow-pulse"
                         style={{
                           zIndex: 10,
                           background: `radial-gradient(circle at center, transparent 30%, ${rgba(rgb, 0.4)} 100%)`,
@@ -731,7 +725,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     {/* Ripple effect when deck is selected */}
                     {recentSelection && (
                       <div
-                        className="absolute inset-0 rounded pointer-events-none animate-deck-selection"
+                        className="absolute inset-0 rounded-vu-5 pointer-events-none animate-deck-selection"
                         style={{
                           zIndex: 15,
                           border: '3px solid',
@@ -743,17 +737,19 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     <div
                       onClick={handleDeckInteraction}
                       data-deck={player.id}
-                      className={`absolute inset-0 rounded flex flex-col items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-md select-none text-white ${PLAYER_COLORS[player.color]?.bg || 'bg-card-back'}`}
+                      className={`absolute inset-0 rounded-vu-5 flex items-center justify-center cursor-pointer hover:ring-2 ring-indigo-400 transition-all shadow-md select-none text-white ${PLAYER_COLORS[player.color]?.bg || 'bg-card-back'}`}
                       style={deckHighlightStyle}
                     >
-                      <span className="text-[10px] sm:text-xs font-bold mb-0.5 uppercase tracking-tight relative z-20">{t('deck')}</span>
-                      <div className="relative z-20">
-                        <span className="text-base sm:text-lg font-bold">{getDeckSize()}</span>
-                        {deckChangeDelta !== null && (
-                          <span key={deckChangeKey} className={`absolute left-full top-0 ml-1 text-base sm:text-lg font-bold animate-fade-out z-40 ${deckChangeDelta > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {deckChangeDelta > 0 ? `+${deckChangeDelta}` : deckChangeDelta}
-                          </span>
-                        )}
+                      <div className="flex flex-col items-center relative z-20">
+                        <span className="font-bold mb-vu-3 uppercase tracking-tight text-vu-15">{t('deck')}</span>
+                        <div className="relative">
+                          <span className="font-bold relative inline-block text-vu-20">{getDeckSize()}</span>
+                          {deckChangeDelta !== null && (
+                            <span className="absolute font-bold z-40 text-vu-20 ml-vu-min" style={{ left: '100%', top: '0', bottom: '0', margin: 'auto 0 0 0' }}>
+                              {deckChangeDelta > 0 ? `+${deckChangeDelta}` : deckChangeDelta}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -762,17 +758,19 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
             </DropZone>
 
             {/* Discard */}
-            <DropZone onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'discard', playerId: player.id })} onContextMenu={(e) => handleContextMenuWithCancel(e, 'discardPile', { player })} isOverClassName="rounded ring-2 ring-white">
-              <div className="aspect-square bg-gray-700 rounded flex flex-col items-center justify-center cursor-pointer hover:bg-gray-600 transition-all shadow-md border border-gray-600 select-none text-white">
-                <span className="text-[10px] sm:text-xs font-bold mb-0.5 text-gray-400 uppercase tracking-tight">{t('discard')}</span>
-                <span className="text-base sm:text-lg font-bold">{getDiscardSize()}</span>
+            <DropZone onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'discard', playerId: player.id })} onContextMenu={(e) => handleContextMenuWithCancel(e, 'discardPile', { player })} isOverClassName="rounded-vu-5 ring-2 ring-white">
+              <div className="aspect-square bg-gray-700 rounded-vu-5 flex items-center justify-center cursor-pointer hover:bg-gray-600 transition-all shadow-md border border-gray-600 select-none text-white">
+                <div className="flex flex-col items-center">
+                  <span className="font-bold mb-vu-3 text-gray-400 uppercase tracking-tight text-vu-15">{t('discard')}</span>
+                  <span className="font-bold text-vu-20">{getDiscardSize()}</span>
+                </div>
               </div>
             </DropZone>
 
             {/* Showcase */}
             <div className="aspect-square relative">
-              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'announced', playerId: player.id })} isOverClassName="rounded ring-2 ring-white">
-                <div className="w-full h-full bg-gray-800 border border-dashed border-gray-600 rounded flex items-center justify-center relative overflow-hidden">
+              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'announced', playerId: player.id })} isOverClassName="rounded-vu-5 ring-2 ring-white">
+                <div className="w-full h-full bg-gray-800 border border-dashed border-gray-600 rounded-vu-5 flex items-center justify-center relative overflow-hidden">
                   {player.announcedCard ? (
                     <div
                       className="w-full h-full p-1 cursor-pointer"
@@ -815,7 +813,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         />
                       </div>
                     </div>
-                  ) : <span className="text-[10px] sm:text-xs font-bold text-gray-500 select-none uppercase tracking-tight">{t('showcase')}</span>}
+                  ) : <span className="font-bold text-gray-500 select-none uppercase tracking-tight text-vu-15">{t('showcase')}</span>}
                 </div>
               </DropZone>
             </div>
@@ -855,7 +853,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
               handleDrop(draggedItem, { target: 'hand', playerId: player.id })
               setDraggedItem(null)
             }
-          }} className="flex-grow bg-gray-800 rounded-lg p-2 overflow-y-scroll border border border-gray-700 custom-scrollbar">
+          }} className="flex-grow bg-gray-800 rounded-vu-5 p-2 overflow-y-scroll custom-scrollbar">
             <div className="flex flex-col gap-[2px]">
               {(() => {
                 // For local players, use actual hand cards
@@ -929,23 +927,6 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     (isOwner || isTeammate || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus ||
                     (!hideDummyCards && !!player.isDummy))
 
-                  // Debug logging for dummy player cards
-                  if (player.isDummy) {
-                    console.log('[PlayerPanel] Dummy card visibility:', {
-                      cardId: card.id,
-                      isOwner,
-                      isTeammate,
-                      isRevealedToAll,
-                      isRevealedToMe,
-                      isRevealedByStatus,
-                      hideDummyCards,
-                      playerIsDummy: player.isDummy,
-                      isVisible,
-                      dummyOverride: (player.isDummy && hideDummyCards),
-                      visibleByDummyRule: (!hideDummyCards && !!player.isDummy)
-                    })
-                  }
-
                   return (
                     <div
                       key={`card-${card.id}-${index}`}
@@ -955,7 +936,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       {/* Highlight overlay - doesn't interfere with card visibility */}
                       {isTarget && (
                         <div
-                          className="absolute inset-0 rounded pointer-events-none animate-glow-pulse"
+                          className="absolute inset-0 rounded-vu-5 pointer-events-none animate-glow-pulse"
                           style={{
                             zIndex: 10,
                             background: `radial-gradient(circle at center, transparent 30%, ${rgba(rgb, 0.4)} 100%)`,
@@ -965,7 +946,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       {/* Ripple effect when card is selected */}
                       {recentSelection && (
                         <div
-                          className="absolute inset-0 rounded pointer-events-none animate-deck-selection"
+                          className="absolute inset-0 rounded-vu-5 pointer-events-none animate-deck-selection"
                           style={{
                             zIndex: 15,
                             border: '3px solid',
@@ -975,7 +956,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         />
                       )}
                       <div
-                        className={`flex items-center bg-gray-900 border rounded p-2 min-w-0 ${isTarget ? 'border-transparent' : 'border-gray-700'}`}
+                        className={`flex items-center bg-gray-900 rounded-vu-5 p-2 min-w-0`}
                         style={cardContainerStyle}
                         draggable={canDrag && !isPlaceholder}
                         onDragStart={(e) => {
@@ -1013,7 +994,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         data-hand-card={`${player.id},${index}`}
                         data-interactive="true"
                       >
-                        <div className="aspect-square flex-shrink-0 mr-3 w-[28.75%] max-w-[230px] min-w-[40px] overflow-hidden rounded">
+                        <div className="aspect-square flex-shrink-0 mr-3 w-[28.75%] max-w-[230px] min-w-[40px] overflow-hidden rounded-vu-5">
                           <div data-card-image="true" className="w-full h-full">
                             {isPlaceholder ? (
                               // Show card back for placeholder cards (remote players in WebRTC)
@@ -1089,7 +1070,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
 
         {/* Reconnection Overlay */}
         {isDisconnected && player.reconnectionDeadline && (
-          <div className="absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center z-40 rounded-lg">
+          <div className="absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center z-40 rounded-vu-5">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent mx-auto mb-2"></div>
               <div className="text-white font-bold">{t('reconnecting')}</div>
@@ -1106,7 +1087,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   if (layoutMode === 'list-remote') {
     const borderClass = isPlayerActive ? 'border-yellow-400' : 'border-gray-700'
     return (
-      <div className={`w-full h-full flex flex-col p-1 pt-[3px] bg-panel-bg border-2 ${borderClass} rounded-lg shadow-xl ${isDisconnected ? 'opacity-60' : ''} relative`}>
+      <div className={`w-full h-full flex flex-col p-1 pt-[3px] bg-panel-bg border-2 ${borderClass} rounded-vu-2 shadow-xl ${isDisconnected ? 'opacity-60' : ''} relative`}>
         {/* Header: Color + Name + Deck Select + Status Icons - all in one row */}
         <div className="flex items-center gap-1 px-1 min-h-[20px] mt-[2px] relative z-10">
           {/* Color picker - compact for remote panels */}
@@ -1142,9 +1123,9 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
               )
             )}
             {/* Win medal */}
-            {winCount > 0 && <img src={ROUND_WIN_MEDAL_URL} alt="Round Winner" className="w-[19px] h-[17.7] flex-shrink-0 mt-[1.3px]" title="Round Winner" />}
+            {winCount > 0 && <img src={ROUND_WIN_MEDAL_URL} alt="Round Winner" className="flex-shrink-0 mt-vu-min" title="Round Winner" style={{ width: `${getVuSize(17)}px`, height: `${getVuSize(17)}px` }} />}
             {/* First player star */}
-            {isFirstPlayer && <img src={firstPlayerIconUrl} className="w-[16.75px] h-[16.75px] flex-shrink-0" title="First Player" />}
+            {isFirstPlayer && <img src={firstPlayerIconUrl} className="flex-shrink-0" title="First Player" style={{ width: `${getVuSize(17)}px`, height: `${getVuSize(17)}px` }} />}
             {/* Active player indicator - clickable to toggle (DISABLED) */}
             {/* <div
               onClick={() => canPerformActions && onToggleActivePlayer(player.id)}
@@ -1158,8 +1139,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
               title={isPlayerActive ? "Active Player" : "Inactive Player"}
             >
               <svg
-                width="17"
-                height="17"
+                style={{ width: `${getVuSize(17)}px`, height: `${getVuSize(17)}px` }}
                 viewBox="0 0 28 28"
                 className={`transition-all duration-200 ${
                   isPlayerActive
@@ -1241,7 +1221,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       {/* Highlight overlay - doesn't interfere with deck visibility */}
                       {isDeckSelectableActive && (
                         <div
-                          className="absolute inset-0 rounded pointer-events-none animate-glow-pulse"
+                          className="absolute inset-0 rounded-vu-5 pointer-events-none animate-glow-pulse"
                           style={{
                             zIndex: 10,
                             background: `radial-gradient(circle at center, transparent 30%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 100%)`,
@@ -1251,7 +1231,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       {/* Ripple effect when deck is selected */}
                       {recentSelection && (
                         <div
-                          className="absolute inset-0 rounded pointer-events-none animate-deck-selection"
+                          className="absolute inset-0 rounded-vu-5 pointer-events-none animate-deck-selection"
                           style={{
                             zIndex: 15,
                             border: '3px solid',
@@ -1277,7 +1257,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
 
             {/* Discard */}
             <div className="aspect-square relative">
-              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'discard', playerId: player.id })} onContextMenu={(e) => handleContextMenuWithCancel(e, 'discardPile', { player })} isOverClassName="rounded ring-2 ring-white">
+              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'discard', playerId: player.id })} onContextMenu={(e) => handleContextMenuWithCancel(e, 'discardPile', { player })} isOverClassName="rounded-vu-5 ring-2 ring-white">
                 <RemotePile
                   label={t('discard')}
                   count={getDiscardSize()}
@@ -1288,8 +1268,8 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
 
             {/* Showcase */}
             <div className="aspect-square relative">
-              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'announced', playerId: player.id })} isOverClassName="rounded ring-2 ring-white">
-                <div className="w-full h-full bg-gray-800 border border-dashed border-gray-600 rounded flex items-center justify-center relative overflow-hidden">
+              <DropZone className="w-full h-full" onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'announced', playerId: player.id })} isOverClassName="rounded-vu-5 ring-2 ring-white">
+                <div className="w-full h-full bg-gray-800 border border-dashed border-gray-600 rounded-vu-5 flex items-center justify-center relative overflow-hidden">
                   {player.announcedCard ? (
                     <div
                       className="w-full h-full"
@@ -1328,10 +1308,11 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         preserveDeployAbilities={preserveDeployAbilities}
                         disableImageTransition={true}
                         playerColor={player.color}
+                        smallPowerDisplay={true}
                       />
                       </div>
                     </div>
-                  ) : <span className="text-[9px] font-bold text-gray-500 select-none uppercase">SHOW</span>}
+                  ) : <span className="font-bold text-gray-500 select-none uppercase opacity-80 tracking-tighter text-vu-15">SHOW</span>}
                 </div>
               </DropZone>
             </div>
@@ -1454,23 +1435,6 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   (isOwner || isTeammate || !!isRevealedToAll || !!isRevealedToMe || !!isRevealedByStatus ||
                   (!hideDummyCards && !!player.isDummy))
 
-                // Debug logging for dummy player cards (second location)
-                if (player.isDummy) {
-                  console.log('[PlayerPanel2] Dummy card visibility:', {
-                    cardId: card.id,
-                    isOwner,
-                    isTeammate,
-                    isRevealedToAll,
-                    isRevealedToMe,
-                    isRevealedByStatus,
-                    hideDummyCards,
-                    playerIsDummy: player.isDummy,
-                    isVisible,
-                    dummyOverride: (player.isDummy && hideDummyCards),
-                    visibleByDummyRule: (!hideDummyCards && !!player.isDummy)
-                  })
-                }
-
                 return (
                   <div
                     key={`${player.id}-hand-${index}-${card.id}`}
@@ -1527,7 +1491,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     {/* Highlight overlay - doesn't interfere with card visibility */}
                     {isTarget && (
                       <div
-                        className="absolute inset-0 rounded pointer-events-none animate-glow-pulse"
+                        className="absolute inset-0 rounded-vu-5 pointer-events-none animate-glow-pulse"
                         style={{
                           zIndex: 10,
                           background: `radial-gradient(circle at center, transparent 30%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 100%)`,
@@ -1537,7 +1501,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                     {/* Ripple effect when card is selected */}
                     {recentSelection && (
                       <div
-                        className="absolute inset-0 rounded pointer-events-none animate-deck-selection"
+                        className="absolute inset-0 rounded-vu-5 pointer-events-none animate-deck-selection"
                         style={{
                           zIndex: 15,
                           border: '3px solid',
@@ -1546,7 +1510,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         }}
                       />
                     )}
-                    <div className="w-full h-full rounded" style={cardHighlightStyle}>
+                    <div className="w-full h-full rounded-vu-5" style={cardHighlightStyle}>
                       <div data-card-image="true" className="w-full h-full">
                         {isPlaceholder ? (
                           // Show card back for placeholder cards (remote players in WebRTC)
@@ -1573,6 +1537,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                             smallStatusIcons={false}
                             preserveDeployAbilities={false}
                             disableImageTransition={true}
+                            smallPowerDisplay={true}
                           />
                         ) : (
                           <CardComponent
@@ -1588,6 +1553,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                             preserveDeployAbilities={preserveDeployAbilities}
                             disableImageTransition={true}
                             playerColor={player.color}
+                            smallPowerDisplay={true}
                           />
                         )}
                       </div>
@@ -1610,7 +1576,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
 
         {/* Reconnection Overlay */}
         {isDisconnected && player.reconnectionDeadline && (
-          <div className="absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center z-40 rounded-lg">
+          <div className="absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center z-40 rounded-vu-5">
             <div className="text-center">
               <div className="animate-spin rounded-full h-10 w-10 border-4 border-white border-t-transparent mx-auto mb-1"></div>
               <div className="text-white font-bold text-sm">{t('reconnecting')}</div>

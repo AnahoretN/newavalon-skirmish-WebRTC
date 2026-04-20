@@ -2,21 +2,377 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===============================================================================
+   VIRTUAL UNIT SYSTEM (VU) - ДИНАМИЧЕСКАЯ СИСТЕМА
+   Базовая единица: 1 VU = 0.1% от высоты окна (0.001 vh)
+   Все размеры автоматически масштабируются при изменении высоты окна!
+=============================================================================== */
+
+:root {
+  /* Базовая единица - 0.1% от высоты окна */
+  --vu-base: 0.1vh;
+
+  /* Отступы и промежутки */
+  --vu-gap-min: calc(4 * var(--vu-base));      /* ~4px */
+  --vu-gap-3: calc(3 * var(--vu-base));        /* ~3px */
+  --vu-gap-5: calc(5 * var(--vu-base));        /* ~5px */
+  --vu-gap-base: calc(7 * var(--vu-base));     /* ~8px */
+  --vu-gap-10: calc(10 * var(--vu-base));      /* ~10px */
+  --vu-gap-md: calc(11 * var(--vu-base));      /* ~12px */
+  --vu-gap-lg: calc(15 * var(--vu-base));      /* ~16px */
+  --vu-gap-xl: calc(22 * var(--vu-base));      /* ~24px */
+  --vu-gap-2xl: calc(30 * var(--vu-base));     /* ~32px */
+
+  /* Размеры карточек */
+  --vu-card-tiny: calc(59 * var(--vu-base));   /* ~64px */
+  --vu-card-small: calc(104 * var(--vu-base)); /* ~112px */
+  --vu-card-normal: calc(118 * var(--vu-base)); /* ~128px */
+  --vu-card-large: calc(148 * var(--vu-base)); /* ~160px */
+  --vu-card-xl: calc(178 * var(--vu-base));    /* ~192px */
+
+  /* Размеры панелей */
+  --vu-header-height: calc(52 * var(--vu-base));     /* ~56px */
+  --vu-panel-padding: calc(11 * var(--vu-base));     /* ~12px */
+  --vu-panel-gap: calc(7 * var(--vu-base));          /* ~8px */
+
+  /* Модальные окна */
+  --vu-modal-sm: calc(185 * var(--vu-base));   /* ~200px */
+  --vu-modal-md: calc(222 * var(--vu-base));   /* ~240px */
+  --vu-modal-lg: calc(370 * var(--vu-base));   /* ~400px */
+  --vu-modal-xl: calc(593 * var(--vu-base));   /* ~640px */
+
+  /* Размеры текста */
+  --vu-text-5: calc(5 * var(--vu-base));        /* ~5px */
+  --vu-text-xs: calc(6 * var(--vu-base));      /* ~6px */
+  --vu-text-sm: calc(7 * var(--vu-base));      /* ~7px */
+  --vu-text-base: calc(8 * var(--vu-base));    /* ~8px */
+  --vu-text-md: calc(9 * var(--vu-base));      /* ~9px */
+  --vu-text-lg: calc(10 * var(--vu-base));     /* ~10px */
+  --vu-text-xl: calc(12 * var(--vu-base));     /* ~12px */
+  --vu-text-13: calc(13 * var(--vu-base));     /* ~13px */
+  --vu-text-15: calc(15 * var(--vu-base));     /* ~15px */
+  --vu-text-2xl: calc(16 * var(--vu-base));    /* ~16px */
+  --vu-text-20: calc(20 * var(--vu-base));     /* ~20px */
+  --vu-text-3xl: calc(20 * var(--vu-base));    /* ~20px */
+  --vu-text-4xl: calc(24 * var(--vu-base));    /* ~24px */
+
+  /* Размеры кнопок */
+  --vu-btn-sm: calc(16 * var(--vu-base));      /* ~16px */
+  --vu-btn-md: calc(24 * var(--vu-base));      /* ~24px */
+  --vu-btn-lg: calc(32 * var(--vu-base));      /* ~32px */
+
+  /* Размеры иконок */
+  --vu-icon-xs: calc(8 * var(--vu-base));      /* ~8px */
+  --vu-icon-sm: calc(12 * var(--vu-base));     /* ~12px */
+  --vu-icon-md: calc(16 * var(--vu-base));     /* ~16px */
+  --vu-icon-lg: calc(24 * var(--vu-base));     /* ~24px */
+
+  /* Размеры игрового поля */
+  --vu-board-padding: calc(10 * var(--vu-base)); /* ~10.8px - отступы от краёв поля боя */
+  --vu-board-gap: calc(4 * var(--vu-base));    /* ~3.8px - расстояние между ячейками */
+  --vu-cell-min: calc(59 * var(--vu-base));    /* ~64px */
+  --vu-cell-base: calc(104 * var(--vu-base));  /* ~112px */
+  --vu-cell-large: calc(118 * var(--vu-base)); /* ~128px */
+
+  /* Размеры для оптимизации изображений */
+  --vu-image-tiny: calc(50 * var(--vu-base));     /* ~50px */
+  --vu-image-small: calc(64 * var(--vu-base));    /* ~64px */
+  --vu-image-preview: calc(150 * var(--vu-base)); /* ~150px */
+  --vu-image-normal: calc(300 * var(--vu-base));  /* ~300px */
+  --vu-image-large: calc(400 * var(--vu-base));   /* ~400px */
+
+  /* Размеры скроллбаров */
+  --vu-scrollbar-thin: calc(6 * var(--vu-base));    /* ~6px */
+  --vu-scrollbar-normal: calc(10 * var(--vu-base)); /* ~10px */
+
+  /* Размеры эффектов и анимаций */
+  --vu-effect-sm: calc(4 * var(--vu-base));  /* ~4px */
+  --vu-effect-md: calc(7 * var(--vu-base));  /* ~7px */
+  --vu-effect-lg: calc(11 * var(--vu-base)); /* ~11px */
+
+  /* Border размеры */
+  --vu-border-base: calc(3 * var(--vu-base));  /* ~3px */
+  --vu-border-md: calc(4 * var(--vu-base));    /* ~4px */
+  --vu-border-lg: calc(5 * var(--vu-base));    /* ~5px */
+
+  /* Позиции */
+  --vu-pos-header-offset: calc(56 * var(--vu-base)); /* ~56px */
+  --vu-pos-corner: calc(3 * var(--vu-base));          /* ~3px */
+
+  /* Header-specific sizes */
+  --vu-header: calc(56 * var(--vu-base));            /* ~56px - header height */
+  --vu-status: calc(12 * var(--vu-base));            /* ~12px - status indicator */
+  --vu-divider: calc(30 * var(--vu-base));           /* ~30px - vertical divider height */
+  --vu-round-offset: calc(280 * var(--vu-base));     /* ~280px - round tracker offset */
+  --vu-settings: calc(280 * var(--vu-base));         /* ~280px - settings menu width */
+  --vu-invite: calc(300 * var(--vu-base));           /* ~300px - invite menu width */
+  --vu-header-gap-sm: calc(3 * var(--vu-base));      /* ~3px - gap между кнопками фаз */
+  --vu-header-gap-md: calc(3 * var(--vu-base));      /* ~3px - gap между кнопками в хедере */
+  --vu-header-gap-divider: calc(8 * var(--vu-base)); /* ~8px - gap от разделителей (хорошее расстояние) */
+
+  /* Tooltip-specific sizes */
+  --vu-tooltip: calc(240 * var(--vu-base));          /* ~240px - tooltip max width for long content */
+
+  /* ContextMenu-specific sizes */
+  --vu-status-btn: calc(28 * var(--vu-base));        /* ~28px - status control buttons width */
+
+  /* TeamAssignmentModal-specific sizes */
+  --vu-team-modal: calc(840 * var(--vu-base));       /* ~840px - max modal width (was max-w-4xl) */
+  --vu-team-slot: calc(60 * var(--vu-base));         /* ~60px - min height for team slots */
+
+  /* JoinGameModal-specific sizes */
+  --vu-join-modal: calc(1150 * var(--vu-base));      /* ~1150px - max modal width (was max-w-6xl) */
+  --vu-join-list: calc(90 * var(--vu-base));         /* ~90px - min height for games list */
+  --vu-join-empty: calc(140 * var(--vu-base));       /* ~140px - min height for empty state */
+
+  /* Animation and effects sizes */
+  --vu-wave-radius: calc(8 * var(--vu-base));        /* ~8px - border radius for wave effects */
+  --vu-shadow-sm: calc(3 * var(--vu-base));          /* ~3px - small shadow size */
+  --vu-shadow-md: calc(4 * var(--vu-base));          /* ~4px - medium shadow size */
+  --vu-shadow-lg: calc(8 * var(--vu-base));          /* ~8px - large shadow size */
+  --vu-translate-sm: calc(25 * var(--vu-base));      /* ~25px - small translation */
+  --vu-translate-md: calc(50 * var(--vu-base));      /* ~50px - medium translation */
+}
+
+/* Tailwind utilities для VU */
+@layer utilities {
+  /* Width */
+  .w-vu-card-tiny { width: var(--vu-card-tiny); }
+  .w-vu-card-small { width: var(--vu-card-small); }
+  .w-vu-card-normal { width: var(--vu-card-normal); }
+  .w-vu-card-large { width: var(--vu-card-large); }
+  .w-vu-card-xl { width: var(--vu-card-xl); }
+  .w-vu-modal-sm { width: var(--vu-modal-sm); }
+  .w-vu-modal-md { width: var(--vu-modal-md); }
+  .w-vu-modal-lg { width: var(--vu-modal-lg); }
+  .w-vu-modal-xl { width: var(--vu-modal-xl); }
+
+  /* Height */
+  .h-vu-card-tiny { height: var(--vu-card-tiny); }
+  .h-vu-card-small { height: var(--vu-card-small); }
+  .h-vu-card-normal { height: var(--vu-card-normal); }
+  .h-vu-card-large { height: var(--vu-card-large); }
+  .h-vu-card-xl { height: var(--vu-card-xl); }
+  .h-vu-header { height: var(--vu-header-height); }
+
+  /* Padding */
+  .p-vu-min { padding: var(--vu-gap-min); }
+  .p-vu-base { padding: var(--vu-gap-base); }
+  .p-vu-md { padding: var(--vu-gap-md); }
+  .p-vu-lg { padding: var(--vu-gap-lg); }
+  .p-vu-xl { padding: var(--vu-gap-xl); }
+  .p-vu-panel { padding: var(--vu-panel-padding); }
+  .p-vu-board { padding: var(--vu-board-padding); }
+
+  /* Padding X */
+  .px-vu-min { padding-left: var(--vu-gap-min); padding-right: var(--vu-gap-min); }
+  .px-vu-base { padding-left: var(--vu-gap-base); padding-right: var(--vu-gap-base); }
+  .px-vu-md { padding-left: var(--vu-gap-md); padding-right: var(--vu-gap-md); }
+  .px-vu-lg { padding-left: var(--vu-gap-lg); padding-right: var(--vu-gap-lg); }
+
+  /* Padding Y */
+  .py-vu-min { padding-top: var(--vu-gap-min); padding-bottom: var(--vu-gap-min); }
+  .py-vu-base { padding-top: var(--vu-gap-base); padding-bottom: var(--vu-gap-base); }
+  .py-vu-md { padding-top: var(--vu-gap-md); padding-bottom: var(--vu-gap-md); }
+  .py-vu-lg { padding-top: var(--vu-gap-lg); padding-bottom: var(--vu-gap-lg); }
+
+  /* Margin */
+  .m-vu-min { margin: var(--vu-gap-min); }
+  .m-vu-base { margin: var(--vu-gap-base); }
+  .m-vu-md { margin: var(--vu-gap-md); }
+  .m-vu-lg { margin: var(--vu-gap-lg); }
+  .m-vu-xl { margin: var(--vu-gap-xl); }
+
+  /* Margin X */
+  .mx-vu-min { margin-left: var(--vu-gap-min); margin-right: var(--vu-gap-min); }
+  .mx-vu-base { margin-left: var(--vu-gap-base); margin-right: var(--vu-gap-base); }
+  .mx-vu-md { margin-left: var(--vu-gap-md); margin-right: var(--vu-gap-md); }
+  .mx-vu-lg { margin-left: var(--vu-gap-lg); margin-right: var(--vu-gap-lg); }
+
+  /* Margin Y */
+  .my-vu-min { margin-top: var(--vu-gap-min); margin-bottom: var(--vu-gap-min); }
+  .my-vu-base { margin-top: var(--vu-gap-base); margin-bottom: var(--vu-gap-base); }
+  .my-vu-md { margin-top: var(--vu-gap-md); margin-bottom: var(--vu-gap-md); }
+  .my-vu-lg { margin-top: var(--vu-gap-lg); margin-bottom: var(--vu-gap-lg); }
+
+  /* Gap */
+  .gap-vu-min { gap: var(--vu-gap-min); }
+  .gap-vu-base { gap: var(--vu-gap-base); }
+  .gap-vu-md { gap: var(--vu-gap-md); }
+  .gap-vu-lg { gap: var(--vu-gap-lg); }
+  .gap-vu-xl { gap: var(--vu-gap-xl); }
+  .gap-vu-panel { gap: var(--vu-panel-gap); }
+  .gap-vu-board { gap: var(--vu-board-gap); }
+  .gap-vu-header-sm { gap: var(--vu-header-gap-sm); }
+  .gap-vu-header-md { gap: var(--vu-header-gap-md); }
+
+  /* Header divider spacing */
+  .header-divider-spacer {
+    margin-left: var(--vu-header-gap-divider);
+    margin-right: var(--vu-header-gap-divider);
+  }
+
+  /* Space X (horizontal gaps between children) */
+  .space-x-vu-sm > * + * { margin-left: var(--vu-gap-base); }
+  .space-x-vu-md > * + * { margin-left: var(--vu-gap-md); }
+
+  /* Text sizes */
+  .text-vu-5 { font-size: var(--vu-text-5); }
+  .text-vu-xs { font-size: var(--vu-text-xs); }
+  .text-vu-sm { font-size: var(--vu-text-sm); }
+  .text-vu-base { font-size: var(--vu-text-base); }
+  .text-vu-md { font-size: var(--vu-text-md); }
+  .text-vu-lg { font-size: var(--vu-text-lg); }
+  .text-vu-xl { font-size: var(--vu-text-xl); }
+  .text-vu-13 { font-size: var(--vu-text-13); }
+  .text-vu-15 { font-size: var(--vu-text-15); }
+  .text-vu-2xl { font-size: var(--vu-text-2xl); }
+  .text-vu-20 { font-size: var(--vu-text-20); }
+  .text-vu-3xl { font-size: var(--vu-text-3xl); }
+  .text-vu-4xl { font-size: var(--vu-text-4xl); }
+
+  /* Icon sizes */
+  .w-vu-icon-xs { width: var(--vu-icon-xs); }
+  .w-vu-icon-sm { width: var(--vu-icon-sm); }
+  .w-vu-icon-md { width: var(--vu-icon-md); }
+  .w-vu-icon-lg { width: var(--vu-icon-lg); }
+
+  .h-vu-icon-xs { height: var(--vu-icon-xs); }
+  .h-vu-icon-sm { height: var(--vu-icon-sm); }
+  .h-vu-icon-md { height: var(--vu-icon-md); }
+  .h-vu-icon-lg { height: var(--vu-icon-lg); }
+
+  /* Button sizes */
+  .w-vu-btn-sm { width: var(--vu-btn-sm); }
+  .w-vu-btn-md { width: var(--vu-btn-md); }
+  .w-vu-btn-lg { width: var(--vu-btn-lg); }
+
+  .h-vu-btn-sm { height: var(--vu-btn-sm); }
+  .h-vu-btn-md { height: var(--vu-btn-md); }
+  .h-vu-btn-lg { height: var(--vu-btn-lg); }
+
+  /* Header-specific sizes */
+  .h-vu-header { height: var(--vu-header); }
+  .w-vu-status { width: var(--vu-status); }
+  .h-vu-status { height: var(--vu-status); }
+  .h-vu-divider { height: var(--vu-divider); }
+  .w-vu-border { width: var(--vu-border-base); }
+
+  /* Positions */
+  .top-vu-header-offset { top: var(--vu-pos-header-offset); }
+  .top-vu-header { top: var(--vu-header-height); }
+  .top-vu-min { top: var(--vu-gap-min); }
+  .top-vu-board { top: var(--vu-board-padding); }
+  .bottom-vu-corner { bottom: var(--vu-pos-corner); }
+  .bottom-vu-min { bottom: var(--vu-gap-min); }
+  .bottom-vu-board { bottom: var(--vu-board-padding); }
+  .left-vu-corner { left: var(--vu-pos-corner); }
+  .left-vu-min { left: var(--vu-gap-min); }
+  .left-vu-board { left: var(--vu-board-padding); }
+  .right-vu-corner { right: var(--vu-pos-corner); }
+  .right-vu-min { right: var(--vu-gap-min); }
+  .right-vu-board { right: var(--vu-board-padding); }
+
+  /* Padding Left/Right */
+  .pl-vu-min { padding-left: var(--vu-gap-min); }
+  .pl-vu-md { padding-left: var(--vu-gap-md); }
+  .pr-vu-min { padding-right: var(--vu-gap-min); }
+  .pr-vu-md { padding-right: var(--vu-gap-md); }
+  .px-vu-lg { padding-left: var(--vu-gap-lg); padding-right: var(--vu-gap-lg); }
+
+  /* Margin Left */
+  .ml-vu-min { margin-left: var(--vu-gap-min); }
+
+  /* Margin Right */
+  .mr-vu-min { margin-right: var(--vu-gap-min); }
+
+  /* Space Y (for gaps between children) */
+  .space-y-vu-md > * + * { margin-top: var(--vu-gap-md); }
+
+  /* Margin Top/Bottom */
+  .mt-vu-md { margin-top: var(--vu-gap-md); }
+  .mt-vu-lg { margin-top: var(--vu-gap-lg); }
+  .mb-vu-min { margin-bottom: var(--vu-gap-min); }
+  .mb-vu-3 { margin-bottom: var(--vu-gap-3); }
+  .mb-vu-5 { margin-bottom: var(--vu-gap-5); }
+  .mb-vu-10 { margin-bottom: var(--vu-gap-10); }
+  .mb-vu-md { margin-bottom: var(--vu-gap-md); }
+
+  /* Padding Top */
+  .pt-vu-lg { padding-top: var(--vu-gap-lg); }
+
+  /* Max Width для модалок */
+  .max-w-vu-modal-sm { max-width: var(--vu-modal-sm); }
+  .max-w-vu-modal-md { max-width: var(--vu-modal-md); }
+  .max-w-vu-modal-lg { max-width: var(--vu-modal-lg); }
+  .max-w-vu-modal-xl { max-width: var(--vu-modal-xl); }
+
+  /* Min Width для Header menus */
+  .min-w-vu-settings { min-width: var(--vu-settings); }
+  .min-w-vu-invite { min-width: var(--vu-invite); }
+
+  /* Width для Tooltip */
+  .w-vu-tooltip { width: var(--vu-tooltip); }
+
+  /* Width/Height для ContextMenu status buttons */
+  .w-vu-status-btn { width: var(--vu-status-btn); }
+  .h-vu-status-btn { height: calc(var(--vu-status-btn) * 0.85); } /* Slightly less than width for better proportions */
+
+  /* Max Width для TeamAssignmentModal */
+  .max-w-vu-team-modal { max-width: var(--vu-team-modal); }
+
+  /* Min Height для TeamAssignmentModal slots */
+  .min-h-vu-team-slot { min-height: var(--vu-team-slot); }
+
+  /* Max Width/Height для JoinGameModal */
+  .max-w-vu-join-modal { max-width: var(--vu-join-modal); }
+  .max-h-vu-join-modal { max-height: calc(100vh - var(--vu-gap-base)); }
+
+  /* Min Height для JoinGameModal */
+  .min-h-vu-join-list { min-height: var(--vu-join-list); }
+  .min-h-vu-join-empty { min-height: var(--vu-join-empty); }
+
+  /* Max Height */
+  .max-h-vu-modal { max-height: calc(100vh - var(--vu-gap-lg)); }
+
+  /* Ring sizing */
+  .ring-vu-md { --tw-ring-width: var(--vu-border-md); }
+
+  /* Shadow sizing */
+  .shadow-vu-glow { box-shadow: 0 0 var(--vu-effect-lg) #22d3ee; }
+
+  /* Border */
+  .border-vu-base { border-width: var(--vu-border-base); }
+  .border-vu-md { border-width: var(--vu-border-md); }
+  .border-vu-lg { border-width: var(--vu-border-lg); }
+
+  /* Padding Bottom */
+  .pb-vu-md { padding-bottom: var(--vu-gap-md); }
+
+  /* Width для карточек в модалках */
+  .w-vu-card-xl { width: calc(200 * var(--vu-base)); }  /* ~200px */
+  .h-vu-card-xl { height: calc(200 * var(--vu-base)); }
+}
+
+/* ===============================================================================
+   GLOBAL STYLES
+=============================================================================== */
+
 /* Global Scrollbar Styling */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: var(--vu-scrollbar-normal);
+  height: var(--vu-scrollbar-normal);
 }
 
 ::-webkit-scrollbar-track {
   background: #1A202C; /* bg-panel-bg */
-  border-radius: 4px;
+  border-radius: var(--vu-border-base);
 }
 
 ::-webkit-scrollbar-thumb {
   background: #4A5568; /* bg-gray-600 */
-  border-radius: 5px;
-  border: 2px solid #1A202C; /* border matches track/bg to create padding effect */
+  border-radius: var(--vu-border-md);
+  border: var(--vu-border-base) solid #1A202C; /* border matches track/bg to create padding effect */
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -32,11 +388,11 @@
 @keyframes pulse-border-thick {
   0%, 100% {
     border-color: rgba(99, 102, 241, 1); /* indigo-500 */
-    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.5);
+    box-shadow: 0 0 0 var(--vu-shadow-md) rgba(99, 102, 241, 0.5);
   }
   50% {
     border-color: rgba(255, 255, 255, 0.8);
-    box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.3);
+    box-shadow: 0 0 0 var(--vu-shadow-lg) rgba(255, 255, 255, 0.3);
   }
 }
 
@@ -51,7 +407,7 @@
   }
   50% {
     border-color: #ffffff;
-    box-shadow: 0 0 0 3px #ffffff;
+    box-shadow: 0 0 0 var(--vu-shadow-sm) #ffffff;
   }
 }
 
@@ -61,8 +417,8 @@
 
 @keyframes float-up {
   0% { transform: translateY(0); opacity: 1; }
-  50% { transform: translateY(-25px); opacity: 1; }
-  100% { transform: translateY(-50px); opacity: 0; }
+  50% { transform: translateY(calc(var(--vu-translate-sm) * -1)); opacity: 1; }
+  100% { transform: translateY(calc(var(--vu-translate-md) * -1)); opacity: 0; }
 }
 
 .animate-float-up {
@@ -129,17 +485,17 @@
 
 /* Custom scrollbar for modal content */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
+  width: var(--vu-scrollbar-thin);
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
   background: rgba(26, 32, 44, 0.5);
-  border-radius: 3px;
+  border-radius: var(--vu-border-base);
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(74, 85, 104, 0.8);
-  border-radius: 3px;
+  border-radius: var(--vu-border-base);
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {

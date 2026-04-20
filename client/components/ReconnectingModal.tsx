@@ -61,7 +61,7 @@ export const ReconnectingModal: React.FC<ReconnectingModalProps> = ({ isOpen, me
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[300] backdrop-blur-sm">
-      <div className="bg-gray-900 rounded-lg border-2 border-blue-500 shadow-2xl p-8 w-full max-w-md text-center">
+      <div className="bg-gray-900 rounded-vu-2 border-2 border-blue-500 shadow-2xl p-8 w-full max-w-md text-center">
 
         {/* Animated spinner */}
         <div className="flex justify-center mb-6">
@@ -91,7 +91,7 @@ export const ReconnectingModal: React.FC<ReconnectingModalProps> = ({ isOpen, me
         {/* Exit button - allows user to cancel reconnection and start fresh */}
         <button
           onClick={handleExit}
-          className="mt-4 px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition font-medium"
+          className="mt-4 px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-vu-2 transition font-medium"
         >
           {t('cancel') || 'Cancel'}
         </button>

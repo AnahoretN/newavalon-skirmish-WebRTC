@@ -11,6 +11,12 @@ import { generateInviteLink } from '@/utils/inviteLinks'
 import { logger } from '@/utils/logger'
 import { getWebRTCEnabled } from '@/hooks/useWebRTCEnabled'
 
+// Вычисляем VU размер для шрифтов динамически
+const getVuSize = (vu: number) => {
+  const vuPixels = window.innerHeight / 1000
+  return vu * vuPixels
+}
+
 interface HeaderProps {
   gameId: string | null;
   isGameStarted: boolean;
@@ -64,34 +70,34 @@ const StatusIndicator = memo<{
   const isWebRTCMode = getWebRTCEnabled()
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="relative flex h-3 w-3" title={isWebRTCMode ? 'WebRTC P2P' : connectionStatus}>
+    <div className="flex items-center" style={{ gap: `${getVuSize(5)}px` }}>
+      <span className="relative flex w-vu-status h-vu-status" title={isWebRTCMode ? 'WebRTC P2P' : connectionStatus}>
         {/* WebRTC P2P mode - blue indicator */}
         {isWebRTCMode && (
           <>
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+            <span className="relative inline-flex rounded-full w-vu-status h-vu-status bg-blue-500"></span>
           </>
         )}
         {/* Standard server mode - green/yellow/red based on status */}
         {!isWebRTCMode && connectionStatus === 'Connected' && !isReconnecting && (
           <>
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+            <span className="relative inline-flex rounded-full w-vu-status h-vu-status bg-green-500"></span>
           </>
         )}
         {!isWebRTCMode && (connectionStatus === 'Connecting' || isReconnecting) && (
           <>
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
+            <span className="relative inline-flex rounded-full w-vu-status h-vu-status bg-yellow-500"></span>
           </>
         )}
         {!isWebRTCMode && connectionStatus === 'Disconnected' && !isReconnecting && (
-          <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+          <span className="relative inline-flex rounded-full w-vu-status h-vu-status bg-red-500"></span>
         )}
       </span>
       {isReconnecting && reconnectProgress && (
-        <span className="text-xs text-yellow-400 animate-pulse">
+        <span className="text-yellow-400 animate-pulse" style={{ fontSize: `${getVuSize(13)}px` }}>
           Reconnecting ({Math.round(reconnectProgress.timeRemaining / 1000)}s)
         </span>
       )}
@@ -112,24 +118,34 @@ const RoundTracker = memo<{
   }>(({ currentRound, turnNumber, onMouseEnter, onMouseLeave, showTooltip, isGameStarted, t }) => {
     const threshold = useMemo(() => (currentRound * 10) + 10, [currentRound])
 
+    // Force re-render on window resize to update VU-based text sizes
+    const [, forceUpdate] = useState({})
+    useEffect(() => {
+      const handleResize = () => {
+        forceUpdate({})
+      }
+      window.addEventListener('resize', handleResize)
+      return () => window.removeEventListener('resize', handleResize)
+    }, [])
+
     return (
       <div className="relative">
         <div
-          className={`flex items-center bg-gray-800 rounded-lg px-3 py-1.5 border border-gray-700 shadow-md ${isGameStarted ? 'cursor-help' : 'opacity-50'}`}
+          className={`flex items-center bg-gray-800 rounded-vu-2 px-vu-md py-vu-md ${isGameStarted ? 'cursor-help' : 'opacity-50'}`}
           onMouseEnter={onMouseEnter}
           onMouseLeave={onMouseLeave}
         >
-          <span className="text-yellow-500 font-bold text-sm tracking-wider">{t('round').toUpperCase()} {currentRound}</span>
-          <span className="text-gray-500 mx-2">|</span>
-          <span className="text-gray-300 text-xs font-mono">{t('turn').toUpperCase()} {turnNumber}</span>
+          <span className="text-yellow-500 font-bold" style={{ fontSize: `${getVuSize(13)}px` }}>{t('round').toUpperCase()} {currentRound}</span>
+          <span className="text-gray-500 mx-vu-3" style={{ fontSize: `${getVuSize(13)}px` }}>|</span>
+          <span className="text-gray-300 font-bold" style={{ fontSize: `${getVuSize(13)}px` }}> {t('turn').toUpperCase()} {turnNumber}</span>
         </div>
 
         {showTooltip && (
-          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-[100] bg-gray-900 text-white p-3 rounded-lg shadow-xl border border-gray-700 text-sm whitespace-nowrap min-w-max">
+          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-vu-min z-[100] bg-gray-900 text-white p-vu-md rounded-vu-2 shadow-xl whitespace-nowrap min-w-max">
             <div className="text-center">
-              <p className="font-bold text-yellow-400 mb-1 whitespace-nowrap">{t('round')} {currentRound} {t('roundVictoryCondition')}</p>
-              <p className="whitespace-nowrap">{t('reach')} <span className="font-bold text-white">{threshold} {t('scorePoints')}</span> {t('toWinRound')}</p>
-              <p className="text-xs text-gray-400 mt-1">{t('checkedAtFirstPlayer')}</p>
+              <p className="font-bold text-yellow-400 mb-vu-min whitespace-nowrap" style={{ fontSize: `${getVuSize(13)}px` }}>{t('round')} {currentRound} {t('roundVictoryCondition')}</p>
+              <p className="whitespace-nowrap" style={{ fontSize: `${getVuSize(13)}px` }}>{t('reach')} <span className="font-bold text-white">{threshold} {t('scorePoints')}</span> {t('toWinRound')}</p>
+              <p className="text-gray-400 mt-vu-min" style={{ fontSize: `${getVuSize(13)}px` }}>{t('checkedAtFirstPlayer')}</p>
             </div>
           </div>
         )}
@@ -205,56 +221,57 @@ const GameSettingsMenu = memo<{
   return (
     <div
       ref={menuRef}
-      className="fixed z-[100] bg-gray-800 rounded-lg shadow-xl border border-gray-700 p-4 min-w-[280px]"
-      style={{ top: rect.bottom + 8, left: rect.left }}
+      className="fixed z-[100] bg-gray-800 rounded-vu-2 shadow-xl border border-gray-700 p-vu-md min-w-vu-settings"
+      style={{ top: `calc(${rect.bottom}px + var(--vu-gap-min))`, left: `${rect.left}px` }}
     >
-      <h3 className="text-white font-bold mb-4 text-sm border-b border-gray-700 pb-2">{t('gameSettings')}</h3>
-
       {/* Auto-Abilities */}
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-gray-300 text-sm">{t('autoAbilities')}</span>
+      <div className="flex items-center justify-between" style={{ marginBottom: `${getVuSize(8)}px` }}>
+        <span className="text-gray-300" style={{ fontSize: `${getVuSize(13)}px` }}>{t('autoAbilities')}</span>
         <button
           onClick={() => onToggleAutoAbilities(!isAutoAbilitiesEnabled)}
           disabled={!isHost}
-          className={`px-3 py-1 rounded text-xs font-bold transition-colors ${
+          className={`px-vu-md rounded font-bold transition-colors ${
             isAutoAbilitiesEnabled
               ? 'bg-green-600 text-white'
               : 'bg-gray-600 text-gray-400'
           } ${!isHost ? 'opacity-50 cursor-not-allowed' : ''}`}
+          style={{ fontSize: `${getVuSize(13)}px`, height: `${getVuSize(29)}px` }}
         >
           {isAutoAbilitiesEnabled ? t('on') : t('off')}
         </button>
       </div>
 
       {/* Auto-Draw */}
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-gray-300 text-sm">{t('autoDraw')}</span>
+      <div className="flex items-center justify-between" style={{ marginBottom: `${getVuSize(8)}px` }}>
+        <span className="text-gray-300" style={{ fontSize: `${getVuSize(13)}px` }}>{t('autoDraw')}</span>
         <button
           onClick={() => onToggleAutoDraw(!isAutoDrawEnabled)}
-          className={`px-3 py-1 rounded text-xs font-bold transition-colors ${
+          className={`px-vu-md rounded font-bold transition-colors ${
             isAutoDrawEnabled
               ? 'bg-green-600 text-white'
               : 'bg-gray-600 text-gray-400'
           }`}
+          style={{ fontSize: `${getVuSize(13)}px`, height: `${getVuSize(29)}px` }}
         >
           {isAutoDrawEnabled ? t('on') : t('off')}
         </button>
       </div>
 
       {/* Dummy Players */}
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-gray-300 text-sm">{t('dummyPlayers')}</span>
-        <div className="flex gap-1 items-center">
+      <div className="flex items-center justify-between" style={{ marginBottom: `${getVuSize(8)}px` }}>
+        <span className="text-gray-300" style={{ fontSize: `${getVuSize(13)}px` }}>{t('dummyPlayers')}</span>
+        <div className="flex items-center" style={{ gap: `${getVuSize(3)}px` }}>
           {dummyOptions.map(option => (
             <button
               key={option}
               onClick={() => onDummyPlayerCountChange(option)}
               disabled={!isHost || isGameStarted || (realPlayerCount + option > MAX_PLAYERS)}
-              className={`w-8 h-8 rounded text-xs font-bold transition-colors ${
+              className={`px-vu-md rounded font-bold transition-colors ${
                 dummyPlayerCount === option
                   ? 'bg-indigo-600 text-white'
                   : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
               } ${!isHost || isGameStarted || (realPlayerCount + option > MAX_PLAYERS) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              style={{ fontSize: `${getVuSize(13)}px`, height: `${getVuSize(29)}px` }}
             >
               {option}
             </button>
@@ -262,12 +279,13 @@ const GameSettingsMenu = memo<{
           {/* Hide Dummy Cards toggle button */}
           <button
             onClick={() => onToggleHideDummyCards(!hideDummyCards)}
-            className={`w-8 h-8 rounded text-xs font-bold transition-colors ${
+            className={`px-vu-md rounded font-bold transition-colors ${
               hideDummyCards
                 ? 'bg-red-600 text-white'
                 : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
             }`}
             title={t('hideDummyCardsTooltip')}
+            style={{ fontSize: `${getVuSize(13)}px`, height: `${getVuSize(29)}px` }}
           >
             🙈
           </button>
@@ -275,19 +293,20 @@ const GameSettingsMenu = memo<{
       </div>
 
       {/* Grid Size */}
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-gray-300 text-sm">{t('gridSize')}</span>
-        <div className="flex gap-1">
+      <div className="flex items-center justify-between" style={{ marginBottom: `${getVuSize(8)}px` }}>
+        <span className="text-gray-300" style={{ fontSize: `${getVuSize(13)}px` }}>{t('gridSize')}</span>
+        <div className="flex" style={{ gap: `${getVuSize(3)}px` }}>
           {[4, 5, 6, 7].map(size => (
             <button
               key={size}
               onClick={() => onGridSizeChange(size as GridSize)}
               disabled={!isHost || isGameStarted}
-              className={`w-10 h-8 rounded text-xs font-bold transition-colors ${
+              className={`rounded font-bold transition-colors ${
                 activeGridSize === size
                   ? 'bg-indigo-600 text-white'
                   : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
               } ${!isHost || isGameStarted ? 'opacity-50 cursor-not-allowed' : ''}`}
+              style={{ fontSize: `${getVuSize(13)}px`, height: `${getVuSize(29)}px`, paddingLeft: `${getVuSize(9)}px`, paddingRight: `${getVuSize(9)}px` }}
             >
               {size}x{size}
             </button>
@@ -297,12 +316,13 @@ const GameSettingsMenu = memo<{
 
       {/* Game Mode */}
       <div className="flex items-center justify-between">
-        <span className="text-gray-300 text-sm">{t('gameMode')}</span>
+        <span className="text-gray-300" style={{ fontSize: `${getVuSize(13)}px` }}>{t('gameMode')}</span>
         <select
           value={gameMode}
           onChange={(e) => onGameModeChange(e.target.value as GameMode)}
           disabled={!isHost || isGameStarted}
-          className="bg-gray-700 border border-gray-600 text-white text-xs rounded px-2 py-1 disabled:opacity-50"
+          className="bg-gray-700 border border-gray-600 text-white rounded px-vu-min disabled:opacity-50"
+          style={{ fontSize: `${getVuSize(13)}px`, height: `${getVuSize(29)}px` }}
         >
           <option value={GameMode.FreeForAll}>{t('ffa')}</option>
           <option value={GameMode.TwoVTwo}>{t('2v2')}</option>
@@ -408,31 +428,30 @@ const InvitePlayerMenu = memo<{
   return (
     <div
       ref={menuRef}
-      className="fixed z-[100] bg-gray-800 rounded-lg shadow-xl border border-gray-700 p-4 min-w-[300px]"
-      style={{ top: rect.bottom + 8, left: Math.max(8, rect.right - 300) }}
+      className="fixed z-[100] bg-gray-800 rounded-vu-2 shadow-xl border border-gray-700 p-vu-md min-w-vu-invite"
+      style={{ top: `calc(${rect.bottom}px + var(--vu-gap-min))`, left: `max(var(--vu-gap-min), ${rect.right}px - var(--vu-invite))` }}
     >
-      <h3 className="text-white font-bold mb-4 text-sm border-b border-gray-700 pb-2">{t('invitePlayer')}</h3>
-
       {/* Game ID */}
-      <div className="mb-4">
-        <div className="bg-gray-900 rounded px-3 py-2 flex items-center justify-between gap-2">
-          <span className="font-mono text-indigo-300 text-sm truncate flex-1">{gameId || '-'}</span>
+      <div style={{ marginBottom: `${getVuSize(8)}px` }}>
+        <div className="bg-gray-900 rounded px-vu-md py-vu-md flex items-center justify-between" style={{ gap: `${getVuSize(2)}px` }}>
+          <span className="font-mono text-indigo-300 truncate flex-1" style={{ fontSize: `${getVuSize(13)}px` }}>{gameId || '-'}</span>
           <button
             onClick={handleCopyGameId}
             disabled={!gameId}
-            className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
+            className={`px-vu-md flex items-center justify-center rounded transition-colors ${
               gameIdCopySuccess
                 ? 'bg-green-600 text-white'
                 : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
             } ${!gameId ? 'opacity-50 cursor-not-allowed' : ''}`}
             title={t('copy')}
+            style={{ height: `${getVuSize(29)}px` }}
           >
             {gameIdCopySuccess ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <svg style={{ width: `${getVuSize(14)}px`, height: `${getVuSize(14)}px` }} viewBox="0 0 24 24" fill="currentColor">
                 <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
               </svg>
             ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg style={{ width: `${getVuSize(14)}px`, height: `${getVuSize(14)}px` }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
               </svg>
@@ -442,18 +461,19 @@ const InvitePlayerMenu = memo<{
       </div>
 
       {/* Privacy Toggle */}
-      <div className="flex items-center justify-between mb-4">
-        <span className="text-gray-300 text-sm">{t('hiddenGame')}</span>
-        <div className={`flex rounded overflow-hidden ${!isHost || isGameStarted ? 'opacity-50' : ''}`}>
+      <div className="flex items-center justify-between" style={{ marginBottom: `${getVuSize(8)}px` }}>
+        <span className="text-gray-300" style={{ fontSize: `${getVuSize(13)}px` }}>{t('hiddenGame')}</span>
+        <div className={`flex rounded overflow-hidden ${!isHost || isGameStarted ? 'opacity-50' : ''}`} style={{ gap: `${getVuSize(3)}px` }}>
           <button
             onClick={() => !isPrivate && onPrivacyChange(true)}
             disabled={!isHost || isGameStarted}
-            className={`w-10 h-8 flex items-center justify-center transition-colors ${
+            className={`px-vu-md flex items-center justify-center transition-colors rounded font-bold ${
               isPrivate ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
             } ${!isHost || isGameStarted ? 'cursor-not-allowed' : ''}`}
             title={t('private')}
+            style={{ fontSize: `${getVuSize(13)}px`, height: `${getVuSize(29)}px`, width: `${getVuSize(50)}px` }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg style={{ width: `${getVuSize(14)}px`, height: `${getVuSize(14)}px` }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M1 1l22 22"/>
               <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
             </svg>
@@ -461,12 +481,13 @@ const InvitePlayerMenu = memo<{
           <button
             onClick={() => isPrivate && onPrivacyChange(false)}
             disabled={!isHost || isGameStarted}
-            className={`w-10 h-8 flex items-center justify-center transition-colors ${
+            className={`px-vu-md flex items-center justify-center transition-colors rounded font-bold ${
               !isPrivate ? 'bg-green-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
             } ${!isHost || isGameStarted ? 'cursor-not-allowed' : ''}`}
             title={t('public')}
+            style={{ fontSize: `${getVuSize(13)}px`, height: `${getVuSize(29)}px`, width: `${getVuSize(50)}px` }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg style={{ width: `${getVuSize(14)}px`, height: `${getVuSize(14)}px` }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
               <circle cx="12" cy="12" r="3"/>
             </svg>
@@ -478,11 +499,12 @@ const InvitePlayerMenu = memo<{
       <button
         onClick={handleCopyLink}
         disabled={!gameId}
-        className={`w-full py-2 rounded text-sm font-bold transition-colors ${
+        className={`w-full px-vu-md rounded font-bold transition-colors ${
           linkCopySuccess
             ? 'bg-green-600 text-white'
             : 'bg-indigo-600 hover:bg-indigo-700 text-white'
         } ${!gameId ? 'opacity-50 cursor-not-allowed' : ''}`}
+        style={{ fontSize: `${getVuSize(13)}px`, height: `${getVuSize(44)}px` }}
       >
         {linkCopySuccess ? t('copied') : t('copyInviteLink')}
       </button>
@@ -545,6 +567,23 @@ const Header = memo<HeaderProps>(({
   const [inviteMenuOpen, setInviteMenuOpen] = useState(false)
   const inviteButtonRef = useRef<HTMLButtonElement>(null)
 
+  // Force re-render on window resize to update VU-based text sizes
+  const [, forceUpdate] = useState({})
+  useEffect(() => {
+    const handleResize = () => {
+      forceUpdate({})
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Универсальные стили для разных размеров текста
+  const textStyles = {
+    vu_deck: { fontSize: `${getVuSize(13)}px` },   // 13 VU
+    vu_8: { fontSize: `${getVuSize(8)}px` },     // 8 VU
+    vu_base: { fontSize: `${getVuSize(7)}px` },  // 7 VU
+  }
+
   const handleRoundMouseEnter = useCallback(() => {
     setShowRoundTooltip(true)
   }, [])
@@ -555,19 +594,20 @@ const Header = memo<HeaderProps>(({
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 h-14 bg-panel-bg bg-opacity-80 backdrop-blur-sm z-50 flex items-center justify-between px-4 shadow-lg">
+      <header className="fixed top-0 left-0 right-0 h-vu-header bg-panel-bg bg-opacity-80 backdrop-blur-sm z-50 flex items-center justify-between px-vu-md shadow-lg" style={{ paddingLeft: `${getVuSize(10)}px`, paddingRight: `${getVuSize(10)}px` }}>
         {/* Left side: Connection indicator + divider + Game Settings + Invite Player + divider */}
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-vu-header-md">
           <StatusIndicator connectionStatus={connectionStatus} isReconnecting={isReconnecting} reconnectProgress={reconnectProgress} />
 
           {/* Vertical divider after connection indicator */}
-          <div className="w-px h-8 bg-gray-600" />
+          <div className="w-vu-border h-vu-divider bg-gray-600 header-divider-spacer" />
 
           {/* Game Settings Button */}
           <button
             ref={settingsButtonRef}
             onClick={() => setSettingsMenuOpen(!settingsMenuOpen)}
-            className="bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-3 rounded text-sm transition-colors"
+            className="bg-gray-700 hover:bg-gray-600 text-white font-medium py-vu-md px-vu-md rounded-vu-2 transition-colors"
+            style={{ fontSize: `${getVuSize(13)}px` }}
           >
             {t('gameSettings')}
           </button>
@@ -577,18 +617,20 @@ const Header = memo<HeaderProps>(({
             ref={inviteButtonRef}
             onClick={() => setInviteMenuOpen(!inviteMenuOpen)}
             disabled={isGameStarted}
-            className={`font-medium py-2 px-3 rounded text-sm transition-colors ${
+            className={`font-medium py-vu-md px-vu-md rounded-vu-2 transition-colors ${
               isGameStarted
                 ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
                 : 'bg-indigo-600 hover:bg-indigo-700 text-white'
             }`}
+            style={{ fontSize: `${getVuSize(13)}px` }}
           >
             {t('invitePlayer')}
           </button>
         </div>
 
         {/* Center-left: Round tracker (always visible, inactive until game starts) */}
-        <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center z-10" style={{ marginLeft: '-280px' }}>
+        {/* Center: Round tracker + divider + Phase display + Tokens + Counters */}
+        <div className="flex items-center gap-vu-header-md">
           <RoundTracker
             currentRound={currentRound}
             turnNumber={turnNumber}
@@ -598,15 +640,16 @@ const Header = memo<HeaderProps>(({
             isGameStarted={isGameStarted}
             t={t}
           />
-        </div>
 
-        {/* Center: Phase display with all 4 phases and navigation arrows (always visible, strictly centered) */}
-        <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center z-10">
-          <div className={`flex items-center bg-gray-800 rounded-lg p-1 border border-gray-700 shadow-md ${!isGameStarted ? 'opacity-50' : ''}`}>
+          {/* Vertical divider */}
+          <div className="w-vu-border h-vu-divider bg-gray-600 header-divider-spacer" />
+
+          {/* Phase display with all 4 phases and navigation arrows (always visible) */}
+          <div className={`flex items-stretch bg-gray-800 rounded-vu-2 px-vu-md ${!isGameStarted ? 'opacity-50' : ''} gap-vu-header-sm`}>
             <button
               onClick={() => onPrevPhase()}
               disabled={!isGameStarted}
-              className="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded transition-colors disabled:cursor-not-allowed disabled:opacity-50 mr-1"
+              className="px-vu-md flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded-vu-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15 6 L8 12 L15 18 Z" /></svg>
             </button>
@@ -641,12 +684,12 @@ const Header = memo<HeaderProps>(({
                   key={phase}
                   onClick={handlePhaseClick}
                   className={`
-                    px-3 py-1.5 text-sm font-bold uppercase transition-all duration-200 rounded
-                    ${isCurrentPhase ? '' : ''}
+                    px-vu-md py-vu-md font-bold uppercase transition-all duration-200 rounded-vu-2
                     ${isDisabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
-                    ${!isDisabled ? 'hover:bg-gray-700' : ''}
+                    ${!isDisabled && !isCurrentPhase ? 'hover:bg-gray-700' : ''}
                     ${bgClass}
                   `}
+                  style={{ fontSize: `${getVuSize(13)}px` }}
                 >
                   {phase}
                 </div>
@@ -655,42 +698,48 @@ const Header = memo<HeaderProps>(({
             <button
               onClick={() => onNextPhase()}
               disabled={!isGameStarted}
-              className="w-8 h-8 flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded transition-colors disabled:cursor-not-allowed disabled:opacity-50 ml-1"
+              className="px-vu-md flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-700 rounded-vu-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M9 6 L16 12 L9 18 Z" /></svg>
             </button>
           </div>
-        </div>
 
-        {/* Center-right: Tokens & Counters */}
-        <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center z-10" style={{ marginLeft: '280px' }}>
+          {/* Vertical divider */}
+          <div className="w-vu-border h-vu-divider bg-gray-600 header-divider-spacer" />
+
+          {/* Tokens button */}
           <button
             onClick={onOpenTokensModal}
-            className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-3 rounded text-sm"
+            className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-vu-md px-vu-md rounded-vu-2 transition-colors"
+            style={{ fontSize: `${getVuSize(13)}px` }}
           >
             {t('tokens')}
           </button>
+
+          {/* Counters button */}
           <button
             onClick={onOpenCountersModal}
-            className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-3 rounded text-sm ml-[5px]"
+            className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-vu-md px-vu-md rounded-vu-2 transition-colors"
+            style={{ fontSize: `${getVuSize(13)}px` }}
           >
             {t('counters')}
           </button>
         </div>
 
-        {/* Right side: Ready button + divider + Exit */}
-        <div className="flex items-center space-x-2">
+        {/* Right side: Ready/Reset + divider + Exit */}
+        <div className="flex items-center gap-vu-header-md">
           {/* Ready button - shows I'm ready [x/y] when game not started */}
           {/* Reset Game button - shows when game is started (available to all players) */}
           {!isGameStarted && players && (
             <button
               onClick={onPlayerReady}
               disabled={localPlayerId === null}
-              className={`font-bold py-2 px-4 rounded text-sm ${
+              className={`font-bold py-vu-md px-vu-lg rounded-vu-2 ${
                 localPlayerId !== null && players.some((p: Player) => p.id === localPlayerId && p.isReady)
                   ? 'bg-blue-600 hover:bg-blue-700'
                   : 'bg-green-600 hover:bg-green-700 animate-pulse'
               } disabled:bg-gray-600 disabled:opacity-70 disabled:cursor-not-allowed disabled:animate-none`}
+              style={{ fontSize: `${getVuSize(13)}px` }}
             >
               {t("imReady")} [{players.filter((p: Player) => p.isReady).length}/{players.length}]
             </button>
@@ -700,24 +749,26 @@ const Header = memo<HeaderProps>(({
             <button
               onClick={onResetGame}
               disabled={!isHost}
-              className={`font-bold py-2 px-4 rounded text-sm ${
+              className={`font-bold py-vu-md px-vu-lg rounded-vu-2 ${
                 isHost
                   ? 'bg-yellow-600 hover:bg-yellow-700 text-white'
                   : 'bg-gray-600 text-gray-400 cursor-not-allowed'
               } disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed`}
               title={isHost ? "Reset game to lobby (keeps players and decks)" : "Only host can reset game"}
+              style={{ fontSize: `${getVuSize(13)}px` }}
             >
               {t('resetGame')}
             </button>
           )}
 
           {/* Vertical divider */}
-          <div className="w-px h-8 bg-gray-600" />
+          <div className="w-vu-border h-vu-divider bg-gray-600 header-divider-spacer" />
 
           {/* Exit button */}
           <button
             onClick={onExitGame}
-            className={`bg-${isGameStarted ? 'red' : 'gray'}-600 hover:bg-${isGameStarted ? 'red' : 'gray'}-700 text-white font-bold py-2 px-4 rounded text-sm`}
+            className={`bg-${isGameStarted ? 'red' : 'gray'}-600 hover:bg-${isGameStarted ? 'red' : 'gray'}-700 text-white font-bold py-vu-md px-vu-lg rounded-vu-2 transition-colors`}
+            style={{ fontSize: `${getVuSize(13)}px` }}
           >
             {t('exit')}
           </button>

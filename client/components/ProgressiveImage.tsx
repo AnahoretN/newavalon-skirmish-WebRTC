@@ -6,10 +6,12 @@
  * 2. Full-quality image (smooth transition)
  *
  * For Cloudinary images, automatically adds optimization parameters
+ *
+ * VU Size Reference: Uses VU-based sizes for responsive image optimization
  */
 
 import { useState, useEffect } from 'react'
-import { getPlaceholderImageUrl, getFullImageUrl, isCloudinaryUrl } from '@/utils/imageOptimization'
+import { getPlaceholderImageUrl, getFullImageUrl, isCloudinaryUrl, VU_IMAGE_SIZES } from '@/utils/imageOptimization'
 
 interface ProgressiveImageProps {
   src: string
@@ -19,6 +21,7 @@ interface ProgressiveImageProps {
   onLoad?: () => void
   onError?: () => void
   placeholderBlur?: number // Blur amount for placeholder (0-20)
+  size?: keyof typeof VU_IMAGE_SIZES // VU-based size preset
   children?: (imgProps: React.ImgHTMLAttributes<HTMLImageElement>) => React.ReactNode
 }
 
@@ -33,12 +36,13 @@ export function ProgressiveImage({
   onLoad,
   onError,
   placeholderBlur = 10,
+  size = 'NORMAL',
   children,
 }: ProgressiveImageProps) {
   const [imageSrc, setImageSrc] = useState(() => {
     // Start with placeholder for Cloudinary URLs
     if (isCloudinaryUrl(src)) {
-      return getPlaceholderImageUrl(src)
+      return getPlaceholderImageUrl(src, placeholderBlur)
     }
     return src
   })
@@ -118,8 +122,16 @@ export function ProgressiveImage({
 /**
  * Hook for progressive image loading
  * Can be used in existing components
+ *
+ * @param src - Image URL
+ * @param placeholderBlur - Blur amount for placeholder (0-20)
+ * @param size - VU-based size preset for optimization
  */
-export function useProgressiveImage(src: string, placeholderBlur: number = 10) {
+export function useProgressiveImage(
+  src: string,
+  placeholderBlur: number = 10,
+  size: keyof typeof VU_IMAGE_SIZES = 'NORMAL'
+) {
   const [imageSrc, setImageSrc] = useState(() => {
     if (isCloudinaryUrl(src)) {
       return getPlaceholderImageUrl(src, placeholderBlur)

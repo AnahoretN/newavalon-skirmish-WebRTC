@@ -104,6 +104,10 @@ export const ModalsRenderer = () => {
           anchorEl={restData.anchorEl ?? null}
           imageRefreshVersion={restData.imageRefreshVersion}
           localPlayerId={restData.localPlayerId ?? null}
+          activePlayerId={restData.activePlayerId}
+          players={restData.players}
+          playerColorMap={restData.playerColorMap}
+          activeGridSize={restData.activeGridSize}
         />
       )}
 

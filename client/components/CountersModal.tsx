@@ -127,18 +127,22 @@ export const CountersModal: React.FC<CountersModalProps> = ({
         onMouseLeave={handleMouseLeave}
         onDragLeave={handleDragLeave}
       >
-        <div className="bg-gray-800 rounded-lg p-4 shadow-xl w-80 max-w-[90vw] h-auto flex flex-col" onClick={e => e.stopPropagation()}>
-          <div className="mb-2">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold">{t('counters')}</h2>
-              <button onClick={onClose} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 px-3 rounded text-sm">
-                    {t('close')}
-              </button>
+        <div className="bg-gray-800 rounded-vu-5 p-vu-lg shadow-xl h-auto flex flex-col" onClick={e => e.stopPropagation()} style={{ width: 'calc(300 * var(--vu-base))', maxWidth: 'calc(400 * var(--vu-base))' }}>
+          <div className="flex justify-between items-center mb-vu-md">
+            <div className="flex flex-col">
+              <h2 className="text-vu-2xl font-bold">{t('counters')}</h2>
+              <p className="text-gray-400 text-vu-13">{t('holdRightClickViewHints')}</p>
             </div>
-            <p className="text-xs text-gray-400 mt-1">{t('holdRightClickViewHints')}</p>
+            <button
+              onClick={onClose}
+              className="py-vu-md px-vu-lg rounded-vu-2 font-bold transition-colors bg-indigo-600 text-white hover:bg-indigo-700"
+              style={{ fontSize: 'var(--vu-text-13)' }}
+            >
+              {t('close')}
+            </button>
           </div>
-          <div className="bg-gray-900 rounded p-4">
-            <div className="grid grid-cols-4 gap-1">
+          <div className="bg-gray-900 rounded p-vu-lg">
+            <div className="grid grid-cols-4 gap-vu-min">
               {availableCounters.map((counter) => {
                 const iconUrl = getIcon(counter.type)
                 const isPower = counter.type.startsWith('Power')
@@ -153,16 +157,18 @@ export const CountersModal: React.FC<CountersModalProps> = ({
                     onMouseDown={(e) => handleMouseDown(e, counter.type, displayLabel)}
                     onMouseUp={handleMouseUp}
                     onMouseMove={handleMouseMove}
-                    className="w-12 h-12 rounded-full border-2 border-white shadow-lg mx-auto relative select-none"
+                    className="rounded-full border-vu-md border-white shadow-lg mx-auto relative select-none"
                     style={{
+                      width: 'calc(45 * var(--vu-base))',
+                      height: 'calc(45 * var(--vu-base))',
                       backgroundColor: 'rgb(107, 114, 128)', // gray-600 no opacity
                       cursor: canInteract ? 'pointer' : 'not-allowed'
                     }}
                   >
                     {iconUrl ? (
-                      <img src={iconUrl} alt={displayLabel} className="w-full h-full object-contain p-1 pointer-events-none" />
+                      <img src={iconUrl} alt={displayLabel} className="w-full h-full object-contain p-vu-min pointer-events-none" />
                     ) : (
-                      <span className={`font-bold text-white pointer-events-none ${isPower ? 'text-sm' : 'text-lg'}`} style={{ textShadow: '0 0 2px black' }}>
+                      <span className={`font-bold text-white pointer-events-none ${isPower ? 'text-vu-sm' : 'text-vu-lg'}`} style={{ textShadow: '0 0 2px black' }}>
                         {isPower ? displayLabel : counter.type.charAt(0)}
                       </span>
                     )}

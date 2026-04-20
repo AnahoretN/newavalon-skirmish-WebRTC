@@ -19,7 +19,7 @@ interface RevealRequestModalProps {
 export const RevealRequestModal: React.FC<RevealRequestModalProps> = ({ fromPlayer, cardCount, onAccept, onDecline }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[105]">
-      <div className="bg-gray-800 rounded-lg p-8 shadow-xl w-full max-w-md text-center">
+      <div className="bg-gray-800 rounded-vu-2 p-8 shadow-xl w-full max-w-md text-center">
         <h2 className="text-2xl font-bold mb-4">Reveal Request</h2>
         <p className="text-gray-300 mb-6">
           <span className="font-bold">{fromPlayer.name}</span> would like to see {cardCount > 1 ? `${cardCount} of your hidden cards` : 'one of your hidden cards'}.

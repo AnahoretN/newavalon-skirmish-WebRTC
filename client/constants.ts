@@ -228,12 +228,17 @@ export const COUNTERS: Card[] = [
 
 /**
  * A mapping of player IDs to their fixed positions on the screen.
- * Top positions are calculated as Header Height (h-14 = 56px) + 3px gap = 59px.
- * Bottom positions are simply 3px from bottom.
+ *
+ * VU System - Dynamic sizing based on window height:
+ * - Top positions: Header Height (~56px) + gap (~3px) = ~59px
+ * - Bottom positions: gap (~3px) from bottom edge
+ * - Corner positions: gap (~3px) from left/right edges
+ *
+ * All positions automatically scale with window height!
  */
 export const PLAYER_POSITIONS: { [key: number]: string } = {
-  1: 'top-[59px] left-2',
-  2: 'top-[59px] right-2',
-  3: 'bottom-[3px] left-2',
-  4: 'bottom-[3px] right-2',
+  1: 'top-vu-header-offset left-vu-corner',
+  2: 'top-vu-header-offset right-vu-corner',
+  3: 'bottom-vu-corner left-vu-corner',
+  4: 'bottom-vu-corner right-vu-corner',
 }

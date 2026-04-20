@@ -2,9 +2,60 @@
  * Cloudinary Image Optimization Utilities
  *
  * Provides functions to generate optimized image URLs for faster loading
+ *
+ * VU Size Reference (based on 1080px window height):
+ * - 1 VU = 0.1% of window height = 1.08px
+ * - IMAGE_TINY = 50 VU ≈ 54px
+ * - IMAGE_SMALL = 64 VU ≈ 69px
+ * - IMAGE_PREVIEW = 150 VU ≈ 162px
+ * - IMAGE_NORMAL = 300 VU ≈ 324px
+ * - IMAGE_LARGE = 400 VU ≈ 432px
  */
 
 const CLOUDINARY_BASE = 'res.cloudinary.com/dxxh6meej'
+
+/**
+ * VU-based image size constants
+ * These match the CSS VU variables in index.css
+ */
+export const VU_IMAGE_SIZES = {
+  TINY: 54,      // --vu-image-tiny: calc(50 * var(--vu-base)) ≈ 54px
+  SMALL: 69,     // --vu-image-small: calc(64 * var(--vu-base)) ≈ 69px
+  PREVIEW: 162,  // --vu-image-preview: calc(150 * var(--vu-base)) ≈ 162px
+  NORMAL: 324,   // --vu-image-normal: calc(300 * var(--vu-base)) ≈ 324px
+  LARGE: 432,    // --vu-image-large: calc(400 * var(--vu-base)) ≈ 432px
+} as const
+
+/**
+ * Get dynamic VU-based image size
+ * Calculates actual pixel size based on current window height
+ * Falls back to 1080px standard if window not available
+ */
+export function getVuImageSize(vuUnits: number): number {
+  if (typeof window === 'undefined') {
+    // Server-side: use 1080px standard (1 VU = 1.08px)
+    return Math.round(vuUnits * 1.08)
+  }
+
+  const vh = window.innerHeight
+  const vuBase = vh * 0.001 // 1 VU = 0.1% of viewport height (CSS пиксели)
+  return Math.round(vuUnits * vuBase)
+}
+
+/**
+ * Get optimized image size using VU constants
+ * Use this for responsive image sizing
+ */
+export function getOptimizedImageSize(
+  size: keyof typeof VU_IMAGE_SIZES | 'dynamic'
+): number {
+  if (size === 'dynamic') {
+    // Calculate based on current viewport
+    return getVuImageSize(300) // Default to IMAGE_NORMAL
+  }
+
+  return VU_IMAGE_SIZES[size]
+}
 
 /**
  * Check if URL is a Cloudinary URL
@@ -100,7 +151,7 @@ export function getPlaceholderImageUrl(url: string, blurAmount: number = 10): st
   return getOptimizedImageUrl(url, {
     quality: 30,
     format: 'jpg',
-    width: 50, // Tiny size for instant loading
+    width: VU_IMAGE_SIZES.TINY, // VU-based tiny size for instant loading
     blur: blurAmount,
   })
 }
@@ -122,16 +173,25 @@ export function getFullImageUrl(url: string): string {
 
 /**
  * Get thumbnail URL for previews (smaller size, faster load)
+ *
+ * @param url - Image URL
+ * @param size - Size preset: 'TINY' | 'SMALL' | 'PREVIEW' | 'NORMAL' | 'LARGE' | custom number
  */
-export function getThumbnailImageUrl(url: string, size: number = 200): string {
+export function getThumbnailImageUrl(
+  url: string,
+  size: keyof typeof VU_IMAGE_SIZES | number = 'PREVIEW'
+): string {
   if (!url || !isCloudinaryUrl(url)) {
     return url
   }
 
+  // Convert size preset to actual pixel value
+  const width = typeof size === 'string' ? VU_IMAGE_SIZES[size] : size
+
   return getOptimizedImageUrl(url, {
     quality: 'auto',
     format: 'auto',
-    width: size,
+    width,
   })
 }
 

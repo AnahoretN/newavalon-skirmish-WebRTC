@@ -18,9 +18,9 @@ const PlayerPill: React.FC<{ player: Player; onDragStart: (e: React.DragEvent, p
     <div
       draggable
       onDragStart={(e) => onDragStart(e, player.id)}
-      className="flex items-center gap-2 bg-gray-600 p-2 rounded-md cursor-grab active:cursor-grabbing"
+      className="flex items-center gap-vu-md bg-gray-600 p-vu-md rounded-vu-2 cursor-grab active:cursor-grabbing"
     >
-      <div className={`w-4 h-4 rounded-full ${colorData.bg} border border-white/50`}></div>
+      <div className={`w-vu-icon-sm h-vu-icon-sm rounded-full ${colorData.bg} border border-white/50`}></div>
       <span className="font-medium">{player.name}</span>
     </div>
   )
@@ -40,10 +40,10 @@ const TeamSlot: React.FC<{
     onDrop={(e) => onDrop(e, teamId)}
     onDragOver={onDragOver}
     onDragLeave={onDragLeave}
-    className={`bg-gray-800 p-4 rounded-lg border-2 ${isOver ? 'border-indigo-500' : 'border-gray-700'} transition-colors`}
+    className={`bg-gray-800 p-vu-lg rounded-vu-2 border-vu-md ${isOver ? 'border-indigo-500' : 'border-gray-700'} transition-colors`}
   >
-    <h3 className="text-lg font-bold mb-3 border-b border-gray-700 pb-2">{teamName} ({players.length}/{capacity})</h3>
-    <div className="space-y-2 min-h-[4rem]">
+    <h3 className="text-vu-lg font-bold mb-vu-md border-b border-gray-700 pb-vu-md">{teamName} ({players.length}/{capacity})</h3>
+    <div className="space-y-vu-md min-h-vu-team-slot">
       {players.map(p => <PlayerPill key={p.id} player={p} onDragStart={onPlayerDragStart} />)}
     </div>
   </div>
@@ -140,10 +140,10 @@ export const TeamAssignmentModal: React.FC<TeamAssignmentModalProps> = ({ player
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-      <div className="bg-gray-900 border border-gray-700 rounded-lg p-8 shadow-xl w-full max-w-4xl">
-        <h2 className="text-3xl font-bold mb-2">{t('assignTeams')}</h2>
-        <p className="text-gray-400 mb-6">{t('dragToReorder')}</p>
-        <div className="grid grid-cols-3 gap-6">
+      <div className="bg-gray-900 border border-gray-700 rounded-vu-2 p-vu-xl shadow-xl w-full max-w-vu-team-modal">
+        <h2 className="text-vu-3xl font-bold mb-vu-md">{t('assignTeams')}</h2>
+        <p className="text-gray-400 mb-vu-xl">{t('dragToReorder')}</p>
+        <div className="grid grid-cols-3 gap-vu-lg">
           {/* Unassigned Players */}
           <div
             onDrop={(e) => handleDrop(e, 'unassigned')}
@@ -151,10 +151,10 @@ export const TeamAssignmentModal: React.FC<TeamAssignmentModalProps> = ({ player
               handleDragOver(e); setDragOverTarget('unassigned')
             }}
             onDragLeave={() => setDragOverTarget(null)}
-            className={`bg-gray-800 p-4 rounded-lg border-2 ${dragOverTarget === 'unassigned' ? 'border-indigo-500' : 'border-gray-700'} transition-colors`}
+            className={`bg-gray-800 p-vu-lg rounded-vu-2 border-vu-md ${dragOverTarget === 'unassigned' ? 'border-indigo-500' : 'border-gray-700'} transition-colors`}
           >
-            <h3 className="text-lg font-bold mb-3 border-b border-gray-700 pb-2">{t('unassigned')}</h3>
-            <div className="space-y-2">
+            <h3 className="text-vu-lg font-bold mb-vu-md border-b border-gray-700 pb-vu-md">{t('unassigned')}</h3>
+            <div className="space-y-vu-md">
               {unassigned.map(p => <PlayerPill key={p.id} player={p} onDragStart={handleDragStart} />)}
             </div>
           </div>
@@ -189,15 +189,15 @@ export const TeamAssignmentModal: React.FC<TeamAssignmentModalProps> = ({ player
             isOver={dragOverTarget === 2}
           />
         </div>
-        <div className="flex justify-end mt-8 space-x-4">
-          <button type="button" onClick={onCancel} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
+        <div className="flex justify-end mt-vu-xl space-x-vu-lg">
+          <button type="button" onClick={onCancel} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-vu-md px-vu-lg rounded">
             {t('cancel')}
           </button>
           <button
             type="button"
             onClick={handleConfirm}
             disabled={!isReady}
-            className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
+            className="bg-green-600 hover:bg-green-700 text-white font-bold py-vu-md px-vu-lg rounded disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
           >
             {t('confirmTeams')}
           </button>

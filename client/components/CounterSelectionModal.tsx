@@ -94,14 +94,14 @@ export const CounterSelectionModal: React.FC<CounterSelectionModalProps> = ({ is
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[250]">
-      <div className="bg-gray-800 rounded-lg p-6 shadow-xl w-96 border border-gray-600">
+      <div className="bg-gray-800 rounded-vu-2 p-6 shadow-xl w-96 border border-gray-600">
         <h3 className="text-xl font-bold text-white mb-4 text-center">Remove Counters</h3>
         <p className="text-gray-400 text-sm mb-6 text-center">
                     Adjust counters on <strong>{data.card.name}</strong>.<br/>
           <span className="text-xs text-gray-500">Press (-) to remove, (+) to keep.</span>
         </p>
 
-        <div className="space-y-3 mb-6 bg-gray-900 p-3 rounded-lg max-h-[300px] overflow-y-auto">
+        <div className="space-y-3 mb-6 bg-gray-900 p-3 rounded-vu-2 max-h-[300px] overflow-y-auto">
           {types.length === 0 && <p className="text-center text-gray-500 italic py-4">No removable counters found.</p>}
 
           {types.map(type => {
@@ -112,7 +112,7 @@ export const CounterSelectionModal: React.FC<CounterSelectionModalProps> = ({ is
             return (
               <div key={type} className="flex items-center justify-between bg-gray-800 border border-gray-700 p-3 rounded">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 flex items-center justify-center bg-gray-700 rounded-sm">
+                  <div className="w-8 h-8 flex items-center justify-center bg-gray-700 rounded-vu-2">
                     {iconUrl ? <img src={iconUrl} className="w-6 h-6 object-contain" alt={`${type} icon`} /> : <span className="font-bold text-white">{type[0]}</span>}
                   </div>
                   <div>

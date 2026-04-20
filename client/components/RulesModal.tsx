@@ -117,7 +117,7 @@ const formatRuleText = (text: string) => {
 // --- Visual Sub-Components ---
 
 const VisualWrapper = ({ children }: { children: React.ReactNode }) => (
-  <div className="w-full h-full bg-board-bg/50 rounded-xl shadow-inner border-2 border-gray-600/50 flex items-center justify-center overflow-hidden relative p-4">
+  <div className="w-full h-full bg-board-bg/50 rounded-vu-2 shadow-inner border-2 border-gray-600/50 flex items-center justify-center overflow-hidden relative p-4">
     <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-900/20 via-transparent to-transparent pointer-events-none"></div>
     {children}
   </div>
@@ -151,7 +151,7 @@ const AnatomyVisual = () => {
 
         {/* The Tooltip (Static Render) */}
         <div className="relative w-80 flex-shrink-0">
-          <div className="bg-gray-900 border border-gray-700 rounded-md shadow-2xl p-3 text-white relative">
+          <div className="bg-gray-900 border border-gray-700 rounded-vu-2 shadow-2xl p-3 text-white relative">
             <CardTooltipContent card={DEMO_CARDS.gawain} />
 
             {/* Name Label */}
@@ -355,7 +355,7 @@ const HandVisual = ({ demoImageRefreshVersion }: { demoImageRefreshVersion: numb
     <VisualWrapper>
       <div className="flex flex-col items-center gap-6 w-full">
         {/* Hand Container resembling PlayerPanel */}
-        <div className="bg-gray-800 rounded-lg p-3 shadow-xl border border-gray-700 w-auto">
+        <div className="bg-gray-800 rounded-vu-2 p-3 shadow-xl border border-gray-700 w-auto">
           <div className="text-[10px] text-gray-400 mb-2 font-bold uppercase tracking-wider pl-1">Hand (6 Cards)</div>
           <div className="flex gap-2 justify-center bg-gray-900/50 rounded p-2">
             {handCards.map((card, i) => (
@@ -448,7 +448,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[100]" onClick={onClose}>
-      <div className="bg-gray-900 w-[95vw] h-[90vh] rounded-xl shadow-2xl flex overflow-hidden border border-gray-700" onClick={e => e.stopPropagation()}>
+      <div className="bg-gray-900 w-[95vw] h-[90vh] rounded-vu-2 shadow-2xl flex overflow-hidden border border-gray-700" onClick={e => e.stopPropagation()}>
 
         {/* Navigation Sidebar */}
         <div className="w-64 bg-gray-800 border-r border-gray-700 flex flex-col flex-shrink-0">
@@ -460,7 +460,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose }) => {
               <button
                 key={section.id}
                 onClick={() => setActiveSectionId(section.id)}
-                className={`w-full text-left px-4 py-3 rounded-md transition-all duration-200 text-sm font-medium flex items-center justify-between ${
+                className={`w-full text-left px-4 py-3 rounded-vu-2 transition-all duration-200 text-sm font-medium flex items-center justify-between ${
                   activeSectionId === section.id
                     ? 'bg-indigo-600 text-white shadow-lg translate-x-1'
                     : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'

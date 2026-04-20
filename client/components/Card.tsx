@@ -9,6 +9,12 @@ import { getOptimizedImageUrl, getThumbnailImageUrl, addCacheBust, isCloudinaryU
 import { globalImageLoader } from '@/utils/imageLoader'
 import { backgroundLoader } from '@/utils/backgroundImageLoader'
 
+// Вычисляем VU размер для элементов динамически
+const getVuSize = (vu: number) => {
+  const vuPixels = window.innerHeight / 1000
+  return vu * vuPixels
+}
+
 // Split props to prevent unnecessary rerenders when only display props change
 interface CardCoreProps {
   card: CardType;
@@ -22,6 +28,7 @@ interface CardCoreProps {
   disableImageTransition?: boolean; // Disable opacity transition for board cards (default: false)
   playerColor?: PlayerColor; // Direct player color (used in PlayerPanel to avoid lookup issues)
   showCommandPlayButton?: boolean; // Show Play button for command cards (only for local player's hand)
+  smallPowerDisplay?: boolean; // Use smaller power circle and font (for right panel opponents)
 }
 
 interface CardInteractionProps {
@@ -51,21 +58,32 @@ interface StatusIconProps {
   refreshVersion?: number;
   playerColorMap: Map<number, PlayerColor>;
   smallStatusIcons?: boolean;
+  isNegative?: boolean; // true for negative tokens (top), false for positive tokens (bottom)
 }
 
-const StatusIcon: React.FC<StatusIconProps> = memo(({ type, playerId, count, refreshVersion, playerColorMap, smallStatusIcons = false }) => {
+const StatusIcon: React.FC<StatusIconProps> = ({ type, playerId, count, refreshVersion, playerColorMap, smallStatusIcons = false, isNegative = true }) => {
   const statusColorName = playerColorMap.get(playerId)
   const statusBg = (statusColorName && PLAYER_COLORS[statusColorName]) ? PLAYER_COLORS[statusColorName].bg : 'bg-gray-500'
 
   const [iconLoadState, setIconLoadState] = useState<'loading' | 'loaded' | 'failed'>('loading')
   const [currentIconUrl, setCurrentIconUrl] = useState<string | null>(null)
 
+  // Force re-render on window resize to update VU-based sizes
+  const [, forceUpdate] = useState({})
+  useEffect(() => {
+    const handleResize = () => {
+      forceUpdate({})
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   // Direct function to get icon URL - reads fresh from STATUS_ICONS every time
   const getIconUrl = useCallback(() => {
     let url = STATUS_ICONS[type]
     if (url) {
-      // Apply Cloudinary optimizations for status icons (small, fast loading)
-      url = getOptimizedImageUrl(url, { width: 64 })
+      // Apply Cloudinary optimizations for status icons (VU-based sizing)
+      url = getOptimizedImageUrl(url, { width: 80 }) // VU icon-md size
       const separator = url.includes('?') ? '&' : '?'
       url = `${url}${separator}v=${refreshVersion}`
     }
@@ -104,21 +122,37 @@ const StatusIcon: React.FC<StatusIconProps> = memo(({ type, playerId, count, ref
   const isSingleInstance = ['Support', 'Threat', 'Revealed', 'LastPlayed', 'Resurrected'].includes(type)
   const showCount = !isSingleInstance && count > 1
 
-  // When count is shown, icon padding is larger to make the icon smaller.
-  const iconPaddingClass = showCount ? 'p-1.5' : 'p-1'
+  // Fixed padding for all icons to avoid size inconsistencies
+  const iconPaddingClass = '' // Временно убираем padding для теста
 
-  // Size logic: w-8 (32px) is default. w-6 (24px) is 75%, which is 25% smaller.
-  const sizeClass = smallStatusIcons ? 'w-6 h-6' : 'w-8 h-8'
-  const fontSizeClass = smallStatusIcons
-    ? (showCount ? 'text-xs' : 'text-base')
-    : (showCount ? 'text-base' : 'text-lg')
+  // Size logic: VU-based sizing for status icons (используем inline styles для точности)
+  const vuPixels = window.innerHeight / 1000
+  const iconSize = 32 * vuPixels // Fixed 35vu size for all tokens
+  const sizeStyle = {
+    width: `${iconSize}px`,
+    height: `${iconSize}px`,
+    minWidth: `${iconSize}px`,
+    maxWidth: `${iconSize}px`
+  }
+  const fontSizeClass = showCount ? 'text-vu-xs' : 'text-vu-sm'
 
-  const countBadgeSize = smallStatusIcons ? 'text-[10px]' : 'text-xs'
+  const countBadgeStyle = { fontSize: 'calc(15 * var(--vu-base))' } // 15 VU для числа количества
 
   return (
     <div
-      className={`relative ${sizeClass} flex items-center justify-center ${statusBg} bg-opacity-80 rounded-sm shadow-md flex-shrink-0`}
+      className={`relative flex items-center justify-center ${statusBg} bg-opacity-80 rounded-vu-2 flex-shrink-0`}
+      style={sizeStyle}
       title={`${type} (Player ${playerId}) ${!isSingleInstance && count > 0 ? `x${count}` : ''}`}
+      ref={(el) => {
+        if (el && process.env.NODE_ENV === 'development') {
+          const rect = el.getBoundingClientRect()
+          const styles = window.getComputedStyle(el)
+          if (Math.abs(rect.width - iconSize) > 2) { // Только если разница больше 2px
+            console.log(`StatusIcon (${type}): actual=${rect.width.toFixed(1)}x${rect.height.toFixed(1)}px, expected=${iconSize.toFixed(1)}px`)
+            console.log(`  computedStyle: width=${styles.width}, height=${styles.height}`)
+          }
+        }
+      }}
     >
       {currentIconUrl && iconLoadState !== 'failed' ? (
         <img
@@ -127,6 +161,12 @@ const StatusIcon: React.FC<StatusIconProps> = memo(({ type, playerId, count, ref
           onError={handleIconError}
           alt={type}
           className={`object-contain w-full h-full transition-all duration-150 ${iconPaddingClass}`}
+          ref={(img) => {
+            if (img) {
+              const rect = img.getBoundingClientRect()
+              console.log(`  Icon image (${type}): ${rect.width.toFixed(1)}x${rect.height.toFixed(1)}px`)
+            }
+          }}
         />
       ) : (
         <span className={`text-white font-black transition-all duration-150 ${fontSizeClass}`} style={{ textShadow: '0 0 2px black' }}>
@@ -136,15 +176,15 @@ const StatusIcon: React.FC<StatusIconProps> = memo(({ type, playerId, count, ref
 
       {showCount && (
         <span
-          className={`absolute top-0 right-0.5 text-white font-bold ${countBadgeSize} leading-none`}
-          style={{ textShadow: '1px 1px 2px black' }}
+          className="absolute top-0 right-0.5 text-white font-extrabold leading-none"
+          style={{ textShadow: '0 0 4px black', ...countBadgeStyle }}
         >
           {count}
         </span>
       )}
     </div>
   )
-})
+}
 
 const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   card,
@@ -163,6 +203,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   disableImageTransition = false, // Disable opacity transition for board cards
   playerColor, // Direct player color (used in PlayerPanel to avoid lookup issues)
   showCommandPlayButton = false, // Only show Play button for local player's hand
+  smallPowerDisplay = false, // Use smaller power display (for right panel)
   preserveDeployAbilities: _preserveDeployAbilities = false, // Used in arePropsEqual comparison
   activeAbilitySourceCoords = null,
   boardCoords = null,
@@ -181,11 +222,12 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   const [isShining, setIsShining] = useState(false)
 
   // Progressive image loading: show preview first, then load to full size
-  // Right panels (opponents): 64px preview → 128px target
-  // Left panel & board: 128px preview → 384px target
+  // VU-based sizing for progressive loading
+  // Right panels (opponents): VU preview → VU target
+  // Left panel & board: VU preview → VU target
   const isHighQuality = loadPriority === 'high'
-  const TARGET_SIZE = isHighQuality ? 384 : 128
-  const PREVIEW_SIZE = isHighQuality ? 128 : 64
+  const TARGET_SIZE = isHighQuality ? 400 : 130 // VU card-large / card-small
+  const PREVIEW_SIZE = isHighQuality ? 130 : 70 // VU card-small / optimized
 
   // Track which URL to display - only update when target is loaded
   // Use ref to track the last loaded target URL to prevent unnecessary updates
@@ -221,6 +263,16 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
   useEffect(() => {
     setHighlightDismissed(false)
   }, [activePhaseIndex, abilityCheckKey])
+
+  // Force re-render on window resize to update VU-based sizes
+  const [, forceUpdate] = useState({})
+  useEffect(() => {
+    const handleResize = () => {
+      forceUpdate({})
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   // Hide tooltip when any card drag starts
   useEffect(() => {
@@ -452,7 +504,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     // Preload full-size image for card detail view
     if (card.imageUrl && isCloudinaryUrl(card.imageUrl)) {
       // Use normal priority for hover preloading since user is likely to click
-      const fullSizeUrl = getOptimizedImageUrl(card.imageUrl, { width: 300 })
+      const fullSizeUrl = getOptimizedImageUrl(card.imageUrl, { width: 320 }) // VU modal-lg
       const urlWithVersion = addCacheBust(fullSizeUrl, imageRefreshVersion)
       backgroundLoader.preload(urlWithVersion, 'normal')
     }
@@ -586,7 +638,20 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
 
   const uniqueStatusGroups = useMemo(() => {
     return Object.values(statusGroups).sort((a, b) => {
-      // Sort by type first, then by playerId to ensure consistent order
+      // Priority: LastPlayed > Support > others (alphabetically)
+      const priorityOrder = ['LastPlayed', 'Support']
+      const aPriority = priorityOrder.indexOf(a.type)
+      const bPriority = priorityOrder.indexOf(b.type)
+
+      // If both have priority (not -1), sort by priority
+      if (aPriority !== -1 && bPriority !== -1) {
+        return aPriority - bPriority
+      }
+      // If only one has priority, it comes first
+      if (aPriority !== -1) return -1
+      if (bPriority !== -1) return 1
+
+      // No priority for either - sort alphabetically by type, then by playerId
       if (a.type !== b.type) {
         return a.type.localeCompare(b.type)
       }
@@ -594,7 +659,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     })
   }, [statusGroups])
 
-  const { currentPower, powerTextColor, isCommandCard } = useMemo(() => {
+  const { currentPower, powerTextColor, isCommandCard, powerCircleSize, powerFontSize } = useMemo(() => {
     const modifier = (card.powerModifier || 0) + (card.bonusPower || 0)
     const power = Math.max(0, card.power + modifier)
     let textColor = 'text-white'
@@ -605,8 +670,14 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     }
     // Check if this is a Command card
     const isCommand = card.deck === 'Command' || card.types?.includes('Command') || card.faction === 'Command'
-    return { currentPower: power, powerTextColor: textColor, isCommandCard: isCommand }
-  }, [card.power, card.powerModifier, card.bonusPower, card.deck, card.types, card.faction])
+
+    // Power display sizes: normal (left panel + board) or small (right panel)
+    const isSmallPowerDisplay = smallPowerDisplay || false // Use smallPowerDisplay prop if provided, otherwise default to false
+    const circleSize = isSmallPowerDisplay ? 27 : 35 // 35 VU normal, 27 VU small (right panel)
+    const fontSize = isSmallPowerDisplay ? 17 : 20 // 20 VU normal, 17 VU small (right panel)
+
+    return { currentPower: power, powerTextColor: textColor, isCommandCard: isCommand, powerCircleSize: circleSize, powerFontSize: fontSize }
+  }, [card.power, card.powerModifier, card.bonusPower, card.deck, card.types, card.faction, smallPowerDisplay])
 
   const showTooltip = useMemo(() =>
     tooltipVisible && isFaceUp && !disableTooltip && (tooltipPos.x > 0 && tooltipPos.y > 0),
@@ -624,7 +695,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
     )
   }
 
-  const powerPositionClass = extraPowerSpacing ? 'bottom-[10px] right-[10px]' : 'bottom-[5px] right-[5px]'
+  const powerPositionClass = extraPowerSpacing ? 'bottom-vu-md right-vu-md' : 'bottom-vu-min right-vu-min'
 
   return (
     <>
@@ -669,18 +740,18 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
               onMouseLeave={handleMouseLeave}
               onMouseMove={handleMouseMove}
               onMouseDown={handleMouseDown}
-              className={`relative w-full h-full ${backColorClass} rounded-md shadow-md border-2 ${borderColorClass} flex-shrink-0 transition-transform duration-300 ${shouldHighlight ? 'scale-[1.10] z-10' : ''}`}
+              className={`relative w-full h-full ${backColorClass} rounded-vu-5 shadow-md border-2 ${borderColorClass} flex-shrink-0 transition-transform duration-300 ${shouldHighlight ? 'scale-[1.10] z-10' : ''}`}
             >
               {revealedGroups.length > 0 && (
-                <div className="absolute top-[3px] left-[3px] flex flex-wrap gap-0.5 pointer-events-none">
+                <div className="absolute top-vu-effect-sm left-vu-effect-sm flex flex-wrap gap-vu-min pointer-events-none">
                   {revealedGroups.map(group => (
-                    <StatusIcon key={group.type + '_' + group.playerId} type={group.type} playerId={group.playerId} count={group.count} refreshVersion={imageRefreshVersion} playerColorMap={playerColorMap} smallStatusIcons={smallStatusIcons} />
+                    <StatusIcon key={group.type + '_' + group.playerId} type={group.type} playerId={group.playerId} count={group.count} refreshVersion={imageRefreshVersion} playerColorMap={playerColorMap} smallStatusIcons={smallStatusIcons} isNegative={true} />
                   ))}
                 </div>
               )}
               {lastPlayedGroup && (
-                <div className="absolute bottom-[3px] left-[3px] pointer-events-none">
-                  <StatusIcon type={lastPlayedGroup.type} playerId={lastPlayedGroup.playerId} count={lastPlayedGroup.count} refreshVersion={imageRefreshVersion} playerColorMap={playerColorMap} smallStatusIcons={smallStatusIcons} />
+                <div className="absolute bottom-vu-effect-sm left-vu-effect-sm pointer-events-none">
+                  <StatusIcon type={lastPlayedGroup.type} playerId={lastPlayedGroup.playerId} count={lastPlayedGroup.count} refreshVersion={imageRefreshVersion} playerColorMap={playerColorMap} smallStatusIcons={smallStatusIcons} isNegative={false} />
                 </div>
               )}
             </div>
@@ -715,10 +786,10 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
             : positiveGroups
 
           const ownerGlowClass = ownerColorData ? ownerColorData.glow : 'shadow-[0_0_15px_#ffffff]'
-          // Border: 4px normal, 5px when ready (1px thicker)
+          // Border: VU-based sizing (normal vs ready state)
           const borderClass = shouldHighlight
-            ? `border-[5px] shadow-2xl ${ownerGlowClass}`
-            : 'border-4'
+            ? `border-vu-md shadow-2xl ${ownerGlowClass}`
+            : 'border-vu-base'
 
           // Inner glow effect with owner's color when ready
           // Border color: blend between white and owner color (50/50 mix)
@@ -760,7 +831,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
               onMouseDown={handleMouseDown}
               onClick={handleCardClick}
               style={innerGlowStyle}
-              className={`relative w-full h-full ${cardBg} rounded-md shadow-md ${borderClass} ${themeColor} ${textColor} flex-shrink-0 select-none overflow-hidden ${shouldHighlight ? 'scale-[1.10] z-10 transition-transform duration-300' : ''}`}
+              className={`relative w-full h-full ${cardBg} rounded-vu-5 shadow-md ${borderClass} ${themeColor} ${textColor} flex-shrink-0 select-none overflow-hidden ${shouldHighlight ? 'scale-[1.10] z-10 transition-transform duration-300' : ''}`}
             >
               {currentImageSrc ? (
                 <>
@@ -803,15 +874,15 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
 
               {uniqueStatusGroups.length > 0 && (
                 <>
-                  <div className="absolute top-[3px] left-[3px] right-[3px] flex flex-row-reverse flex-wrap justify-start items-start z-10 pointer-events-none">
+                  <div className="absolute top-vu-effect-sm left-vu-effect-sm right-vu-effect-sm flex flex-row-reverse flex-wrap justify-start items-start z-10 pointer-events-none">
                     {negativeGroups.map((group) => (
-                      <StatusIcon key={`${group.type}_${group.playerId}`} type={group.type} playerId={group.playerId} count={group.count} refreshVersion={imageRefreshVersion} playerColorMap={playerColorMap} smallStatusIcons={smallStatusIcons} />
+                      <StatusIcon key={`${group.type}_${group.playerId}`} type={group.type} playerId={group.playerId} count={group.count} refreshVersion={imageRefreshVersion} playerColorMap={playerColorMap} smallStatusIcons={smallStatusIcons} isNegative={true} />
                     ))}
                   </div>
 
-                  <div className="absolute bottom-[3px] left-[3px] right-[30px] flex flex-wrap-reverse content-start items-end z-10 pointer-events-none">
+                  <div className="absolute bottom-vu-effect-sm left-vu-effect-sm right-vu-md flex flex-row flex-wrap-reverse content-end items-end z-10 pointer-events-none" style={{ maxWidth: 'calc(100% - var(--vu-btn-lg) - var(--vu-gap-base))' }}>
                     {combinedPositiveGroups.map((group) => (
-                      <StatusIcon key={`${group.type}_${group.playerId}`} type={group.type} playerId={group.playerId} count={group.count} refreshVersion={imageRefreshVersion} playerColorMap={playerColorMap} smallStatusIcons={smallStatusIcons} />
+                      <StatusIcon key={`${group.type}_${group.playerId}`} type={group.type} playerId={group.playerId} count={group.count} refreshVersion={imageRefreshVersion} playerColorMap={playerColorMap} smallStatusIcons={smallStatusIcons} isNegative={false} />
                     ))}
                   </div>
                 </>
@@ -820,7 +891,8 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
               {isCommandCard && showCommandPlayButton && !hidePower ? (
                 // Command card: Show Play button (rounded square with triangle) - ONLY for local player
                 <div
-                  className={`absolute ${powerPositionClass} w-8 h-8 rounded-lg ${ownerColorData ? ownerColorData.bg : 'bg-gray-600'} border-[3px] border-white flex items-center justify-center z-20 shadow-md cursor-pointer hover:scale-110 transition-transform`}
+                  className={`absolute ${powerPositionClass} rounded-vu-5 ${ownerColorData ? ownerColorData.bg : 'bg-gray-600'} border-vu-base border-white flex items-center justify-center z-20 shadow-md cursor-pointer hover:scale-110 transition-transform`}
+                  style={{ width: `${getVuSize(powerCircleSize)}px`, height: `${getVuSize(powerCircleSize)}px` }}
                   onClick={(e) => {
                     e.stopPropagation() // Prevent card click
                     if (onCommandPlayClick) {
@@ -831,11 +903,11 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
                 >
                   {/* Play triangle icon */}
                   <svg
-                    width="16"
-                    height="16"
+                    width={powerFontSize >= 14 ? "14" : "10"}
+                    height={powerFontSize >= 14 ? "14" : "10"}
                     viewBox="0 0 24 24"
                     fill="white"
-                    style={{ marginLeft: '2px' }} // Visual offset to center the triangle
+                    style={{ marginLeft: '1px' }} // Visual offset to center the triangle
                   >
                     <polygon points="5,3 19,12 5,21" />
                   </svg>
@@ -843,9 +915,10 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
               ) : card.power > 0 && !hidePower ? (
                 // Regular card: Show power circle
                 <div
-                  className={`absolute ${powerPositionClass} w-8 h-8 rounded-full ${ownerColorData ? ownerColorData.bg : 'bg-gray-600'} border-[3px] border-white flex items-center justify-center z-20 shadow-md`}
+                  className={`absolute ${powerPositionClass} rounded-full ${ownerColorData ? ownerColorData.bg : 'bg-gray-600'} border-vu-base border-white flex items-center justify-center z-20 shadow-md`}
+                  style={{ width: `${getVuSize(powerCircleSize)}px`, height: `${getVuSize(powerCircleSize)}px` }}
                 >
-                  <span className={`${powerTextColor} font-bold text-lg leading-none`} style={{ textShadow: '0 0 2px black' }}>{currentPower}</span>
+                  <span className={`${powerTextColor} font-bold leading-none`} style={{ fontSize: `${getVuSize(powerFontSize)}px`, textShadow: '0 0 2px black' }}>{currentPower}</span>
                 </div>
               ) : null}
             </div>
@@ -1012,6 +1085,10 @@ const arePropsEqual = (prevProps: CardCoreProps & CardInteractionProps, nextProp
 
   // Check direct playerColor prop (used in PlayerPanel)
   if (prevProps.playerColor !== nextProps.playerColor) {
+    return false
+  }
+  // Check smallPowerDisplay prop
+  if (prevProps.smallPowerDisplay !== nextProps.smallPowerDisplay) {
     return false
   }
 

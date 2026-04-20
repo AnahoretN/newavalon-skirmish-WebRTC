@@ -307,7 +307,7 @@ const TopDeckView: React.FC<TopDeckViewProps> = memo(({
       <div
         ref={modalRef}
         onDragLeave={handleDragLeave}
-        className="bg-gray-800 rounded-lg p-6 shadow-xl w-auto max-w-5xl border border-gray-600 relative flex flex-col items-center"
+        className="bg-gray-800 rounded-vu-5 p-6 shadow-xl w-auto max-w-5xl border border-gray-600 relative flex flex-col items-center"
         onClick={e => e.stopPropagation()}
       >
 
@@ -356,7 +356,7 @@ const TopDeckView: React.FC<TopDeckViewProps> = memo(({
                   onDragEnd={handleDragEnd}
                   onDrop={(e) => handleDrop(e, index)}
                   onContextMenu={(e) => handleContextMenu(e, deckIndex)}
-                  className="w-32 h-32 relative rounded-lg flex items-center justify-center cursor-grab active:cursor-grabbing hover:scale-105 transition-transform"
+                  className="w-32 h-32 relative rounded-vu-5 flex items-center justify-center cursor-grab active:cursor-grabbing hover:scale-105 transition-transform"
                   style={{
                     opacity: isDragging ? 0.5 : 1,
                     zIndex: isDragTarget ? 10 : 0,

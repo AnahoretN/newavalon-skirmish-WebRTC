@@ -301,7 +301,7 @@ const GridCell = memo<{
       const isInPlayMode = !!playMode
       const isStackMode = !!cursorStack
       const isOccupied = !!cell.card
-      const baseClasses = 'w-full h-full rounded-lg transition-colors duration-200 flex items-center justify-center relative'
+      const baseClasses = 'w-full h-full rounded-vu-5 border border-gray-600 border-opacity-30 transition-colors duration-200 flex items-center justify-center relative'
 
       // Check if dragged item is from hand/deck/discard/board (cards that can be played/moved)
       const isDraggingCard = draggedItem && ['hand', 'deck', 'discard', 'board'].includes(draggedItem.source)
@@ -405,14 +405,15 @@ const GridCell = memo<{
               <>
                 {/* Cell border with owner's color - no background, just thick border */}
                 <div
-                  className="absolute inset-0 rounded-md pointer-events-none"
+                  className="absolute inset-0 rounded-vu-5 pointer-events-none"
                   style={{
                     zIndex: 40,
-                    border: '4px solid',
+                    borderWidth: 'var(--vu-border-md)',
+                    borderStyle: 'solid',
                     borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
                     background: 'transparent',
                     boxSizing: 'border-box',
-                    boxShadow: `0 0 8px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.5)`,
+                    boxShadow: `0 0 calc(2 * var(--vu-effect-md)) rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.5)`,
                   }}
                 />
               </>
@@ -427,11 +428,12 @@ const GridCell = memo<{
               : { r: 37, g: 99, b: 235 }
             return (
               <div
-                className="absolute inset-0 rounded-md pointer-events-none animate-pulse"
+                className="absolute inset-0 rounded-vu-5 pointer-events-none animate-pulse"
                 style={{
                   zIndex: 35,
-                  boxShadow: `0 0 10px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75)`,
-                  border: '3px solid',
+                  boxShadow: `0 0 calc(2.5 * var(--vu-effect-md)) rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75)`,
+                  borderWidth: 'var(--vu-border-base)',
+                  borderStyle: 'solid',
                   borderColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
                   background: `radial-gradient(circle at center, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 0%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4) 100%)`,
                 }}
@@ -449,11 +451,12 @@ const GridCell = memo<{
               : { r: 255, g: 215, b: 0 }  // Gold color for scoring
             return (
               <div
-                className="absolute inset-0 rounded-md pointer-events-none animate-glow-pulse"
+                className="absolute inset-0 rounded-vu-5 pointer-events-none animate-glow-pulse"
                 style={{
                   zIndex: 45,
-                  boxShadow: `0 0 10px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75)`,
-                  border: '4px solid',
+                  boxShadow: `0 0 calc(2.5 * var(--vu-effect-md)) rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75)`,
+                  borderWidth: 'var(--vu-border-md)',
+                  borderStyle: 'solid',
                   borderColor: 'white',
                   background: `radial-gradient(circle at center, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 0%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 100%)`,
                 }}
@@ -468,7 +471,7 @@ const GridCell = memo<{
               <img
                 src="https://res.cloudinary.com/dxxh6meej/image/upload/v1771365317/no_tarket_lndzoc.webp"
                 alt="No Target"
-                className="w-24 h-24 object-contain animate-fade-out drop-shadow-[0_0_5px_rgba(255,0,0,0.8)]"
+                className="w-vu-card-normal h-vu-card-normal object-contain animate-fade-out drop-shadow-[0_0_5px_rgba(255,0,0,0.8)]"
               />
             </div>
           )}
@@ -485,7 +488,7 @@ const GridCell = memo<{
             return (
               <div
                 key={`targeting-mode-${highlightOwnerId}`}
-                className="absolute inset-0 rounded-md pointer-events-none animate-glow-pulse"
+                className="absolute inset-0 rounded-vu-5 pointer-events-none animate-glow-pulse"
                 style={{
                   zIndex: 50,
                   boxShadow: `0 0 10px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75)`,
@@ -508,11 +511,12 @@ const GridCell = memo<{
             return (
               <div
                 key={`line-selection-${row}-${col}`}
-                className="absolute inset-0 rounded-md pointer-events-none animate-glow-pulse"
+                className="absolute inset-0 rounded-vu-5 pointer-events-none animate-glow-pulse"
                 style={{
                   zIndex: 45,
-                  boxShadow: `0 0 10px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75)`,
-                  border: '4px solid',
+                  boxShadow: `0 0 calc(2.5 * var(--vu-effect-md)) rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75)`,
+                  borderWidth: 'var(--vu-border-md)',
+                  borderStyle: 'solid',
                   borderColor: 'white',
                   background: `radial-gradient(circle at center, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0) 0%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75) 100%)`,
                 }}
@@ -568,7 +572,7 @@ const GridCell = memo<{
           {showScoringHighlight && scoringLineInfo && (
             <div
               onClick={handleClick}
-              className="absolute inset-0 rounded-md cursor-pointer"
+              className="absolute inset-0 rounded-vu-5 cursor-pointer"
               style={{ zIndex: 60 }}
               title={`Click to score this line (${scoringLineInfo.score} points)`}
             />
@@ -594,7 +598,7 @@ const FloatingTextOverlay = memo<{ textData: FloatingTextData; playerColorMap: M
 
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[60] animate-float-up">
-      <span className={`text-4xl font-black ${colorClass}`} style={{ WebkitTextStroke: '1px white' }}>
+      <span className={`text-vu-3xl font-black ${colorClass}`} style={{ WebkitTextStroke: '1px white' }}>
         {textData.text}
       </span>
     </div>
@@ -632,7 +636,7 @@ const VisualEffectOverlay = memo<{ effect: VisualEffect; playerColorMap: Map<num
     case 'noTarget': {
       return (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[50]">
-          <div className="text-6xl font-black text-red-500" style={{ textShadow: '2px 2px 0 #000' }}>
+          <div className="text-vu-xl font-black text-red-500" style={{ textShadow: '2px 2px 0 #000' }}>
             ✕
           </div>
         </div>
@@ -725,7 +729,7 @@ export const GameBoard = memo<GameBoardProps>(({
     const { type, row, col, playerId } = highlight
     const playerColor = playerColorMap.get(playerId)
     const outlineClass = (playerColor && PLAYER_COLORS[playerColor]) ? PLAYER_COLORS[playerColor].outline : 'outline-yellow-400'
-    const baseClasses = `outline outline-[8px] ${outlineClass} rounded-lg`
+    const baseClasses = `outline outline-vu-lg ${outlineClass} rounded-vu-5`
     const totalSize = board.length
     const offset = Math.floor((totalSize - activeGridSize) / 2)
 
@@ -933,8 +937,8 @@ export const GameBoard = memo<GameBoardProps>(({
   }, [activeBoard, board.length, activeGridSize, validTargetsSet, targetingModeTargetsSet, targetingMode?.action?.mode, noTargetOverlay, floatingTextsMap, visualEffectsArray, abilityMode, abilityMode?.payload?.firstCoords])
 
   return (
-    <div className="relative p-2 bg-board-bg rounded-xl h-full aspect-square transition-all duration-300">
-      <div className={`grid ${gridSizeClasses[activeGridSize]} gap-0.5 h-full w-full`}>
+    <div className="relative p-vu-board bg-board-bg rounded-vu-5 h-full aspect-square transition-all duration-300">
+      <div className={`grid ${gridSizeClasses[activeGridSize]} gap-vu-board h-full w-full`}>
         {processedCells.map((rowCells) =>
           rowCells.map(({
             cellKey, originalRowIndex, originalColIndex, cell, isValidTarget,
@@ -1004,7 +1008,7 @@ export const GameBoard = memo<GameBoardProps>(({
             </div>
           )),
         )}
-{/* Temporary highlight for flash effects */}      {highlight && (        <div className={`absolute top-2 right-2 bottom-2 left-2 grid ${gridSizeClasses[activeGridSize]} gap-0.5 pointer-events-none z-20`}>          {HighlightContent}        </div>      )}
+{/* Temporary highlight for flash effects */}      {highlight && (        <div className={`absolute top-vu-board right-vu-board bottom-vu-board left-vu-board grid ${gridSizeClasses[activeGridSize]} gap-vu-board pointer-events-none z-20`}>          {HighlightContent}        </div>      )}
       </div>
 
     </div>

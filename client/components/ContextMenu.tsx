@@ -18,8 +18,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
       const { innerWidth, innerHeight } = window
       const { offsetWidth, offsetHeight } = menuRef.current
 
-      const correctedX = x + offsetWidth > innerWidth ? innerWidth - offsetWidth - 10 : x
-      const correctedY = y + offsetHeight > innerHeight ? innerHeight - offsetHeight - 10 : y
+      // Convert VU to pixels for edge distance
+      const vuBase = window.innerHeight * 0.001 // CSS пиксели, автоматически компенсируют zoom
+      const edgeDistance = vuBase * 10 // ~10px edge distance
+
+      const correctedX = x + offsetWidth > innerWidth ? innerWidth - offsetWidth - edgeDistance : x
+      const correctedY = y + offsetHeight > innerHeight ? innerHeight - offsetHeight - edgeDistance : y
 
       setCorrectedPos({ top: correctedY, left: correctedX })
     }
@@ -28,13 +32,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed bg-gray-900 border border-gray-700 rounded-md shadow-lg z-[9999] py-1"
+      className="fixed bg-gray-900 border border-gray-700 rounded-vu-2 shadow-lg z-[9999] py-vu-min"
       style={{ top: correctedPos.top, left: correctedPos.left, opacity: menuRef.current ? 1 : 0 }}
       onClick={(e) => e.stopPropagation()}
     >
       {items.map((item, index) => {
         if ('isDivider' in item) {
-          return <hr key={`divider-${index}`} className="border-gray-700 my-1" />
+          return <hr key={`divider-${index}`} className="border-gray-700 my-vu-min" />
         } else if ('onClick' in item) {
           return (
             <button
@@ -46,7 +50,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
                 }
               }}
               disabled={item.disabled}
-              className="block w-full text-left px-4 py-1 text-sm text-white hover:bg-indigo-600 disabled:text-gray-500 disabled:cursor-not-allowed disabled:bg-gray-800"
+              className="block w-full text-left px-vu-lg py-vu-min text-vu-13 text-white hover:bg-indigo-600 disabled:text-gray-500 disabled:cursor-not-allowed disabled:bg-gray-800"
               style={{ fontWeight: item.isBold ? 'bold' : 'normal' }}
             >
               {item.label}
@@ -54,13 +58,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
           )
         } else { // This item must be a statusControl.
           return (
-            <div key={index} className="flex items-center justify-between px-4 py-1 text-sm text-white w-full space-x-2">
+            <div key={index} className="flex items-center justify-between px-vu-lg py-vu-min text-vu-13 text-white w-full space-x-vu-md">
               <button
                 onClick={(e) => {
                   e.stopPropagation(); item.onRemove()
                 }}
                 disabled={item.removeDisabled}
-                className="w-7 h-6 flex items-center justify-center bg-gray-700 hover:bg-red-600 rounded disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed font-mono text-lg"
+                className="w-vu-status-btn h-vu-status-btn flex items-center justify-center bg-gray-700 hover:bg-red-600 rounded disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed font-mono text-vu-13"
               >
                                 -
               </button>
@@ -69,7 +73,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
                 onClick={(e) => {
                   e.stopPropagation(); item.onAdd()
                 }}
-                className="w-7 h-6 flex items-center justify-center bg-gray-700 hover:bg-green-600 rounded font-mono text-lg"
+                className="w-vu-status-btn h-vu-status-btn flex items-center justify-center bg-gray-700 hover:bg-green-600 rounded font-mono text-vu-13"
               >
                                 +
               </button>

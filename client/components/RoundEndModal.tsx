@@ -50,7 +50,7 @@ export const RoundEndModal: React.FC<RoundEndModalProps> = ({ gameState, onConti
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[200] backdrop-blur-sm">
-      <div className="bg-gray-900 rounded-lg border-2 border-gray-700 shadow-2xl p-6 w-full max-w-md text-left relative">
+      <div className="bg-gray-900 rounded-vu-2 border-2 border-gray-700 shadow-2xl p-6 w-full max-w-md text-left relative">
 
         {/* Header */}
         <div className="mb-4 text-center">

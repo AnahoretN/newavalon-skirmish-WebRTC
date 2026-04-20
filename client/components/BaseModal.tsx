@@ -19,11 +19,11 @@ export interface BaseModalProps {
 }
 
 const sizeClasses = {
-  sm: 'max-w-md',
-  md: 'max-w-lg',
-  lg: 'max-w-2xl',
-  xl: 'max-w-4xl',
-  full: 'max-w-full max-h-full m-4',
+  sm: 'max-w-vu-modal-sm',
+  md: 'max-w-vu-modal-md',
+  lg: 'max-w-vu-modal-lg',
+  xl: 'max-w-vu-modal-xl',
+  full: 'max-w-full max-h-full m-vu-lg',
 }
 
 /**
@@ -111,7 +111,7 @@ export const BaseModal: React.FC<BaseModalProps> = ({
   return (
     <div
       ref={modalRef}
-      className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${className}`}
+      className={`fixed inset-0 z-50 flex items-center justify-center p-vu-lg ${className}`}
       onClick={handleBackdropClick}
     >
       {/* Animated backdrop */}
@@ -123,7 +123,7 @@ export const BaseModal: React.FC<BaseModalProps> = ({
 
       {/* Animated modal */}
       <div
-        className={`bg-gray-800 rounded-lg shadow-2xl w-full ${
+        className={`bg-gray-800 rounded-vu-2 shadow-2xl w-full ${
           sizeClasses[size]
         } border border-white/10 relative transition-all duration-200 ${
           isContentVisible
@@ -134,17 +134,17 @@ export const BaseModal: React.FC<BaseModalProps> = ({
       >
         {/* Header */}
         {(title || showCloseButton) && (
-          <div className="flex items-center justify-between p-4 border-b border-gray-700">
-            {title && <h2 className="text-xl font-bold text-white">{title}</h2>}
+          <div className="flex items-center justify-between p-vu-lg border-b border-gray-700">
+            {title && <h2 className="text-vu-3xl font-bold text-white">{title}</h2>}
             {showCloseButton && (
               <button
                 onClick={onClose}
-                className="text-gray-400 hover:text-white transition-colors p-1 rounded hover:bg-gray-700"
+                className="text-gray-400 hover:text-white transition-colors p-vu-min rounded-vu-2 hover:bg-gray-700"
                 aria-label={t('close') || 'Close'}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
-                  className="h-6 w-6"
+                  className="w-vu-btn-md h-vu-btn-md"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -162,7 +162,7 @@ export const BaseModal: React.FC<BaseModalProps> = ({
         )}
 
         {/* Content */}
-        <div className="p-4 max-h-[calc(100vh-12rem)] overflow-y-auto custom-scrollbar">
+        <div className="p-vu-lg max-h-[calc(100vh-var(--vu-header-height))] overflow-y-auto custom-scrollbar">
           {children}
         </div>
       </div>
@@ -180,7 +180,7 @@ export interface ModalFooterProps {
 
 export const ModalFooter: React.FC<ModalFooterProps> = ({ children, className = '' }) => {
   return (
-    <div className={`flex items-center justify-end gap-2 mt-4 pt-4 border-t border-gray-700 ${className}`}>
+    <div className={`flex items-center justify-end gap-vu-base mt-vu-lg pt-vu-lg border-t border-gray-700 ${className}`}>
       {children}
     </div>
   )
@@ -197,8 +197,8 @@ export interface ModalSectionProps {
 
 export const ModalSection: React.FC<ModalSectionProps> = ({ title, children, className = '' }) => {
   return (
-    <div className={`mb-4 ${className}`}>
-      {title && <h3 className="text-lg font-semibold mb-2 text-white">{title}</h3>}
+    <div className={`mb-vu-md ${className}`}>
+      {title && <h3 className="text-vu-xl font-semibold mb-vu-md text-white">{title}</h3>}
       {children}
     </div>
   )

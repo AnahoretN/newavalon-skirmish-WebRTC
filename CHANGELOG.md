@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-20
+
+### Added
+- **Virtual Units (VU) System**: Complete dynamic measurement system for responsive UI
+  - **1 VU = 0.1% of window height** - fully dynamic scaling based on viewport
+  - Interface automatically scales to any screen size (720p - 4K)
+  - All elements maintain proportions regardless of window size
+  - No media queries needed for basic responsiveness
+  - Unified measurement system across entire interface
+
+- **Complete Component Migration**: All 22 UI components migrated to VU system
+  - Core components: Card.tsx, GameBoard.tsx, PlayerPanel.tsx, App.tsx
+  - Modal windows: BaseModal, DeckViewModal, CardDetailModal, CommandModal, CountersModal, TokensModal
+  - UI elements: Header, Tooltip, ContextMenu, TeamAssignmentModal, JoinGameModal
+  - Animations: ClickWave effects, box-shadows, translateY values
+  - Image optimization: Dynamic Cloudinary image sizes based on VU
+
+- **Testing Infrastructure**: Comprehensive VU testing tools
+  - VUTestPanel for real-time monitoring (enable with VITE_SHOW_VU_PANEL=true)
+  - Automated test suite with runVuTests()
+  - Visual overlay debugging tools
+  - Performance monitoring for FPS and scaling
+
+### Changed
+- **Responsive Design**: Interface now scales seamlessly across all devices
+  - Mobile phones (< 640px): Automatic scaling
+  - Tablets (640px - 1024px): Optimized layout
+  - Desktop (1024px - 1280px): Standard view
+  - 4K screens (> 1280px): Enhanced resolution support
+
+- **Performance**: GPU-accelerated animations and CSS calc() optimizations
+  - Hardware acceleration for smooth 60 FPS animations
+  - CSS calc() expressions processed natively by browser
+  - Reduced JavaScript recalculations
+
+- **Developer Experience**: Simplified responsive design workflow
+  - Single VU measurement system replaces multiple media queries
+  - Consistent sizing across all components
+  - Easy to add new components with VU classes
+
 ## [0.2.13] - 2026-04-14
 
 ### Added

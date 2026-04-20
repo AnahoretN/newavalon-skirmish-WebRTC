@@ -84,79 +84,93 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, ownerPla
 
   return (
     <div onClick={onClose} className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[300]">
-      <div onClick={e => e.stopPropagation()} className={`bg-gray-800 rounded-lg shadow-2xl w-full max-w-4xl h-[40rem] p-6 flex gap-6 border-4 ${themeColor}`}>
-        {/* Left: Image */}
-        <div className="w-1/2 h-full flex-shrink-0">
-          {currentImageSrc ? (
-            <img src={currentImageSrc} onError={handleImageError} alt={displayCard.name} className="w-full h-full object-contain rounded-lg" />
-          ) : (
-            <div className="w-full h-full bg-gray-700 rounded-lg flex items-center justify-center text-2xl font-bold text-center p-4">{displayCard.name}</div>
-          )}
-        </div>
-        {/* Right: Details */}
-        <div className="w-1/2 h-full flex flex-col gap-4 overflow-y-auto pr-2 text-left">
-          {/* Title & Deck */}
-          <div>
-            <h2 className="text-4xl font-bold">{displayCard.name}</h2>
-            <p className="text-lg text-gray-400 capitalize">{displayCard.types?.join(', ') || `${displayCard.deck} Card`}</p>
+      <div onClick={e => e.stopPropagation()} className={`bg-gray-800 rounded-vu-5 shadow-2xl w-full ${themeColor} border-vu-5`} style={{ maxWidth: 'calc(var(--vu-modal-xl) * 2)', maxHeight: '90vh' }}>
+        {/* Main Container: Image (left) + Text+Button (right) */}
+        <div className="flex">
+          {/* Left: Image Container - 3/5 width */}
+          <div className="w-3/5 p-vu-lg">
+            {currentImageSrc ? (
+              <img src={currentImageSrc} onError={handleImageError} alt={displayCard.name} className="w-full h-auto object-contain rounded-vu-5 max-h-[85vh]" />
+            ) : (
+              <div className="w-full h-40 bg-gray-700 rounded-vu-5 flex items-center justify-center text-vu-3xl font-bold text-center p-vu-lg">{displayCard.name}</div>
+            )}
           </div>
 
-          {/* Core Stats */}
-          <div className="bg-gray-900 p-4 rounded-lg">
-            <p><strong className="text-indigo-400 text-lg">Power:</strong> <span className="text-xl font-bold">{displayCard.power}</span></p>
-            <p className="mt-2"><strong className="text-indigo-400 text-lg">Ability:</strong> <span className="text-gray-200 text-base">{formatAbilityText(displayCard.abilityText, abilityKeywords)}</span></p>
-          </div>
+          {/* Right: Text Container + Close Button - 2/5 width */}
+          <div className="w-2/5 flex flex-col p-vu-lg">
+            {/* Scrollable text container */}
+            <div className="flex flex-col gap-vu-min overflow-y-auto pr-vu-md flex-grow text-left">
+              {/* Title & Deck */}
+              <div>
+                <h2 className="text-vu-20 font-bold">{displayCard.name}</h2>
+                <p className="text-vu-13 text-gray-400 capitalize">{displayCard.types?.join(', ') || `${displayCard.deck} Card`}</p>
+              </div>
 
-          {/* Owner Info */}
-          {ownerPlayer && (
-            <div className="bg-gray-900 p-4 rounded-lg text-sm">
-              <p><strong className="text-indigo-400">Owner:</strong> {ownerPlayer.name}</p>
-              {teamName && <p className="mt-1"><strong className="text-indigo-400">Team:</strong> {teamName}</p>}
+              {/* Core Stats */}
+              <div className="bg-gray-900 p-vu-lg rounded-vu-5">
+                <p><strong className="text-indigo-400 text-vu-15">Power:</strong> <span className="text-vu-15 font-bold">{displayCard.power}</span></p>
+                <p className="mt-vu-md leading-none"><strong className="text-indigo-400 text-vu-15">Ability:</strong> <span className="text-gray-200 text-vu-13">{formatAbilityText(displayCard.abilityText, abilityKeywords)}</span></p>
+              </div>
+
+              {/* Owner Info */}
+              {ownerPlayer && (
+                <div className="bg-gray-900 p-vu-lg rounded-vu-2 text-vu-13">
+                  <p><strong className="text-indigo-400 text-vu-15">Owner:</strong> {ownerPlayer.name}</p>
+                  {teamName && <p className="mt-vu-min"><strong className="text-indigo-400 text-vu-15">Team:</strong> {teamName}</p>}
+                </div>
+              )}
+
+              {/* Statuses */}
+              {card.statuses && card.statuses.length > 0 && (
+                <div className="bg-gray-900 p-vu-lg rounded-vu-5">
+                  <h3 className="text-indigo-400 text-vu-15 font-bold mb-vu-md">Statuses</h3>
+                  <ul className="space-y-vu-md text-vu-13 max-h-50 overflow-y-auto pr-vu-md">
+                    {Object.entries(statusGroups).map(([type, owners]) => {
+                      // Calculate counts per player
+                      const playerCounts = owners.reduce((acc, playerId) => {
+                        acc[playerId] = (acc[playerId] || 0) + 1
+                        return acc
+                      }, {} as Record<number, number>)
+
+                      const breakdown = Object.entries(playerCounts).map(([pid, count]) => {
+                        const pName = allPlayers.find(p => p.id === Number(pid))?.name || `Player ${pid}`
+                        return `${pName} (x${count})`
+                      }).join(', ')
+
+                      const counterDef = getCounterTranslation(type)
+                      const description = counterDef ? counterDef.description : (statusDescriptions[type] || 'No description available.')
+
+                      return (
+                        <li key={type}>
+                          <strong className="text-gray-200">{type}</strong> <span className="text-gray-400 text-vu-13 ml-vu-min">- {breakdown}</span>
+                          <p className="text-gray-400 text-vu-13 pl-vu-md mt-vu-min leading-none">{description}</p>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              )}
+
+              {/* Flavor Text */}
+              {displayCard.flavorText && (
+                <div className="bg-gray-900 p-vu-lg rounded-vu-5">
+                  <h3 className="text-indigo-400 text-vu-15 font-bold mb-vu-min">Flavor Text</h3>
+                  <p className="italic text-gray-400 leading-none">{displayCard.flavorText?.split('\n').map((line, i) => <React.Fragment key={i}>{i > 0 && <br />}{line}</React.Fragment>)}</p>
+                </div>
+              )}
             </div>
-          )}
 
-          {/* Statuses */}
-          {card.statuses && card.statuses.length > 0 && (
-            <div className="bg-gray-900 p-4 rounded-lg">
-              <h3 className="text-indigo-400 text-lg font-bold mb-2">Statuses</h3>
-              <ul className="space-y-2 text-sm">
-                {Object.entries(statusGroups).map(([type, owners]) => {
-                  // Calculate counts per player
-                  const playerCounts = owners.reduce((acc, playerId) => {
-                    acc[playerId] = (acc[playerId] || 0) + 1
-                    return acc
-                  }, {} as Record<number, number>)
-
-                  const breakdown = Object.entries(playerCounts).map(([pid, count]) => {
-                    const pName = allPlayers.find(p => p.id === Number(pid))?.name || `Player ${pid}`
-                    return `${pName} (x${count})`
-                  }).join(', ')
-
-                  const counterDef = getCounterTranslation(type)
-                  const description = counterDef ? counterDef.description : (statusDescriptions[type] || 'No description available.')
-
-                  return (
-                    <li key={type}>
-                      <strong className="text-gray-200">{type}</strong> <span className="text-gray-400 text-xs ml-1">- {breakdown}</span>
-                      <p className="text-gray-400 text-xs pl-2 mt-0.5">{description}</p>
-                    </li>
-                  )
-                })}
-              </ul>
-            </div>
-          )}
-
-          {/* Flavor Text */}
-          {displayCard.flavorText && (
-            <div className="bg-gray-900 p-4 rounded-lg">
-              <h3 className="text-indigo-400 font-bold mb-1">Flavor Text</h3>
-              <p className="italic text-gray-400">{displayCard.flavorText?.split('\n').map((line, i) => <React.Fragment key={i}>{i > 0 && <br />}{line}</React.Fragment>)}</p>
-            </div>
-          )}
-
-          <button onClick={onClose} className="mt-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded self-end">
+            {/* Close Button below text container */}
+            <div className="mt-vu-md">
+              <button
+                onClick={onClose}
+                className="w-full py-vu-md px-vu-lg rounded-vu-2 font-bold transition-colors bg-indigo-600 text-white hover:bg-indigo-700"
+                style={{ fontSize: 'var(--vu-text-13)' }}
+              >
                 Close
-          </button>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

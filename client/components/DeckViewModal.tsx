@@ -16,9 +16,9 @@ const DeckViewCard: React.FC<{
   imageRefreshVersion?: number;
   disableActiveHighlights?: boolean;
 }> = memo(({ card, playerColorMap, localPlayerId, imageRefreshVersion, disableActiveHighlights }) => {
-  // Target size: 112x112 display, so 130px gives some margin
-  const TARGET_SIZE = 130
-  const PREVIEW_SIZE = 100  // Larger preview for better quality in modal
+  // Target size: card-small (112px) display with margin, increased 1.5x for Deck modal
+  const TARGET_SIZE = 130 * 1.5
+  const PREVIEW_SIZE = 100 * 1.5  // Larger preview for better quality in modal
 
   // Track which URL to display - only update when target is loaded
   const [displayUrl, setDisplayUrl] = useState<string>(() => {
@@ -299,7 +299,7 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
 
   const rowCount = Math.ceil(cards.length / 5)
   const shouldScroll = rowCount > 5
-  const heightFor5Rows = 'calc(5 * 7rem + 4 * 0.5rem + 1rem)'
+  const heightFor5Rows = 'calc(5 * var(--vu-card-small) + 4 * var(--vu-gap-md) + var(--vu-gap-lg))'
 
   if (!isOpen) {
     return null
@@ -314,18 +314,28 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
       <div
         ref={modalRef}
         onClick={(e) => e.stopPropagation()}
-        className="bg-gray-800 rounded-lg p-4 shadow-xl w-auto max-w-4xl max-h-[95vh] flex flex-col">
-        <div className="flex justify-between items-center mb-2 flex-shrink-0">
-          <h2 className="text-xl font-bold">{title}</h2>
-          <button onClick={onClose} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 px-3 rounded text-sm">
-                {t('close')}
+        className="bg-gray-800 rounded-vu-5 p-vu-lg shadow-xl flex flex-col"
+        style={{ width: 'calc(var(--vu-modal-xl) * 1.5)', maxWidth: 'calc(var(--vu-modal-xl) * 1.5)' }}>
+        <div className="flex justify-between items-center mb-vu-md flex-shrink-0">
+          <div className="flex flex-col">
+            <h2 className="text-vu-3xl font-bold">{title}</h2>
+            {!disableDrag && (
+              <p className="text-gray-400 text-vu-13">{t('dragCardsReorder')}</p>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="py-vu-md px-vu-lg rounded-vu-2 font-bold transition-colors bg-indigo-600 text-white hover:bg-indigo-700"
+            style={{ fontSize: 'var(--vu-text-13)' }}
+          >
+            {t('close')}
           </button>
         </div>
         <div
-          className={`bg-gray-900 rounded p-2 ${shouldScroll ? 'overflow-y-auto' : ''}`}
+          className={`bg-gray-900 rounded p-vu-md ${shouldScroll ? 'overflow-y-auto' : ''}`}
           style={shouldScroll ? { height: heightFor5Rows } : {}}
         >
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-5 gap-vu-md">
             {displayCards.map((card, index) => {
               // Find original index for this card in case of reordering
               const originalIndex = localCards.findIndex(c => c.id === card.id)
@@ -358,13 +368,14 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
                   onClick={() => isInteractive && onCardClick?.(originalIndex)}
                   onDoubleClick={() => isInteractive && onCardDoubleClick?.(originalIndex)}
                   data-interactive={isInteractive}
-                  className={`w-28 h-28 relative transition-all rounded-lg
+                  className={`relative transition-all rounded-vu-5
                     ${canDragThisCard ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}
                     ${isDragTarget ? 'scale-105 z-10' : ''}
                     ${isBeingDragged ? 'scale-95' : (!disableDrag ? 'hover:scale-105' : '')}
                   `}
+                  style={{ width: 'calc(var(--vu-card-small) * 1.5)', height: 'calc(var(--vu-card-small) * 1.5)' }}
                 >
-                  <div className={`w-full h-full ${isHighlighted && highlightFilter ? 'ring-3 ring-cyan-400 rounded-md shadow-[0_0_9px_#22d3ee]' : ''}`}>
+                  <div className={`w-full h-full ${isHighlighted && highlightFilter ? 'ring-vu-md ring-cyan-400 rounded-vu-5 shadow-vu-glow' : ''}`}>
                     <DeckViewCard
                       card={card}
                       playerColorMap={playerColorMap}
@@ -376,14 +387,9 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
                 </div>
               )
             })}
-            {displayCards.length === 0 && <p className="col-span-5 w-full text-center text-gray-400 py-8">{t('empty')}</p>}
+            {displayCards.length === 0 && <p className="col-span-5 w-full text-center text-gray-400 py-vu-xl">{t('empty')}</p>}
           </div>
         </div>
-        {!disableDrag && (
-          <p className="text-gray-400 text-xs mt-2 text-center">
-            {t('dragCardsReorder')}
-          </p>
-        )}
       </div>
     </div>
   )

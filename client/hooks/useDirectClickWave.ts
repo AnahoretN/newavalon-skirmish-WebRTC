@@ -62,17 +62,17 @@ if (typeof document !== 'undefined') {
       0% {
         transform: scale(1.0);
         opacity: 1;
-        border-width: 4px;
+        border-width: var(--vu-border-md);
       }
       50% {
         transform: scale(1.1);
         opacity: 1;
-        border-width: 4px;
+        border-width: var(--vu-border-md);
       }
       100% {
         transform: scale(1.25);
         opacity: 0;
-        border-width: 2px;
+        border-width: var(--vu-border-base);
       }
     }
     .click-wave-ring {
@@ -81,14 +81,14 @@ if (typeof document !== 'undefined') {
       left: 0;
       right: 0;
       bottom: 0;
-      border-radius: 8px;
+      border-radius: var(--vu-wave-radius);
       pointer-events: none !important;
     }
     .click-wave-fill {
       background: radial-gradient(circle, transparent 0%, var(--wave-color) 100%);
     }
     .click-wave-border {
-      border: 4px solid var(--wave-border-color);
+      border: var(--vu-border-md) solid var(--wave-border-color);
     }
   `
   document.head?.appendChild(style)

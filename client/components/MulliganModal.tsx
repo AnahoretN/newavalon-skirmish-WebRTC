@@ -3,6 +3,12 @@ import type { Card as CardType, Player as PlayerType } from '@/types'
 import { Card } from './Card'
 import { useLanguage } from '@/contexts/LanguageContext'
 
+// Вычисляем VU размер для элементов динамически
+const getVuSize = (vu: number) => {
+  const vuPixels = window.innerHeight / 1000
+  return vu * vuPixels
+}
+
 interface MulliganModalProps {
   players: PlayerType[]
   localPlayerId: number | null
@@ -94,15 +100,14 @@ export const MulliganModal: React.FC<MulliganModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-      <div className="bg-gray-800 rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-center gap-3 mb-2">
-          <h2 className="text-2xl font-bold text-white text-center">{tt('mulligan')}</h2>
-          <span className="text-lg text-white font-medium mt-1">[Attempts: {attempts}]</span>
+      <div className="bg-gray-800 rounded-vu-2 p-vu-xl max-w-vu-modal w-full max-h-vu-modal overflow-y-auto" style={{ padding: `${getVuSize(24)}px`, maxWidth: `${getVuSize(800)}px`, maxHeight: `${getVuSize(900)}px` }}>
+        <div className="text-center mb-vu-min" style={{ marginBottom: `${getVuSize(8)}px` }}>
+          <h2 className="font-bold text-white" style={{ fontSize: `${getVuSize(32)}px` }}>{tt('mulligan')}</h2>
         </div>
-        <p className="text-gray-400 mb-6 text-center">{tt('mulliganInstruction')}</p>
+        <p className="text-gray-400 mb-vu-lg text-center" style={{ marginBottom: `${getVuSize(24)}px`, fontSize: `${getVuSize(18)}px` }}>{tt('mulliganInstruction')}</p>
 
         {/* Cards grid - 2 rows by 3 columns */}
-        <div className="grid grid-cols-3 gap-4 mb-6 max-w-[600px] mx-auto">
+        <div className="grid grid-cols-3 gap-vu-md mb-vu-lg mx-auto" style={{ gap: `${getVuSize(16)}px`, marginBottom: `${getVuSize(24)}px`, maxWidth: `${getVuSize(600)}px` }}>
           {hand.map((card, index) => {
             const isClickable = canInteract && canExchange
             return (
@@ -131,15 +136,20 @@ export const MulliganModal: React.FC<MulliganModalProps> = ({
         </div>
 
         {/* Confirm button - always visible, updates with player count */}
-        <div className="flex justify-center">
+        <div className="flex items-center justify-center gap-vu-md">
+          <div className="bg-red-600 px-vu-lg py-vu-md rounded-vu-2 text-white font-bold hover:bg-red-700 transition-colors" style={{ fontSize: `${getVuSize(20)}px` }}>
+            Attempts: {attempts}
+          </div>
+          <div className="w-vu-border h-vu-divider bg-white/30"></div>
           <button
             onClick={handleConfirm}
             disabled={!canInteract}
-            className={`px-8 py-3 font-bold rounded-lg transition-colors ${
+            className={`font-bold rounded-vu-2 transition-colors ${
               canInteract
                 ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
                 : 'bg-gray-600 text-gray-400 cursor-not-allowed'
             }`}
+            style={{ padding: `${getVuSize(12)}px ${getVuSize(32)}px`, fontSize: `${getVuSize(20)}px` }}
           >
             {tt('confirmHand')} [{confirmedCount}/{totalPlayers}]
           </button>

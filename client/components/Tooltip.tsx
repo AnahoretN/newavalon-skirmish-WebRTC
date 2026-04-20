@@ -34,24 +34,29 @@ export const Tooltip: React.FC<TooltipProps> = ({ x, y, children }) => {
       const { innerWidth, innerHeight } = window
       const { offsetWidth, offsetHeight } = tooltipRef.current
 
-      let newLeft = x + 20
+      // Convert VU to pixels for positioning calculations
+      const vuBase = window.innerHeight * 0.001 // CSS пиксели, автоматически компенсируют zoom
+      const offset = vuBase * 22 // ~22px offset from cursor
+      const minEdge = vuBase * 5 // ~5px minimum edge distance
+
+      let newLeft = x + offset
       // If the tooltip would go off the right edge, flip it to the left of the cursor.
       if (newLeft + offsetWidth > innerWidth) {
-        newLeft = x - offsetWidth - 20
+        newLeft = x - offsetWidth - offset
       }
       // Ensure it doesn't go off the left edge
-      if (newLeft < 5) {
-        newLeft = 5
+      if (newLeft < minEdge) {
+        newLeft = minEdge
       }
 
-      let newTop = y + 20
+      let newTop = y + offset
       // If the tooltip would go off the bottom edge, flip it to above the cursor.
       if (newTop + offsetHeight > innerHeight) {
-        newTop = y - offsetHeight - 20
+        newTop = y - offsetHeight - offset
       }
       // Ensure it doesn't go off the top edge
-      if (newTop < 5) {
-        newTop = 5
+      if (newTop < minEdge) {
+        newTop = minEdge
       }
 
       setPosition({ top: newTop, left: newLeft })
@@ -63,7 +68,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ x, y, children }) => {
       ref={tooltipRef}
       // Removed fixed max-w-xs to allow children to dictate width (up to a reasonable screen limit)
       // Added w-max to try to hug content, but max-w constraints in children prevent overflow.
-      className="fixed bg-gray-900 border border-gray-700 rounded-md shadow-lg z-[99999] p-3 text-white text-base pointer-events-none transition-opacity duration-100"
+      className="fixed bg-gray-900 border border-gray-700 rounded-vu-2 shadow-lg z-[99999] p-vu-md text-white text-vu-base pointer-events-none transition-opacity duration-100"
       style={{ top: position.top, left: position.left, opacity: 1 }}
     >
       {children}
@@ -133,19 +138,19 @@ export const CardTooltipContent: React.FC<CardTooltipContentProps> = ({ card, st
 
   // Power positioning styles for inner mode (list mode)
   const powerStyles = powerPosition === 'inner' ? {
-    powerContainer: 'absolute top-[2px] right-[2px] w-4 h-4 rounded-full bg-gray-700 border border-gray-500 flex items-center justify-center text-xs font-bold',
+    powerContainer: 'absolute top-vu-min right-vu-min w-vu-icon-sm h-vu-icon-sm rounded-full bg-gray-700 border border-gray-500 flex items-center justify-center text-vu-xs font-bold',
   } : null
 
   return (
     <div className={baseClasses}>
       {/* Header Section: Name & Type */}
       {/* truncate ensures long names fit without causing horizontal scroll */}
-      <div className="mb-1 pr-1 relative min-w-0">
-        <div className="font-bold text-white text-lg leading-tight mb-0.5 truncate">
+      <div className="mb-vu-min pr-vu-min relative min-w-0">
+        <div className="font-bold text-white leading-tight mb-vu-min truncate text-vu-15">
           {displayName}
         </div>
         {typeString && (
-          <div className="text-xs text-gray-400 font-semibold truncate">
+          <div className="text-gray-400 font-semibold truncate text-vu-13">
             {typeString}
           </div>
         )}
@@ -160,49 +165,49 @@ export const CardTooltipContent: React.FC<CardTooltipContentProps> = ({ card, st
       {/* Body Section: Ability, Statuses, Owner */}
       {/*
           Logic:
-          - If content is long (>35 chars), set w-[16rem] (approx 256px) to force wrapping at ~35 chars.
+          - If content is long (>35 chars), set w-vu-tooltip (approx 256px) to force wrapping at ~35 chars.
           - If content is short, let it auto-size (shrink wrap).
           - whitespace-normal allows wrapping.
-          - If Title is wider than 16rem, the parent (w-max) expands.
+          - If Title is wider than w-vu-tooltip, the parent (w-max) expands.
             This body section will align to the left inside that space.
       */}
-      <div className={`flex flex-col ${!className && isLongContent ? 'w-[16rem]' : 'w-full'} whitespace-normal break-words`}>
+      <div className={`flex flex-col ${!className && isLongContent ? 'w-vu-tooltip' : 'w-full'} whitespace-normal break-words`}>
 
         {/* Divider above Ability - Custom spacing: 1px top, 5px bottom */}
-        {displayAbility && <hr className="border-gray-600 mt-[0px] mb-[2px]" />}
+        {displayAbility && <hr className="border-gray-600 mt-0 mb-vu-min" />}
 
         {/* Ability Text */}
         {displayAbility && (
-          <div className="text-sm text-gray-200 leading-snug">
+          <div className="text-gray-200 leading-snug text-vu-13">
             {formatAbilityText(displayAbility, abilityKeywords)}
           </div>
         )}
 
         {/* Divider below Ability */}
-        {displayAbility && <hr className="border-gray-600 my-[4px]" />}
+        {displayAbility && <hr className="border-gray-600 my-vu-min" />}
 
         {/* Statuses Section */}
         {hasStatuses && (
-          <div className="text-xs text-gray-200 leading-snug">
+          <div className="text-gray-200 leading-snug text-vu-13">
             {Object.entries(statusCountsByType).map(([type, count], index, array) => (
               <span key={type}>
                 <span className="font-bold text-indigo-300">{type}</span>
-                {count > 1 && <span className="text-gray-400 ml-1">(x{count})</span>}
+                {count > 1 && <span className="text-gray-400 ml-vu-min">(x{count})</span>}
                 {statusDescriptions?.[type] && (
-                  <span className="text-gray-400 ml-1">({statusDescriptions[type]})</span>
+                  <span className="text-gray-400 ml-vu-min">({statusDescriptions[type]})</span>
                 )}
-                {index < array.length - 1 ? <span className="text-gray-400 mr-1">, </span> : ''}
+                {index < array.length - 1 ? <span className="text-gray-400 mr-vu-min">, </span> : ''}
               </span>
             ))}
           </div>
         )}
 
         {/* Divider above Owner */}
-        {hasStatuses && ownerName && !hideOwner && <hr className="border-gray-600 my-[2px]" />}
+        {hasStatuses && ownerName && !hideOwner && <hr className="border-gray-600 my-vu-min" />}
 
         {/* Owner Section */}
         {ownerName && !hideOwner && (
-          <div className="text-xs text-gray-500 font-semibold">
+          <div className="text-gray-500 font-semibold text-vu-13">
               Owner: <span className="text-gray-300">{ownerName}</span>
           </div>
         )}

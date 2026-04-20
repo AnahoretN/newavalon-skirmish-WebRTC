@@ -82,7 +82,7 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
           <p className="mb-6 text-gray-400">The application encountered an unexpected error.</p>
           <button
             onClick={() => window.location.reload()}
-            className="bg-indigo-600 px-6 py-3 rounded-lg hover:bg-indigo-700 transition font-bold shadow-lg"
+            className="bg-indigo-600 px-6 py-3 rounded-vu-2 hover:bg-indigo-700 transition font-bold shadow-lg"
           >
             Reload Game
           </button>
