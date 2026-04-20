@@ -347,12 +347,13 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
               const isInteractive = canInteract && isMatchingFilter && !cursorStack
               const canDragThisCard = isInteractive && !disableDrag
 
-              const opacity = isBeingDragged ? 0.5 : (isMatchingFilter ? 1 : 0.3)
+              const opacity = isBeingDragged ? 0.5 : (isMatchingFilter ? 1 : 1)
+              const grayscaleFilter = isMatchingFilter ? 'none' : 'grayscale(100%)'
+              const brightnessFilter = isMatchingFilter ? 'none' : 'brightness(0.4)'
 
               return (
                 <div
                   key={`${card.id}-${index}`}
-                  style={{ opacity }}
                   draggable={canDragThisCard}
                   onDragStart={() => handleDragStart(card, originalIndex)}
                   onDragOver={(e) => handleDragOver(e, index)}
@@ -373,9 +374,9 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
                     ${isDragTarget ? 'scale-105 z-10' : ''}
                     ${isBeingDragged ? 'scale-95' : (!disableDrag ? 'hover:scale-105' : '')}
                   `}
-                  style={{ width: 'calc(var(--vu-card-small) * 1.5)', height: 'calc(var(--vu-card-small) * 1.5)' }}
+                  style={{ width: 'calc(var(--vu-card-small) * 1.5)', height: 'calc(var(--vu-card-small) * 1.5)', filter: `${grayscaleFilter} ${brightnessFilter}`, opacity }}
                 >
-                  <div className={`w-full h-full ${isHighlighted && highlightFilter ? 'ring-vu-md ring-cyan-400 rounded-vu-5 shadow-vu-glow' : ''}`}>
+                  <div className={`w-full h-full ${isHighlighted && highlightFilter && isMatchingFilter ? 'ring-vu-md ring-cyan-400 rounded-vu-5' : ''}`}>
                     <DeckViewCard
                       card={card}
                       playerColorMap={playerColorMap}

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-04-20
+
+### Changed
+- **Deck Selection Visual Feedback**: Improved visual distinction in card selection modals
+  - Valid targets: Normal appearance with optional highlight ring
+  - Invalid targets: Grayscale (100%) + dimmed (40% brightness)
+  - Removed glow effect from invalid targets for clearer visual hierarchy
+  - Applied to "Select Card from Deck" ability interactions
+
 ## [0.3.0] - 2026-04-20
 
 ### Added
