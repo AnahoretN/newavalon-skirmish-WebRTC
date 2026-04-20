@@ -230,6 +230,7 @@
   .text-vu-20 { font-size: var(--vu-text-20); }
   .text-vu-3xl { font-size: var(--vu-text-3xl); }
   .text-vu-4xl { font-size: var(--vu-text-4xl); }
+  .text-vu-35 { font-size: calc(35 * var(--vu-base)); }
 
   /* Icon sizes */
   .w-vu-icon-xs { width: var(--vu-icon-xs); }

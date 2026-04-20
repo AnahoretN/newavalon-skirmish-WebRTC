@@ -598,7 +598,7 @@ const FloatingTextOverlay = memo<{ textData: FloatingTextData; playerColorMap: M
 
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[60] animate-float-up">
-      <span className={`text-vu-3xl font-black ${colorClass}`} style={{ WebkitTextStroke: '1px white' }}>
+      <span className={`text-vu-35 font-black ${colorClass}`} style={{ WebkitTextStroke: '1px white' }}>
         {textData.text}
       </span>
     </div>
@@ -621,7 +621,7 @@ const VisualEffectOverlay = memo<{ effect: VisualEffect; playerColorMap: Map<num
       return (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[60] animate-float-up">
           <span
-            className="text-4xl font-black"
+            className="text-vu-35 font-black"
             style={{
               color: ft.color || `rgb(${colorRgb})`,
               WebkitTextStroke: '1px white'
