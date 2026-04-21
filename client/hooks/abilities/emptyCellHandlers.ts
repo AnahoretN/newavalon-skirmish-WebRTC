@@ -175,6 +175,7 @@ export function handleEmptyCellClick(
     const tokenOwnerId = sourceCard?.ownerId ?? abilityMode.sourceCard?.ownerId
     spawnToken(boardCoords, payload.tokenId, tokenOwnerId!)
     markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    clearTargetingMode()
     setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
     return true
   }
@@ -200,6 +201,7 @@ export function handleEmptyCellClick(
     const tokenOwnerId = sourceCard?.ownerId ?? abilityMode.sourceCard?.ownerId
     spawnToken(boardCoords, payload.tokenId, tokenOwnerId!)
     markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    clearTargetingMode()
     setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
     return true
   }
@@ -221,6 +223,7 @@ export function handleEmptyCellClick(
     const tokenOwnerId = sourceCard?.ownerId ?? abilityMode.sourceCard?.ownerId
     spawnToken(boardCoords, payload.tokenId, tokenOwnerId!)
     markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    clearTargetingMode()
     setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
     return true
   }

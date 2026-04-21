@@ -100,16 +100,25 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, ownerPla
           <div className="w-2/5 flex flex-col p-vu-lg">
             {/* Scrollable text container */}
             <div className="flex flex-col gap-vu-min overflow-y-auto pr-vu-md flex-grow text-left">
-              {/* Title & Deck */}
-              <div>
-                <h2 className="text-vu-20 font-bold">{displayCard.name}</h2>
-                <p className="text-vu-14 text-gray-400 capitalize">{displayCard.types?.join(', ') || `${displayCard.deck} Card`}</p>
+              {/* Title & Deck + Power */}
+              <div className="flex justify-between items-stretch gap-vu-md">
+                <div className="flex-1">
+                  <h2 className="text-vu-20 font-bold">{displayCard.name}</h2>
+                  <p className="text-vu-14 text-gray-400 capitalize">{displayCard.types?.join(', ') || `${displayCard.deck} Card`}</p>
+                </div>
+                <div className="flex items-center bg-gray-900 px-vu-lg rounded-vu-2">
+                  <span className="text-indigo-400 text-vu-16 font-bold">Power:</span> <span className="text-vu-20 font-black ml-vu-min">{displayCard.power}</span>
+                </div>
               </div>
 
               {/* Core Stats */}
               <div className="bg-gray-900 p-vu-lg rounded-vu-5">
-                <p><strong className="text-indigo-400 text-vu-16">Power:</strong> <span className="text-vu-16 font-bold">{displayCard.power}</span></p>
-                <p className="mt-vu-md leading-none"><strong className="text-indigo-400 text-vu-16">Ability:</strong> <span className="text-gray-200 text-vu-14">{formatAbilityText(displayCard.abilityText, abilityKeywords)}</span></p>
+                <h3 className="text-indigo-400 text-vu-16 font-bold text-center mb-vu-min">Ability</h3>
+                <div className="leading-[1.2] text-gray-200 text-vu-14">
+                  {displayCard.abilityText?.split('\n').map((line, i) => (
+                    <p key={i} className="mb-[1.1em] last:mb-0">{formatAbilityText(line, abilityKeywords)}</p>
+                  ))}
+                </div>
               </div>
 
               {/* Owner Info */}
@@ -123,7 +132,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, ownerPla
               {/* Statuses */}
               {card.statuses && card.statuses.length > 0 && (
                 <div className="bg-gray-900 p-vu-lg rounded-vu-5">
-                  <h3 className="text-indigo-400 text-vu-16 font-bold mb-vu-md">Statuses</h3>
+                  <h3 className="text-indigo-400 text-vu-16 font-bold text-center mb-vu-min">Statuses</h3>
                   <ul className="space-y-vu-md text-vu-14 max-h-50 overflow-y-auto pr-vu-md">
                     {Object.entries(statusGroups).map(([type, owners]) => {
                       // Calculate counts per player
@@ -143,7 +152,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, ownerPla
                       return (
                         <li key={type}>
                           <strong className="text-gray-200">{type}</strong> <span className="text-gray-400 text-vu-14 ml-vu-min">- {breakdown}</span>
-                          <p className="text-gray-400 text-vu-14 pl-vu-md mt-vu-min leading-none">{description}</p>
+                          <p className="text-gray-400 text-vu-14 pl-vu-md mt-vu-min leading-[1.15]">{description}</p>
                         </li>
                       )
                     })}
@@ -154,8 +163,8 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, ownerPla
               {/* Flavor Text */}
               {displayCard.flavorText && (
                 <div className="bg-gray-900 p-vu-lg rounded-vu-5">
-                  <h3 className="text-indigo-400 text-vu-16 font-bold mb-vu-min">Flavor Text</h3>
-                  <p className="italic text-vu-14 text-gray-400 leading-[1.1]">{displayCard.flavorText?.split('\n').map((line, i) => <React.Fragment key={i}>{i > 0 && <br />}{line}</React.Fragment>)}</p>
+                  <h3 className="text-indigo-400 text-vu-16 font-bold text-center mb-vu-min">Flavor Text</h3>
+                  <p className="italic text-vu-14 text-gray-400 leading-[1.15]">{displayCard.flavorText?.split('\n').map((line, i) => <React.Fragment key={i}>{i > 0 && <br />}{line}</React.Fragment>)}</p>
                 </div>
               )}
             </div>

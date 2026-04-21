@@ -1896,7 +1896,7 @@ function handleSpawnToken(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, spawnToken, markAbilityUsed, setAbilityMode } = props
+  const { abilityMode, spawnToken, markAbilityUsed, setAbilityMode, clearTargetingMode } = props
 
   if (!abilityMode || abilityMode.mode !== 'SPAWN_TOKEN') {
     return false
@@ -1916,6 +1916,7 @@ function handleSpawnToken(
   const tokenOwnerId = sourceCard?.ownerId ?? abilityMode.sourceCard?.ownerId
   spawnToken(boardCoords, payload.tokenName, tokenOwnerId!)
   markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+  clearTargetingMode()
   setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
   return true
 }
@@ -1990,7 +1991,7 @@ function handlePlaceToken(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, spawnToken, markAbilityUsed, setAbilityMode } = props
+  const { abilityMode, spawnToken, markAbilityUsed, setAbilityMode, clearTargetingMode } = props
 
   if (!abilityMode || abilityMode.mode !== 'PLACE_TOKEN') {
     return false
@@ -2023,6 +2024,7 @@ function handlePlaceToken(
   } else {
     // Normal completion
     markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    clearTargetingMode()
     setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
   }
   return true

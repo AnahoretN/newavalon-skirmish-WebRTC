@@ -1057,6 +1057,22 @@ function handleEnterMode(
     return
   }
 
+  // SPAWN_TOKEN (Inventive Maker Deploy, Recon Drone Deploy, etc.)
+  if (mode === 'SPAWN_TOKEN') {
+    // Check targets BEFORE activating targeting mode
+    const hasSpawnTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    if (!hasSpawnTargets) {
+      triggerNoTarget(action.sourceCoords || sourceCoords)
+      // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
+      return
+    }
+    // Calculate valid targets for highlighting
+    const spawnTargets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    setAbilityMode(action)
+    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, spawnTargets)
+    return
+  }
+
   // SELECT_UNIT_FOR_MOVE (Finn Setup)
   if (mode === 'SELECT_UNIT_FOR_MOVE') {
     // Check if there are valid targets (allied cards on board)
