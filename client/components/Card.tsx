@@ -612,6 +612,9 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
       const ownerColorName = playerColorMap.get(card.ownerId)
       if (ownerColorName) {
         colorData = PLAYER_COLORS[ownerColorName]
+      } else {
+        // Debug: log when ownerId exists but not in playerColorMap
+        console.warn(`[Card] ownerId ${card.ownerId} not found in playerColorMap. Map keys:`, Array.from(playerColorMap.keys()))
       }
     }
 
@@ -724,7 +727,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
               onMouseLeave={handleMouseLeave}
               onMouseMove={handleMouseMove}
               onMouseDown={handleMouseDown}
-              className={`relative w-full h-full ${backColorClass} rounded-vu-5 shadow-md border-2 ${borderColorClass} flex-shrink-0 transition-transform duration-300 ${shouldHighlight ? 'scale-[1.10] z-10' : ''}`}
+              className={`relative w-full h-full ${backColorClass} rounded-vu-5 shadow-md border-2 ${borderColorClass} flex-shrink-0 ${shouldHighlight ? 'z-10' : ''}`}
             >
               {revealedGroups.length > 0 && (
                 <div className="absolute top-vu-effect-sm left-vu-effect-sm flex flex-wrap gap-vu-min pointer-events-none">
@@ -744,11 +747,12 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
       ) : (
         // --- CARD FACE ---
         (() => {
-          // Theme color priority: owner's player color > card color > deck theme > gray
+          // Theme color priority: owner's player color > card color > deck theme > dark gray (visible)
           // ownerColorData is null if card.ownerId is missing or not found in playerColorMap
+          // IMPORTANT: Always ensure themeColor is set to avoid invisible borders
           const themeColor = ownerColorData
             ? ownerColorData.border
-            : DECK_THEMES[card.deck]?.color || 'border-gray-300'
+            : (DECK_THEMES[card.deck]?.color || 'border-gray-600')
 
           // Background priority:
           // 1. Token cards use their color
@@ -769,14 +773,11 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
             ? [lastPlayedGroup, ...positiveGroups]
             : positiveGroups
 
-          const ownerGlowClass = ownerColorData ? ownerColorData.glow : 'shadow-[0_0_15px_#ffffff]'
-          // Border: VU-based sizing (normal vs ready state)
-          const borderClass = shouldHighlight
-            ? `border-vu-md shadow-2xl ${ownerGlowClass}`
-            : 'border-vu-base'
+          // Border: Always use base width, white border for ready ability is now at cell level
+          const borderClass = 'border-vu-base'
 
           // Inner glow effect with owner's color when ready
-          // Border color: blend between white and owner color (50/50 mix)
+          // Note: White border is now applied at cell level in GameBoard to avoid overflow clipping
           const ownerColorName = card.ownerId ? playerColorMap.get(card.ownerId) : null
           // Fallback to white/blue glow if color is missing from PLAYER_COLOR_RGB
           const colorRgb = ownerColorName ? (PLAYER_COLOR_RGB[ownerColorName] || { r: 255, g: 255, b: 255 }) : null
@@ -786,12 +787,10 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
             g: Math.min(255, Math.round(colorRgb.g * 1.3)),
             b: Math.min(255, Math.round(colorRgb.b * 1.3)),
           } : null
-          // Border color: white
+          // Inner glow and radial gradient overlay (no white border here)
           const innerGlowStyle = shouldHighlight && colorRgb ? {
             background: `radial-gradient(circle at center, transparent 20%, rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.5) 100%)`,
             boxShadow: glowRgb ? `inset 0 0 12px rgba(${glowRgb.r}, ${glowRgb.g}, ${glowRgb.b}, 0.5)` : undefined,
-            border: '5px solid',
-            borderColor: `rgb(255, 255, 255)`,
           } : {}
 
           // Semi-transparent colored filter overlay for cards with ready abilities
@@ -815,7 +814,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
               onMouseDown={handleMouseDown}
               onClick={handleCardClick}
               style={innerGlowStyle}
-              className={`relative w-full h-full ${cardBg} rounded-vu-5 shadow-md ${borderClass} ${themeColor} ${textColor} select-none overflow-hidden ${shouldHighlight ? 'scale-[1.10] z-10 transition-transform duration-300' : ''}`}
+              className={`relative w-full h-full ${cardBg} rounded-vu-5 shadow-md ${borderClass} ${themeColor} ${textColor} select-none overflow-hidden ${shouldHighlight ? 'z-10' : ''}`}
             >
               {currentImageSrc ? (
                 <>

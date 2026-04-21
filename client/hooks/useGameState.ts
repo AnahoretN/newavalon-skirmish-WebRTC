@@ -759,15 +759,6 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   }, [sendAction])
 
   const handleDrop = useCallback((item: DragItem, target: any) => {
-    console.log('[HANDLE DROP] Processing drop:', {
-      source: item.source,
-      cardId: item.card?.id,
-      cardName: item.card?.name,
-      targetCoords: target.boardCoords,
-      activeGridSize: gameState.activeGridSize,
-      boardSize: gameState.board.length
-    })
-
     if (target.target === 'board') {
       // Определяем действие по источнику карты
       let action = 'PLAY_CARD'
