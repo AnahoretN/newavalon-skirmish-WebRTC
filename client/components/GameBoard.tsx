@@ -60,9 +60,9 @@ const isLineSelectionMode = (mode: string | undefined): boolean => {
          mode === 'SELECT_LINE_FOR_SUPPORT_COUNTERS' ||
          mode === 'SELECT_LINE_FOR_THREAT_COUNTERS' ||
          mode === 'SELECT_DIAGONAL'
-}
+};
 
-const GridCell = memo<{
+interface GridCellProps {
   row: number;
   col: number;
   cell: { card: CardType | null };
@@ -71,15 +71,15 @@ const GridCell = memo<{
   handleDrop: (item: DragItem, target: DropTarget) => void;
   draggedItem: DragItem | null;
   setDraggedItem: (item: DragItem | null) => void;
-  openContextMenu: GameBoardProps['openContextMenu'];
-  playMode: GameBoardProps['playMode'];
-  setPlayMode: GameBoardProps['setPlayMode'];
+  openContextMenu: (e: React.MouseEvent, type: 'boardItem' | 'emptyBoardCell', data: any) => void;
+  playMode: { card: CardType; sourceItem: DragItem; faceDown?: boolean } | null;
+  setPlayMode: (mode: null) => void;
   playerColorMap: Map<number, PlayerColor>;
   localPlayerId: number | null;
   onCardDoubleClick: (card: CardType, boardCoords: { row: number; col: number }) => void;
   onEmptyCellDoubleClick: (boardCoords: { row: number; col: number }) => void;
   imageRefreshVersion?: number;
-  cursorStack: GameBoardProps['cursorStack'];
+  cursorStack: { type: string; count: number } | null;
   currentPhase?: number;
   activePlayerId?: number | null; // Aligned with GameState type (null when no active player)
   onCardClick?: (card: CardType, boardCoords: { row: number; col: number }) => void;
@@ -104,7 +104,9 @@ const GridCell = memo<{
   hoveredCell: { row: number; col: number } | null; // State-based hover tracking for drag highlight
   setHoveredCell: (cell: { row: number; col: number } | null) => void; // Setter for hover state
   hideDummyCards?: boolean; // Hide dummy cards setting
-}>((props) => {
+}
+
+const GridCell = memo((props: GridCellProps) => {
   const {
       row, col, cell, isGameStarted, activeGridSize, handleDrop, draggedItem, setDraggedItem,
       openContextMenu, playMode, setPlayMode, playerColorMap, localPlayerId,
@@ -155,24 +157,15 @@ const GridCell = memo<{
       }, [scoringLines, row, col, activeGridSize])
       const showScoringHighlight = scoringLineInfo !== null
 
+// Random delay for ready ability animation - recalculates on any prop change (0-0.25 sec)
+const readyAbilityDelay = useMemo(() => Math.random() * 0.25, [props, cell.card?.id, row, col, currentPhase])
+
       const onDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault()
 
         const rect = e.currentTarget.getBoundingClientRect()
         const centerX = rect.left + rect.width / 2
         const centerY = rect.top + rect.height / 2
-
-        console.log('[DROP] Attempting drop:', {
-          targetRow: row,
-          targetCol: col,
-          activeGridSize,
-          draggedFrom: draggedItem?.source,
-          draggedCardId: draggedItem?.card?.id,
-          elementRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-          center: { x: centerX, y: centerY },
-          cursor: { x: e.clientX, y: e.clientY },
-          offsetFromCenter: { x: e.clientX - centerX, y: e.clientY - centerY }
-        })
 
         if (draggedItem) {
           handleDrop(draggedItem, { target: 'board', boardCoords: { row, col } })
@@ -239,16 +232,6 @@ const GridCell = memo<{
         const centerX = rect.left + rect.width / 2
         const centerY = rect.top + rect.height / 2
 
-        console.log('[DRAG OVER] Cell coords:', {
-          row, col, activeGridSize,
-          cellIsEmpty, canDrop,
-          draggedFrom: draggedItem?.source,
-          elementRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-          center: { x: centerX, y: centerY },
-          cursor: { x: e.clientX, y: e.clientY },
-          offsetFromCenter: { x: e.clientX - centerX, y: e.clientY - centerY }
-        })
-
         if (canDrop) {
           // Set immediately for instant visual feedback - using state to trigger re-render
           setHoveredCell({ row, col })
@@ -297,15 +280,6 @@ const GridCell = memo<{
         if (cell.card) {
           const rect = e.currentTarget.getBoundingClientRect()
 
-          console.log('[DRAG START] Card from board:', {
-            cardId: cell.card.id,
-            cardName: cell.card.name,
-            sourceRow: row,
-            sourceCol: col,
-            activeGridSize,
-            elementRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-          })
-
           setDraggedItem({
             card: cell.card,
             source: 'board',
@@ -344,13 +318,7 @@ const GridCell = memo<{
       const isInPlayMode = !!playMode
       const isStackMode = !!cursorStack
       const isOccupied = !!cell.card
-      const baseClasses = 'w-full h-full min-w-0 min-h-0 rounded-vu-5 border border-gray-600 border-opacity-30 transition-colors duration-200 flex items-center justify-center relative overflow-hidden'
 
-      // Check if dragged item is from hand/deck/discard/board (cards that can be played/moved)
-      const isDraggingCard = draggedItem && ['hand', 'deck', 'discard', 'board'].includes(draggedItem.source)
-
-      // Interactive for click handling, but visual highlight comes from shared highlights
-      const isInteractive = isValidTarget || (isInPlayMode && !isOccupied) || (isStackMode && isValidTarget)
       // Check if card has ready ability (for activation) - ONLY for active player's cards
       const hasReadyAbility = cell.card && hasReadyAbilityInCurrentPhase(
         cell.card,
@@ -358,6 +326,15 @@ const GridCell = memo<{
         activePlayerId
       )
       const hasActiveEffect = isValidTarget || hasReadyAbility
+
+      // Remove overflow-hidden when there are active effects to allow highlights to show outside cell bounds
+      const baseClasses = `w-full h-full min-w-0 min-h-0 rounded-vu-5 border border-gray-600 border-opacity-30 transition-colors duration-200 flex items-center justify-center relative ${hasActiveEffect ? '' : 'overflow-hidden'}`
+
+      // Check if dragged item is from hand/deck/discard/board (cards that can be played/moved)
+      const isDraggingCard = draggedItem && ['hand', 'deck', 'discard', 'board'].includes(draggedItem.source)
+
+      // Interactive for click handling, but visual highlight comes from shared highlights
+      const isInteractive = isValidTarget || (isInPlayMode && !isOccupied) || (isStackMode && isValidTarget)
       // Card has active effects (highlight, selection, or ready ability) - should appear above other cards
 
       // Visual highlights:
@@ -611,6 +588,42 @@ const GridCell = memo<{
             </div>
           )}
 
+          {/* Ready ability highlight - targeting-style highlight without fill or pulse, with entrance animation */}
+          {hasReadyAbility && !disableActiveHighlights && !targetingModePlayerId && (() => {
+            // Check if this card is currently executing an ability
+            const isExecutingAbility = abilitySourceCoords &&
+              abilitySourceCoords.row === row &&
+              abilitySourceCoords.col === col;
+
+            // Don't show highlight if card is executing ability
+            if (isExecutingAbility) {
+              return null;
+            }
+
+            // Get card owner's color for glow effect
+            const cardOwnerId = cell.card?.ownerId;
+            const ownerColorName = cardOwnerId ? playerColorMap.get(cardOwnerId) : null;
+            const colorRgb = ownerColorName ? (PLAYER_COLOR_RGB[ownerColorName] || { r: 255, g: 255, b: 255 }) : null;
+
+            return (
+              <div
+                className="absolute inset-0 rounded-vu-5 pointer-events-none"
+                style={{
+                  zIndex: 45, // Above drag highlight (40), below scoring overlay (60)
+                  opacity: 0, // Start invisible until animation begins
+                  animation: `ready-ability-entrance 0.7s ease-out forwards`,
+                  animationDelay: `${readyAbilityDelay}s`, // Delay before animation starts
+                  transformOrigin: 'center center',
+                  boxShadow: colorRgb ? `0 0 calc(12 * var(--vu-base)) rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.75)` : undefined, // 12vu glow
+                  border: 'calc(5 * var(--vu-base)) solid', // 5vu border
+                  borderColor: 'white',
+                  background: 'transparent', // No fill
+                }}
+                title="Ready to activate ability"
+              />
+            )
+          })()}
+
           {/* Scoring line clickable overlay - captures clicks on cards during scoring */}
           {showScoringHighlight && scoringLineInfo && (
             <div
@@ -761,16 +774,6 @@ export const GameBoard = memo<GameBoardProps>(({
       .slice(offset, offset + activeGridSize)
       .map(row => row.slice(offset, offset + activeGridSize))
 
-    // Debug: log the active board dimensions
-    console.log('[activeBoard] Created:', {
-      totalSize,
-      activeGridSize,
-      offset,
-      rowCount: sliced.length,
-      colCount: sliced[0]?.length || 0,
-      totalCells: sliced.reduce((sum, row) => sum + row.length, 0)
-    })
-
     return sliced
   }, [board, activeGridSize])
 
@@ -862,14 +865,6 @@ export const GameBoard = memo<GameBoardProps>(({
   const processedCells = useMemo(() => {
     const totalSize = board.length
     const offset = Math.floor((totalSize - activeGridSize) / 2)
-
-    console.log('[GameBoard] Creating cells for grid:', {
-      totalSize,
-      activeGridSize,
-      offset,
-      boardLength: board.length,
-      activeBoardLength: activeBoard.length
-    })
 
     // Helper to check if ability mode is a line selection mode
     const isLineSelectionModeAbility = abilityMode?.mode && (
@@ -971,16 +966,6 @@ export const GameBoard = memo<GameBoardProps>(({
         const originalColIndex = colIndex + offset
         const cellKey = `${originalRowIndex}-${originalColIndex}`
 
-        // Log first few cells to understand the grid structure
-        if (rowIndex < 2 && colIndex < 2) {
-          console.log(`[GameBoard] Cell [${rowIndex}][${colIndex}]:`, {
-            originalRowIndex,
-            originalColIndex,
-            cellKey,
-            hasCard: !!cell.card
-          })
-        }
-
         const isTargetingModeValidTarget = targetingModeTargetsSet.has(cellKey)
 
         // Filter new ID-based visual effects for this cell
@@ -1008,15 +993,6 @@ export const GameBoard = memo<GameBoardProps>(({
         }
       }),
     )
-
-    // Debug: log the processed cells count
-    const totalCells = cells.reduce((sum, row) => sum + row.length, 0)
-    console.log('[processedCells] Created:', {
-      gridRows: cells.length,
-      gridCols: cells[0]?.length || 0,
-      totalCells,
-      gridSizeClass: gridSizeClasses[activeGridSize]
-    })
 
     return cells
   }, [activeBoard, board.length, activeGridSize, validTargetsSet, targetingModeTargetsSet, targetingMode?.action?.mode, noTargetOverlay, floatingTextsMap, visualEffectsArray, abilityMode, abilityMode?.payload?.firstCoords])

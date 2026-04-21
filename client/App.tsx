@@ -335,20 +335,9 @@ const AppInner = function AppInner() {
     }
   })
 
-  // Debug wrapper for setHideDummyCards
-  const handleToggleHideDummyCards = useCallback((newValue: boolean | ((prev: boolean) => boolean)) => {
-    console.log('[hideDummyCards] Toggling:', typeof newValue === 'function' ? 'function' : newValue)
-    setHideDummyCards(prev => {
-      const finalValue = typeof newValue === 'function' ? newValue(prev) : newValue
-      console.log('[hideDummyCards] Previous:', prev, 'New:', finalValue)
-      return finalValue
-    })
-  }, [])
-
   // Save hideDummyCards setting to localStorage when it changes
   useEffect(() => {
     try {
-      console.log('[hideDummyCards] Saving to localStorage:', hideDummyCards)
       localStorage.setItem('hide_dummy_cards', String(hideDummyCards))
     } catch {
       // Ignore localStorage errors
@@ -669,7 +658,21 @@ const AppInner = function AppInner() {
     if (prevPlayersRef.current !== playersSignature) {
       prevPlayersRef.current = playersSignature
       const newMap = new Map<number, PlayerColor>()
-      currentPlayers.forEach(p => newMap.set(p.id, p.color))
+
+      // Validate player colors before adding to map
+      const validColors: PlayerColor[] = ['blue', 'purple', 'red', 'green', 'yellow', 'orange', 'pink', 'brown']
+
+      currentPlayers.forEach(p => {
+        if (p.color && validColors.includes(p.color)) {
+          newMap.set(p.id, p.color)
+        } else {
+          // Debug: log when player has invalid or missing color
+          console.warn(`[App] Player ${p.id} has invalid color:`, p.color, 'Valid colors:', validColors)
+          // Use fallback color (blue) for players with invalid colors
+          newMap.set(p.id, 'blue')
+        }
+      })
+
       playerColorMapRef.current = newMap
     }
 
@@ -2918,7 +2921,7 @@ const AppInner = function AppInner() {
           }
         }}
         hideDummyCards={hideDummyCards}
-        onToggleHideDummyCards={handleToggleHideDummyCards}
+        onToggleHideDummyCards={setHideDummyCards}
         currentRound={gameState.currentRound}
         turnNumber={gameState.turnNumber}
         isScoringStep={gameState.isScoringStep}

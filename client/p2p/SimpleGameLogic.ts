@@ -2282,12 +2282,14 @@ function handleDestroyCard(state: GameState, _playerId: number, data: any): Game
   // This allows deploy ability to be used again when card returns to battlefield
   clearAllStatusesExceptRevealed(destroyedCard)
 
-  // Add to owner's discard
+  // Check if destroyed card is a token - tokens don't go to discard
+
+  // Add to owner's discard ONLY if it's NOT a token
   let updatedState = {
     ...state,
     board: newBoard,
     players: state.players.map(p => {
-      if (p.id === ownerId) {
+      if (p.id === ownerId && !isToken(destroyedCard)) {
         return {
           ...p,
           discard: [...p.discard, destroyedCard],

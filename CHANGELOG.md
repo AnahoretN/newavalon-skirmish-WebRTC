@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-04-21
+
+### Fixed
+- **Critical Compilation Errors**: Fixed multiple syntax errors preventing build
+  - Missing semicolons in GameBoard.tsx (lines 601-606)
+  - Incorrect GridCell component type definition - changed from inline type to interface
+  - React Hooks violation - moved useMemo out of conditional block (IIFE)
+  - Improper hook dependencies causing order mismatch errors
+
+### Added
+- **Ready Ability Animation Enhancement**: Improved visual feedback for ready abilities
+  - Random delay (0-0.25 seconds) for each card's ability highlight
+  - Delay recalculates on phase change for dynamic effect
+  - Smooth entrance animation with proper opacity transitions
+  - Prevents visual clutter by desynchronizing ability highlights
+
 ## [0.3.1] - 2026-04-20
 
 ### Changed
