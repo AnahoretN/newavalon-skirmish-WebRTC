@@ -1018,12 +1018,12 @@ export function handleResetGame(ws: any, data: any) {
     gameState.isRoundEndModalOpen = false;
     gameState.isReadyCheckActive = false;
 
-    // Clear the board with preserved grid size (activeGridSize is a number: 4, 5, 6, 7)
-    const gridSize: number = (preservedSettings.activeGridSize as unknown as number) || 8;
+    // Clear the board - ALWAYS use maximum size (7x7), activeGridSize only controls the visible area
+    const GRID_MAX_SIZE = 7;
     gameState.board = [];
-    for (let i = 0; i < gridSize; i++) {
+    for (let i = 0; i < GRID_MAX_SIZE; i++) {
       const row: any[] = [];
-      for (let j = 0; j < gridSize; j++) {
+      for (let j = 0; j < GRID_MAX_SIZE; j++) {
         row.push({ card: null });
       }
       gameState.board.push(row);

@@ -286,12 +286,12 @@ export function handleResetGame(state: GameState): GameState {
     }
   })
 
-  // Create empty board with preserved size
-  const gridSize = state.activeGridSize || 8
+  // Create empty board - ALWAYS 7x7, activeGridSize controls the visible/playable area
+  const BOARD_SIZE = 7
   const newBoard: Array<Array<{ card: Card | null }>> = []
-  for (let i = 0; i < gridSize; i++) {
+  for (let i = 0; i < BOARD_SIZE; i++) {
     const row: Array<{ card: Card | null }> = []
-    for (let j = 0; j < gridSize; j++) {
+    for (let j = 0; j < BOARD_SIZE; j++) {
       row.push({ card: null })
     }
     newBoard.push(row)

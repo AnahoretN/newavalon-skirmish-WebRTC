@@ -1141,10 +1141,11 @@ function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): G
   const toRow = toCoords.row
   const toCol = toCoords.col
 
-  // Check boundaries
-  const gridSize = state.activeGridSize
-  if (fromRow < 0 || fromRow >= gridSize || fromCol < 0 || fromCol >= gridSize) {return state}
-  if (toRow < 0 || toRow >= gridSize || toCol < 0 || toCol >= gridSize) {return state}
+  // Check boundaries - use actual board size (always 7x7), not activeGridSize
+  // Coordinates are actual board indices, activeGridSize is only for visual rendering
+  const boardSize = state.board.length
+  if (fromRow < 0 || fromRow >= boardSize || fromCol < 0 || fromCol >= boardSize) {return state}
+  if (toRow < 0 || toRow >= boardSize || toCol < 0 || toCol >= boardSize) {return state}
 
   // Check if source cell contains card
   const sourceCard = state.board[fromRow]?.[fromCol]?.card

@@ -961,6 +961,16 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         draggable={canDrag && !isPlaceholder}
                         onDragStart={(e) => {
                           if (canDrag && !isPlaceholder) {
+                            const rect = e.currentTarget.getBoundingClientRect()
+
+                            console.log('[DRAG START] Card from hand:', {
+                              cardId: card.id,
+                              cardName: card.name,
+                              playerId: player.id,
+                              cardIndex: index,
+                              elementRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+                            })
+
                             setDraggedItem({
                               card,
                               source: 'hand',

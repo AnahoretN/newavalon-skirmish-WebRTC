@@ -43,7 +43,6 @@ export const initializeVUBasePixels = (): void => {
   const computedValue = root.style.getPropertyValue('--vu-base-px')
   const computedStyle = window.getComputedStyle(root)
   const cssVarValue = computedStyle.getPropertyValue('--vu-base-px')
-  console.log(`CSS var check: setProperty="${vuPixels}px", style.getPropertyValue="${computedValue}", computedStyle.getPropertyValue="${cssVarValue}"`)
 }
 
 /**

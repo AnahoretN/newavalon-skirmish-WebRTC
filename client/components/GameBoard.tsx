@@ -157,11 +157,28 @@ const GridCell = memo<{
 
       const onDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault()
+
+        const rect = e.currentTarget.getBoundingClientRect()
+        const centerX = rect.left + rect.width / 2
+        const centerY = rect.top + rect.height / 2
+
+        console.log('[DROP] Attempting drop:', {
+          targetRow: row,
+          targetCol: col,
+          activeGridSize,
+          draggedFrom: draggedItem?.source,
+          draggedCardId: draggedItem?.card?.id,
+          elementRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+          center: { x: centerX, y: centerY },
+          cursor: { x: e.clientX, y: e.clientY },
+          offsetFromCenter: { x: e.clientX - centerX, y: e.clientY - centerY }
+        })
+
         if (draggedItem) {
           handleDrop(draggedItem, { target: 'board', boardCoords: { row, col } })
         }
         setHoveredCell(null)
-      }, [draggedItem, handleDrop, row, col, setHoveredCell])
+      }, [draggedItem, handleDrop, row, col, setHoveredCell, activeGridSize])
 
       const handleClick = useCallback(() => {
         // Check if we're in line selection mode (for abilities) - check FIRST before other modes
@@ -217,6 +234,21 @@ const GridCell = memo<{
         const cellIsEmpty = !cell.card
         const canDrop = cellIsEmpty || (cell.card && isCounter)
 
+        // Get element position for debugging
+        const rect = e.currentTarget.getBoundingClientRect()
+        const centerX = rect.left + rect.width / 2
+        const centerY = rect.top + rect.height / 2
+
+        console.log('[DRAG OVER] Cell coords:', {
+          row, col, activeGridSize,
+          cellIsEmpty, canDrop,
+          draggedFrom: draggedItem?.source,
+          elementRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+          center: { x: centerX, y: centerY },
+          cursor: { x: e.clientX, y: e.clientY },
+          offsetFromCenter: { x: e.clientX - centerX, y: e.clientY - centerY }
+        })
+
         if (canDrop) {
           // Set immediately for instant visual feedback - using state to trigger re-render
           setHoveredCell({ row, col })
@@ -228,7 +260,7 @@ const GridCell = memo<{
           }
           e.dataTransfer.dropEffect = 'none'
         }
-      }, [draggedItem, cell.card, row, col, hoveredCell, setHoveredCell])
+      }, [draggedItem, cell.card, row, col, hoveredCell, setHoveredCell, activeGridSize])
 
       const onDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
         // Only clear if we're leaving this cell (not entering a child element)
@@ -263,6 +295,17 @@ const GridCell = memo<{
           return
         }
         if (cell.card) {
+          const rect = e.currentTarget.getBoundingClientRect()
+
+          console.log('[DRAG START] Card from board:', {
+            cardId: cell.card.id,
+            cardName: cell.card.name,
+            sourceRow: row,
+            sourceCol: col,
+            activeGridSize,
+            elementRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+          })
+
           setDraggedItem({
             card: cell.card,
             source: 'board',
@@ -277,7 +320,7 @@ const GridCell = memo<{
             e.dataTransfer.setDragImage(cardElement as Element, 20, 20)
           }
         }
-      }, [cell.card, setDraggedItem, row, col, cursorStack])
+      }, [cell.card, setDraggedItem, row, col, cursorStack, activeGridSize])
 
       const handleCardContextMenu = useCallback((e: React.MouseEvent) => {
         // Right-click cancels all targeting/ability modes for all players
@@ -301,7 +344,7 @@ const GridCell = memo<{
       const isInPlayMode = !!playMode
       const isStackMode = !!cursorStack
       const isOccupied = !!cell.card
-      const baseClasses = 'w-full h-full rounded-vu-5 border border-gray-600 border-opacity-30 transition-colors duration-200 flex items-center justify-center relative'
+      const baseClasses = 'w-full h-full min-w-0 min-h-0 rounded-vu-5 border border-gray-600 border-opacity-30 transition-colors duration-200 flex items-center justify-center relative overflow-hidden'
 
       // Check if dragged item is from hand/deck/discard/board (cards that can be played/moved)
       const isDraggingCard = draggedItem && ['hand', 'deck', 'discard', 'board'].includes(draggedItem.source)
@@ -538,11 +581,11 @@ const GridCell = memo<{
               }}
               onContextMenu={handleCardContextMenu}
               onDoubleClick={handleCardDoubleClick}
-              className={`w-full h-full ${isGameStarted && !cursorStack ? 'cursor-grab' : 'cursor-default'} relative ${hasActiveEffect ? 'z-40' : 'z-30'}`}
+              className={`w-full h-full min-w-0 min-h-0 ${isGameStarted && !cursorStack ? 'cursor-grab' : 'cursor-default'} relative flex-shrink overflow-hidden ${hasActiveEffect ? 'z-40' : 'z-30'}`}
               data-interactive="true"
             >
               {/* Wrapper for custom drag image - prevents tooltip from being included in drag */}
-              <div data-card-element="true" className="w-full h-full">
+              <div data-card-element="true" className="w-full h-full min-w-0 min-h-0 overflow-hidden flex items-center justify-center">
                 <Card
                   card={cell.card}
                   isFaceUp={isFaceUp}
@@ -583,11 +626,12 @@ const GridCell = memo<{
 
 GridCell.displayName = 'GridCell'
 
+// Use only grid-cols-N, let rows auto-generate for better responsiveness
 const gridSizeClasses: { [key in GridSize]: string } = {
-  4: 'grid-cols-4 grid-rows-4',
-  5: 'grid-cols-5 grid-rows-5',
-  6: 'grid-cols-6 grid-rows-6',
-  7: 'grid-cols-7 grid-rows-7',
+  4: 'grid-cols-4',
+  5: 'grid-cols-5',
+  6: 'grid-cols-6',
+  7: 'grid-cols-7',
 }
 
 const FloatingTextOverlay = memo<{ textData: FloatingTextData; playerColorMap: Map<number, PlayerColor>; }>(({ textData, playerColorMap }) => {
@@ -713,9 +757,21 @@ export const GameBoard = memo<GameBoardProps>(({
     const totalSize = board.length
     const offset = Math.floor((totalSize - activeGridSize) / 2)
 
-    return board
+    const sliced = board
       .slice(offset, offset + activeGridSize)
       .map(row => row.slice(offset, offset + activeGridSize))
+
+    // Debug: log the active board dimensions
+    console.log('[activeBoard] Created:', {
+      totalSize,
+      activeGridSize,
+      offset,
+      rowCount: sliced.length,
+      colCount: sliced[0]?.length || 0,
+      totalCells: sliced.reduce((sum, row) => sum + row.length, 0)
+    })
+
+    return sliced
   }, [board, activeGridSize])
 
   // Track which cell is being hovered during drag - using state to trigger re-renders
@@ -806,6 +862,14 @@ export const GameBoard = memo<GameBoardProps>(({
   const processedCells = useMemo(() => {
     const totalSize = board.length
     const offset = Math.floor((totalSize - activeGridSize) / 2)
+
+    console.log('[GameBoard] Creating cells for grid:', {
+      totalSize,
+      activeGridSize,
+      offset,
+      boardLength: board.length,
+      activeBoardLength: activeBoard.length
+    })
 
     // Helper to check if ability mode is a line selection mode
     const isLineSelectionModeAbility = abilityMode?.mode && (
@@ -901,11 +965,21 @@ export const GameBoard = memo<GameBoardProps>(({
       return false
     }
 
-    return activeBoard.map((rowItems, rowIndex) =>
+    const cells = activeBoard.map((rowItems, rowIndex) =>
       rowItems.map((cell, colIndex) => {
         const originalRowIndex = rowIndex + offset
         const originalColIndex = colIndex + offset
         const cellKey = `${originalRowIndex}-${originalColIndex}`
+
+        // Log first few cells to understand the grid structure
+        if (rowIndex < 2 && colIndex < 2) {
+          console.log(`[GameBoard] Cell [${rowIndex}][${colIndex}]:`, {
+            originalRowIndex,
+            originalColIndex,
+            cellKey,
+            hasCard: !!cell.card
+          })
+        }
 
         const isTargetingModeValidTarget = targetingModeTargetsSet.has(cellKey)
 
@@ -934,18 +1008,37 @@ export const GameBoard = memo<GameBoardProps>(({
         }
       }),
     )
+
+    // Debug: log the processed cells count
+    const totalCells = cells.reduce((sum, row) => sum + row.length, 0)
+    console.log('[processedCells] Created:', {
+      gridRows: cells.length,
+      gridCols: cells[0]?.length || 0,
+      totalCells,
+      gridSizeClass: gridSizeClasses[activeGridSize]
+    })
+
+    return cells
   }, [activeBoard, board.length, activeGridSize, validTargetsSet, targetingModeTargetsSet, targetingMode?.action?.mode, noTargetOverlay, floatingTextsMap, visualEffectsArray, abilityMode, abilityMode?.payload?.firstCoords])
 
   return (
     <div className="relative p-vu-board bg-board-bg rounded-vu-5 h-full aspect-square transition-all duration-300">
-      <div className={`grid ${gridSizeClasses[activeGridSize]} gap-vu-board h-full w-full`}>
+      <div
+        className={`grid ${gridSizeClasses[activeGridSize]} gap-vu-board h-full w-full`}
+        style={{
+          gridTemplateRows: `repeat(${activeGridSize}, 1fr)`,
+          gridTemplateColumns: `repeat(${activeGridSize}, 1fr)`
+        }}
+        data-grid-size={activeGridSize}
+        data-total-cells={processedCells.reduce((sum, row) => sum + row.length, 0)}
+      >
         {processedCells.map((rowCells) =>
           rowCells.map(({
             cellKey, originalRowIndex, originalColIndex, cell, isValidTarget,
             isTargetingModeValidTarget, targetingModeActionMode, isNoTarget, cellFloatingTexts,
             cellVisualEffects,
           }) => (
-            <div key={cellKey} className="relative w-full h-full" data-row={originalRowIndex} data-col={originalColIndex}>
+            <div key={cellKey} className="relative w-full h-full min-w-0 min-h-0" data-row={originalRowIndex} data-col={originalColIndex}>
               <GridCell
                 row={originalRowIndex}
                 col={originalColIndex}

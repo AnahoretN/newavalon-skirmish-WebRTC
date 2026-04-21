@@ -22,21 +22,18 @@ interface Player {
   [key: string]: any;
 }
 
-interface Board {
-  row: number;
-  col: number;
+interface Cell {
   card: any | null;
 }
 
-interface GridSize {
-  rows: number;
-  cols: number;
-}
+type Board = Cell[][];
+
+type GridSize = 4 | 5 | 6 | 7;
 
 interface GameState {
   id: string;
   players: Player[];
-  board: Board[][];
+  board: Board;
   isGameStarted: boolean;
   activePlayerId: number | null;
   currentPhase: number;
@@ -73,7 +70,7 @@ export function createGameState(gameId: string, options: GameOptions = {}): Game
     id: gameId,
     players: [],
     spectators: [],
-    board: Array(8).fill(null).map(() => Array(8).fill(null)),
+    board: Array(7).fill(null).map(() => Array(7).fill(null).map(() => ({ card: null }))),
     isGameStarted: false,
     activePlayerId: null,
     currentPhase: 0,
@@ -81,7 +78,7 @@ export function createGameState(gameId: string, options: GameOptions = {}): Game
     currentRound: 1,
     isPrivate: (options && options.isPrivate) || false,
     gameMode: (options && options.gameMode) || 'skirmish',
-    activeGridSize: { rows: 8, cols: 8 },
+    activeGridSize: 4,
     isReadyCheckActive: false,
     isMulliganActive: false,
     mulliganCompletePlayers: [],

@@ -143,16 +143,6 @@ const StatusIcon: React.FC<StatusIconProps> = ({ type, playerId, count, refreshV
       className={`relative flex items-center justify-center ${statusBg} bg-opacity-80 rounded-vu-2 flex-shrink-0`}
       style={sizeStyle}
       title={`${type} (Player ${playerId}) ${!isSingleInstance && count > 0 ? `x${count}` : ''}`}
-      ref={(el) => {
-        if (el && process.env.NODE_ENV === 'development') {
-          const rect = el.getBoundingClientRect()
-          const styles = window.getComputedStyle(el)
-          if (Math.abs(rect.width - iconSize) > 2) { // Только если разница больше 2px
-            console.log(`StatusIcon (${type}): actual=${rect.width.toFixed(1)}x${rect.height.toFixed(1)}px, expected=${iconSize.toFixed(1)}px`)
-            console.log(`  computedStyle: width=${styles.width}, height=${styles.height}`)
-          }
-        }
-      }}
     >
       {currentIconUrl && iconLoadState !== 'failed' ? (
         <img
@@ -825,7 +815,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
               onMouseDown={handleMouseDown}
               onClick={handleCardClick}
               style={innerGlowStyle}
-              className={`relative w-full h-full ${cardBg} rounded-vu-5 shadow-md ${borderClass} ${themeColor} ${textColor} flex-shrink-0 select-none overflow-hidden ${shouldHighlight ? 'scale-[1.10] z-10 transition-transform duration-300' : ''}`}
+              className={`relative w-full h-full ${cardBg} rounded-vu-5 shadow-md ${borderClass} ${themeColor} ${textColor} select-none overflow-hidden ${shouldHighlight ? 'scale-[1.10] z-10 transition-transform duration-300' : ''}`}
             >
               {currentImageSrc ? (
                 <>
