@@ -308,9 +308,15 @@ export function useGameState(_props: any = {}): UseGameStateResult {
 
       const host = new SimpleHost(createInitialState(), {
         onStateUpdate: (personalState) => {
+          console.log('[onStateUpdate HOST] TIMESTAMP:', Date.now())
           const fullState = personalToGameState(personalState, 1)
-          setGameState(fullState)
-          setLocalPlayerId(1)
+          console.log('[onStateUpdate HOST] Checking board[2][3]:', fullState.board[2]?.[3]?.card?.baseId)
+          // CRITICAL: Use flushSync to ensure state updates immediately
+          // This fixes the issue where calculateValidTargets sees stale state
+          flushSync(() => {
+            setGameState(fullState)
+            setLocalPlayerId(1)
+          })
 
           // Auto-save session on state updates
           const sessionData = host.exportSession()
@@ -402,8 +408,10 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           }
 
           const fullState = personalToGameState(personalState, myId)
-          setGameState(fullState)
-          setLocalPlayerId(myId)
+          flushSync(() => {
+            setGameState(fullState)
+            setLocalPlayerId(myId)
+          })
         },
         onConnected: () => {
           setConnectionStatus('Connected')
@@ -614,8 +622,10 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           const host = createHostFromSavedSession(savedSession, {
             onStateUpdate: (personalState) => {
               const fullState = personalToGameState(personalState, 1)
-              setGameState(fullState)
-              setLocalPlayerId(1)
+              flushSync(() => {
+                setGameState(fullState)
+                setLocalPlayerId(1)
+              })
 
               // Continue saving session on state updates
               const sessionData = host.exportSession()
@@ -856,6 +866,8 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           // CRITICAL: Pass targeting mode for chained actions (Tactical Maneuver rewards)
           targetingMode: gameState.targetingMode,
         }
+        console.log('[MOVE_CARD_ON_BOARD] Sending action:', action, actionData)
+        console.log('[MOVE_CARD_ON_BOARD] Card:', item.card?.baseId, 'from:', item.boardCoords, 'to:', target.boardCoords)
       }
 
       sendAction(action, actionData)
@@ -1417,10 +1429,29 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   }, [])
 
   // ============================================================================
+  // Функция для получения свежего состояния из host/guest
+  // Это необходимо для случаев когда React state еще не обновился
+  // ============================================================================
+  const getFreshGameState = useCallback((): GameState => {
+    if (hostRef.current) {
+      // For host, get state directly from SimpleHost
+      return personalToGameState(hostRef.current.state, 1)
+    }
+    if (guestRef.current) {
+      // For guest, get state from SimpleGuest
+      const myId = localPlayerId || 0
+      return personalToGameState(guestRef.current.state, myId)
+    }
+    // Fallback to React state
+    return gameState
+  }, [gameState, localPlayerId])
+
+  // ============================================================================
   // Результат
   // ============================================================================
   return {
     gameState,
+    getFreshGameState, // Функция для получения свежего состояния из host/guest
     localPlayerId,
     setLocalPlayerId,
     draggedItem,

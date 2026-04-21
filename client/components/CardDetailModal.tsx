@@ -103,28 +103,28 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, ownerPla
               {/* Title & Deck */}
               <div>
                 <h2 className="text-vu-20 font-bold">{displayCard.name}</h2>
-                <p className="text-vu-13 text-gray-400 capitalize">{displayCard.types?.join(', ') || `${displayCard.deck} Card`}</p>
+                <p className="text-vu-14 text-gray-400 capitalize">{displayCard.types?.join(', ') || `${displayCard.deck} Card`}</p>
               </div>
 
               {/* Core Stats */}
               <div className="bg-gray-900 p-vu-lg rounded-vu-5">
-                <p><strong className="text-indigo-400 text-vu-15">Power:</strong> <span className="text-vu-15 font-bold">{displayCard.power}</span></p>
-                <p className="mt-vu-md leading-none"><strong className="text-indigo-400 text-vu-15">Ability:</strong> <span className="text-gray-200 text-vu-13">{formatAbilityText(displayCard.abilityText, abilityKeywords)}</span></p>
+                <p><strong className="text-indigo-400 text-vu-16">Power:</strong> <span className="text-vu-16 font-bold">{displayCard.power}</span></p>
+                <p className="mt-vu-md leading-none"><strong className="text-indigo-400 text-vu-16">Ability:</strong> <span className="text-gray-200 text-vu-14">{formatAbilityText(displayCard.abilityText, abilityKeywords)}</span></p>
               </div>
 
               {/* Owner Info */}
               {ownerPlayer && (
-                <div className="bg-gray-900 p-vu-lg rounded-vu-2 text-vu-13">
-                  <p><strong className="text-indigo-400 text-vu-15">Owner:</strong> {ownerPlayer.name}</p>
-                  {teamName && <p className="mt-vu-min"><strong className="text-indigo-400 text-vu-15">Team:</strong> {teamName}</p>}
+                <div className="bg-gray-900 p-vu-lg rounded-vu-2 text-vu-14">
+                  <p><strong className="text-indigo-400 text-vu-16">Owner:</strong> {ownerPlayer.name}</p>
+                  {teamName && <p className="mt-vu-min"><strong className="text-indigo-400 text-vu-16">Team:</strong> {teamName}</p>}
                 </div>
               )}
 
               {/* Statuses */}
               {card.statuses && card.statuses.length > 0 && (
                 <div className="bg-gray-900 p-vu-lg rounded-vu-5">
-                  <h3 className="text-indigo-400 text-vu-15 font-bold mb-vu-md">Statuses</h3>
-                  <ul className="space-y-vu-md text-vu-13 max-h-50 overflow-y-auto pr-vu-md">
+                  <h3 className="text-indigo-400 text-vu-16 font-bold mb-vu-md">Statuses</h3>
+                  <ul className="space-y-vu-md text-vu-14 max-h-50 overflow-y-auto pr-vu-md">
                     {Object.entries(statusGroups).map(([type, owners]) => {
                       // Calculate counts per player
                       const playerCounts = owners.reduce((acc, playerId) => {
@@ -142,8 +142,8 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, ownerPla
 
                       return (
                         <li key={type}>
-                          <strong className="text-gray-200">{type}</strong> <span className="text-gray-400 text-vu-13 ml-vu-min">- {breakdown}</span>
-                          <p className="text-gray-400 text-vu-13 pl-vu-md mt-vu-min leading-none">{description}</p>
+                          <strong className="text-gray-200">{type}</strong> <span className="text-gray-400 text-vu-14 ml-vu-min">- {breakdown}</span>
+                          <p className="text-gray-400 text-vu-14 pl-vu-md mt-vu-min leading-none">{description}</p>
                         </li>
                       )
                     })}
@@ -154,8 +154,8 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, ownerPla
               {/* Flavor Text */}
               {displayCard.flavorText && (
                 <div className="bg-gray-900 p-vu-lg rounded-vu-5">
-                  <h3 className="text-indigo-400 text-vu-15 font-bold mb-vu-min">Flavor Text</h3>
-                  <p className="italic text-gray-400 leading-none">{displayCard.flavorText?.split('\n').map((line, i) => <React.Fragment key={i}>{i > 0 && <br />}{line}</React.Fragment>)}</p>
+                  <h3 className="text-indigo-400 text-vu-16 font-bold mb-vu-min">Flavor Text</h3>
+                  <p className="italic text-vu-14 text-gray-400 leading-[1.1]">{displayCard.flavorText?.split('\n').map((line, i) => <React.Fragment key={i}>{i > 0 && <br />}{line}</React.Fragment>)}</p>
                 </div>
               )}
             </div>
@@ -165,7 +165,7 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({ card, ownerPla
               <button
                 onClick={onClose}
                 className="w-full py-vu-md px-vu-lg rounded-vu-2 font-bold transition-colors bg-indigo-600 text-white hover:bg-indigo-700"
-                style={{ fontSize: 'var(--vu-text-13)' }}
+                style={{ fontSize: 'var(--vu-text-14)' }}
               >
                 Close
               </button>

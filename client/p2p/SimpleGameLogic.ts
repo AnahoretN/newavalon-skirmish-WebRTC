@@ -1132,9 +1132,16 @@ function handlePlayCard(state: GameState, playerId: number, data: any): GameStat
  * MOVE_CARD_ON_BOARD - move card from one cell to another
  */
 function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): GameState {
+  const timestamp = Date.now()
   const { fromCoords, toCoords, faceDown, targetingMode, contextCardId: directContextCardId } = data || {}
 
-  if (!fromCoords || !toCoords) {return state}
+  console.log('[handleMoveCardOnBoard] TIMESTAMP:', timestamp, 'CALLED with data:', data)
+  console.log('[handleMoveCardOnBoard] fromCoords:', fromCoords, 'toCoords:', toCoords)
+
+  if (!fromCoords || !toCoords) {
+    console.log('[handleMoveCardOnBoard] RETURN: missing coords')
+    return state
+  }
 
   const fromRow = fromCoords.row
   const fromCol = fromCoords.col
@@ -1144,16 +1151,41 @@ function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): G
   // Check boundaries - use actual board size (always 7x7), not activeGridSize
   // Coordinates are actual board indices, activeGridSize is only for visual rendering
   const boardSize = state.board.length
-  if (fromRow < 0 || fromRow >= boardSize || fromCol < 0 || fromCol >= boardSize) {return state}
-  if (toRow < 0 || toRow >= boardSize || toCol < 0 || toCol >= boardSize) {return state}
+  if (fromRow < 0 || fromRow >= boardSize || fromCol < 0 || fromCol >= boardSize) {
+    console.log('[handleMoveCardOnBoard] RETURN: fromCoords out of bounds', { fromRow, fromCol, boardSize })
+    return state
+  }
+  if (toRow < 0 || toRow >= boardSize || toCol < 0 || toCol >= boardSize) {
+    console.log('[handleMoveCardOnBoard] RETURN: toCoords out of bounds', { toRow, toCol, boardSize })
+    return state
+  }
 
   // Check if source cell contains card
   const sourceCard = state.board[fromRow]?.[fromCol]?.card
-  if (!sourceCard) {return state}
+  console.log('[handleMoveCardOnBoard] sourceCard at fromCoords:', sourceCard?.baseId, sourceCard?.id)
+  if (!sourceCard) {
+    console.log('[handleMoveCardOnBoard] RETURN: no card at fromCoords')
+    console.log('[handleMoveCardOnBoard] Current board at fromCoords:', state.board[fromRow]?.[fromCol])
+    // Show what cards are on the board
+    console.log('[handleMoveCardOnBoard] All cards on board:')
+    state.board.forEach((row, r) => {
+      row.forEach((cell, c) => {
+        if (cell.card) {
+          console.log(`  board[${r}][${c}]:`, cell.card.baseId, cell.card.id)
+        }
+      })
+    })
+    return state
+  }
 
   // Check if target cell is empty
   const targetCell = state.board[toRow]?.[toCol]
-  if (!targetCell || targetCell.card) {return state}
+  if (!targetCell || targetCell.card) {
+    console.log('[handleMoveCardOnBoard] RETURN: target cell occupied or invalid', targetCell)
+    return state
+  }
+
+  console.log('[handleMoveCardOnBoard] All checks passed, moving card from', { fromRow, fromCol }, 'to', { toRow, toCol })
 
   // STUN RULE: If card is stunned and owner tries to move it, skip movement but apply other effects
   const isStunned = sourceCard.statuses?.some((s: any) => s.type === 'Stun')
@@ -1328,6 +1360,13 @@ function handleMoveCardOnBoard(state: GameState, playerId: number, data: any): G
   if (targetingMode) {
     newState = { ...newState, targetingMode: null }
   }
+
+  // DEBUG: Check what's in the new board at fromCoords and toCoords
+  const cardAtFrom = newState.board[fromRow]?.[fromCol]?.card
+  const cardAtTo = newState.board[toRow]?.[toCol]?.card
+  console.log('[handleMoveCardOnBoard] FINAL STATE: card at fromCoords', { fromRow, fromCol }, ':', cardAtFrom?.baseId)
+  console.log('[handleMoveCardOnBoard] FINAL STATE: card at toCoords', { toRow, toCol }, ':', cardAtTo?.baseId)
+  console.log('[handleMoveCardOnBoard] FINAL STATE: returning newState')
 
   return newState
 }

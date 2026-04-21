@@ -9,6 +9,7 @@ import { TIMING } from '@/utils/common'
 import { validateTarget } from '@shared/utils/targeting'
 import { READY_STATUS } from '@shared/abilities/readySystem.js'
 import { hasReadyStatus } from '@shared/abilities/readySystem.js'
+import { flushSync } from 'react-dom'
 
  
 
@@ -40,6 +41,8 @@ export function handleHandCardClick(
   cardIndex: number,
   props: HandCardClickProps
 ): void {
+  console.log('[HAND CARD CLICK] Called', { playerName: player.name, cardName: card.name, cardIndex })
+
   const {
     gameState,
     localPlayerId,
@@ -63,13 +66,18 @@ export function handleHandCardClick(
   }
 
   // Handle cursorStack for hand cards (e.g., Revealed tokens from Threat Analyst)
+  console.log('[HAND CARD CLICK] cursorStack check', { hasCursorStack: !!cursorStack, cursorStackType: cursorStack?.type })
+
   if (cursorStack) {
+    console.log('[HAND CARD CLICK] Has cursorStack', { type: cursorStack.type, count: cursorStack.count })
+
     // DEBUG: Log cursorStack info
     // RULE: Targeting tokens (Aim, Exploit, Stun, Shield) cannot be placed on cards in hand
     // Only Rule tokens (and Revealed status) can be placed on hand cards
     const targetingTokens = ['Aim', 'Exploit', 'Stun', 'Shield']
     if (targetingTokens.includes(cursorStack.type)) {
       // Silently ignore - do not allow targeting tokens on hand cards
+      console.log('[HAND CARD CLICK] Targeting token not allowed on hand card')
       return
     }
 
@@ -92,9 +100,20 @@ export function handleHandCardClick(
       cursorStack.originalOwnerId // CRITICAL: Pass token owner ID for command cards
     )
 
+    console.log('[HAND CARD CLICK] validateTarget result', { isValid, cardName: card.name, playerId: player.id })
+
     if (isValid) {
       // Apply the token/status to the card
       if (cursorStack.type === 'Revealed') {
+        console.log('[HAND CARD CLICK] Processing Revealed token placement', {
+          playerId: player.id,
+          cardIndex,
+          cardName: card.name,
+          cursorStackCount: cursorStack.count,
+          abilityMode: !!props.abilityMode,
+          abilityModeType: props.abilityMode?.type,
+        })
+
         // For Revealed, we need to request reveal or add status
         const effectiveActorId = cursorStack.sourceCard?.ownerId ?? gameState.activePlayerId ?? localPlayerId ?? 1
         if (!card.statuses) {
@@ -112,26 +131,48 @@ export function handleHandCardClick(
             count: 1,
           }, { target: 'hand', playerId: player.id, cardIndex })
 
+          console.log('[HAND CARD CLICK] Called moveItem for Revealed token')
+
           // CRITICAL: Mark ability as used with proper readyStatusToRemove
           if (cursorStack.sourceCoords && cursorStack.sourceCoords.row >= 0) {
             const readyStatusToRemove = cursorStack.readyStatusToRemove || (cursorStack as any)._originalReadyStatusToRemove
             markAbilityUsed(cursorStack.sourceCoords, cursorStack.isDeployAbility, false, readyStatusToRemove)
+            console.log('[HAND CARD CLICK] Called markAbilityUsed', { sourceCoords: cursorStack.sourceCoords })
           }
-          if (cursorStack.count > 1) {
-            setCursorStack(prev => prev ? ({ ...prev, count: prev.count - 1 }) : null)
-          } else {
-            // Clear targeting mode and valid targets when last token is placed
-            clearTargetingMode()
-            clearValidTargets?.()
-            // For RECON_DRONE_COMMIT and similar multi-step abilities, skip chainedAction
-            // The ability is already marked as used by markAbilityUsed above
-            // chainedAction was only needed for intermediate steps, not final completion
-            setCursorStack(null)
-            // CRITICAL: Clear abilityMode so the ability can complete
+        } else {
+          console.log('[HAND CARD CLICK] Card already has Revealed from this player')
+        }
+
+        // CRITICAL: Always clear targeting mode when clicking on a valid hand card
+        // Even if the status was already present, the click should complete the ability
+        if (cursorStack.count > 1) {
+          console.log('[HAND CARD CLICK] Decreasing cursorStack count', { from: cursorStack.count, to: cursorStack.count - 1 })
+          setCursorStack(prev => prev ? ({ ...prev, count: prev.count - 1 }) : null)
+        } else {
+          console.log('[HAND CARD CLICK] Last token - clearing everything')
+
+          // CRITICAL: Clear abilityMode AND cursorStack FIRST and SYNCHRONOUSLY to prevent
+          // useEffect in App.tsx from restoring targetingMode
+          // The useEffect checks if abilityMode or cursorStack is active and may restore targetingMode
+          flushSync(() => {
             setAbilityMode(null)
-          }
+            setCursorStack(null)
+          })
+          console.log('[HAND CARD CLICK] Cleared abilityMode and cursorStack synchronously')
+
+          // NOW clear targeting mode - it won't be restored because both abilityMode and cursorStack are null
+          clearTargetingMode()
+          clearValidTargets?.()
+
+          console.log('[HAND CARD CLICK] Called clearTargetingMode and clearValidTargets')
         }
       }
+    } else {
+      console.log('[HAND CARD CLICK] Card is NOT valid target for cursorStack', {
+        cardName: card.name,
+        cursorStackType: cursorStack.type,
+        playerId: player.id,
+      })
     }
     return
   }

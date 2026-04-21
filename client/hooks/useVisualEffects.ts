@@ -289,16 +289,25 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
    * Clear targeting mode for all clients
    */
   const clearTargetingMode = useCallback(() => {
+    console.log('[VISUAL EFFECTS] clearTargetingMode called')
+
     // Clear local state
-    setGameState((prev: any) => ({
-      ...prev,
-      targetingMode: null,
-    }))
+    setGameState((prev: any) => {
+      console.log('[VISUAL EFFECTS] Clearing targetingMode in local state', {
+        hadTargetingMode: !!prev.targetingMode,
+        playerId: prev.targetingMode?.playerId,
+      })
+      return {
+        ...prev,
+        targetingMode: null,
+      }
+    })
 
     // Broadcast via SimpleHost if available (P2P mode)
     if (simpleHost) {
       const effects = new SimpleVisualEffects(simpleHost)
       effects.clearTargetingMode()
+      console.log('[VISUAL EFFECTS] Broadcast clearTargetingMode to SimpleHost')
     }
   }, [simpleHost, setGameState])
 

@@ -133,12 +133,12 @@ export const TokensModal: React.FC<TokensModalProps> = ({ isOpen, onClose, setDr
         <div className="flex justify-between items-center mb-vu-md">
           <div className="flex flex-col">
             <h2 className="text-vu-2xl font-bold">{t('tokens')}</h2>
-            <p className="text-gray-400 text-vu-13">{t('dragOutsideToPlaceToken')}</p>
+            <p className="text-gray-400 text-vu-14">{t('dragOutsideToPlaceToken')}</p>
           </div>
           <button
             onClick={onClose}
             className="py-vu-md px-vu-lg rounded-vu-2 font-bold transition-colors bg-indigo-600 text-white hover:bg-indigo-700"
-            style={{ fontSize: 'var(--vu-text-13)' }}
+            style={{ fontSize: 'var(--vu-text-14)' }}
           >
             {t('close')}
           </button>

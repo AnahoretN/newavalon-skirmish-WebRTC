@@ -18,6 +18,7 @@ import {
 
 interface UseAppAbilitiesProps {
     gameState: GameState;
+    getFreshGameState: () => GameState; // Функция для получения свежего состояния
     localPlayerId: number | null;
     abilityMode: AbilityAction | null;
     setAbilityMode: React.Dispatch<React.SetStateAction<AbilityAction | null>>;
@@ -79,6 +80,7 @@ interface UseAppAbilitiesProps {
  */
 export const useAppAbilities = ({
   gameState,
+  getFreshGameState, // Функция для получения свежего состояния
   localPlayerId,
   abilityMode,
   setAbilityMode,
@@ -168,6 +170,7 @@ export const useAppAbilities = ({
   const handleActionExecution = useCallback((action: AbilityAction, sourceCoords: { row: number, col: number }) => {
     handleActionExecutionModule(action, sourceCoords, {
       gameState,
+      getFreshGameState,
       localPlayerId,
       abilityMode,
       setAbilityMode,
@@ -213,6 +216,7 @@ export const useAppAbilities = ({
     })
   }, [
     gameState,
+    getFreshGameState,
     localPlayerId,
     abilityMode,
     setAbilityMode,
@@ -262,12 +266,18 @@ export const useAppAbilities = ({
   }, [abilityMode, handleActionExecution, setAbilityMode])
 
   // Sync targeting mode with abilityMode for P2P visual effects
-  // When abilityMode is cleared, also clear targetingMode
+  // CRITICAL: DON'T auto-clear targetingMode when abilityMode becomes null
+  // Targeting mode should only be cleared explicitly (e.g., when token is placed)
+  // This useEffect is only for logging now
   useEffect(() => {
-    if (!abilityMode) {
-      clearTargetingMode()
-    }
-  }, [abilityMode, clearTargetingMode])
+    console.log('[USE APP ABILITIES] abilityMode changed', {
+      hasAbilityMode: !!abilityMode,
+      abilityModeType: abilityMode?.type,
+      abilityModeMode: abilityMode?.mode,
+    })
+    // NOTE: Removed automatic clearTargetingMode() call to prevent premature clearing
+    // Targeting mode is now managed explicitly in handCardHandlers.ts and modeHandlers.ts
+  }, [abilityMode])
 
   /**
    * Activate a card's ability
@@ -275,6 +285,7 @@ export const useAppAbilities = ({
   const activateAbility = useCallback((card: Card, boardCoords: { row: number, col: number }) => {
     activateAbilityModule(card, boardCoords, {
       gameState,
+      getFreshGameState,
       localPlayerId,
       abilityMode,
       cursorStack,
@@ -283,7 +294,7 @@ export const useAppAbilities = ({
       addBoardCardStatus,
       setAbilityMode,
     })
-  }, [gameState, localPlayerId, abilityMode, cursorStack, handleActionExecution, markAbilityUsed, addBoardCardStatus, setAbilityMode])
+  }, [gameState, getFreshGameState, localPlayerId, abilityMode, cursorStack, handleActionExecution, markAbilityUsed, addBoardCardStatus, setAbilityMode])
   /**
    * Handle click on board card
    */
@@ -390,6 +401,7 @@ export const useAppAbilities = ({
       const currentAbilityMode = abilityModeRef.current
       const handled = handleModeCardClickModule(card, boardCoords, {
         gameState,
+        getFreshGameState,
         localPlayerId,
         abilityMode: currentAbilityMode,
         setAbilityMode,
@@ -495,6 +507,7 @@ export const useAppAbilities = ({
     // Use modular handler
     handleEmptyCellClickModule(boardCoords, {
       gameState,
+      getFreshGameState,
       localPlayerId,
       abilityMode,
       setAbilityMode,
@@ -530,6 +543,7 @@ export const useAppAbilities = ({
     // All empty cell handling is now done in the modular handler
   }, [
     gameState,
+    getFreshGameState,
     localPlayerId,
     abilityMode,
     setAbilityMode,
@@ -561,6 +575,7 @@ export const useAppAbilities = ({
   const handleHandCardClickCallback = useCallback((player: Player, card: Card, cardIndex: number) => {
     handleHandCardClick(player, card, cardIndex, {
       gameState,
+      getFreshGameState,
       localPlayerId,
       abilityMode,
       cursorStack,
@@ -577,6 +592,7 @@ export const useAppAbilities = ({
       setPlayMode,
       activateAbility: (c, coords) => activateAbilityModule(c, coords, {
         gameState,
+        getFreshGameState,
         localPlayerId,
         abilityMode,
         cursorStack,
@@ -585,7 +601,7 @@ export const useAppAbilities = ({
         addBoardCardStatus,
       }),
     })
-  }, [abilityMode, cursorStack, gameState, localPlayerId, handleActionExecution, markAbilityUsed, setAbilityMode, setCommandContext, triggerHandCardSelection, moveItem, setCursorStack, clearTargetingMode, clearValidTargets, setPlayMode, interactionLock])
+  }, [abilityMode, cursorStack, gameState, getFreshGameState, localPlayerId, handleActionExecution, markAbilityUsed, setAbilityMode, setCommandContext, triggerHandCardSelection, moveItem, setCursorStack, clearTargetingMode, clearValidTargets, setPlayMode, interactionLock])
 
   /**
    * Handle double click on announced card
@@ -593,6 +609,7 @@ export const useAppAbilities = ({
   const handleAnnouncedCardDoubleClickCallback = useCallback((player: Player, card: Card) => {
     handleAnnouncedCardDoubleClick(player, card, {
       gameState,
+      getFreshGameState,
       localPlayerId,
       abilityMode,
       cursorStack,
@@ -608,6 +625,7 @@ export const useAppAbilities = ({
       clearValidTargets,
       activateAbility: (c, coords) => activateAbilityModule(c, coords, {
         gameState,
+        getFreshGameState,
         localPlayerId,
         abilityMode,
         cursorStack,
@@ -616,7 +634,7 @@ export const useAppAbilities = ({
         addBoardCardStatus,
       }),
     })
-  }, [abilityMode, cursorStack, gameState, localPlayerId, handleActionExecution, markAbilityUsed, setAbilityMode, setCommandContext, triggerHandCardSelection, moveItem, setCursorStack, clearTargetingMode, clearValidTargets, interactionLock])
+  }, [abilityMode, cursorStack, gameState, getFreshGameState, localPlayerId, handleActionExecution, markAbilityUsed, setAbilityMode, setCommandContext, triggerHandCardSelection, moveItem, setCursorStack, clearTargetingMode, clearValidTargets, interactionLock])
 
   return {
     activateAbility,

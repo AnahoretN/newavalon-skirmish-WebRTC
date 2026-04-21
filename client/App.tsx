@@ -74,6 +74,7 @@ const AppInner = function AppInner() {
 
   const {
     gameState,
+    getFreshGameState,
     localPlayerId,
     setLocalPlayerId,
     createGame,
@@ -433,6 +434,7 @@ const AppInner = function AppInner() {
     handleHandCardClick,
   } = useAppAbilities({
     gameState,
+    getFreshGameState, // Передаём функцию для получения свежего состояния
     localPlayerId,
     abilityMode,
     setAbilityMode,
@@ -1534,9 +1536,10 @@ const AppInner = function AppInner() {
         }
       }
     } else if (!hasActiveMode) {
-      // Clear targeting mode ONLY if it belongs to the local player
-      // Don't clear targeting mode that was set by another player
-      if (gameState.targetingMode?.playerId === localPlayerId) {
+      // Clear targeting mode ONLY if it belongs to the local player AND no cursorStack is active
+      // CRITICAL: Don't clear targeting mode if cursorStack is active (e.g., placing tokens)
+      // Targeting mode will be cleared when token is placed (in handCardHandlers.ts)
+      if (gameState.targetingMode?.playerId === localPlayerId && !cursorStack) {
         clearTargetingMode()
       }
       // Also clear valid hand targets to remove highlights
@@ -1584,6 +1587,7 @@ const AppInner = function AppInner() {
 
   // Clear targetingMode when abilityMode transitions from active to null (Deploy ability completion)
   // This ensures targeting highlights are cleared on all clients when Deploy finishes
+  // CRITICAL: Don't auto-clear if cursorStack is active (e.g., Vigilant Spotter placing Revealed token)
   const prevAbilityModeRef = useRef<AbilityAction | null>(null)
   useEffect(() => {
     const hadAbilityMode = prevAbilityModeRef.current !== null
@@ -1591,14 +1595,15 @@ const AppInner = function AppInner() {
 
     if (hadAbilityMode && !hasAbilityMode) {
       // Ability mode was just cleared - check if it was a Deploy ability or any ability that set targeting mode
-      // Clear targeting mode if it belongs to local player (they own it)
-      if (gameState.targetingMode?.playerId === localPlayerId) {
+      // CRITICAL: Only clear targeting mode if cursorStack is NOT active
+      // If cursorStack is active, targeting mode will be cleared when token is placed (in handCardHandlers.ts)
+      if (gameState.targetingMode?.playerId === localPlayerId && !cursorStack) {
         clearTargetingMode()
       }
     }
 
     prevAbilityModeRef.current = abilityMode
-  }, [abilityMode, gameState.targetingMode?.playerId, localPlayerId, clearTargetingMode])
+  }, [abilityMode, gameState.targetingMode?.playerId, localPlayerId, clearTargetingMode, cursorStack])
 
 
   useEffect(() => {

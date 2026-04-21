@@ -50,7 +50,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
                 }
               }}
               disabled={item.disabled}
-              className="block w-full text-left px-vu-lg py-vu-min text-vu-13 text-white hover:bg-indigo-600 disabled:text-gray-500 disabled:cursor-not-allowed disabled:bg-gray-800"
+              className="block w-full text-left px-vu-lg py-vu-min text-vu-14 text-white hover:bg-indigo-600 disabled:text-gray-500 disabled:cursor-not-allowed disabled:bg-gray-800"
               style={{ fontWeight: item.isBold ? 'bold' : 'normal' }}
             >
               {item.label}
@@ -58,13 +58,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
           )
         } else { // This item must be a statusControl.
           return (
-            <div key={index} className="flex items-center justify-between px-vu-lg py-vu-min text-vu-13 text-white w-full space-x-vu-md">
+            <div key={index} className="flex items-center justify-between px-vu-lg py-vu-min text-vu-14 text-white w-full space-x-vu-md">
               <button
                 onClick={(e) => {
                   e.stopPropagation(); item.onRemove()
                 }}
                 disabled={item.removeDisabled}
-                className="w-vu-status-btn h-vu-status-btn flex items-center justify-center bg-gray-700 hover:bg-red-600 rounded disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed font-mono text-vu-13"
+                className="w-vu-status-btn h-vu-status-btn flex items-center justify-center bg-gray-700 hover:bg-red-600 rounded disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed font-mono text-vu-14"
               >
                                 -
               </button>
@@ -73,7 +73,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
                 onClick={(e) => {
                   e.stopPropagation(); item.onAdd()
                 }}
-                className="w-vu-status-btn h-vu-status-btn flex items-center justify-center bg-gray-700 hover:bg-green-600 rounded font-mono text-vu-13"
+                className="w-vu-status-btn h-vu-status-btn flex items-center justify-center bg-gray-700 hover:bg-green-600 rounded font-mono text-vu-14"
               >
                                 +
               </button>

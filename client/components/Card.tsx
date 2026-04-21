@@ -774,7 +774,7 @@ const CardCore: React.FC<CardCoreProps & CardInteractionProps> = memo(({
             : positiveGroups
 
           // Border: Always use base width, white border for ready ability is now at cell level
-          const borderClass = 'border-vu-base'
+          const borderClass = 'border-[calc(4*var(--vu-base))]'
 
           // Inner glow effect with owner's color when ready
           // Note: White border is now applied at cell level in GameBoard to avoid overflow clipping

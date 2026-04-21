@@ -320,13 +320,13 @@ export const DeckViewModal: React.FC<DeckViewModalProps> = ({
           <div className="flex flex-col">
             <h2 className="text-vu-3xl font-bold">{title}</h2>
             {!disableDrag && (
-              <p className="text-gray-400 text-vu-13">{t('dragCardsReorder')}</p>
+              <p className="text-gray-400 text-vu-14">{t('dragCardsReorder')}</p>
             )}
           </div>
           <button
             onClick={onClose}
             className="py-vu-md px-vu-lg rounded-vu-2 font-bold transition-colors bg-indigo-600 text-white hover:bg-indigo-700"
-            style={{ fontSize: 'var(--vu-text-13)' }}
+            style={{ fontSize: 'var(--vu-text-14)' }}
           >
             {t('close')}
           </button>

@@ -352,7 +352,7 @@ const RemotePile: React.FC<{ label: string, count: number, onClick?: () => void,
   >
     {children ? children : (
       <div className="flex flex-col items-center">
-        <span className="font-bold mb-vu-3 opacity-80 uppercase tracking-tighter text-vu-15">{label}</span>
+        <span className="font-bold mb-vu-3 opacity-80 uppercase tracking-tighter text-vu-16">{label}</span>
         <div className="relative">
           <span className="font-bold relative inline-block text-vu-20">{count}</span>
           {delta !== null && delta !== undefined && (
@@ -741,7 +741,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       style={deckHighlightStyle}
                     >
                       <div className="flex flex-col items-center relative z-20">
-                        <span className="font-bold mb-vu-3 uppercase tracking-tight text-vu-15">{t('deck')}</span>
+                        <span className="font-bold mb-vu-3 uppercase tracking-tight text-vu-16">{t('deck')}</span>
                         <div className="relative">
                           <span className="font-bold relative inline-block text-vu-20">{getDeckSize()}</span>
                           {deckChangeDelta !== null && (
@@ -761,7 +761,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
             <DropZone onDrop={() => draggedItem && handleDrop(draggedItem, { target: 'discard', playerId: player.id })} onContextMenu={(e) => handleContextMenuWithCancel(e, 'discardPile', { player })} isOverClassName="rounded-vu-5 ring-2 ring-white">
               <div className="aspect-square bg-gray-700 rounded-vu-5 flex items-center justify-center cursor-pointer hover:bg-gray-600 transition-all shadow-md border border-gray-600 select-none text-white">
                 <div className="flex flex-col items-center">
-                  <span className="font-bold mb-vu-3 text-gray-400 uppercase tracking-tight text-vu-15">{t('discard')}</span>
+                  <span className="font-bold mb-vu-3 text-gray-400 uppercase tracking-tight text-vu-16">{t('discard')}</span>
                   <span className="font-bold text-vu-20">{getDiscardSize()}</span>
                 </div>
               </div>
@@ -813,7 +813,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                         />
                       </div>
                     </div>
-                  ) : <span className="font-bold text-gray-500 select-none uppercase tracking-tight text-vu-15">{t('showcase')}</span>}
+                  ) : <span className="font-bold text-gray-500 select-none uppercase tracking-tight text-vu-16">{t('showcase')}</span>}
                 </div>
               </DropZone>
             </div>
@@ -1314,7 +1314,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                       />
                       </div>
                     </div>
-                  ) : <span className="font-bold text-gray-500 select-none uppercase opacity-80 tracking-tighter text-vu-15">SHOW</span>}
+                  ) : <span className="font-bold text-gray-500 select-none uppercase opacity-80 tracking-tighter text-vu-16">SHOW</span>}
                 </div>
               </DropZone>
             </div>

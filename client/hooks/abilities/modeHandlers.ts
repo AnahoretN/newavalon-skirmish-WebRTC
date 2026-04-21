@@ -155,6 +155,7 @@ export interface ContinueAutoStepsProps {
 
 export interface ModeHandlersProps {
   gameState: GameState
+  getFreshGameState: () => GameState // Функция для получения свежего состояния
   localPlayerId: number | null
   abilityMode: AbilityAction | null
   setAbilityMode: React.Dispatch<React.SetStateAction<AbilityAction | null>>

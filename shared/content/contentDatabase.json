@@ -330,7 +330,8 @@
           "details": {
             "tokenType": "Revealed",
             "count": 1,
-            "onlyOpponents": true
+            "onlyOpponents": true,
+            "targetLocation": "hand"
           }
         }
       ]
@@ -669,13 +670,9 @@
         {
           "type": "deploy",
           "supportRequired": false,
-          "action": "PUSH",
-          "mode": "ADJACENT_TARGET",
-          "details": {
-            "filter": "isOpponent",
-            "distance": 1,
-            "mayMoveInto": true
-          }
+          "action": "ENTER_MODE",
+          "mode": "PUSH",
+          "details": {}
         },
         {
           "type": "setup",
@@ -900,13 +897,9 @@
               }
             },
             {
-              "action": "PUSH",
-              "mode": "ADJACENT_TARGET",
-              "details": {
-                "filter": "isOpponent",
-                "distance": 1,
-                "mayMoveInto": true
-              }
+              "action": "ENTER_MODE",
+              "mode": "PUSH",
+              "details": {}
             }
           ]
         },
@@ -1028,11 +1021,12 @@
           "type": "deploy",
           "supportRequired": false,
           "action": "CREATE_STACK",
-          "mode": "ADJACENT_TARGET",
+          "mode": null,
           "details": {
             "tokenType": "Stun",
             "count": 1,
-            "filter": "isOpponent"
+            "onlyOpponents": true,
+            "mustBeAdjacentToSource": true
           }
         },
         {

@@ -34,44 +34,47 @@ export const CommandModal: React.FC<CommandModalProps> = ({ isOpen, card, player
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[200] backdrop-blur-sm">
-      <div className="bg-gray-900 rounded-vu-2 border-vu-md border-yellow-500 shadow-2xl p-vu-xl w-full max-w-vu-modal-xl flex gap-vu-xl">
+      <div className="bg-gray-900 rounded-vu-2 border-vu-md border-yellow-500 shadow-2xl p-vu-xl w-full max-w-[calc(889.5*var(--vu-base))] flex gap-vu-xl">
 
-        {/* Left: Card View */}
-        <div className="w-1/3 flex flex-col items-center justify-center border-r border-gray-700 pr-vu-xl">
-          <div className="w-vu-card-xl h-vu-card-xl relative transform hover:scale-105 transition-transform duration-300">
+        {/* Left: Card View - Square */}
+        <div className="flex items-center justify-center">
+          <div className="w-[calc(300*var(--vu-base))] h-[calc(300*var(--vu-base))] relative">
             <CardComponent card={displayCard} isFaceUp={true} playerColorMap={playerColorMap} disableTooltip={true} />
           </div>
-          <h2 className="text-vu-3xl font-bold text-yellow-500 mt-vu-xl text-center leading-tight">{displayCard.name}</h2>
         </div>
 
         {/* Right: Selection Interface */}
-        <div className="w-2/3 flex flex-col">
-          <h3 className="text-vu-2xl font-bold text-white mb-vu-lg border-b border-gray-700 pb-vu-md">Select Module</h3>
+        <div className="flex-1 flex flex-col">
+          <h3 className="text-vu-14 font-bold mb-vu-lg pb-vu-md">
+            <span className="text-white">Select Module - </span>
+            <span className="text-yellow-500">{displayCard.name}</span>
+          </h3>
 
           <div className="flex flex-col gap-vu-md flex-grow justify-center overflow-y-auto max-h-[60vh] pr-vu-md">
             {parsedOptions.map((optionText, index) => (
               <button
                 key={index}
                 onClick={() => onConfirm(index)}
-                className="group relative bg-gray-800 hover:bg-indigo-900 border-vu-md border-gray-600 hover:border-indigo-400 rounded-vu-2 p-vu-lg transition-all duration-200 text-left shadow-lg hover:shadow-indigo-500/20 flex items-start gap-vu-lg shrink-0"
+                className="group relative bg-gray-800 hover:bg-indigo-900 border-[calc(4*var(--vu-base))] border-gray-600 hover:border-indigo-400 rounded-vu-2 p-vu-lg transition-all duration-200 text-left shadow-lg hover:shadow-indigo-500/20 flex items-center gap-vu-lg shrink-0"
               >
-                <div className="bg-gray-700 text-gray-400 w-vu-icon-md h-vu-icon-md flex-shrink-0 flex items-center justify-center rounded-full font-bold text-vu-xs group-hover:bg-indigo-500 group-hover:text-white transition-colors mt-vu-min">
+                <div className="bg-gray-700 text-gray-400 w-vu-icon-lg h-vu-icon-lg flex-shrink-0 flex items-center justify-center rounded-full font-bold text-vu-14 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
                   {index + 1}
                 </div>
-                <div className="text-gray-200 group-hover:text-white text-vu-lg font-medium leading-snug">
+                <div className="text-gray-200 group-hover:text-white text-vu-14 font-medium leading-snug">
                   {formatAbilityText(optionText, abilityKeywords)}
                 </div>
               </button>
             ))}
             {parsedOptions.length === 0 && (
-              <div className="text-gray-500 text-center italic">No selectable modules found on this card.</div>
+              <div className="text-gray-500 text-center italic text-vu-14">No selectable modules found on this card.</div>
             )}
           </div>
 
-          <div className="mt-vu-xl flex justify-end">
+          <div className="flex justify-end pr-vu-md">
             <button
               onClick={onCancel}
-              className="px-vu-xl py-vu-md rounded bg-gray-700 hover:bg-gray-600 text-white font-bold transition-colors text-vu-sm"
+              className="py-vu-md px-vu-lg rounded-vu-2 font-bold transition-colors bg-indigo-600 text-white hover:bg-indigo-700"
+              style={{ fontSize: 'var(--vu-text-14)' }}
             >
               {t('cancel')}
             </button>

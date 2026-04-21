@@ -146,11 +146,11 @@ export const CardTooltipContent: React.FC<CardTooltipContentProps> = ({ card, st
       {/* Header Section: Name & Type */}
       {/* truncate ensures long names fit without causing horizontal scroll */}
       <div className="mb-vu-min pr-vu-min relative min-w-0">
-        <div className="font-bold text-white leading-tight mb-vu-min truncate text-vu-15">
+        <div className="font-bold text-white leading-tight mb-vu-min truncate text-vu-16">
           {displayName}
         </div>
         {typeString && (
-          <div className="text-gray-400 font-semibold truncate text-vu-13">
+          <div className="text-gray-400 font-semibold truncate text-vu-14">
             {typeString}
           </div>
         )}
@@ -178,7 +178,7 @@ export const CardTooltipContent: React.FC<CardTooltipContentProps> = ({ card, st
 
         {/* Ability Text */}
         {displayAbility && (
-          <div className="text-gray-200 leading-snug text-vu-13">
+          <div className="text-gray-200 leading-snug text-vu-14">
             {formatAbilityText(displayAbility, abilityKeywords)}
           </div>
         )}
@@ -188,10 +188,10 @@ export const CardTooltipContent: React.FC<CardTooltipContentProps> = ({ card, st
 
         {/* Statuses Section */}
         {hasStatuses && (
-          <div className="text-gray-200 leading-snug text-vu-13">
+          <div className="text-gray-200 leading-snug text-vu-14">
             {Object.entries(statusCountsByType).map(([type, count], index, array) => (
               <span key={type}>
-                <span className="font-bold text-indigo-300">{type}</span>
+                <span className="text-indigo-300">{type}</span>
                 {count > 1 && <span className="text-gray-400 ml-vu-min">(x{count})</span>}
                 {statusDescriptions?.[type] && (
                   <span className="text-gray-400 ml-vu-min">({statusDescriptions[type]})</span>
@@ -207,7 +207,7 @@ export const CardTooltipContent: React.FC<CardTooltipContentProps> = ({ card, st
 
         {/* Owner Section */}
         {ownerName && !hideOwner && (
-          <div className="text-gray-500 font-semibold text-vu-13">
+          <div className="text-gray-500 font-semibold text-vu-14">
               Owner: <span className="text-gray-300">{ownerName}</span>
           </div>
         )}

@@ -117,7 +117,12 @@ export function activateAbility(
     // NEW FLOW: Remove ready status FIRST, then execute
     // This ensures the visual highlight disappears immediately on click
     // EXCEPT for AUTO_STEPS - they will mark ability used when all steps complete
-    if (action.readyStatusToRemove && action.mode !== 'AUTO_STEPS') {
+    // EXCEPT for PUSH and CREATE_STACK with requiredTargetStatus - they validate targets at execution time and remove ready status there
+    const shouldSkipReadyRemoval = action.mode === 'AUTO_STEPS' ||
+                                   action.mode === 'PUSH' ||
+                                   (action.type === 'CREATE_STACK' && action.requiredTargetStatus)
+
+    if (action.readyStatusToRemove && !shouldSkipReadyRemoval) {
       markAbilityUsed(boardCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
     }
 

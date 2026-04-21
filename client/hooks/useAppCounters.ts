@@ -1,4 +1,5 @@
 import { useRef, useEffect, useLayoutEffect } from 'react'
+import { flushSync } from 'react-dom'
 import type { CursorStackState, GameState, AbilityAction, DragItem, DropTarget, CommandContext } from '@/types'
 import { validateTarget } from '@shared/utils/targeting'
 import { createTokenCursorStack } from '@/utils/tokenTargeting'
@@ -180,6 +181,12 @@ export const useAppCounters = ({
                 if (cursorStack.chainedAction) {
                   onAction(cursorStack.chainedAction, cursorStack.sourceCoords || { row: -1, col: -1 })
                 }
+                // CRITICAL: Clear abilityMode AND cursorStack SYNCHRONOUSLY to prevent
+                // useEffect in App.tsx from restoring targetingMode
+                flushSync(() => {
+                  setAbilityMode(null)
+                  setCursorStack(null)
+                })
                 clearTargetingMode()
               }
 
@@ -196,9 +203,8 @@ export const useAppCounters = ({
               }
               if (cursorStack.count > 1) {
                 setCursorStack(prev => prev ? ({ ...prev, count: prev.count - 1 }) : null)
-              } else {
-                setCursorStack(null)
               }
+              // Note: cursorStack already cleared above if count was 1
               interactionLock.current = true
               setTimeout(() => {
                 interactionLock.current = false
@@ -240,6 +246,12 @@ export const useAppCounters = ({
               if (cursorStack.chainedAction) {
                 onAction(cursorStack.chainedAction, cursorStack.sourceCoords || { row: -1, col: -1 })
               }
+              // CRITICAL: Clear abilityMode AND cursorStack SYNCHRONOUSLY to prevent
+              // useEffect in App.tsx from restoring targetingMode
+              flushSync(() => {
+                setAbilityMode(null)
+                setCursorStack(null)
+              })
               clearTargetingMode()
             }
 
@@ -256,9 +268,8 @@ export const useAppCounters = ({
             }
             if (cursorStack.count > 1) {
               setCursorStack(prev => prev ? ({ ...prev, count: prev.count - 1 }) : null)
-            } else {
-              setCursorStack(null)
             }
+            // Note: cursorStack already cleared above if count was 1
             interactionLock.current = true
             setTimeout(() => {
               interactionLock.current = false
@@ -409,8 +420,13 @@ export const useAppCounters = ({
                   }
                   // Clear targeting mode when cursor stack is fully consumed
                   // This handles cases like GAWAIN_DEPLOY_SHIELD_AIM where no chained action exists
+                  // CRITICAL: Clear abilityMode AND cursorStack SYNCHRONOUSLY to prevent
+                  // useEffect in App.tsx from restoring targetingMode
+                  flushSync(() => {
+                    setAbilityMode(null)
+                    setCursorStack(null)
+                  })
                   clearTargetingMode()
-                  setCursorStack(null)
                 }
                 interactionLock.current = true
                 setTimeout(() => {
@@ -431,15 +447,25 @@ export const useAppCounters = ({
               // Only close if not clicking on game board or hand cards
               // This allows retrying token placement on valid targets
               if (!isOverGameBoard && !isOverHandCard) {
+                // CRITICAL: Clear abilityMode AND cursorStack SYNCHRONOUSLY to prevent
+                // useEffect in App.tsx from restoring targetingMode
+                flushSync(() => {
+                  setAbilityMode(null)
+                  setCursorStack(null)
+                })
                 clearTargetingMode()
-                setCursorStack(null)
               }
             }
           } else {
             // Only close if clicking outside modal and outside game areas
             if (!isOverModal && !isOverGameBoard && !isOverHandCard) {
+              // CRITICAL: Clear abilityMode AND cursorStack SYNCHRONOUSLY to prevent
+              // useEffect in App.tsx from restoring targetingMode
+              flushSync(() => {
+                setAbilityMode(null)
+                setCursorStack(null)
+              })
               clearTargetingMode()
-              setCursorStack(null)
             }
           }
         }
@@ -460,14 +486,19 @@ export const useAppCounters = ({
       }
       // Right-click cancels token placement mode
       e.preventDefault()
+      // CRITICAL: Clear abilityMode AND cursorStack SYNCHRONOUSLY to prevent
+      // useEffect in App.tsx from restoring targetingMode
+      flushSync(() => {
+        setAbilityMode(null)
+        setCursorStack(null)
+      })
       clearTargetingMode()
-      setCursorStack(null)
     }
     window.addEventListener('contextmenu', handleGlobalContextMenu)
     return () => {
       window.removeEventListener('contextmenu', handleGlobalContextMenu)
     }
-  }, [cursorStack, setCursorStack, clearTargetingMode])
+  }, [cursorStack, setCursorStack, setAbilityMode, clearTargetingMode])
 
   const handleCounterMouseDown = (type: string, e: React.MouseEvent) => {
     mousePos.current = { x: e.clientX, y: e.clientY }

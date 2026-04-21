@@ -276,7 +276,7 @@ export const DeckBuilderModal: React.FC<DeckBuilderModalProps> = ({ isOpen, onCl
             <button
               onClick={onClose}
               className="py-vu-md px-vu-lg rounded-vu-2 font-bold transition-colors bg-gray-700 hover:bg-gray-600 text-white"
-              style={{ fontSize: 'var(--vu-text-13)' }}
+              style={{ fontSize: 'var(--vu-text-14)' }}
             >
               {t('close')}
             </button>

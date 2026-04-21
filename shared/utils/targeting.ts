@@ -341,6 +341,12 @@ export const calculateValidTargets = (
 
   // If action is CREATE_STACK, iterate only active grid area
   if (action.type === 'CREATE_STACK') {
+    // CRITICAL: If targetLocation is 'hand', don't return board targets
+    // Hand targets are calculated separately in actionExecutionHandler.ts
+    if (action.targetLocation === 'hand') {
+      return []
+    }
+
     const constraints = {
       targetOwnerId: action.targetOwnerId,
       excludeOwnerId: action.excludeOwnerId,
@@ -430,7 +436,25 @@ export const calculateValidTargets = (
     return targets
   }
 
-  const { mode, payload, sourceCoords, contextCheck } = action
+  const { mode, payload, sourceCoords: actionSourceCoords, contextCheck } = action
+
+  // For PUSH mode, always find the CURRENT board position of sourceCard
+  // This fixes the issue where sourceCoords are cached and not updated when other cards move
+  let sourceCoords = actionSourceCoords
+  if (mode === 'PUSH' && action.sourceCard) {
+    console.log('[calculateValidTargets PUSH] TIMESTAMP:', Date.now())
+    // Search the board for the current position of source card
+    for (let r = 0; r < gridSize; r++) {
+      for (let c = 0; c < gridSize; c++) {
+        if (board[r][c].card?.id === action.sourceCard.id) {
+          sourceCoords = { row: r, col: c }
+          console.log('[calculateValidTargets PUSH] Found current sourceCard position:', { row: r, col: c }, 'old position:', actionSourceCoords)
+          break
+        }
+      }
+      if (sourceCoords.row !== actionSourceCoords?.row || sourceCoords.col !== actionSourceCoords?.col) break
+    }
+  }
 
   // Special case: MOVE_SELF_ANY_EMPTY (Recon Drone Setup)
   // Handle early to avoid falling through to SELECT_TARGET
@@ -669,6 +693,20 @@ export const calculateValidTargets = (
   }
   // 3. Push (Adjacent opponent who can be pushed into empty space)
   else if (mode === 'PUSH' && sourceCoords) {
+    console.log('[calculateValidTargets PUSH] sourceCoords:', sourceCoords, 'actorId:', actorId, 'gridSize:', gridSize, 'activeSize:', activeSize, 'bounds:', { minBound, maxBound })
+    console.log('[calculateValidTargets PUSH] board around sourceCoords:')
+    // Show all cells around sourceCoords for debugging
+    for (let dr = -2; dr <= 2; dr++) {
+      for (let dc = -2; dc <= 2; dc++) {
+        const r = sourceCoords.row + dr
+        const c = sourceCoords.col + dc
+        if (r >= 0 && r < gridSize && c >= 0 && c < gridSize) {
+          const cell = board[r][c]
+          console.log(`[calculateValidTargets PUSH] board[${r}][${c}]:`, cell?.card?.baseId || 'empty', 'ownerId:', cell?.card?.ownerId)
+        }
+      }
+    }
+
     const neighbors = [
       { r: sourceCoords.row - 1, c: sourceCoords.col },
       { r: sourceCoords.row + 1, c: sourceCoords.col },
@@ -680,15 +718,18 @@ export const calculateValidTargets = (
     const isInActiveBounds = (r: number, c: number) => r >= minBound && r <= maxBound && c >= minBound && c <= maxBound
 
     neighbors.forEach(nb => {
+      console.log('[calculateValidTargets PUSH] checking neighbor:', nb, 'inBounds:', isInActiveBounds(nb.r, nb.c))
       // Check bounds (using visible grid bounds)
       if (isInActiveBounds(nb.r, nb.c)) {
         const targetCard = board[nb.r][nb.c].card
+        console.log('[calculateValidTargets PUSH] card at neighbor:', targetCard?.baseId, 'ownerId:', targetCard?.ownerId)
 
         // Check if opponent (Not Self AND Not Teammate)
         if (targetCard && targetCard.ownerId !== actorId) {
           const actorPlayer = currentGameState.players.find(p => p.id === actorId)
           const targetPlayer = currentGameState.players.find(p => p.id === targetCard.ownerId)
           const isTeammate = actorPlayer?.teamId !== undefined && targetPlayer?.teamId !== undefined && actorPlayer.teamId === targetPlayer.teamId
+          console.log('[calculateValidTargets PUSH] actorPlayer:', actorPlayer?.name, 'teamId:', actorPlayer?.teamId, 'targetPlayer:', targetPlayer?.name, 'teamId:', targetPlayer?.teamId, 'isTeammate:', isTeammate)
 
           if (!isTeammate) {
             // Calculate push destination
@@ -697,16 +738,20 @@ export const calculateValidTargets = (
             const pushRow = nb.r + dRow
             const pushCol = nb.c + dCol
 
+            console.log('[calculateValidTargets PUSH] push dest:', { pushRow, pushCol }, 'inBounds:', isInActiveBounds(pushRow, pushCol), 'isEmpty:', !board[pushRow]?.[pushCol]?.card)
+
             // Check dest bounds and emptiness against VISIBLE grid
             if (isInActiveBounds(pushRow, pushCol)) {
               if (!board[pushRow][pushCol].card) {
                 targets.push({ row: nb.r, col: nb.c })
+                console.log('[calculateValidTargets PUSH] VALID TARGET FOUND!')
               }
             }
           }
         }
       }
     })
+    console.log('[calculateValidTargets PUSH] final targets count:', targets.length)
   }
   // 3b. SHIELD_SELF_THEN_PUSH (Reclaimed Gawain - same as PUSH but includes self as valid target)
   else if (mode === 'SHIELD_SELF_THEN_PUSH' && sourceCoords) {
@@ -1142,6 +1187,13 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
     return false // No adjacent cards
   }
 
+  // Special Case: PUSH (Riot Agent Deploy) - targets are validated at ability application time
+  // Allows activation even if no valid targets exist at placement time
+  // Valid targets (adjacent opponent that can be pushed into empty space) are checked when player clicks to activate
+  if (action.mode === 'PUSH') {
+    return true // Always allow activation - validation happens on click
+  }
+
   // Special Case: REVEREND_DOUBLE_EXPLOIT can target any card on battlefield
   if (action.mode === 'REVEREND_DOUBLE_EXPLOIT') {
     // Check if there's at least one card on battlefield
@@ -1339,6 +1391,13 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
 
   // Note: CREATE_STACK is now checked via calculateValidTargets as well
   if (action.type === 'CREATE_STACK') {
+    // Special Case: Abilities with requiredTargetStatus (Riot Agent Commit, etc.) - targets validated at application time
+    // Allows activation even if no valid targets exist at placement time
+    // Valid targets are checked when player clicks to activate
+    if (action.requiredTargetStatus) {
+      return true // Always allow activation - validation happens on click
+    }
+
     const boardTargets = calculateValidTargets(action, currentGameState, playerId, commandContext)
 
     if (boardTargets.length > 0) {

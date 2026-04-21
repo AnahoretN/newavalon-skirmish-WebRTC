@@ -13,6 +13,7 @@ import { executeInstantAutoStep, advanceToNextStepWithCoords, type AutoStep } fr
 
 export interface ActionHandlerProps {
   gameState: GameState
+  getFreshGameState: () => GameState // Функция для получения свежего состояния
   localPlayerId: number | null
   abilityMode: AbilityAction | null
   setAbilityMode: React.Dispatch<React.SetStateAction<AbilityAction | null>>
@@ -86,6 +87,7 @@ export function handleActionExecution(
 ): void {
   const {
     gameState,
+    getFreshGameState, // Функция для получения свежего состояния
     localPlayerId,
     commandContext,
     triggerNoTarget,
@@ -168,7 +170,7 @@ function handleReverendSetupScore(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
-  const { gameState, updatePlayerScore, triggerFloatingText, markAbilityUsed } = props
+  const { gameState, getFreshGameState, updatePlayerScore, triggerFloatingText, markAbilityUsed } = props
   const ownerId = action.sourceCard?.ownerId ?? 0
   let exploitCount = 0
 
@@ -450,9 +452,28 @@ function handleCreateStack(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
-  const { gameState, setAbilityMode, setCursorStack, triggerNoTarget, localPlayerId, setTargetingMode, addBoardCardStatus, markAbilityUsed, handleActionExecution: execAction } = props
+  const { gameState, getFreshGameState, setAbilityMode, setCursorStack, triggerNoTarget, localPlayerId, setTargetingMode, addBoardCardStatus, markAbilityUsed, handleActionExecution: execAction, commandContext } = props
 
   let count = action.count || 0
+
+  // Special Case: Abilities with requiredTargetStatus (Riot Agent Commit, etc.) - check valid targets at application time
+  // CRITICAL: Mark ability as used FIRST (remove ready status, add "used this turn")
+  // This happens regardless of whether there are valid targets or not
+  if (action.requiredTargetStatus) {
+    if (action.readyStatusToRemove) {
+      markAbilityUsed(action.sourceCoords || sourceCoords, action.isDeployAbility, false, action.readyStatusToRemove)
+    }
+
+    // CRITICAL: Use getFreshGameState() to get the latest state from host/guest
+    const freshGameState = getFreshGameState ? getFreshGameState() : gameState
+    const validTargets = calculateValidTargets(action, freshGameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    if (validTargets.length === 0) {
+      triggerNoTarget(action.sourceCoords || sourceCoords)
+      // Ready status already removed, ability marked as used
+      return
+    }
+    // Continue to create cursorStack...
+  }
 
   // Handle Dynamic Count
   if (action.dynamicCount) {
@@ -582,9 +603,11 @@ function handleCreateStack(
         }
       }
 
-      // Create cursorStack
-      const newCursorStack = createTokenCursorStack(tokenType, tokenOwnerId, null, modifications)
-      setCursorStack(newCursorStack)
+      console.log('[ACTION EXECUTION] Case 1 - Setting up targeting for Revealed token', {
+        tokenType,
+        targetOwnerId: action.targetOwnerId,
+        handTargetsCount: handTargets.length,
+      })
 
       // Create a dummy action for setTargetingMode (required parameter)
       const dummyAction: AbilityAction = {
@@ -599,9 +622,25 @@ function handleCreateStack(
         sourceCard: action.sourceCard,
       }
 
+      // CRITICAL: Set targeting mode BEFORE cursorStack to prevent premature clearing
+      // If cursorStack is set first, it triggers useEffect which clears targeting mode
       // Activate targeting mode so all players see the valid hand targets highlighted
       setTargetingMode(dummyAction, tokenOwnerId, sourceCoords, undefined, undefined, handTargets)
-      // Don't clear abilityMode here - it will be cleared when cursorStack is depleted (in useAppAbilities.ts)
+
+      console.log('[ACTION EXECUTION] Called setTargetingMode for hand targets')
+
+      // CRITICAL: Set abilityMode to prevent useEffect from clearing targeting mode
+      // We use a minimal abilityMode just to keep hasActiveMode = true
+      setAbilityMode(dummyAction)
+
+      console.log('[ACTION EXECUTION] Set abilityMode to prevent premature clearing')
+
+      // Create cursorStack AFTER targeting mode and abilityMode are set
+      const newCursorStack = createTokenCursorStack(tokenType, tokenOwnerId, null, modifications)
+      setCursorStack(newCursorStack)
+
+      console.log('[ACTION EXECUTION] Set cursorStack')
+      // The ability will complete when the player clicks on a hand card (in handCardHandlers.ts)
     }
     // Case 2: Revealed with onlyOpponents (e.g., False Orders Option 0 - reveal any opponent's cards)
     else if (tokenType === 'Revealed' && (action.onlyOpponents || action.excludeOwnerId)) {
@@ -640,8 +679,12 @@ function handleCreateStack(
         }
       }
 
-      // Create cursorStack
-      setCursorStack(createTokenCursorStack(tokenType, tokenOwnerId, null, modifications))
+      console.log('[ACTION EXECUTION] Case 2 - Setting up targeting for Revealed token', {
+        tokenType,
+        onlyOpponents: action.onlyOpponents,
+        excludeOwnerId: action.excludeOwnerId,
+        handTargetsCount: handTargets.length,
+      })
 
       // Create a dummy action for setTargetingMode (required parameter)
       const dummyAction: AbilityAction = {
@@ -657,9 +700,24 @@ function handleCreateStack(
         sourceCard: action.sourceCard,
       }
 
+      // CRITICAL: Set targeting mode BEFORE cursorStack to prevent premature clearing
+      // If cursorStack is set first, it triggers useEffect which clears targeting mode
       // Activate targeting mode so all players see the valid hand targets highlighted
       setTargetingMode(dummyAction, tokenOwnerId, sourceCoords, undefined, undefined, handTargets)
-      // Don't clear abilityMode here - it will be cleared when cursorStack is depleted (in useAppAbilities.ts)
+
+      console.log('[ACTION EXECUTION] Called setTargetingMode for hand targets (Case 2)')
+
+      // CRITICAL: Set abilityMode to prevent useEffect from clearing targeting mode
+      // We use a minimal abilityMode just to keep hasActiveMode = true
+      setAbilityMode(dummyAction)
+
+      console.log('[ACTION EXECUTION] Set abilityMode to prevent premature clearing (Case 2)')
+
+      // Create cursorStack AFTER targeting mode and abilityMode are set
+      setCursorStack(createTokenCursorStack(tokenType, tokenOwnerId, null, modifications))
+
+      console.log('[ACTION EXECUTION] Set cursorStack (Case 2)')
+      // The ability will complete when the player clicks on a hand card (in handCardHandlers.ts)
     } else {
       // Normal token placement (board only)
       setCursorStack(createTokenCursorStack(tokenType, tokenOwnerId, null, modifications))
@@ -678,7 +736,7 @@ function handleOpenModal(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
-  const { gameState, localPlayerId, commandContext, setViewingDiscard, markAbilityUsed, triggerNoTarget, setAbilityMode, setTargetingMode } = props
+  const { gameState, getFreshGameState, localPlayerId, commandContext, setViewingDiscard, markAbilityUsed, triggerNoTarget, setAbilityMode, setTargetingMode } = props
 
   const hasTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
 
@@ -812,7 +870,7 @@ function handleEnterMode(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
-  const { gameState, localPlayerId, commandContext, triggerNoTarget, setAbilityMode, addBoardCardStatus, setTargetingMode, handleActionExecution: execAction, markAbilityUsed } = props
+  const { gameState, getFreshGameState, localPlayerId, commandContext, triggerNoTarget, setAbilityMode, addBoardCardStatus, setTargetingMode, handleActionExecution: execAction, markAbilityUsed } = props
 
   const mode = action.mode
   const payload = action.payload || {}
@@ -930,15 +988,24 @@ function handleEnterMode(
 
   // PUSH
   if (mode === 'PUSH') {
-    // Check targets BEFORE activating targeting mode
-    // This ensures "no target" is shown if there are no adjacent cards to push
-    const hasPushTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
-    if (!hasPushTargets) {
+    // CRITICAL: Mark ability as used FIRST (remove ready status, add "used this turn")
+    // This happens regardless of whether there are valid targets or not
+    if (action.readyStatusToRemove) {
+      markAbilityUsed(sourceCoords, action.isDeployAbility, false, action.readyStatusToRemove)
+    }
+
+    // Calculate valid targets - checked at application time
+    // CRITICAL: Use getFreshGameState() to get the latest state from host/guest
+    // This fixes the issue where React state hasn't updated yet after card movement
+    const freshGameState = getFreshGameState ? getFreshGameState() : gameState
+    console.log('[PUSH DEBUG] action.sourceCoords:', action.sourceCoords, 'sourceCoords param:', sourceCoords, 'actorId:', action.sourceCard?.ownerId || localPlayerId)
+    const pushTargets = calculateValidTargets(action, freshGameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    console.log('[PUSH DEBUG] pushTargets:', pushTargets)
+    if (pushTargets.length === 0) {
       triggerNoTarget(action.sourceCoords || sourceCoords)
-      // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
+      // Ready status already removed, ability marked as used
       return
     }
-    const pushTargets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
     setAbilityMode(action)
     setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, pushTargets)
     return
@@ -1572,7 +1639,7 @@ function handleContextReward(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
-  const { gameState, commandContext, updatePlayerScore, triggerFloatingText, drawCardsBatch, removeBoardCardStatus, addBoardCardStatus, modifyBoardCardPower, markAbilityUsed } = props
+  const { gameState, getFreshGameState, commandContext, updatePlayerScore, triggerFloatingText, drawCardsBatch, removeBoardCardStatus, addBoardCardStatus, modifyBoardCardPower, markAbilityUsed } = props
 
   const rewardType = action.payload?.contextReward
   // CRITICAL: Use _sourceCoordsBeforeMove first (where card IS now), not destination
