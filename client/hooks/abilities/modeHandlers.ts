@@ -1779,14 +1779,17 @@ function handleReverendDoubleExploit(
 }
 
 /**
- * Handle SELECT_UNIT_FOR_MOVE (Code Keeper/Signal Prophet Commit, Finn Setup)
+ * Handle SELECT_UNIT_FOR_MOVE (Code Keeper/Signal Prophet Commit, Finn Setup, Data Interception Option 1)
+ *
+ * CRITICAL FIX: Uses getFreshGameState() to get the latest card state including tokens
+ * added in previous steps of multi-step commands (e.g., Exploit from Data Interception main action)
  */
 function handleSelectUnitForMove(
   card: Card,
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, setAbilityMode, setTargetingMode, gameState, localPlayerId, commandContext, calculateValidTargets } = props
+  const { abilityMode, setAbilityMode, setTargetingMode, clearTargetingMode, gameState, getFreshGameState, localPlayerId, commandContext, calculateValidTargets } = props
 
   if (!abilityMode || abilityMode.mode !== 'SELECT_UNIT_FOR_MOVE') {
     return false
@@ -1802,16 +1805,43 @@ function handleSelectUnitForMove(
     return false
   }
 
-  if (payload.filter && !payload.filter(card, boardCoords.row, boardCoords.col)) {
+  // CRITICAL FIX: Use getFreshGameState() to get the latest card state
+  // This fixes Data Interception Option 1 where filter checks for Exploit tokens
+  // added in the previous step (CREATE_STACK) which may not be in React state yet
+  const freshState = getFreshGameState ? getFreshGameState() : gameState
+  const freshCard = freshState.board[boardCoords.row][boardCoords.col].card
+
+  // DIAGNOSTIC: Log filter check with both old and fresh card states
+  console.log('[SELECT_UNIT_FOR_MOVE] Filter check', {
+    cardName: card.name,
+    cardId: card.id,
+    boardCoords,
+    hasFilter: !!payload.filter,
+    oldCardStatuses: card.statuses?.map(s => ({ type: s.type, addedBy: s.addedByPlayerId })) || [],
+    freshCardStatuses: freshCard?.statuses?.map(s => ({ type: s.type, addedBy: s.addedByPlayerId })) || [],
+    commandOwnerId: sourceCard?.ownerId,
+  })
+
+  if (payload.filter && !payload.filter(freshCard || card, boardCoords.row, boardCoords.col)) {
+    console.log('[SELECT_UNIT_FOR_MOVE] Filter FAILED - card not valid')
     return false
   }
+
+  console.log('[SELECT_UNIT_FOR_MOVE] Filter PASSED - transitioning to SELECT_CELL')
+
+  // Use freshCard if available, otherwise fall back to card parameter
+  const cardToUse = freshCard || card
+
+  // CRITICAL: Clear targeting mode before setting new one to prevent stale highlights
+  // This fixes the issue where targeting mode from SELECT_UNIT_FOR_MOVE persisted
+  clearTargetingMode()
 
   // Transition to SELECT_CELL mode
   // CRITICAL: Preserve chainedAction and originalOwnerId for reward (draw/score) after move
   const newMode: any = {
     type: 'ENTER_MODE',
     mode: 'SELECT_CELL',
-    sourceCard: card,
+    sourceCard: cardToUse,
     sourceCoords: boardCoords,
     isDeployAbility,
     readyStatusToRemove,
@@ -1820,7 +1850,7 @@ function handleSelectUnitForMove(
     payload: {
       range: payload.range || 2,
       moveFromHand: payload.moveFromHand || false,
-      selectedCard: card,
+      selectedCard: cardToUse,
       allowSelf: false,
       useContextCard: true, // Mark that we should use the selected unit card for context
       recordContext: true, // CRITICAL: Record moved card for context rewards (Tactical Maneuver draw/score)
@@ -1830,10 +1860,13 @@ function handleSelectUnitForMove(
   setAbilityMode(newMode)
 
   // Calculate valid targets and set targeting mode for visual highlights
-  // Use the selected card's owner as actorId for correct highlight color (important for dummy players)
-  const actorId = card.ownerId ?? originalOwnerId ?? localPlayerId ?? 0
+  // CRITICAL: Use freshState for calculateValidTargets to get accurate targets
+  // CRITICAL: Use originalOwnerId (command card owner) for highlight color, NOT selected card owner
+  // This fixes Data Interception option 1 where highlight color changed to selected card's owner
+  const actorId = originalOwnerId ?? localPlayerId ?? 0
   if (calculateValidTargets) {
-    const targets = calculateValidTargets(newMode, gameState, localPlayerId || 0, commandContext)
+    const targets = calculateValidTargets(newMode, freshState, localPlayerId || 0, commandContext)
+    console.log('[SELECT_UNIT_FOR_MOVE] Calculated valid targets:', targets.length, 'targets for', cardToUse.name)
     setTargetingMode(newMode, actorId, boardCoords, targets, commandContext)
   } else {
     setTargetingMode(newMode, actorId, boardCoords, undefined, commandContext)
@@ -2136,7 +2169,7 @@ function handleSelectCell(
   boardCoords: { row: number; col: number },
   props: ModeHandlersProps
 ): boolean {
-  const { abilityMode, moveItem, markAbilityUsed, setAbilityMode, triggerClickWave, handleActionExecution, setCommandContext } = props
+  const { abilityMode, moveItem, markAbilityUsed, setAbilityMode, triggerClickWave, handleActionExecution, setCommandContext, clearTargetingMode } = props
 
   if (!abilityMode || abilityMode.mode !== 'SELECT_CELL') {
     return false
@@ -2178,7 +2211,9 @@ function handleSelectCell(
       }
     }
 
-    moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, target)
+    // CRITICAL: Use bypassOwnershipCheck for dummy player command execution
+    // When local player activates dummy's command (like Data Interception), they need to move dummy's cards
+    moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords, bypassOwnershipCheck: true }, target)
   }
 
   // CRITICAL: Record moved card context for rewards like Tactical Maneuver
@@ -2222,6 +2257,18 @@ function handleSelectCell(
     }, TIMING.MODE_CLEAR_DELAY)
   }
 
+  // CRITICAL: Clear targeting mode when move is complete
+  // This was missing for Data Interception option 1 and similar abilities without chainedAction
+  // If there's a chainedAction, delay clearTargetingMode to avoid race condition
+  if (actualChainedAction) {
+    // chainedAction might set targetingMode, so clear after it executes
+    setTimeout(() => {
+      clearTargetingMode()
+    }, TIMING.MODE_CLEAR_DELAY + 50)
+  } else {
+    // No chainedAction, clear immediately
+    clearTargetingMode()
+  }
   setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
   return true
 }

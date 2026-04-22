@@ -119,18 +119,69 @@ export const useAppCommand = ({
       }
     }
 
-    // Add main actions to queue if they have targets
-    mainActions.forEach(action => {
-      // Basic target check validation could happen here, but queue processor handles it.
-      // Special case: self-buffs or global applies always valid.
-      queue.push(action)
+    // 2. Option Actions (get these first to check for chainedAction)
+    const optActions = getCommandAction(commandModalCard.id, optionIndex, commandModalCard as any, gameState as any, ownerId)
+
+    // CRITICAL FIX: If option action has chainedAction, merge it into mainActions instead of adding both
+    // This fixes Data Interception where both main and option had CREATE_STACK
+    // The chainedAction from optActions should be attached to mainActions, not executed separately
+    const optionHasChainedAction = optActions.some(a => a.chainedAction)
+
+    // DIAGNOSTIC: Log action structure
+    console.log('[handleCommandConfirm] Action structure:', {
+      cardId: commandModalCard.id,
+      optionIndex,
+      mainActionsCount: mainActions.length,
+      mainActionTypes: mainActions.map(a => ({ type: a.type, tokenType: a.tokenType, mode: a.mode, hasChainedAction: !!a.chainedAction })),
+      optActionsCount: optActions.length,
+      optActionTypes: optActions.map(a => ({ type: a.type, tokenType: a.tokenType, mode: a.mode, hasChainedAction: !!a.chainedAction, chainedActionType: a.chainedAction?.type, chainedActionMode: a.chainedAction?.mode })),
+      optionHasChainedAction,
     })
 
-    // 2. Option Actions
-    const optActions = getCommandAction(commandModalCard.id, optionIndex, commandModalCard as any, gameState as any, ownerId)
-    optActions.forEach(action => {
-      queue.push(action)
+    if (optionHasChainedAction && optActions.length > 0) {
+      // Pass chainedAction from optActions to mainActions
+      const chainedAction = optActions[0].chainedAction
+      console.log('[handleCommandConfirm] Merging chainedAction from optActions to mainActions:', {
+        chainedActionType: chainedAction.type,
+        chainedActionMode: chainedAction.mode,
+      })
+      mainActions.forEach(action => {
+        queue.push({ ...action, chainedAction })
+      })
+    } else {
+      // Add main actions to queue
+      mainActions.forEach(action => {
+        queue.push(action)
+      })
+
+      // Add option actions to queue (only if no chainedAction)
+      optActions.forEach(action => {
+        queue.push(action)
+      })
+    }
+
+    console.log('[handleCommandConfirm] Final queue:', {
+      queueLength: queue.length,
+      queueActionTypes: queue.map(a => ({ type: a.type, tokenType: a.tokenType, mode: a.mode, hasChainedAction: !!a.chainedAction, chainedActionType: a.chainedAction?.type, chainedActionMode: a.chainedAction?.mode })),
     })
+
+    // CRITICAL: Before setting actionQueue, check if queue is correct
+    // For Data Interception option 1, queue should have:
+    // 1. CREATE_STACK Exploit with chainedAction (SELECT_UNIT_FOR_MOVE)
+    // 2. GLOBAL_AUTO_APPLY (cleanup)
+    if (commandModalCard.baseId?.toLowerCase().includes('datainterception') && optionIndex === 1) {
+      console.log('[handleCommandConfirm] Data Interception option 1 queue validation:', {
+        expectedFirstAction: 'CREATE_STACK Exploit with chainedAction ENTER_MODE SELECT_UNIT_FOR_MOVE',
+        actualFirstAction: queue[0] ? `${queue[0].type} ${queue[0].tokenType || ''} with chainedAction ${queue[0].chainedAction?.type} ${queue[0].chainedAction?.mode || ''}` : 'NO ACTION',
+        expectedSecondAction: 'GLOBAL_AUTO_APPLY',
+        actualSecondAction: queue[1] ? `${queue[1].type} ${queue[1].payload?.cleanupCommand ? '(cleanup)' : ''}` : 'NO ACTION',
+      })
+    }
+
+    console.log('[handleCommandConfirm] Setting actionQueue with', queue.length, 'actions')
+    setActionQueue(queue)
+    console.log('[handleCommandConfirm] actionQueue set, closing modal')
+    setCommandModalCard(null)
 
     // 3. Cleanup (Discard Card) - Inspiration handles this after modal
     if (!commandModalCard.baseId?.toLowerCase().includes('inspiration')) {

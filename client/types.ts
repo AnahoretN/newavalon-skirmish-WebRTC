@@ -259,7 +259,11 @@ export interface GameState {
   highlights: HighlightData[]; // Array of cell highlights to display
   deckSelections: DeckSelectionData[]; // Array of deck selection effects to display
   handCardSelections: HandCardSelectionData[]; // Array of hand card selection effects to display
-  targetingMode: TargetingModeData | null; // Active targeting mode (shared across all clients)
+  // Split targeting mode for simpler race condition handling
+  localTargetingMode: TargetingModeData | null; // Only for local player's actions
+  remoteTargetingMode: TargetingModeData | null; // Only for visualizing other players' actions
+  // Legacy targetingMode (deprecated, kept for backward compatibility during migration)
+  targetingMode?: TargetingModeData | null;
   abilityMode?: AbilityAction; // Active ability mode (for P2P visual sync) - extends AbilityAction with sourceCard, sourceCoords, etc.
   clickWaves?: ClickWave[]; // Array of click wave effects
   // NEW: ID-based effects system (replaces old arrays)
@@ -444,7 +448,7 @@ export type AbilityAction = {
  * so all players can see the valid targets highlighted in the activating player's color.
  */
 export interface TargetingModeData {
-    playerId: number; // The player whose turn it is to select a target
+    playerId: number; // The player whose turn it is to select a target (owner of this targeting mode)
     action: AbilityAction; // The action defining targeting constraints (includes chainedAction for multi-step abilities)
     sourceCoords?: { row: number; col: number }; // Source card coordinates (if applicable)
     timestamp: number; // For uniqueness and timeout
@@ -452,6 +456,7 @@ export interface TargetingModeData {
     handTargets?: { playerId: number, cardIndex: number }[]; // Valid hand targets (pre-calculated)
     isDeckSelectable?: boolean; // Whether deck is a valid target
     originalOwnerId?: number; // The owner of the card that initiated this action (for correct highlight color)
+    ownerId: number; // The player who created this targeting mode (for preventing remote overwrites)
     // Convenience accessor for chainedAction (also available via action.chainedAction)
     chainedAction?: AbilityAction; // Action to execute after this targeting mode completes (e.g., draw/score rewards for Tactical Maneuver)
 }

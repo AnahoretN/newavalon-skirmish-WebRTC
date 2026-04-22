@@ -67,6 +67,8 @@ interface UseAppAbilitiesProps {
     clearTargetingMode: () => void;
     validTargets?: {row: number, col: number}[];
     sendAction?: (action: string, data?: any) => void;
+    setActionQueue?: React.Dispatch<React.SetStateAction<AbilityAction[]>>;
+    pendingChainedActionRef?: React.MutableRefObject<boolean>;
 }
 
 /**
@@ -127,6 +129,8 @@ export const useAppAbilities = ({
   clearTargetingMode,
   validTargets,
   sendAction,
+  setActionQueue,
+  pendingChainedActionRef,
 }: UseAppAbilitiesProps) => {
 
   // Store handleLineSelection ref to avoid circular dependency
@@ -213,6 +217,8 @@ export const useAppAbilities = ({
       setTargetingMode,
       clearTargetingMode,
       sendAction,
+      pendingChainedActionRef,
+      setActionQueue,
     })
   }, [
     gameState,
@@ -255,6 +261,8 @@ export const useAppAbilities = ({
     setTargetingMode,
     clearTargetingMode,
     sendAction,
+    pendingChainedActionRef,
+    setActionQueue,
   ])
 
   // Auto-Execute GLOBAL_AUTO_APPLY actions when they appear in abilityMode
@@ -311,6 +319,21 @@ export const useAppAbilities = ({
         tokenType: cursorStack.type,
       }
 
+      // DIAGNOSTIC: Log cursorStack validation
+      console.log('[BOARD CARD CLICK] Checking cursorStack target', {
+        cardName: card.name,
+        cardId: card.baseId,
+        cardOwnerId: card.ownerId,
+        tokenType: cursorStack.type,
+        targetOwnerId: cursorStack.targetOwnerId,
+        excludeOwnerId: cursorStack.excludeOwnerId,
+        onlyOpponents: cursorStack.onlyOpponents,
+        onlyFaceDown: cursorStack.onlyFaceDown,
+        targetType: cursorStack.targetType,
+        requiredTargetStatus: cursorStack.requiredTargetStatus,
+        originalOwnerId: cursorStack.originalOwnerId,
+      })
+
       const isValid = validateTarget(
         { card, ownerId: card.ownerId ?? 0, location: 'board' },
         constraints,
@@ -319,8 +342,10 @@ export const useAppAbilities = ({
         cursorStack.originalOwnerId // CRITICAL: Pass token owner ID for command cards
       )
 
+      console.log('[BOARD CARD CLICK] validateTarget result:', isValid)
+
       if (isValid) {
-        // Handle Revealed token with duplicate check
+        // Handle Revealed token with duplicate check - prevent duplicate placement
         if (cursorStack.type === 'Revealed') {
           const effectiveActorId = cursorStack.sourceCard?.ownerId ?? gameState.activePlayerId ?? localPlayerId ?? 1
           const hasRevealed = card.statuses?.some(s => s.type === 'Revealed' && s.addedByPlayerId === effectiveActorId)
@@ -330,35 +355,8 @@ export const useAppAbilities = ({
             return
           }
         }
-
-        // Place the token/status on the card
-        // IMPORTANT: ownerId determines who "owns" the token (for abilities that check for your tokens)
-        const effectiveActorId = cursorStack.originalOwnerId ?? cursorStack.sourceCard?.ownerId ?? gameState.activePlayerId ?? localPlayerId ?? 1
-        moveItem({
-          card: { id: 'dummy', deck: 'counter', name: '', imageUrl: '', fallbackImage: '', power: 0, abilityText: '', types: [] },
-          source: 'counter_panel',
-          statusType: cursorStack.type,
-          ownerId: effectiveActorId,
-          count: 1,
-        }, { target: 'board', boardCoords })
-
-        if (cursorStack.sourceCoords && cursorStack.sourceCoords.row >= 0) {
-          markAbilityUsed(cursorStack.sourceCoords, cursorStack.isDeployAbility, false, cursorStack.readyStatusToRemove)
-        }
-
-        if (cursorStack.count > 1) {
-          setCursorStack(prev => prev ? ({ ...prev, count: prev.count - 1 }) : null)
-        } else {
-          // Clear targeting mode and valid targets when last token is placed
-          clearTargetingMode()
-          clearValidTargets()
-          if (cursorStack.chainedAction) {
-            handleActionExecution(cursorStack.chainedAction, cursorStack.sourceCoords || { row: -1, col: -1 })
-          }
-          setCursorStack(null)
-          // Clear abilityMode when cursorStack is depleted (e.g., REVEAL_ENEMY_CHAINED)
-          setAbilityMode(null)
-        }
+        // NOTE: Token placement is handled by useAppCounters.ts (global mouseup handler)
+        // This prevents duplication - the token is only placed once via handleDrop
       }
       return
     }
@@ -496,6 +494,7 @@ export const useAppAbilities = ({
     nextPhase,
     scoreLine,
     scoreDiagonal,
+    setActionQueue,
   ])
 
   /**
@@ -590,6 +589,8 @@ export const useAppAbilities = ({
       clearTargetingMode,
       clearValidTargets,
       setPlayMode,
+      setActionQueue,
+      onAction: handleActionExecution,
       activateAbility: (c, coords) => activateAbilityModule(c, coords, {
         gameState,
         getFreshGameState,
@@ -601,7 +602,7 @@ export const useAppAbilities = ({
         addBoardCardStatus,
       }),
     })
-  }, [abilityMode, cursorStack, gameState, getFreshGameState, localPlayerId, handleActionExecution, markAbilityUsed, setAbilityMode, setCommandContext, triggerHandCardSelection, moveItem, setCursorStack, clearTargetingMode, clearValidTargets, setPlayMode, interactionLock])
+  }, [abilityMode, cursorStack, gameState, getFreshGameState, localPlayerId, handleActionExecution, markAbilityUsed, setAbilityMode, setCommandContext, triggerHandCardSelection, moveItem, setCursorStack, clearTargetingMode, clearValidTargets, setPlayMode, setActionQueue, interactionLock])
 
   /**
    * Handle double click on announced card

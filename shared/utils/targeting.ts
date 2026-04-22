@@ -7,6 +7,25 @@ import type { GameState, Card, CommandContext, AbilityAction } from '../../clien
 import { checkAdj } from '../abilities/abilityUtils.js'
 import { hasStatus } from '../abilities/index.js'
 
+/**
+ * Get token targeting rules from countersDatabase
+ * Client-side version for targeting validation
+ * NOTE: This is a simplified version - full version is in client/utils/tokenTargeting.ts
+ */
+function getTokenTargetingRules(tokenType: string): { allowBoard: boolean; allowBoardFaceDown: boolean; allowHand: boolean } {
+  // Import countersDatabase dynamically to avoid circular dependency
+  // For shared targeting utilities, we need to check against allowedTargets
+  // Default: tokens can target board cards
+  const defaults = { allowBoard: true, allowBoardFaceDown: false, allowHand: false }
+
+  // Revealed token special case: can target hand and board-facedown only
+  if (tokenType === 'Revealed') {
+    return { allowBoard: false, allowBoardFaceDown: true, allowHand: true }
+  }
+
+  return defaults
+}
+
 // Constants for target validation
 const TARGET_OPPONENTS = -1
 const TARGET_MOVED_OWNER = -2
@@ -381,6 +400,24 @@ export const calculateValidTargets = (
           // Exclude dummy player cards for Revealed tokens
           if (dummyPlayerIds.has(cell.card.ownerId)) {
             continue
+          }
+
+          // CRITICAL: Check allowedTargets for token types from countersDatabase
+          // Some tokens (like Revealed) can only target specific card states
+          if (action.tokenType) {
+            const tokenRules = getTokenTargetingRules(action.tokenType)
+
+            // If token cannot target board at all (hand-only tokens), skip
+            if (!tokenRules.allowBoard && !tokenRules.allowBoardFaceDown) {
+              continue
+            }
+
+            // If token can only target board-facedown cards (not regular board), check face-down status
+            if (tokenRules.allowBoardFaceDown && !tokenRules.allowBoard) {
+              if (cell.card.isFaceDown !== true) {
+                continue // Skip face-up cards - token only targets face-down cards
+              }
+            }
           }
 
           const isValid = validateTarget(

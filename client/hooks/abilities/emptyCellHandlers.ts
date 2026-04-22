@@ -355,12 +355,18 @@ export function handleEmptyCellClick(
           nextAction.payload.contextCardId = movedCard.id
         }
       }
+      // CRITICAL: Clear targeting mode BEFORE setting abilityMode to null
+      // This prevents targeting mode from being re-set after chained action
+      clearTargetingMode()
       setAbilityMode(null)
       setTimeout(() => {
         handleActionExecution(nextAction, boardCoords)
       }, TIMING.MODE_CLEAR_DELAY)
     } else {
-      setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
+      // CRITICAL: Clear targeting mode AND ability mode immediately (not via setTimeout)
+      // This fixes the issue where targeting mode was being re-set after move completion
+      clearTargetingMode()
+      setAbilityMode(null)
     }
 
     return true

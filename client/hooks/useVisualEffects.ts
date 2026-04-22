@@ -7,8 +7,7 @@
  * - Works in both P2P and WebSocket modes
  */
 
-import { useCallback, useEffect } from 'react'
-import { flushSync } from 'react-dom'
+import { useCallback, useEffect, useRef } from 'react'
 import type { HighlightData, FloatingTextData, TargetingModeData, AbilityAction, CommandContext, GameState } from '../types'
 import { SimpleVisualEffects } from '../p2p/SimpleVisualEffects'
 import type { SimpleHost } from '../p2p/SimpleHost'
@@ -54,6 +53,9 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     setGameState,
   } = props
 
+  // Track targeting mode clear timestamp to prevent race conditions
+  const targetingModeClearRef = useRef<number>(0)
+
   // Initialize click wave overlay on mount
   useEffect(() => {
     initClickWaveOverlay()
@@ -85,11 +87,10 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     const timestamp = Date.now()
     const batch = items.map((item, i) => ({ ...item, timestamp: timestamp + i })) as FloatingTextData[]
 
-    // CRITICAL: Use flushSync to ensure state update is processed immediately
-    // This ensures useEffect in App.tsx fires synchronously
-    flushSync(() => {
+    // Defer state update to avoid flushSync during render cycle
+    setTimeout(() => {
       setLatestFloatingTexts(batch)
-    })
+    }, 0)
 
     // Broadcast via SimpleHost if available (P2P mode)
     if (simpleHost) {
@@ -219,9 +220,10 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     // 1. Guests in P2P mode (they receive state via SimpleHost)
     // 2. Debugging/development tools
     // 3. Fallback if direct DOM fails
-    flushSync(() => {
+    // Defer to avoid flushSync during render cycle
+    setTimeout(() => {
       setClickWaves(prev => [...prev, wave])
-    })
+    }, 0)
 
     // Broadcast via SimpleHost if available (P2P host mode)
     if (simpleHost) {
@@ -242,6 +244,11 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
 
   /**
    * Set targeting mode for all clients
+   *
+   * RULES:
+   * 1. Only the OWNER (playerId === localPlayerId) can control targetingMode
+   * 2. Remote updates are for DISPLAY ONLY - cannot overwrite local targetingMode
+   * 3. When owner clears targetingMode, it's cleared for everyone
    */
   const setTargetingMode = useCallback((
     action: AbilityAction,
@@ -249,10 +256,36 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     sourceCoords?: { row: number; col: number },
     preCalculatedTargets?: { row: number, col: number }[],
     _commandContext?: CommandContext,
-    preCalculatedHandTargets?: { playerId: number, cardIndex: number }[]
+    preCalculatedHandTargets?: { playerId: number, cardIndex: number }[],
+    isLocal: boolean = true
   ) => {
+    const newTimestamp = Date.now()
+    console.log('[VISUAL EFFECTS] setTargetingMode called:', {
+      mode: action.mode,
+      playerId,
+      sourceCard: action.sourceCard?.name,
+      preCalculatedTargetsCount: preCalculatedTargets?.length,
+      timestamp: newTimestamp,
+      isLocal,
+    })
     const currentGameState = gameStateRef.current
     if (!currentGameState || !currentGameState.board) {
+      return
+    }
+
+    const localPlayerId = currentGameState.localPlayerId
+
+    // CRITICAL: Only the OWNER can set targetingMode
+    // Remote updates are ignored if we have our own local targetingMode
+    const isOwner = playerId === localPlayerId
+    const hasLocalTargetingMode = currentGameState.targetingMode?.ownerId === localPlayerId
+
+    if (!isLocal && hasLocalTargetingMode) {
+      console.log('[VISUAL EFFECTS] Ignoring REMOTE targetingMode update (we are the owner):', {
+        remotePlayerId: playerId,
+        localPlayerId,
+        localMode: currentGameState.targetingMode.action.mode,
+      })
       return
     }
 
@@ -264,12 +297,13 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
       playerId,
       action,
       sourceCoords,
-      timestamp: Date.now(),
+      timestamp: newTimestamp,
       boardTargets: preCalculatedTargets,
       handTargets: preCalculatedHandTargets,
       // Extract these from action for easier access (also available via action.chainedAction)
       chainedAction: actualChainedAction,
       originalOwnerId: action.originalOwnerId,
+      ownerId: playerId, // The player who created this targeting mode
     }
 
     // Update local state immediately
@@ -279,23 +313,54 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     }))
 
     // Broadcast via SimpleHost if available (P2P mode)
-    if (simpleHost) {
+    // CRITICAL: Only HOST (playerId 1) broadcasts to ensure single source of truth
+    // Non-host players just update their local state for display
+    if (simpleHost && localPlayerId === 1) {
       const effects = new SimpleVisualEffects(simpleHost)
       effects.setTargetingMode(targetingModeData)
+      console.log('[VISUAL EFFECTS] Host broadcasting targetingMode to all clients')
     }
   }, [simpleHost, gameStateRef, setGameState])
 
   /**
    * Clear targeting mode for all clients
+   *
+   * RULES:
+   * 1. OWNER (ownerId === localPlayerId) can clear their own targetingMode
+   * 2. HOST (localPlayerId === 1) can clear any targetingMode (controls gameState)
+   * 3. When cleared, HOST broadcasts to all clients
    */
   const clearTargetingMode = useCallback(() => {
     console.log('[VISUAL EFFECTS] clearTargetingMode called')
+    const currentGameState = gameStateRef.current
+    const localPlayerId = currentGameState?.localPlayerId
+    const targetingMode = currentGameState?.targetingMode
+
+    if (!targetingMode) {
+      console.log('[VISUAL EFFECTS] No targetingMode to clear')
+      return
+    }
+
+    const isOwner = targetingMode.ownerId === localPlayerId
+    const isHost = localPlayerId === 1
+
+    // Only OWNER or HOST can clear targetingMode
+    if (!isOwner && !isHost) {
+      console.log('[VISUAL EFFECTS] Ignoring clear request (not owner or host):', {
+        ownerId: targetingMode.ownerId,
+        localPlayerId,
+      })
+      return
+    }
 
     // Clear local state
     setGameState((prev: any) => {
       console.log('[VISUAL EFFECTS] Clearing targetingMode in local state', {
         hadTargetingMode: !!prev.targetingMode,
         playerId: prev.targetingMode?.playerId,
+        ownerId: prev.targetingMode?.ownerId,
+        isOwner,
+        isHost,
       })
       return {
         ...prev,
@@ -304,12 +369,13 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     })
 
     // Broadcast via SimpleHost if available (P2P mode)
-    if (simpleHost) {
+    // CRITICAL: Only HOST (playerId 1) broadcasts to ensure single source of truth
+    if (simpleHost && isHost) {
       const effects = new SimpleVisualEffects(simpleHost)
       effects.clearTargetingMode()
-      console.log('[VISUAL EFFECTS] Broadcast clearTargetingMode to SimpleHost')
+      console.log('[VISUAL EFFECTS] Host broadcasting clearTargetingMode to all clients')
     }
-  }, [simpleHost, setGameState])
+  }, [simpleHost, gameStateRef, setGameState])
 
   return {
     triggerHighlight,

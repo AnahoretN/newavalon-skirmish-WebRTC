@@ -69,6 +69,9 @@ const AppInner = function AppInner() {
 
   // Declare ability state early (needed by useGameState)
   const [abilityMode, setAbilityMode] = useState<AbilityAction | null>(null)
+  // CRITICAL: Track pending chained actions to prevent race condition
+  // When a chained action is being processed, the action queue should wait
+  const pendingChainedActionRef = useRef<boolean>(false)
 
   const gameStateHook = useGameState({ abilityMode, setAbilityMode })
 
@@ -481,6 +484,8 @@ const AppInner = function AppInner() {
     clearTargetingMode,
     validTargets,
     sendAction,
+    setActionQueue,
+    pendingChainedActionRef,
   })
 
   const handleAnnouncedCardDoubleClick = (player: Player, card: Card) => {
@@ -596,6 +601,7 @@ const AppInner = function AppInner() {
     setAbilityMode,
     triggerClickWave,
     clearTargetingMode,
+    setActionQueue,
   })
 
   const isSpectator = useMemo(
@@ -1203,8 +1209,9 @@ const AppInner = function AppInner() {
 
     if (isComplexCommand && !commandModalCard) {
       // Open modal for complex command
-      // CRITICAL: Set ownerId on the card so handleCommandConfirm uses the correct player ID
-      setCommandModalCard({ ...card, ownerId: localPlayerId })
+      // CRITICAL: Use the card's actual owner, NOT localPlayerId
+      // This fixes dummy player command activation where local player controls dummy's cards
+      setCommandModalCard({ ...card, ownerId: card.ownerId ?? localPlayerId })
     } else if (!isComplexCommand && !commandModalCard) {
       // Simple command - execute directly
       const actions = getCommandAction(card.id, -1, card as any, gameState as any, localPlayerId)
@@ -1262,6 +1269,13 @@ const AppInner = function AppInner() {
     // If another player has set targeting mode, don't override with local calculations
     // This allows visual effects from remote players to display correctly
     if (gameState.targetingMode && gameState.targetingMode.playerId !== localPlayerId) {
+      return
+    }
+
+    // CRITICAL: If abilityMode is null/cleared AND cursorStack is also null, don't set targetingMode
+    // This prevents setTargetingMode from being called after ability is complete
+    // But allow targetingMode for cursorStack (tokens) even when abilityMode is null
+    if (!abilityMode && !cursorStack) {
       return
     }
 
@@ -1333,7 +1347,10 @@ const AppInner = function AppInner() {
       }
     }
 
-    const boardTargets = effectiveAction ? calculateValidTargets(effectiveAction, gameState, actorId ?? null, commandContext) : []
+    // CRITICAL: Use getFreshGameState() instead of gameState for calculateValidTargets
+    // This ensures filters see tokens added in previous steps of multi-step commands (e.g., Data Interception)
+    const freshGameState = getFreshGameState ? getFreshGameState() : gameState
+    const boardTargets = effectiveAction ? calculateValidTargets(effectiveAction, freshGameState, actorId ?? null, commandContext) : []
     const handTargets: {playerId: number, cardIndex: number}[] = []
 
     // Handle playMode - highlight empty board cells for unit placement
@@ -1379,9 +1396,9 @@ const AppInner = function AppInner() {
           // For complex commands, we need to get the actions that will be available
           // Try option 0 (first option) to see what targets it needs
           try {
-            const optionActions = getCommandAction(commandModalCard.id, 0, commandModalCard as any, gameState as any, commandModalCard.ownerId!)
+            const optionActions = getCommandAction(commandModalCard.id, 0, commandModalCard as any, freshGameState as any, commandModalCard.ownerId!)
             optionActions.forEach((action: any) => {
-              const targets = calculateValidTargets(action as any, gameState as any, commandModalCard.ownerId!, commandContext)
+              const targets = calculateValidTargets(action as any, freshGameState as any, commandModalCard.ownerId!, commandContext)
               targets.forEach(t => {
                 if (!boardTargets.some(bt => bt.row === t.row && bt.col === t.col)) {
                   boardTargets.push(t)
@@ -1948,8 +1965,20 @@ const AppInner = function AppInner() {
   }, [gameState?.currentPhase, abilityMode])
 
   useEffect(() => {
-    if (actionQueue.length > 0 && !abilityMode && !cursorStack) {
+    console.log('[ACTION QUEUE] Check:', {
+      queueLength: actionQueue.length,
+      hasAbilityMode: !!abilityMode,
+      pendingChainedAction: pendingChainedActionRef.current,
+      hasCursorStack: !!cursorStack,
+      nextAction: actionQueue[0]?.type,
+      nextMode: actionQueue[0]?.mode,
+      allActionTypes: actionQueue.map(a => ({ type: a.type, mode: a.mode, tokenType: a.tokenType, hasChainedAction: !!a.chainedAction })),
+    })
+    // CRITICAL: Also check pendingChainedActionRef - if a chained action is being processed,
+    // wait for it to complete before processing the next action in the queue
+    if (actionQueue.length > 0 && !abilityMode && !cursorStack && !pendingChainedActionRef.current) {
       const nextAction = actionQueue[0]
+      console.log('[ACTION QUEUE] Executing:', nextAction.type, nextAction.mode || nextAction.tokenType, 'hasChainedAction:', !!nextAction.chainedAction)
       setActionQueue(prev => prev.slice(1))
 
       // Context Injection Logic for Multi-Step Commands (False Orders / Tactical Maneuver)
@@ -1957,6 +1986,7 @@ const AppInner = function AppInner() {
 
       // Only use commandContext if the action explicitly requests it (via useContextCard flag)
       // This prevents actions like Recon Drone's Setup from incorrectly targeting the wrong card
+      // Also handle SELECT_UNIT_FOR_MOVE for Data Interception and similar commands
       if (actionToProcess.mode === 'SELECT_CELL' && commandContext.lastMovedCardCoords && actionToProcess.payload?.useContextCard) {
         const { row, col } = commandContext.lastMovedCardCoords
         // Add bounds/null checks before accessing the board
@@ -1978,6 +2008,11 @@ const AppInner = function AppInner() {
             actionToProcess.recordContext = true
           }
         }
+      } else if (actionToProcess.mode === 'SELECT_UNIT_FOR_MOVE' && commandContext.lastPlacedToken?.boardCoords) {
+        // Data Interception Option 1: Place Exploit token, then move unit with Exploit
+        // Inject sourceCoords from the token placement step
+        actionToProcess.sourceCoords = commandContext.lastPlacedToken.boardCoords
+        actionToProcess.recordContext = true
       }
 
       const calculateDynamicCount = (factor: string, ownerId: number, baseCount: number = 0) => {

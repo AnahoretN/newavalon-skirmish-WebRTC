@@ -90,13 +90,25 @@ export function createTokenCursorStack(
     ...baseState,
     ...tokenRules,
     ...modifications,
-    // Preserve these from existing stack if present
+    // Preserve these from existing stack if present (but modifications take precedence)
     ...(existingStack && {
-      chainedAction: existingStack.chainedAction,
+      chainedAction: modifications?.chainedAction !== undefined ? modifications.chainedAction : existingStack.chainedAction,
       isDeployAbility: existingStack.isDeployAbility,
       readyStatusToRemove: existingStack.readyStatusToRemove,
     }),
   }
+
+  // DIAGNOSTIC: Log chainedAction propagation
+  console.log('[createTokenCursorStack] chainedAction propagation:', {
+    tokenType,
+    existingStackCount: existingStack?.count || 0,
+    modificationsHasChainedAction: !!modifications?.chainedAction,
+    modificationsChainedActionType: modifications?.chainedAction?.type,
+    existingStackHasChainedAction: !!existingStack?.chainedAction,
+    existingStackChainedActionType: existingStack?.chainedAction?.type,
+    resultHasChainedAction: !!result.chainedAction,
+    resultChainedActionType: result.chainedAction?.type,
+  })
 
   return result
 }

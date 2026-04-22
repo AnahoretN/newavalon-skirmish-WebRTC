@@ -18,6 +18,7 @@ interface UseAppCountersProps {
     setAbilityMode: React.Dispatch<React.SetStateAction<AbilityAction | null>>;
     triggerClickWave: (location: 'board' | 'hand' | 'deck', boardCoords?: { row: number; col: number }, handTarget?: { playerId: number; cardIndex: number }) => void;
   clearTargetingMode: () => void;
+  setActionQueue: React.Dispatch<React.SetStateAction<AbilityAction[]>>;
 }
 
 export const useAppCounters = ({
@@ -34,6 +35,7 @@ export const useAppCounters = ({
   setAbilityMode,
   triggerClickWave,
   clearTargetingMode,
+  setActionQueue,
 }: UseAppCountersProps) => {
   const cursorFollowerRef = useRef<HTMLDivElement>(null)
   const mousePos = useRef({ x: 0, y: 0 })
@@ -178,16 +180,9 @@ export const useAppCounters = ({
               // the state update doesn't include the stale targetingMode
               // This fixes the issue where other players see persistent targeting highlights
               if (cursorStack.count === 1) {
-                if (cursorStack.chainedAction) {
-                  onAction(cursorStack.chainedAction, cursorStack.sourceCoords || { row: -1, col: -1 })
-                }
-                // CRITICAL: Clear abilityMode AND cursorStack SYNCHRONOUSLY to prevent
-                // useEffect in App.tsx from restoring targetingMode
-                flushSync(() => {
-                  setAbilityMode(null)
-                  setCursorStack(null)
-                })
-                clearTargetingMode()
+                // CRITICAL: Don't execute chainedAction directly - add to actionQueue
+                // This will be handled after the token is placed and cursorStack is cleared
+                // The chainedAction will be processed when useAppAbilities handles cursorStack completion
               }
 
               // Allow placing Revealed token on opponent or dummy hand cards
@@ -201,10 +196,50 @@ export const useAppCounters = ({
               if (cursorStack.sourceCoords && cursorStack.sourceCoords.row >= 0) {
                 markAbilityUsed(cursorStack.sourceCoords, cursorStack.isDeployAbility)
               }
-              if (cursorStack.count > 1) {
-                setCursorStack(prev => prev ? ({ ...prev, count: prev.count - 1 }) : null)
+
+              // Calculate remaining count AFTER this drop
+              const remainingCount = cursorStack.count - 1
+
+              if (remainingCount > 0) {
+                setCursorStack(prev => prev ? ({ ...prev, count: remainingCount }) : null)
+              } else {
+                // Stack is now empty - clear it and execute chained action
+                if (cursorStack.chainedAction) {
+                  const chained = { ...cursorStack.chainedAction }
+                  // CRITICAL: Add chainedAction to actionQueue instead of executing directly
+                  if (setActionQueue) {
+                    setTimeout(() => {
+                      setActionQueue(prev => [...prev, chained])
+                    }, 0)
+                  } else {
+                    onAction(chained, { row: -1, col: -1 })
+                  }
+                } else if (cursorStack._autoStepsContext) {
+                  const autoStepsContext = cursorStack._autoStepsContext
+                  const continueAction: any = {
+                    type: 'CONTINUE_AUTO_STEPS',
+                    sourceCard: cursorStack.sourceCard,
+                    sourceCoords: cursorStack.sourceCoords,
+                    isDeployAbility: cursorStack.isDeployAbility,
+                    readyStatusToRemove: cursorStack.readyStatusToRemove,
+                    payload: {
+                      _autoStepsContext: autoStepsContext,
+                      stepContext: {
+                        targetCoords: { row: -1, col: -1 },
+                        targetCard: null
+                      }
+                    }
+                  }
+                  onAction(continueAction, { row: -1, col: -1 })
+                }
+                // CRITICAL: Clear cursorStack IMMEDIATELY after stack is empty
+                flushSync(() => {
+                  setAbilityMode(null)
+                  setCursorStack(null)
+                })
+                clearTargetingMode()
               }
-              // Note: cursorStack already cleared above if count was 1
+
               interactionLock.current = true
               setTimeout(() => {
                 interactionLock.current = false
@@ -240,18 +275,9 @@ export const useAppCounters = ({
             // Dropping the token via handleDrop will add the status, revealing the card.
 
             if (cursorStack.count === 1) {
-              // CRITICAL: Clear targeting mode BEFORE handleDrop to ensure
-              // the state update doesn't include the stale targetingMode
-              // This fixes the issue where other players see persistent targeting highlights
-              if (cursorStack.chainedAction) {
-                onAction(cursorStack.chainedAction, cursorStack.sourceCoords || { row: -1, col: -1 })
-              }
-              // CRITICAL: Clear abilityMode AND cursorStack SYNCHRONOUSLY to prevent
-              // useEffect in App.tsx from restoring targetingMode
-              flushSync(() => {
-                setAbilityMode(null)
-                setCursorStack(null)
-              })
+              // CRITICAL: Don't execute chainedAction directly here
+              // It will be handled by useAppAbilities when cursorStack completes
+              // Just clear targeting mode - cursorStack will be cleared after token placement
               clearTargetingMode()
             }
 
@@ -266,10 +292,50 @@ export const useAppCounters = ({
             if (cursorStack.sourceCoords && cursorStack.sourceCoords.row >= 0) {
               markAbilityUsed(cursorStack.sourceCoords, cursorStack.isDeployAbility)
             }
-            if (cursorStack.count > 1) {
-              setCursorStack(prev => prev ? ({ ...prev, count: prev.count - 1 }) : null)
+
+            // Calculate remaining count AFTER this drop
+            const remainingCount = cursorStack.count - 1
+
+            if (remainingCount > 0) {
+              setCursorStack(prev => prev ? ({ ...prev, count: remainingCount }) : null)
+            } else {
+              // Stack is now empty - clear it and execute chained action
+              if (cursorStack.chainedAction) {
+                const chained = { ...cursorStack.chainedAction }
+                // CRITICAL: Add chainedAction to actionQueue instead of executing directly
+                if (setActionQueue) {
+                  setTimeout(() => {
+                    setActionQueue(prev => [...prev, chained])
+                  }, 0)
+                } else {
+                  onAction(chained, { row: -1, col: -1 })
+                }
+              } else if (cursorStack._autoStepsContext) {
+                const autoStepsContext = cursorStack._autoStepsContext
+                const continueAction: any = {
+                  type: 'CONTINUE_AUTO_STEPS',
+                  sourceCard: cursorStack.sourceCard,
+                  sourceCoords: cursorStack.sourceCoords,
+                  isDeployAbility: cursorStack.isDeployAbility,
+                  readyStatusToRemove: cursorStack.readyStatusToRemove,
+                  payload: {
+                    _autoStepsContext: autoStepsContext,
+                    stepContext: {
+                      targetCoords: { row: -1, col: -1 },
+                      targetCard: null
+                    }
+                  }
+                }
+                onAction(continueAction, { row: -1, col: -1 })
+              }
+              // CRITICAL: Clear cursorStack IMMEDIATELY after stack is empty
+              flushSync(() => {
+                setAbilityMode(null)
+                setCursorStack(null)
+              })
+              clearTargetingMode()
             }
-            // Note: cursorStack already cleared above if count was 1
+
             interactionLock.current = true
             setTimeout(() => {
               interactionLock.current = false
@@ -347,13 +413,24 @@ export const useAppCounters = ({
                 // Trigger target selection effect
                 triggerClickWave('board', { row, col })
 
-                if (cursorStack.recordContext) {
-                  setCommandContext(prev => ({
-                    ...prev,
+                // CRITICAL: Store info about the just-placed token for commands like Data Interception
+                // This allows the next step (SELECT_UNIT_FOR_MOVE) to see the token even before gameState updates
+                const effectiveActorId = (gameState.players.find(p => p.id === gameState.activePlayerId)?.isDummy && gameState.activePlayerId !== null)
+                  ? gameState.activePlayerId
+                  : (cursorStack.originalOwnerId ?? localPlayerId ?? 0)
+                setCommandContext(prev => ({
+                  ...prev,
+                  lastPlacedToken: {
+                    cardId: targetCard.id,
+                    tokenType: cursorStack.type,
+                    addedByPlayerId: effectiveActorId,
+                    boardCoords: { row, col },
+                  },
+                  ...(cursorStack.recordContext ? {
                     lastMovedCardCoords: { row, col },
                     lastMovedCardId: targetCard.id,
-                  }))
-                }
+                  } : {}),
+                }))
 
                 if (cursorStack.sourceCoords && cursorStack.sourceCoords.row >= 0) {
                   markAbilityUsed(cursorStack.sourceCoords, cursorStack.isDeployAbility)
@@ -395,8 +472,39 @@ export const useAppCounters = ({
                     if (chained.type === 'CREATE_STACK') {
                       setAbilityMode(null)
                     }
-                    // Use the new { row, col } as sourceCoords for chained action, not cursorStack.sourceCoords
-                    onAction(chained, { row, col })
+                    // CRITICAL FIX: Add chainedAction to actionQueue instead of executing directly
+                    // This fixes Data Interception where chainedAction (SELECT_UNIT_FOR_MOVE) needs to
+                    // execute AFTER token placement and be processed by actionQueue useEffect
+                    if (setActionQueue) {
+                      console.log('[COUNTER DROP] Scheduling chainedAction to actionQueue:', {
+                        type: chained.type,
+                        mode: chained.mode,
+                      })
+                      // CRITICAL: Use setTimeout to defer setActionQueue until AFTER useEffect completes
+                      // This prevents the race condition where:
+                      // 1. setActionQueue adds chainedAction
+                      // 2. flushSync(setCursorStack) triggers re-render
+                      // 3. useEffect runs again with cursorStack:false and executes GLOBAL_AUTO_APPLY twice
+                      setTimeout(() => {
+                        setActionQueue(prev => {
+                          console.log('[COUNTER DROP] Adding chainedAction to queue, current length:', prev.length)
+                          return [...prev, chained]
+                        })
+                      }, 0)
+                    } else {
+                      // Fallback: execute directly if setActionQueue not available
+                      console.log('[COUNTER DROP] setActionQueue not available - executing chainedAction directly')
+                      onAction(chained, { row, col })
+                    }
+
+                    // CRITICAL: Clear cursorStack IMMEDIATELY after scheduling chainedAction
+                    // This prevents the infinite loop bug where the last token can be placed repeatedly
+                    // because cursorStack remains active after chainedAction is scheduled
+                    flushSync(() => {
+                      setAbilityMode(null)
+                      setCursorStack(null)
+                    })
+                    clearTargetingMode()
                   } else if (cursorStack._autoStepsContext) {
                     // AUTO_STEPS continuation after cursorStack completes (Zius Setup, Centurion Commit, etc.)
                     const autoStepsContext = cursorStack._autoStepsContext

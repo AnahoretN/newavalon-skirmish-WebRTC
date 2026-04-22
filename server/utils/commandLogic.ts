@@ -132,6 +132,10 @@ export const getCommandAction = (
   // DATA INTERCEPTION - Exploit tokens, then reveal or move
   // =========================================================================
   else if (baseId === 'datainterception') {
+    // CRITICAL: Use card.ownerId for token ownership, not localPlayerId
+    // This fixes the case where local player activates dummy player's command
+    const commandOwnerId = card.ownerId ?? localPlayerId
+
     // 1. Common Step: Place 1 Exploit on any card.
     if (isMain) {
       actions.push({
@@ -143,26 +147,50 @@ export const getCommandAction = (
     }
 
     // Option 0: Count Total Exploits (X) -> Place X Reveal tokens.
+    // CRITICAL: This is a TWO-STEP action:
+    // 1. Place Exploit token (CREATE_STACK)
+    // 2. Then count ALL Exploits and place Revealed tokens (chainedAction)
     else if (optionIndex === 0) {
       actions.push({
         type: 'CREATE_STACK',
-        tokenType: 'Revealed',
-        dynamicCount: { factor: 'Exploit', ownerId: localPlayerId },
-        onlyFaceDown: true, // Also covers unrevealed hand cards due to validation logic
-        onlyOpponents: true,
-        targetOwnerId: -1,
+        tokenType: 'Exploit',
+        count: 1,
         sourceCard: card,
+        // After placing Exploit, chain CREATE_STACK for Revealed tokens with dynamicCount
+        // This ensures dynamicCount includes the Exploit just placed
+        chainedAction: {
+          type: 'CREATE_STACK',
+          tokenType: 'Revealed',
+          dynamicCount: { factor: 'Exploit', ownerId: commandOwnerId },
+          onlyFaceDown: true, // Also covers unrevealed hand cards due to validation logic
+          onlyOpponents: true,
+          targetOwnerId: -1,
+          sourceCard: card,
+        },
       })
     }
     // Option 1: Select Unit with Own Exploit -> Move Range 2.
+    // CRITICAL: This is a TWO-STEP action:
+    // 1. Place Exploit token (CREATE_STACK)
+    // 2. Then allow selecting unit WITH Exploit to move (chainedAction)
     else if (optionIndex === 1) {
       actions.push({
-        type: 'ENTER_MODE',
-        mode: 'SELECT_UNIT_FOR_MOVE',
+        type: 'CREATE_STACK',
+        tokenType: 'Exploit',
+        count: 1,
         sourceCard: card,
-        payload: {
-          range: 2,
-          filter: (target: Card) => target.statuses?.some((s: { type: string; addedByPlayerId?: number }) => s.type === 'Exploit' && s.addedByPlayerId === localPlayerId) || false,
+        // CRITICAL: After placing Exploit, chain SELECT_UNIT_FOR_MOVE
+        // This ensures the filter will find the Exploit token just placed
+        chainedAction: {
+          type: 'ENTER_MODE',
+          mode: 'SELECT_UNIT_FOR_MOVE',
+          sourceCard: card,
+          payload: {
+            range: 2,
+            // CRITICAL: Check for Exploit tokens added by the command owner (card.ownerId)
+            // not the local player. This fixes dummy player command activation.
+            filter: (target: Card) => target.statuses?.some((s: { type: string; addedByPlayerId?: number }) => s.type === 'Exploit' && s.addedByPlayerId === commandOwnerId) || false,
+          },
         },
       })
     }
@@ -357,6 +385,10 @@ export const getCommandAction = (
   // ENHANCED INTERROGATION - Aim tokens, then reveal or move
   // =========================================================================
   else if (baseId === 'enhancedinterrogation') {
+    // CRITICAL: Use card.ownerId for token ownership, not localPlayerId
+    // This fixes the case where local player activates dummy player's command
+    const commandOwnerId = card.ownerId ?? localPlayerId
+
     // Common Logic: Place 1 Aim token first
     if (isMain) {
       actions.push({
@@ -368,26 +400,50 @@ export const getCommandAction = (
     }
 
     // Option 0: Count Total Aim (X) -> Place X Reveal tokens.
+    // CRITICAL: This is a TWO-STEP action:
+    // 1. Place Aim token (CREATE_STACK)
+    // 2. Then count ALL Aim tokens and place Revealed tokens (chainedAction)
     else if (optionIndex === 0) {
       actions.push({
         type: 'CREATE_STACK',
-        tokenType: 'Revealed',
-        dynamicCount: { factor: 'Aim', ownerId: localPlayerId },
-        onlyFaceDown: true,
-        onlyOpponents: true,
-        targetOwnerId: -1,
+        tokenType: 'Aim',
+        count: 1,
         sourceCard: card,
+        // After placing Aim, chain CREATE_STACK for Revealed tokens with dynamicCount
+        // This ensures dynamicCount includes the Aim just placed
+        chainedAction: {
+          type: 'CREATE_STACK',
+          tokenType: 'Revealed',
+          dynamicCount: { factor: 'Aim', ownerId: commandOwnerId },
+          onlyFaceDown: true,
+          onlyOpponents: true,
+          targetOwnerId: -1,
+          sourceCard: card,
+        },
       })
     }
     // Option 1: Select Unit with Own Aim -> Move Range 2.
+    // CRITICAL: This is a TWO-STEP action:
+    // 1. Place Aim token (CREATE_STACK)
+    // 2. Then allow selecting unit WITH Aim to move (chainedAction)
     else if (optionIndex === 1) {
       actions.push({
-        type: 'ENTER_MODE',
-        mode: 'SELECT_UNIT_FOR_MOVE',
+        type: 'CREATE_STACK',
+        tokenType: 'Aim',
+        count: 1,
         sourceCard: card,
-        payload: {
-          range: 2,
-          filter: (target: Card) => target.statuses?.some((s: { type: string; addedByPlayerId?: number }) => s.type === 'Aim' && s.addedByPlayerId === localPlayerId) || false,
+        // After placing Aim, chain SELECT_UNIT_FOR_MOVE
+        // This ensures the filter will find the Aim token just placed
+        chainedAction: {
+          type: 'ENTER_MODE',
+          mode: 'SELECT_UNIT_FOR_MOVE',
+          sourceCard: card,
+          payload: {
+            range: 2,
+            // CRITICAL: Check for Aim tokens added by the command owner (card.ownerId)
+            // not the local player. This fixes dummy player command activation.
+            filter: (target: Card) => target.statuses?.some((s: { type: string; addedByPlayerId?: number }) => s.type === 'Aim' && s.addedByPlayerId === commandOwnerId) || false,
+          },
         },
       })
     }
@@ -411,13 +467,26 @@ export const getCommandAction = (
   // This ensures highlights and effects use the correct owner color even in multi-step commands
   // If card.ownerId is not set (e.g., for command cards in announced zone), use the computed localPlayerId
   const effectiveOwnerId = card.ownerId || localPlayerId
-  actions.forEach(action => {
-    action.originalOwnerId = effectiveOwnerId
+
+  // CRITICAL: Recursively set originalOwnerId for all actions AND their chainedActions
+  // This fixes Data Interception option 1 where chainedAction (SELECT_UNIT_FOR_MOVE) needs originalOwnerId
+  function setOriginalOwnerIdRecursively(action: any, ownerId: number) {
+    action.originalOwnerId = ownerId
     // Also ensure sourceCard has ownerId set (for dynamicResource calculations)
     if (action.sourceCard && !action.sourceCard.ownerId) {
-      action.sourceCard.ownerId = effectiveOwnerId
+      action.sourceCard.ownerId = ownerId
     }
-  })
+    // CRITICAL: Also set originalOwnerId on chainedAction if present
+    if (action.chainedAction) {
+      setOriginalOwnerIdRecursively(action.chainedAction, ownerId)
+    }
+    // Also check payload.chainedAction (for some command cards)
+    if (action.payload?.chainedAction) {
+      setOriginalOwnerIdRecursively(action.payload.chainedAction, ownerId)
+    }
+  }
+
+  actions.forEach(action => setOriginalOwnerIdRecursively(action, effectiveOwnerId))
 
   return actions
 }

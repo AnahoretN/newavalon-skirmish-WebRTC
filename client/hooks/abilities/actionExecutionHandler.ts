@@ -57,6 +57,8 @@ export interface ActionHandlerProps {
   clearTargetingMode?: () => void
   // P2P: sendAction for GLOBAL_AUTO_APPLY with contextCardId (False Orders Stun x2)
   sendAction?: (action: string, data?: any) => void
+  pendingChainedActionRef?: React.MutableRefObject<boolean>
+  setActionQueue?: React.Dispatch<React.SetStateAction<any[]>>
 }
 
 /**
@@ -85,6 +87,20 @@ export function handleActionExecution(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
+  // DIAGNOSTIC: Log all action executions with call stack
+  const callStack = new Error().stack?.split('\n').slice(2, 7).map(line => line.trim())
+  console.log('[handleActionExecution] Called:', {
+    type: action.type,
+    mode: action.mode,
+    tokenType: action.tokenType,
+    sourceCard: action.sourceCard?.name,
+    hasChainedAction: !!action.chainedAction,
+    chainedActionType: action.chainedAction?.type,
+    chainedActionMode: action.chainedAction?.mode,
+    sourceCoords,
+    callStack,
+  })
+
   const {
     gameState,
     getFreshGameState, // Функция для получения свежего состояния
@@ -136,8 +152,17 @@ export function handleActionExecution(
       // This prevents abilities like Recon Drone Commit from creating token stacks when no valid targets exist
       if (action.chainedAction && !action.skipChainedActionOnNoTargets) {
         setTimeout(() => {
+          if (props.pendingChainedActionRef) {
+            props.pendingChainedActionRef.current = true
+          }
           execAction(action.chainedAction!, sourceCoords)
-        }, 500)
+          // Clear the flag after React has processed state updates
+          setTimeout(() => {
+            if (props.pendingChainedActionRef) {
+              props.pendingChainedActionRef.current = false
+            }
+          }, 50)
+        }, 1000)
       }
       return
     }
@@ -174,9 +199,13 @@ function handleReverendSetupScore(
   const ownerId = action.sourceCard?.ownerId ?? 0
   let exploitCount = 0
 
-  for (let r = 0; r < gameState.board.length; r++) {
-    for (let c = 0; c < gameState.board[r].length; c++) {
-      const card = gameState.board[r][c]?.card
+  // CRITICAL: Use getFreshGameState() to get the latest state from host/guest
+  // This ensures we count Exploit tokens added in previous steps of multi-step commands
+  const freshState = getFreshGameState()
+
+  for (let r = 0; r < freshState.board.length; r++) {
+    for (let c = 0; c < freshState.board[r].length; c++) {
+      const card = freshState.board[r][c]?.card
       if (card?.statuses) {
         const exploitCounters = card.statuses.filter((s: any) => s.type === 'Exploit' && s.addedByPlayerId === ownerId)
         exploitCount += exploitCounters.length
@@ -300,8 +329,12 @@ function handleGlobalAutoApply(
 
     let revealedCount = 0
 
+    // CRITICAL: Use getFreshGameState() to get the latest state from host/guest
+    // This ensures we count tokens added in previous steps of multi-step commands
+    const freshState = getFreshGameState()
+
     // Count in opponents' hands
-    gameState.players.forEach((p: any) => {
+    freshState.players.forEach((p: any) => {
       if (p.id !== finnOwnerId) {
         p.hand.forEach((c: any) => {
           if (c.statuses?.some((s: any) => s.type === 'Revealed' && s.addedByPlayerId === finnOwnerId)) {
@@ -312,7 +345,7 @@ function handleGlobalAutoApply(
     })
 
     // Count on battlefield
-    gameState.board.forEach((row: any[]) => {
+    freshState.board.forEach((row: any[]) => {
       row.forEach((cell: any) => {
         const card = cell.card
         if (card && card.ownerId !== finnOwnerId) {
@@ -351,21 +384,43 @@ function handleGlobalAutoApply(
   if (action.payload?.tokenType && action.payload.filter) {
     const { tokenType, filter } = action.payload
     const targets: { row: number; col: number }[] = []
-    const gridSize = gameState.board.length
+
+    // CRITICAL: Use getFreshGameState() to get the latest state from host/guest
+    // This ensures filters that check for tokens added in previous steps work correctly
+    const freshState = getFreshGameState()
+    const gridSize = freshState.board.length
+
+    // DIAGNOSTIC: Log filter execution start
+    console.log('[GLOBAL_AUTO_APPLY filter] Starting filter scan for', action.sourceCard?.name, '| tokenType:', tokenType)
 
     for (let r = 0; r < gridSize; r++) {
       for (let c = 0; c < gridSize; c++) {
-        const card = gameState.board[r][c].card
+        const card = freshState.board[r][c].card
         if (card && filter(card, r, c)) {
           targets.push({ row: r, col: c })
+          console.log('[GLOBAL_AUTO_APPLY filter] Found target:', card.name, 'at', {row: r, col: c})
         }
       }
     }
 
+    console.log('[GLOBAL_AUTO_APPLY filter] Total targets found:', targets.length)
+
     if (targets.length === 0) {
+      console.log('[GLOBAL_AUTO_APPLY filter] No targets found - triggering NO_TARGET')
       triggerNoTarget(action.sourceCoords || sourceCoords)
       if (action.chainedAction) {
-        setTimeout(() => execAction(action.chainedAction!, sourceCoords), 500)
+        console.log('[GLOBAL_AUTO_APPLY filter] Has chainedAction despite no targets - scheduling in 1000ms')
+        setTimeout(() => {
+          if (props.pendingChainedActionRef) {
+            props.pendingChainedActionRef.current = true
+          }
+          execAction(action.chainedAction!, sourceCoords)
+          setTimeout(() => {
+            if (props.pendingChainedActionRef) {
+              props.pendingChainedActionRef.current = false
+            }
+          }, 50)
+        }, 1000)
       }
       // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
       return
@@ -379,7 +434,23 @@ function handleGlobalAutoApply(
     markAbilityUsed(action.sourceCoords || sourceCoords, !!action.isDeployAbility, false, action.readyStatusToRemove)
 
     if (action.chainedAction) {
-      setTimeout(() => execAction(action.chainedAction!, sourceCoords), TIMING.MODE_CLEAR_DELAY)
+      // DIAGNOSTIC: Log chainedAction execution
+      console.log('[CHAINED_ACTION] Will execute in 1000ms:', action.chainedAction.type, action.chainedAction.tokenType || action.chainedAction.mode || action.chainedAction.payload?.actionType)
+
+      // CRITICAL: Use longer delay to ensure gameState updates before chainedAction executes
+      // This fixes commands like Data Interception where dynamicCount needs to see tokens
+      // added in the current step before calculating counts for the next step
+      setTimeout(() => {
+        if (props.pendingChainedActionRef) {
+          props.pendingChainedActionRef.current = true
+        }
+        execAction(action.chainedAction!, sourceCoords)
+        setTimeout(() => {
+          if (props.pendingChainedActionRef) {
+            props.pendingChainedActionRef.current = false
+          }
+        }, 50)
+      }, 1000)
     }
     return
   }
@@ -397,7 +468,11 @@ function handleGlobalAutoApply(
   if (action.payload && !action.payload.cleanupCommand) {
     const { tokenType, filter } = action.payload
     const targets: { row: number; col: number }[] = []
-    const gridSize = gameState.board.length
+
+    // CRITICAL: Use getFreshGameState() to get the latest state from host/guest
+    // This ensures filters that check for tokens added in previous steps work correctly
+    const freshState = getFreshGameState()
+    const gridSize = freshState.board.length
 
     // Handle Context Rewards (Tactical Maneuver)
     if (action.payload.contextReward && action.sourceCard) {
@@ -408,7 +483,7 @@ function handleGlobalAutoApply(
     if (filter) {
       for (let r = 0; r < gridSize; r++) {
         for (let c = 0; c < gridSize; c++) {
-          const targetCard = gameState.board[r][c].card
+          const targetCard = freshState.board[r][c].card
           if (targetCard && filter(targetCard)) {
             targets.push({ row: r, col: c })
           }
@@ -452,6 +527,17 @@ function handleCreateStack(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
+  const callStack = new Error().stack?.split('\n').slice(2, 5).map(line => line.trim())
+  console.log('[handleCreateStack] Called:', {
+    tokenType: action.tokenType,
+    count: action.count,
+    sourceCard: action.sourceCard?.name,
+    hasChainedAction: !!action.chainedAction,
+    chainedActionType: action.chainedAction?.type,
+    chainedActionMode: action.chainedAction?.mode,
+    callStack,
+  })
+
   const { gameState, getFreshGameState, setAbilityMode, setCursorStack, triggerNoTarget, localPlayerId, setTargetingMode, addBoardCardStatus, markAbilityUsed, handleActionExecution: execAction, commandContext } = props
 
   let count = action.count || 0
@@ -479,14 +565,48 @@ function handleCreateStack(
   if (action.dynamicCount) {
     const { factor, ownerId } = action.dynamicCount
     let dynamic = 0
-    gameState.board.forEach((r: any[]) => {
-      r.forEach((c: any) => {
+    const tokenLocations: {row: number, col: number, cardName: string}[] = []
+
+    // CRITICAL: Use getFreshGameState() instead of gameState to get the most up-to-date state
+    // This fixes commands like Data Interception where dynamicCount needs to see tokens
+    // added in previous steps (e.g., Exploit counters placed in the same command)
+    const freshState = getFreshGameState()
+
+    // Also check commandContext.lastPlacedToken for tokens just placed in current step
+    const justPlaced = commandContext?.lastPlacedToken
+    let justPlacedCounted = false
+
+    freshState.board.forEach((r: any[], rowIdx: number) => {
+      r.forEach((c: any, colIdx: number) => {
         if (c.card?.statuses) {
           const matchingTokens = c.card.statuses.filter((s: any) => s.type === factor && s.addedByPlayerId === ownerId)
-          dynamic += matchingTokens.length
+          if (matchingTokens.length > 0) {
+            dynamic += matchingTokens.length
+            tokenLocations.push({ row: rowIdx, col: colIdx, cardName: c.card.name })
+          }
         }
       })
     })
+
+    // DIAGNOSTIC: Check if token was just placed but not yet in freshState
+    if (justPlaced && justPlaced.tokenType === factor && justPlaced.addedByPlayerId === ownerId) {
+      if (!tokenLocations.some(t => t.row === justPlaced.boardCoords?.row && t.col === justPlaced.boardCoords?.col)) {
+        dynamic += 1
+        tokenLocations.push({
+          row: justPlaced.boardCoords?.row ?? -1,
+          col: justPlaced.boardCoords?.col ?? -1,
+          cardName: '(just placed via commandContext)'
+        })
+        justPlacedCounted = true
+      }
+    }
+
+    // DIAGNOSTIC: Log dynamic count calculation with detailed info
+    console.log('[DYNAMIC_COUNT] Action:', action.sourceCard?.name, '| Token:', factor, '| Owner:', ownerId)
+    console.log('[DYNAMIC_COUNT] Found:', dynamic, 'tokens across', tokenLocations.length, 'locations')
+    console.log('[DYNAMIC_COUNT] Locations:', tokenLocations)
+    console.log('[DYNAMIC_COUNT] commandContext.lastPlacedToken:', justPlaced, '| counted from context:', justPlacedCounted)
+
     count = dynamic
   }
 
@@ -581,7 +701,8 @@ function handleCreateStack(
     const tokenType = action.tokenType || 'Aim'
     // Special handling for Revealed token - include hand targets for opponents
     // Case 1: Specific target owner (e.g., "reveal cards from player X's hand")
-    if (tokenType === 'Revealed' && action.targetOwnerId) {
+    // CRITICAL: Check targetOwnerId > 0 to exclude -1 (which means "all opponents")
+    if (tokenType === 'Revealed' && action.targetOwnerId && action.targetOwnerId > 0) {
       // Collect hand targets for the specific opponent
       const handTargets: {playerId: number, cardIndex: number}[] = []
       const targetPlayer = gameState.players.find(p => p.id === action.targetOwnerId)
@@ -594,7 +715,9 @@ function handleCreateStack(
             s.type === 'Revealed' && s.addedByPlayerId === tokenOwnerId
           )
           // ENHANCED INTERROGATION: Check onlyFaceDown - only target face-down cards
-          const isFaceDown = card.isFaceDown === true
+          // CRITICAL: Hand cards are considered face-down by default (they're hidden from opponents)
+          // So we treat cards in hand as faceDown if isFaceDown is not explicitly false
+          const isFaceDown = card.isFaceDown !== false // Default to true for hand cards
           const passesFaceDownCheck = !action.onlyFaceDown || isFaceDown
 
           if (!hasOurRevealed && passesFaceDownCheck) {
@@ -603,11 +726,39 @@ function handleCreateStack(
         }
       }
 
-      console.log('[ACTION EXECUTION] Case 1 - Setting up targeting for Revealed token', {
-        tokenType,
-        targetOwnerId: action.targetOwnerId,
-        handTargetsCount: handTargets.length,
-      })
+      // DIAGNOSTIC: Log Revealed token targeting setup
+      console.log('[CREATE_STACK] Setting up Revealed token targeting for owner', tokenOwnerId, '=>', handTargets.length, 'hand targets')
+
+      // CRITICAL: If no hand targets, skip Revealed placement
+      // For command cards with chainedAction (e.g., Enhanced Interrogation, Data Interception),
+      // the chainedAction will be added to actionQueue directly
+      if (handTargets.length === 0) {
+        console.log('[CREATE_STACK] No hand targets for Revealed - skipping Revealed placement')
+        // CRITICAL: If this action has a chainedAction, add it to actionQueue directly
+        // This ensures chainedAction is processed after the current action completes
+        if (action.chainedAction) {
+          console.log('[CREATE_STACK] Action has chainedAction - adding to actionQueue:', action.chainedAction.type, action.chainedAction.mode)
+          if (props.setActionQueue) {
+            console.log('[CREATE_STACK] Adding chainedAction to actionQueue via setActionQueue')
+            props.setActionQueue((prev: any[]) => [...prev, action.chainedAction!])
+          } else {
+            // Fallback: execute directly if setActionQueue not available
+            console.log('[CREATE_STACK] setActionQueue not available - executing chainedAction directly')
+            if (props.pendingChainedActionRef) {
+              props.pendingChainedActionRef.current = true
+            }
+            execAction(action.chainedAction!, sourceCoords)
+            setTimeout(() => {
+              if (props.pendingChainedActionRef) {
+                props.pendingChainedActionRef.current = false
+              }
+            }, 50)
+          }
+        } else if (action.readyStatusToRemove) {
+          markAbilityUsed(action.sourceCoords || sourceCoords, action.isDeployAbility, false, action.readyStatusToRemove)
+        }
+        return
+      }
 
       // Create a dummy action for setTargetingMode (required parameter)
       const dummyAction: AbilityAction = {
@@ -627,19 +778,14 @@ function handleCreateStack(
       // Activate targeting mode so all players see the valid hand targets highlighted
       setTargetingMode(dummyAction, tokenOwnerId, sourceCoords, undefined, undefined, handTargets)
 
-      console.log('[ACTION EXECUTION] Called setTargetingMode for hand targets')
-
       // CRITICAL: Set abilityMode to prevent useEffect from clearing targeting mode
       // We use a minimal abilityMode just to keep hasActiveMode = true
       setAbilityMode(dummyAction)
-
-      console.log('[ACTION EXECUTION] Set abilityMode to prevent premature clearing')
 
       // Create cursorStack AFTER targeting mode and abilityMode are set
       const newCursorStack = createTokenCursorStack(tokenType, tokenOwnerId, null, modifications)
       setCursorStack(newCursorStack)
 
-      console.log('[ACTION EXECUTION] Set cursorStack')
       // The ability will complete when the player clicks on a hand card (in handCardHandlers.ts)
     }
     // Case 2: Revealed with onlyOpponents (e.g., False Orders Option 0 - reveal any opponent's cards)
@@ -648,14 +794,18 @@ function handleCreateStack(
       const handTargets: {playerId: number, cardIndex: number}[] = []
       const excludedId = action.excludeOwnerId ?? tokenOwnerId
 
-      for (const player of gameState.players) {
+      // CRITICAL: Use getFreshGameState() to get the latest state from host/guest
+      // This ensures we don't select cards that already have Revealed tokens from previous steps
+      const freshState = getFreshGameState()
+
+      for (const player of freshState.players) {
         // Skip excluded player (token owner's own hand)
         if (player.id === excludedId) {
           continue
         }
         // Skip teammates if onlyOpponents is set
         if (action.onlyOpponents) {
-          const tokenOwner = gameState.players.find(p => p.id === tokenOwnerId)
+          const tokenOwner = freshState.players.find(p => p.id === tokenOwnerId)
           if (tokenOwner && tokenOwner.teamId !== undefined && tokenOwner.teamId === player.teamId) {
             continue
           }
@@ -669,7 +819,9 @@ function handleCreateStack(
               s.type === 'Revealed' && s.addedByPlayerId === tokenOwnerId
             )
             // ENHANCED INTERROGATION: Check onlyFaceDown - only target face-down cards
-            const isFaceDown = card.isFaceDown === true
+            // CRITICAL: Hand cards are considered face-down by default (they're hidden from opponents)
+            // So we treat cards in hand as faceDown if isFaceDown is not explicitly false
+            const isFaceDown = card.isFaceDown !== false // Default to true for hand cards
             const passesFaceDownCheck = !action.onlyFaceDown || isFaceDown
 
             if (!hasOurRevealed && passesFaceDownCheck) {
@@ -679,12 +831,31 @@ function handleCreateStack(
         }
       }
 
-      console.log('[ACTION EXECUTION] Case 2 - Setting up targeting for Revealed token', {
-        tokenType,
-        onlyOpponents: action.onlyOpponents,
-        excludeOwnerId: action.excludeOwnerId,
-        handTargetsCount: handTargets.length,
-      })
+      // DIAGNOSTIC: Log Revealed token targeting setup (all opponents)
+      console.log('[CREATE_STACK] Setting up Revealed token for all opponents =>', handTargets.length, 'hand targets')
+
+      // CRITICAL: If no hand targets, skip Revealed placement and execute chainedAction directly
+      if (handTargets.length === 0) {
+        console.log('[CREATE_STACK] No hand targets for Revealed (all opponents) - skipping to chainedAction')
+        if (action.chainedAction) {
+          console.log('[CREATE_STACK] Executing chainedAction:', action.chainedAction.type, action.chainedAction.mode)
+          // CRITICAL: Set pending flag before executing chained action
+          if (props.pendingChainedActionRef) {
+            props.pendingChainedActionRef.current = true
+          }
+          // CRITICAL: Execute synchronously so abilityMode is set before action queue continues
+          execAction(action.chainedAction!, sourceCoords)
+          // Clear the flag after React has processed state updates
+          setTimeout(() => {
+            if (props.pendingChainedActionRef) {
+              props.pendingChainedActionRef.current = false
+            }
+          }, 50)
+        } else if (action.readyStatusToRemove) {
+          markAbilityUsed(action.sourceCoords || sourceCoords, action.isDeployAbility, false, action.readyStatusToRemove)
+        }
+        return
+      }
 
       // Create a dummy action for setTargetingMode (required parameter)
       const dummyAction: AbilityAction = {
@@ -705,26 +876,49 @@ function handleCreateStack(
       // Activate targeting mode so all players see the valid hand targets highlighted
       setTargetingMode(dummyAction, tokenOwnerId, sourceCoords, undefined, undefined, handTargets)
 
-      console.log('[ACTION EXECUTION] Called setTargetingMode for hand targets (Case 2)')
-
       // CRITICAL: Set abilityMode to prevent useEffect from clearing targeting mode
       // We use a minimal abilityMode just to keep hasActiveMode = true
       setAbilityMode(dummyAction)
 
-      console.log('[ACTION EXECUTION] Set abilityMode to prevent premature clearing (Case 2)')
-
       // Create cursorStack AFTER targeting mode and abilityMode are set
       setCursorStack(createTokenCursorStack(tokenType, tokenOwnerId, null, modifications))
-
-      console.log('[ACTION EXECUTION] Set cursorStack (Case 2)')
       // The ability will complete when the player clicks on a hand card (in handCardHandlers.ts)
     } else {
       // Normal token placement (board only)
+      // DIAGNOSTIC: Log cursorStack creation
+      console.log('[CREATE_STACK] Creating cursorStack:', {
+        tokenType,
+        count,
+        tokenOwnerId,
+        sourceCard: action.sourceCard?.name,
+        hasChainedAction: !!action.chainedAction,
+        chainedActionType: action.chainedAction?.type,
+      })
       setCursorStack(createTokenCursorStack(tokenType, tokenOwnerId, null, modifications))
       // Don't clear abilityMode here - it will be cleared when cursorStack is depleted (in useAppAbilities.ts)
     }
   } else {
+    console.log('[CREATE_STACK] count is 0 - triggering NO_TARGET')
     triggerNoTarget(sourceCoords)
+
+    // CRITICAL: Still execute chainedAction even when count is 0
+    // This fixes Data Interception option 1 where chainedAction (SELECT_UNIT_FOR_MOVE)
+    // should execute even when there are no opponent cards to reveal
+    if (action.chainedAction) {
+      console.log('[CREATE_STACK] Executing chainedAction despite count=0:', action.chainedAction.type, action.chainedAction.mode)
+      // CRITICAL: Set pending flag before executing chained action
+      if (props.pendingChainedActionRef) {
+        props.pendingChainedActionRef.current = true
+      }
+      // CRITICAL: Execute synchronously so abilityMode is set before action queue continues
+      execAction(action.chainedAction!, sourceCoords)
+      // Clear the flag after React has processed state updates
+      setTimeout(() => {
+        if (props.pendingChainedActionRef) {
+          props.pendingChainedActionRef.current = false
+        }
+      }, 50)
+    }
   }
 }
 
@@ -870,7 +1064,7 @@ function handleEnterMode(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
-  const { gameState, getFreshGameState, localPlayerId, commandContext, triggerNoTarget, setAbilityMode, addBoardCardStatus, setTargetingMode, handleActionExecution: execAction, markAbilityUsed } = props
+  const { gameState, getFreshGameState, localPlayerId, commandContext, triggerNoTarget, setAbilityMode, addBoardCardStatus, setTargetingMode, clearTargetingMode, handleActionExecution: execAction, markAbilityUsed } = props
 
   const mode = action.mode
   const payload = action.payload || {}
@@ -1073,18 +1267,32 @@ function handleEnterMode(
     return
   }
 
-  // SELECT_UNIT_FOR_MOVE (Finn Setup)
+  // SELECT_UNIT_FOR_MOVE (Finn Setup, Data Interception option 1)
   if (mode === 'SELECT_UNIT_FOR_MOVE') {
+    console.log('[SELECT_UNIT_FOR_MOVE] Called from handleEnterMode', {
+      sourceCard: action.sourceCard?.name,
+      sourceCoords,
+    })
+
+    // CRITICAL: Use getFreshGameState() to get the latest state after CREATE_STACK
+    // This fixes Data Interception option 1 where Exploit counter is placed just before SELECT_UNIT_FOR_MOVE
+    const freshGameState = getFreshGameState ? getFreshGameState() : gameState
+    const actorId = getSafePlayerId(action, localPlayerId)
+
     // Check if there are valid targets (allied cards on board)
-    const hasTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    const hasTargets = checkActionHasTargets(action, freshGameState, actorId, commandContext)
     if (!hasTargets) {
+      console.log('[SELECT_UNIT_FOR_MOVE] No targets found - triggering NO_TARGET')
       triggerNoTarget(action.sourceCoords || sourceCoords)
       // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
       return
     }
-    const targets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    const targets = calculateValidTargets(action, freshGameState, actorId, commandContext)
+    console.log('[SELECT_UNIT_FOR_MOVE] Found targets:', targets.length)
+    // CRITICAL: Clear any existing targeting mode before setting new one
+    clearTargetingMode()
     setAbilityMode(action)
-    setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, targets, commandContext)
+    setTargetingMode(action, actorId, sourceCoords, targets, commandContext)
     return
   }
 
@@ -1154,12 +1362,15 @@ function handleEnterMode(
   if (mode === 'IP_AGENT_THREAT_SCORING') {
     const ownerId = action.sourceCard?.ownerId ?? 0
     const { row, col } = sourceCoords
-    const gridSize = gameState.activeGridSize
+
+    // CRITICAL: Use getFreshGameState() to get the latest state from host/guest
+    const freshState = getFreshGameState()
+    const gridSize = freshState.activeGridSize
 
     // Check for adjacent Support
     const hasSupport = (r: number, c: number): boolean => {
       if (r < 0 || r >= gridSize || c < 0 || c >= gridSize) { return false }
-      const cell = gameState.board[r]?.[c]
+      const cell = freshState.board[r]?.[c]
       if (!cell?.card) { return false }
       return cell.card.statuses?.some((s: any) => s.type === 'Support' && s.addedByPlayerId === ownerId) ?? false
     }
@@ -1666,16 +1877,20 @@ function handleContextReward(
     return
   }
 
+  // CRITICAL: Use getFreshGameState() to get the latest state from host/guest
+  // This ensures we find the card at its current location after previous moves
+  const freshState = getFreshGameState()
+
   // Find the card at coords
-  let card = gameState.board[coords.row][coords.col].card
+  let card = freshState.board[coords.row][coords.col].card
 
   // Handle stale state - search by ID if card not at expected coords
   const searchId = action.payload?._tempContextId || commandContext.lastMovedCardId
   if ((!card || (searchId && card.id !== searchId)) && searchId) {
-    for (let r = 0; r < gameState.board.length; r++) {
-      for (let c = 0; c < gameState.board[r].length; c++) {
-        if (gameState.board[r][c].card?.id === searchId) {
-          card = gameState.board[r][c].card
+    for (let r = 0; r < freshState.board.length; r++) {
+      for (let c = 0; c < freshState.board[r].length; c++) {
+        if (freshState.board[r][c].card?.id === searchId) {
+          card = freshState.board[r][c].card
           break
         }
       }

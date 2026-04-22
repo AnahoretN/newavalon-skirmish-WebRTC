@@ -8,7 +8,6 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { flushSync } from 'react-dom'
 import type { GameState, Card, DragItem, HighlightData, FloatingTextData, DeckSelectionData, HandCardSelectionData } from '../types'
 import { createInitialState } from './core/gameCreators'
 import { logger } from '../utils/logger'
@@ -308,15 +307,12 @@ export function useGameState(_props: any = {}): UseGameStateResult {
 
       const host = new SimpleHost(createInitialState(), {
         onStateUpdate: (personalState) => {
-          console.log('[onStateUpdate HOST] TIMESTAMP:', Date.now())
           const fullState = personalToGameState(personalState, 1)
-          console.log('[onStateUpdate HOST] Checking board[2][3]:', fullState.board[2]?.[3]?.card?.baseId)
-          // CRITICAL: Use flushSync to ensure state updates immediately
-          // This fixes the issue where calculateValidTargets sees stale state
-          flushSync(() => {
+          // Defer state update to avoid flushSync during render cycle
+          setTimeout(() => {
             setGameState(fullState)
             setLocalPlayerId(1)
-          })
+          }, 0)
 
           // Auto-save session on state updates
           const sessionData = host.exportSession()
@@ -333,10 +329,10 @@ export function useGameState(_props: any = {}): UseGameStateResult {
         onClickWave: (wave) => {
           // INSTANT: Show wave via direct DOM manipulation
           triggerDirectClickWave(wave as any)
-          // Also update React state for debugging/compatibility
-          flushSync(() => {
+          // Defer React state update to avoid flushSync during render cycle
+          setTimeout(() => {
             setClickWaves(prev => [...prev, wave])
-          })
+          }, 0)
           // Auto-remove after animation completes (700ms to match ClickWave totalDuration)
           setTimeout(() => {
             setClickWaves(prev => prev.filter(w => w.timestamp !== wave.timestamp))
@@ -351,9 +347,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
             playerId: item.playerId,
             timestamp: timestamp + i
           }))
-          flushSync(() => {
-            setLatestFloatingTexts(batch)
-          })
+          setLatestFloatingTexts(batch)
         }
       })
 
@@ -408,10 +402,11 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           }
 
           const fullState = personalToGameState(personalState, myId)
-          flushSync(() => {
+          // Defer state update to avoid flushSync during render cycle
+          setTimeout(() => {
             setGameState(fullState)
             setLocalPlayerId(myId)
-          })
+          }, 0)
         },
         onConnected: () => {
           setConnectionStatus('Connected')
@@ -463,10 +458,10 @@ export function useGameState(_props: any = {}): UseGameStateResult {
         onClickWave: (wave) => {
           // INSTANT: Show wave via direct DOM manipulation
           triggerDirectClickWave(wave as any)
-          // Also update React state for debugging/compatibility
-          flushSync(() => {
+          // Defer React state update to avoid flushSync during render cycle
+          setTimeout(() => {
             setClickWaves(prev => [...prev, wave])
-          })
+          }, 0)
           // Auto-remove after animation completes (700ms to match ClickWave totalDuration)
           setTimeout(() => {
             setClickWaves(prev => prev.filter(w => w.timestamp !== wave.timestamp))
@@ -622,10 +617,11 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           const host = createHostFromSavedSession(savedSession, {
             onStateUpdate: (personalState) => {
               const fullState = personalToGameState(personalState, 1)
-              flushSync(() => {
+              // Defer state update to avoid flushSync during render cycle
+              setTimeout(() => {
                 setGameState(fullState)
                 setLocalPlayerId(1)
-              })
+              }, 0)
 
               // Continue saving session on state updates
               const sessionData = host.exportSession()
@@ -641,9 +637,9 @@ export function useGameState(_props: any = {}): UseGameStateResult {
             },
             onClickWave: (wave) => {
               triggerDirectClickWave(wave as any)
-              flushSync(() => {
+              setTimeout(() => {
                 setClickWaves(prev => [...prev, wave])
-              })
+              }, 0)
               setTimeout(() => {
                 setClickWaves(prev => prev.filter(w => w.timestamp !== wave.timestamp))
               }, 700)
@@ -657,9 +653,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
                 playerId: item.playerId,
                 timestamp: timestamp + i
               }))
-              flushSync(() => {
-                setLatestFloatingTexts(batch)
-              })
+              setLatestFloatingTexts(batch)
             }
           })
 
@@ -1239,14 +1233,60 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   // Status effects
   // ============================================================================
   const addBoardCardStatus = useCallback((coords: any, status: any, playerId?: number, count?: number) => {
+    const ownerId = playerId ?? localPlayerId ?? 0
+    const actualCount = count || 1
+
+    // CRITICAL: Optimistic update - update local gameState immediately
+    // This fixes chainedAction not seeing tokens added in previous steps
+    setGameState((prev: GameState) => {
+      if (!prev.board[coords.row]?.[coords.col]) return prev
+
+      const updatedBoard = prev.board.map((row, rIdx) =>
+        row.map((cell, cIdx) => {
+          if (rIdx === coords.row && cIdx === coords.col && cell.card) {
+            const newStatus = {
+              type: status,
+              addedByPlayerId: ownerId,
+              id: `${status}_${ownerId}_${Date.now()}_${Math.random()}`
+            }
+
+            const existingStatuses = cell.card.statuses || []
+
+            // Add the specified number of statuses
+            const newStatuses = [...existingStatuses]
+            for (let i = 0; i < actualCount; i++) {
+              newStatuses.push({
+                ...newStatus,
+                id: `${status}_${ownerId}_${Date.now()}_${Math.random()}_${i}`
+              })
+            }
+
+            return {
+              ...cell,
+              card: {
+                ...cell.card,
+                statuses: newStatuses
+              }
+            }
+          }
+          return cell
+        })
+      )
+
+      return {
+        ...prev,
+        board: updatedBoard
+      }
+    })
+
     // Map to P2P action format
     sendAction('ADD_STATUS_TO_BOARD_CARD', {
       boardCoords: coords,
       statusType: status,
-      ownerId: playerId ?? localPlayerId ?? 0,
-      count: count || 1 // Support bulk adding for Reverend ability
+      ownerId: ownerId,
+      count: actualCount
     })
-  }, [sendAction, localPlayerId])
+  }, [sendAction, localPlayerId, setGameState])
   const removeBoardCardStatus = useCallback((coords: any, status: any) => {
     // Map to P2P action format
     sendAction('REMOVE_ALL_COUNTERS_BY_TYPE', { coords, type: status })
