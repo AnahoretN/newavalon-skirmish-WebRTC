@@ -228,6 +228,34 @@ export class SimpleHost {
       return
     }
 
+    // Handle TARGETING_MODE - broadcast targeting mode from guest to all clients
+    // This fixes abilities like Faber that require hand card targeting
+    if (action === 'TARGETING_MODE') {
+      // CRITICAL: Update host's state with targetingMode so it's included in broadcastAll()
+      // This ensures PlayerPanel receives the targetingMode for highlighting hand cards
+      this.state = {
+        ...this.state,
+        targetingMode: data
+      }
+      this.version++
+      // Broadcast the targeting mode to all clients (including sender) via state update
+      this.broadcastAll()
+      return
+    }
+
+    // Handle CLEAR_TARGETING_MODE - broadcast clear targeting mode from guest to all clients
+    if (action === 'CLEAR_TARGETING_MODE') {
+      // CRITICAL: Clear targetingMode from host's state
+      this.state = {
+        ...this.state,
+        targetingMode: null
+      }
+      this.version++
+      // Broadcast the updated state to all clients
+      this.broadcastAll()
+      return
+    }
+
     // Handle EXIT_GAME - intentional player exit (becomes dummy, no reconnection)
     // @ts-ignore - EXIT_GAME is not in standard action types
     if (action === 'EXIT_GAME') {
@@ -272,6 +300,43 @@ export class SimpleHost {
       this.broadcastAll()
 
       this.config.onPlayerLeave?.(playerId)
+      return
+    }
+
+    // Handle HOST_EXIT_GAME - host is ending the game for everyone
+    // @ts-ignore - HOST_EXIT_GAME is not in standard action types
+    if (action === 'HOST_EXIT_GAME') {
+      // Notify all guests that host has ended the game
+      this.broadcast({
+        type: 'HOST_ENDED_GAME',
+        data: {
+          reason: 'host_ended_game'
+        }
+      })
+
+      // Close all guest connections
+      this.connections.forEach((conn, peerId) => {
+        try {
+          conn.close()
+        } catch (e) {
+          // Connection already closed
+        }
+      })
+      this.connections.clear()
+      this.peerIdToPlayerId.clear()
+
+      // Destroy the peer
+      if (this.peer) {
+        try {
+          this.peer.destroy()
+        } catch (e) {
+          // Peer already destroyed
+        }
+        this.peer = null
+      }
+
+      // Notify callback so app can return to main menu
+      this.config.onHostEndedGame?.()
       return
     }
 
@@ -1182,6 +1247,34 @@ export class SimpleHost {
    */
   getRawState(): GameState {
     return this.state
+  }
+
+  /**
+   * Set targeting mode - used when host activates targeting abilities
+   * This ensures targetingMode is included in state broadcasts
+   * @param targetingMode - The targeting mode data to set
+   */
+  setTargetingMode(targetingMode: any): void {
+    this.state = {
+      ...this.state,
+      targetingMode
+    }
+    this.version++
+    // Broadcast to all clients including host (via notifyStateUpdate)
+    this.broadcastAll()
+  }
+
+  /**
+   * Clear targeting mode
+   */
+  clearTargetingMode(): void {
+    this.state = {
+      ...this.state,
+      targetingMode: null
+    }
+    this.version++
+    // Broadcast to all clients including host (via notifyStateUpdate)
+    this.broadcastAll()
   }
 
   /**
