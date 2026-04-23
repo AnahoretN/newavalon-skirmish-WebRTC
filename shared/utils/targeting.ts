@@ -1354,14 +1354,38 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
         actionType === 'SELECT_HAND_FOR_DISCARD_THEN_PLACE_TOKEN' ||
         actionType === 'LUCIUS_SETUP' ||
         actionType === 'SELECT_HAND_FOR_DEPLOY') {
-      // Check if source card's owner has cards in hand
+      // Check if source card's owner has cards in hand that pass the filter
       const ownerId = action.sourceCard?.ownerId || playerId
+      console.log('[checkActionHasTargets] Hand-only discard action:', {
+        actionType,
+        ownerId,
+        sourceCardName: action.sourceCard?.name,
+      })
       if (ownerId !== null) {
         const player = currentGameState.players.find(p => p.id === ownerId)
         if (player && player.hand.length > 0) {
-          return true // Player has cards to discard
+          // Check if any card in hand passes the filter
+          const filter = action.payload.filter
+          if (!filter) {
+            console.log('[checkActionHasTargets] No filter, any card is valid')
+            return true // No filter means any card is valid
+          }
+          // Check if at least one card passes the filter
+          let validCount = 0
+          for (const card of player.hand) {
+            if (filter(card)) {
+              validCount++
+              console.log('[checkActionHasTargets] Card passes filter:', card.name)
+            }
+          }
+          console.log('[checkActionHasTargets] Valid cards:', validCount, 'of', player.hand.length)
+          if (validCount > 0) {
+            return true // Found at least one valid card
+          }
+          return false // No cards pass the filter
         }
       }
+      console.log('[checkActionHasTargets] No player or no cards in hand')
       return false // No cards in hand
     }
   }

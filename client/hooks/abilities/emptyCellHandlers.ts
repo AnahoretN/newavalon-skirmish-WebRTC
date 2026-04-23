@@ -175,8 +175,10 @@ export function handleEmptyCellClick(
     const tokenOwnerId = sourceCard?.ownerId ?? abilityMode.sourceCard?.ownerId
     spawnToken(boardCoords, payload.tokenId, tokenOwnerId!)
     markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    // CRITICAL: Set abilityMode to null BEFORE clearing targetingMode
+    // This prevents useEffect in App.tsx from re-setting targeting mode
+    setAbilityMode(null)
     clearTargetingMode()
-    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
     return true
   }
 
@@ -201,8 +203,10 @@ export function handleEmptyCellClick(
     const tokenOwnerId = sourceCard?.ownerId ?? abilityMode.sourceCard?.ownerId
     spawnToken(boardCoords, payload.tokenId, tokenOwnerId!)
     markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    // CRITICAL: Set abilityMode to null BEFORE clearing targetingMode
+    // This prevents useEffect in App.tsx from re-setting targeting mode
+    setAbilityMode(null)
     clearTargetingMode()
-    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
     return true
   }
 
@@ -223,8 +227,10 @@ export function handleEmptyCellClick(
     const tokenOwnerId = sourceCard?.ownerId ?? abilityMode.sourceCard?.ownerId
     spawnToken(boardCoords, payload.tokenId, tokenOwnerId!)
     markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    // CRITICAL: Set abilityMode to null BEFORE clearing targetingMode
+    // This prevents useEffect in App.tsx from re-setting targeting mode
+    setAbilityMode(null)
     clearTargetingMode()
-    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
     return true
   }
 
@@ -662,8 +668,10 @@ export function handleEmptyCellClick(
     // Move the card to the selected empty cell
     moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
     markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
+    // CRITICAL: Set abilityMode to null BEFORE clearing targetingMode
+    // This prevents useEffect in App.tsx from re-setting targeting mode
+    setAbilityMode(null)
     clearTargetingMode()
-    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
     return true
   }
 

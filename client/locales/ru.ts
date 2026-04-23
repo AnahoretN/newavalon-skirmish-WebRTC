@@ -110,6 +110,7 @@ export const ru: TranslationResource = {
     connecting: 'Подключение...',
     reconnecting: 'Переподключение...',
     reconnectingDescription: 'Попытка восстановить соединение...',
+    hostEndedGame: 'Хост завершил игру',
     pleaseWait: 'Пожалуйста, подождите...',
     doNotClose: 'Не закрывайте это окно во время переподключения',
     error: 'Ошибка',

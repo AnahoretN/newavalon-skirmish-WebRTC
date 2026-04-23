@@ -1415,18 +1415,22 @@ function handlePushMove(
 
   // Option 1: Stay in place (click on sourceCoords)
   if (boardCoords.row === sourceCoords.row && boardCoords.col === sourceCoords.col) {
+    // CRITICAL: Set abilityMode to null BEFORE clearing targetingMode
+    // This prevents useEffect in App.tsx from re-setting targeting mode
+    setAbilityMode(null)
     clearTargetingMode()
     markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
-    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
     return true
   }
 
   // Option 2: Move to vacated cell (where the pushed card was)
   if (boardCoords.row === payload.vacatedCoords.row && boardCoords.col === payload.vacatedCoords.col) {
+    // CRITICAL: Set abilityMode to null BEFORE clearing targetingMode
+    // This prevents useEffect in App.tsx from re-setting targeting mode
+    setAbilityMode(null)
     clearTargetingMode()
     moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
     markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
-    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
     return true
   }
 
@@ -1440,10 +1444,12 @@ function handlePushMove(
     const maxCol = Math.max(sourceCoords.col, payload.vacatedCoords.col)
     if (boardCoords.col > minCol && boardCoords.col < maxCol) {
       // Intermediate cell in the same row
+      // CRITICAL: Set abilityMode to null BEFORE clearing targetingMode
+      // This prevents useEffect in App.tsx from re-setting targeting mode
+      setAbilityMode(null)
       clearTargetingMode()
       moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
       markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
-      setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
       return true
     }
   } else if (sameCol) {
@@ -1451,10 +1457,12 @@ function handlePushMove(
     const maxRow = Math.max(sourceCoords.row, payload.vacatedCoords.row)
     if (boardCoords.row > minRow && boardCoords.row < maxRow) {
       // Intermediate cell in the same column
+      // CRITICAL: Set abilityMode to null BEFORE clearing targetingMode
+      // This prevents useEffect in App.tsx from re-setting targeting mode
+      setAbilityMode(null)
       clearTargetingMode()
       moveItem({ card: sourceCard, source: 'board', boardCoords: sourceCoords }, { target: 'board', boardCoords })
       markAbilityUsed(boardCoords, isDeployAbility, false, readyStatusToRemove)
-      setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
       return true
     }
   }
@@ -1949,8 +1957,10 @@ function handleSpawnToken(
   const tokenOwnerId = sourceCard?.ownerId ?? abilityMode.sourceCard?.ownerId
   spawnToken(boardCoords, payload.tokenName, tokenOwnerId!)
   markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+  // CRITICAL: Set abilityMode to null BEFORE clearing targetingMode
+  // This prevents useEffect in App.tsx from re-setting targeting mode
+  setAbilityMode(null)
   clearTargetingMode()
-  setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
   return true
 }
 
@@ -2057,8 +2067,11 @@ function handlePlaceToken(
   } else {
     // Normal completion
     markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
+    // CRITICAL: Set abilityMode to null BEFORE clearing targetingMode
+    // This prevents useEffect in App.tsx from re-setting targeting mode
+    // after clearTargetingMode() is called but before abilityMode is cleared
+    setAbilityMode(null)
     clearTargetingMode()
-    setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
   }
   return true
 }
@@ -2833,8 +2846,10 @@ function handleSelectDeck(
 
   triggerDeckSelection(card.ownerId ?? 0, localPlayerId ?? 0)
   markAbilityUsed(sourceCoords || boardCoords, isDeployAbility, false, readyStatusToRemove)
+  // CRITICAL: Set abilityMode to null BEFORE clearing targetingMode
+  // This prevents useEffect in App.tsx from re-setting targeting mode
+  setAbilityMode(null)
   clearTargetingMode() // Clear targeting mode immediately after selection
-  setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
   return true
 }
 
@@ -2985,9 +3000,11 @@ function handleSelectLineForSupportTokens(
     addBoardCardStatus(target, counterType, counterOwnerId)
   }
 
+  // CRITICAL: Set abilityMode to null BEFORE clearing targetingMode
+  // This prevents useEffect in App.tsx from re-setting targeting mode
+  setAbilityMode(null)
   clearTargetingMode()
   markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
-  setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
 
   return true
 }
@@ -3073,9 +3090,11 @@ function handleSelectLineForThreatCounters(
     addBoardCardStatus(target, counterType, counterOwnerId)
   }
 
+  // CRITICAL: Set abilityMode to null BEFORE clearing targetingMode
+  // This prevents useEffect in App.tsx from re-setting targeting mode
+  setAbilityMode(null)
   clearTargetingMode()
   markAbilityUsed(sourceCoords, isDeployAbility, false, readyStatusToRemove)
-  setTimeout(() => setAbilityMode(null), TIMING.MODE_CLEAR_DELAY)
 
   return true
 }

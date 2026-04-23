@@ -1064,6 +1064,13 @@ function handleEnterMode(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
+  console.log('[handleEnterMode] Called:', {
+    mode: action.mode,
+    actionType: action.payload?.actionType,
+    sourceCard: action.sourceCard?.name,
+    sourceCoords,
+  })
+
   const { gameState, getFreshGameState, localPlayerId, commandContext, triggerNoTarget, setAbilityMode, addBoardCardStatus, setTargetingMode, clearTargetingMode, handleActionExecution: execAction, markAbilityUsed } = props
 
   const mode = action.mode
@@ -1324,7 +1331,18 @@ function handleEnterMode(
         handTargets.push({ playerId: player.id, cardIndex: i })
       }
 
+      console.log('[handleEnterMode] Hand-only discard action:', {
+        actionType,
+        ownerId,
+        playerName: player.name,
+        handSize: player.hand.length,
+        handTargetsCount: handTargets.length,
+        handTargets,
+        hasFilter: !!payload.filter,
+      })
+
       if (handTargets.length === 0) {
+        console.log('[handleEnterMode] No valid hand targets, triggering NO_TARGET')
         triggerNoTarget(action.sourceCoords || sourceCoords)
         return
       }

@@ -110,6 +110,7 @@ export const sr: TranslationResource = {
     connecting: 'Povezivanje...',
     reconnecting: 'Ponovno povezivanje...',
     reconnectingDescription: 'Pokušaj obnove konekciju...',
+    hostEndedGame: 'Domaćin je završio igru',
     pleaseWait: 'Molim sa sačekajte...',
     doNotClose: 'Ne zatvaraj ovaj prozor dok se ponovo povezujete',
     error: 'Greška',

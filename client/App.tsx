@@ -1965,20 +1965,10 @@ const AppInner = function AppInner() {
   }, [gameState?.currentPhase, abilityMode])
 
   useEffect(() => {
-    console.log('[ACTION QUEUE] Check:', {
-      queueLength: actionQueue.length,
-      hasAbilityMode: !!abilityMode,
-      pendingChainedAction: pendingChainedActionRef.current,
-      hasCursorStack: !!cursorStack,
-      nextAction: actionQueue[0]?.type,
-      nextMode: actionQueue[0]?.mode,
-      allActionTypes: actionQueue.map(a => ({ type: a.type, mode: a.mode, tokenType: a.tokenType, hasChainedAction: !!a.chainedAction })),
-    })
     // CRITICAL: Also check pendingChainedActionRef - if a chained action is being processed,
     // wait for it to complete before processing the next action in the queue
     if (actionQueue.length > 0 && !abilityMode && !cursorStack && !pendingChainedActionRef.current) {
       const nextAction = actionQueue[0]
-      console.log('[ACTION QUEUE] Executing:', nextAction.type, nextAction.mode || nextAction.tokenType, 'hasChainedAction:', !!nextAction.chainedAction)
       setActionQueue(prev => prev.slice(1))
 
       // Context Injection Logic for Multi-Step Commands (False Orders / Tactical Maneuver)

@@ -351,9 +351,10 @@ export function useGameState(_props: any = {}): UseGameStateResult {
         }
       })
 
-      const peerId = await host.initialize()
+      // CRITICAL: Set hostRef BEFORE initialize() so onStateUpdate can access it
       hostRef.current = host
       isHostRef.current = true
+      const peerId = await host.initialize()
       setConnectionStatus('Connected')
 
       // Save initial session data
@@ -376,9 +377,6 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     try {
       setConnectionStatus('Connecting')
 
-      // Сохраняем имя для поиска
-      const myName = localStorage.getItem('player_name')
-
       const guest = new SimpleGuest({
         localPlayerId: 0,
         onStateUpdate: (personalState) => {
@@ -393,11 +391,13 @@ export function useGameState(_props: any = {}): UseGameStateResult {
             }
           }
 
-          if (myId === 0) {
-            // Пытаемся найти игрока с именем из localStorage
-            const playerByName = personalState.players.find((p: any) => p.name === myName)
-            if (playerByName) {
-              myId = playerByName.id
+          // CRITICAL: If token not found, use guest.getLocalPlayerId() as fallback
+          // This is the authoritative ID from SimpleGuest (set by host in JOIN_ACCEPT)
+          // Do NOT fall back to name search as it can match wrong player (host) if names are same
+          if (myId === 0 && guestRef.current) {
+            const guestId = guestRef.current.getLocalPlayerId()
+            if (guestId > 0) {
+              myId = guestId
             }
           }
 
@@ -475,11 +475,26 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           // Return to main menu
           setGameState(createInitialState())
           setConnectionStatus('Disconnected')
+        },
+        onHostEndedGame: () => {
+          // Host has ended the game - return to main menu
+          // Clear credentials to prevent reconnect
+          localStorage.removeItem('webrtc_host_peer_id')
+          localStorage.removeItem('player_token')
+          guestRef.current = null
+          isHostRef.current = false
+          setGameState(createInitialState())
+          setConnectionStatus('Disconnected')
+          setIsReconnecting(false)
+          setReconnectProgress(null)
+          isReconnectingRef.current = false
         }
       })
 
-      await guest.connect(hostPeerId)
+      // CRITICAL: Set guestRef BEFORE connect() so onStateUpdate can access it
+      // onStateUpdate may be called during connect() when JOIN_ACCEPT is received
       guestRef.current = guest
+      await guest.connect(hostPeerId)
       isHostRef.current = false
 
       return guest.getLocalPlayerId()
@@ -1416,8 +1431,16 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     localStorage.removeItem('player_token')
     localStorage.removeItem('webrtc_host_session') // Clear host session data
 
-    // Send EXIT message to host if we're a guest
-    if (guestRef.current && !isHostRef.current) {
+    // CRITICAL: Different behavior for host vs guests
+    if (isHostRef.current && hostRef.current) {
+      // Host is exiting - notify all guests and end game for everyone
+      try {
+        hostRef.current.hostAction('HOST_EXIT_GAME', {})
+      } catch (e) {
+        // Failed to send HOST_EXIT message
+      }
+    } else if (guestRef.current && !isHostRef.current) {
+      // Guest is exiting - notify host so we become dummy (no reconnection)
       try {
         guestRef.current.sendAction('EXIT_GAME', {})
       } catch (e) {

@@ -85,6 +85,7 @@ const enUI = {
   connecting: 'Connecting...',
   reconnecting: 'Reconnecting...',
   reconnectingDescription: 'Attempting to restore connection...',
+  hostEndedGame: 'Host has ended the game',
   pleaseWait: 'Please wait...',
   doNotClose: 'Do not close this window while reconnecting',
   error: 'Error',

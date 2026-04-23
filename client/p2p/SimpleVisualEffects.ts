@@ -223,6 +223,17 @@ export class SimpleVisualEffects {
    * Set targeting mode for all guests
    */
   setTargetingMode(mode: TargetingModeData): void {
+    console.log('[SimpleVisualEffects] setTargetingMode called:', {
+      playerId: mode.playerId,
+      actionMode: mode.action.mode,
+      actionType: mode.action.payload?.actionType,
+      hasBoardTargets: !!mode.boardTargets,
+      boardTargetsCount: mode.boardTargets?.length || 0,
+      hasHandTargets: !!mode.handTargets,
+      handTargetsCount: mode.handTargets?.length || 0,
+      handTargets: mode.handTargets,
+    })
+
     // Sanitize the action to remove non-serializable properties like sourceCard
     const sanitizedAction = sanitizeAbilityAction(mode.action)
 
@@ -254,9 +265,24 @@ export class SimpleVisualEffects {
     if (mode.originalOwnerId !== undefined) {
       sanitizedMode.originalOwnerId = mode.originalOwnerId
     }
+    if (mode.ownerId !== undefined) {
+      sanitizedMode.ownerId = mode.ownerId
+    }
+
+    console.log('[SimpleVisualEffects] Sanitized mode:', {
+      hasHandTargets: !!sanitizedMode.handTargets,
+      handTargetsCount: sanitizedMode.handTargets?.length || 0,
+      handTargets: sanitizedMode.handTargets,
+    })
 
     // Final deep sanitization to catch anything missed
     const finalMode = deepSanitize(sanitizedMode)
+
+    console.log('[SimpleVisualEffects] Final mode after deepSanitize:', {
+      hasHandTargets: !!finalMode.handTargets,
+      handTargetsCount: finalMode.handTargets?.length || 0,
+      handTargets: finalMode.handTargets,
+    })
 
     this.host.broadcast({
       type: 'TARGETING_MODE',

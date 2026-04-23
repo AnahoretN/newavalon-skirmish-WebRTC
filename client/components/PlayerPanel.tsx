@@ -409,6 +409,35 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   triggerClickWave,
   hideDummyCards = false,
 }) => {
+  // DEBUG: Log targetingMode when PlayerPanel renders
+  console.log('[PlayerPanel] Rendering, targetingMode:', {
+    playerName: player.name,
+    playerId: player.id,
+    hasTargetingMode: !!targetingMode,
+    targetingModePlayerId: targetingMode?.playerId,
+    hasHandTargets: !!targetingMode?.handTargets,
+    handTargetsLength: targetingMode?.handTargets?.length || 0,
+    handTargets: targetingMode?.handTargets,
+    isDeckSelectable: targetingMode?.isDeckSelectable,
+    actionMode: (targetingMode as any)?.action?.mode,
+    actionType: (targetingMode as any)?.action?.payload?.actionType,
+  })
+
+  if (targetingMode?.handTargets && targetingMode.handTargets.length > 0) {
+    const hasTargetsForThisPlayer = targetingMode.handTargets.some(t => t.playerId === player.id)
+    if (hasTargetsForThisPlayer) {
+      console.log('[PlayerPanel] Rendering with handTargets:', {
+        playerName: player.name,
+        playerId: player.id,
+        targetingModePlayerId: targetingMode.playerId,
+        targetingModeActionMode: (targetingMode as any)?.action?.mode,
+        targetingModeActionType: (targetingMode as any)?.action?.payload?.actionType,
+        handTargets: targetingMode.handTargets,
+        targetsForThisPlayer: targetingMode.handTargets.filter(t => t.playerId === player.id),
+      })
+    }
+  }
+
   const { t, resources } = useLanguage()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -880,6 +909,18 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   // Check if this card is a valid target from GLOBAL targetingMode only
                   // NO LOCAL effects - all highlights must be synchronized across all players
                   const isTarget = targetingMode?.handTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
+
+                  // DEBUG: Log targetingMode for this player
+                  if (index === 0 && targetingMode?.handTargets) {
+                    console.log('[PlayerPanel] Checking card for targeting:', {
+                      playerName: player.name,
+                      playerId: player.id,
+                      targetingModePlayerId: targetingMode.playerId,
+                      handTargets: targetingMode.handTargets,
+                      isTarget,
+                      cardIndex: index,
+                    })
+                  }
 
                   // Use targeting player's color for the highlight
                   // If targetingMode is active, use that player's color, otherwise use highlightOwnerId or activePlayerId

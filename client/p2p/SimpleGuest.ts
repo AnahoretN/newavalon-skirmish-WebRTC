@@ -176,6 +176,8 @@ export class SimpleGuest {
       this.handleClickWave(data)
     } else if (data.type === 'RECONNECT_REJECTED') {
       this.handleReconnectRejected(data)
+    } else if (data.type === 'HOST_ENDED_GAME') {
+      this.handleHostEndedGame()
     } else {
       logger.warn('[SimpleGuest] Unknown message type:', data.type)
     }
@@ -372,6 +374,14 @@ export class SimpleGuest {
    */
   private handleTargetingMode(data: any): void {
     const { targetingMode } = data.data
+    console.log('[SimpleGuest] handleTargetingMode called:', {
+      playerId: targetingMode.playerId,
+      actionMode: targetingMode.action?.mode,
+      actionType: targetingMode.action?.payload?.actionType,
+      hasHandTargets: !!targetingMode.handTargets,
+      handTargetsCount: targetingMode.handTargets?.length || 0,
+      handTargets: targetingMode.handTargets,
+    })
     this.config.onTargetingMode?.(targetingMode)
   }
 
@@ -457,6 +467,23 @@ export class SimpleGuest {
       logger.error('[SimpleGuest] Auto-reconnect failed:', e)
       return false
     }
+  }
+
+  /**
+   * Handle host ended game - host has exited the game
+   */
+  private handleHostEndedGame(): void {
+    logger.info('[SimpleGuest] Host ended the game')
+
+    // Clear saved credentials to prevent auto-reconnect
+    localStorage.removeItem('webrtc_host_peer_id')
+    localStorage.removeItem('player_token')
+
+    // Destroy connection
+    this.destroy()
+
+    // Notify app to show message and return to main menu
+    this.config.onHostEndedGame?.()
   }
 
   /**

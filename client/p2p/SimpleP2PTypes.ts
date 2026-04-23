@@ -115,6 +115,9 @@ export type ActionType =
   // Visual effects
   | 'CLICK_WAVE'
 
+  // Host exit game
+  | 'HOST_EXIT_GAME'
+
 /**
  * Message from client to host - action request
  */
@@ -322,6 +325,16 @@ export interface ReconnectRejectedMessage {
 }
 
 /**
+ * Host ended game - sent by host when host exits the game
+ */
+export interface HostEndedGameMessage {
+  type: 'HOST_ENDED_GAME'
+  data: {
+    reason: string
+  }
+}
+
+/**
  * Join accept - sent by host to accept guest connection
  */
 export interface JoinAcceptMessage {
@@ -348,6 +361,7 @@ export type P2PMessage =
   | ClickWaveMessage
   | JoinAcceptMessage
   | ReconnectRejectedMessage
+  | HostEndedGameMessage
 
 /**
  * SimpleHost configuration
@@ -357,6 +371,7 @@ export interface SimpleHostConfig {
   onPlayerJoin?: (playerId: number) => void
   onPlayerLeave?: (playerId: number) => void
   onError?: (error: string) => void
+  onHostEndedGame?: () => void
   // Visual effect callbacks (for host-local display)
   onClickWave?: (wave: {
     timestamp: number
@@ -395,4 +410,5 @@ export interface SimpleGuestConfig {
     playerColor: string
   }) => void
   onReconnectRejected?: (reason: string) => void
+  onHostEndedGame?: () => void
 }
