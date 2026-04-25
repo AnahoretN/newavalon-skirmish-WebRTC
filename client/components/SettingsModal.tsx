@@ -16,6 +16,7 @@ interface SettingsModalProps {
   gameId?: string | null;
   isGameStarted?: boolean;
   isPrivate?: boolean;
+  hostId?: string | null;
   webrtcEnabled?: boolean;
   onWebrtcToggle?: (enabled: boolean) => void;
   onClearImageCache?: () => void;
@@ -28,6 +29,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   connectionStatus,
   onReconnect,
   gameId = null,
+  hostId = null,
   isGameStarted = false,
   isPrivate = false,
   webrtcEnabled = false,
@@ -37,11 +39,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const { language, setLanguage, t } = useLanguage()
   const [serverUrl, setServerUrl] = useState('')
   const [linkCopySuccess, setLinkCopySuccess] = useState(false)
+  const [linkCopyError, setLinkCopyError] = useState(false)
   const [isReconnecting, setIsReconnecting] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [cacheClearing, setCacheClearing] = useState(false)
   const [localWebrtcEnabled, setLocalWebrtcEnabled] = useState(webrtcEnabled)
   const [serverSettingsExpanded, setServerSettingsExpanded] = useState(false)
+  const [peerjsServerExpanded, setPeerjsServerExpanded] = useState(false)
+  const [peerjsServerUrl, setPeerjsServerUrl] = useState('')
 
   const isConnected = connectionStatus === 'Connected'
 
@@ -55,6 +60,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (isOpen) {
       const savedWebrtc = localStorage.getItem('webrtc_enabled')
       setLocalWebrtcEnabled(savedWebrtc === 'true')
+      // Load PeerJS server URL
+      const savedPeerjsUrl = localStorage.getItem('peerjs_server_url') || ''
+      setPeerjsServerUrl(savedPeerjsUrl)
     }
   }, [isOpen])
 
@@ -109,8 +117,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   }
 
   const handleCopyGameLink = () => {
-    // Generate context-aware invite link based on current game state
-    const { url: inviteLink } = generateInviteLink(gameId, isGameStarted, isPrivate)
+    // Generate invite link based on current mode
+    let inviteLink: string
+
+    // Check if WebRTC mode is enabled
+    const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+
+    if (isWebRTCMode) {
+      if (hostId) {
+        // WebRTC P2P mode - use host link
+        const baseUrl = window.location.origin + window.location.pathname
+        inviteLink = `${baseUrl}#hostId=${encodeURIComponent(hostId)}`
+      } else {
+        // WebRTC mode but host not ready - show error
+        setLinkCopyError(true)
+        setTimeout(() => setLinkCopyError(false), 3000)
+        return
+      }
+    } else {
+      // Standard server mode - use generateInviteLink
+      const { url: link } = generateInviteLink(gameId, isGameStarted, isPrivate)
+      inviteLink = link
+    }
 
     // Copy to clipboard
     navigator.clipboard.writeText(inviteLink).then(() => {
@@ -160,6 +188,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   }
 
+  const handleClearWebRTCSession = () => {
+    // Clear all WebRTC-related data
+    localStorage.removeItem('webrtc_host_session')
+    localStorage.removeItem('webrtc_host_peer_id')
+    localStorage.removeItem('webrtc_guest_peer_id')
+    localStorage.removeItem('peerjs_server_index')
+    // Force reload to clear any in-memory WebRTC state
+    window.location.reload()
+  }
+
+  // Check if there's a WebRTC session to clear
+  const hasWebRTCSession = !!(
+    localStorage.getItem('webrtc_host_session') ||
+    localStorage.getItem('webrtc_host_peer_id') ||
+    localStorage.getItem('webrtc_guest_peer_id')
+  )
+
   // Button is only enabled when connected, no unsaved changes, AND server URL is not empty
   const canCopyLink = isConnected && !hasUnsavedChanges && serverUrl.trim().length > 0
 
@@ -208,6 +253,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* PeerJS Server Settings - only shown when WebRTC is enabled */}
+          {localWebrtcEnabled && (
+            <div className="bg-gray-750 rounded-vu-2">
+              <button
+                onClick={() => setPeerjsServerExpanded(!peerjsServerExpanded)}
+                className="w-full flex items-center justify-between p-3 text-left cursor-pointer hover:bg-gray-700"
+              >
+                <span className="text-sm font-medium text-gray-300">{t('peerjsServerSettings')}</span>
+                <svg
+                  className={`w-5 h-5 text-gray-400 transition-transform ${
+                    peerjsServerExpanded ? 'rotate-180' : ''
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {peerjsServerExpanded && (
+                <div className="p-3 pt-0">
+                  <div>
+                    <label htmlFor="peerjs-server-url" className="block text-sm font-medium text-gray-300 mb-1">
+                      {t('peerjsServerAddress')}
+                    </label>
+                    <input
+                      id="peerjs-server-url"
+                      type="text"
+                      value={peerjsServerUrl}
+                      onChange={(e) => {
+                        setPeerjsServerUrl(e.target.value)
+                        localStorage.setItem('peerjs_server_url', e.target.value.trim())
+                      }}
+                      placeholder={t('peerjsServerPlaceholder')}
+                      className="w-full bg-gray-700 border border-gray-600 text-white font-mono rounded-vu-2 p-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      {t('peerjsServerDesc')}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Collapsible Server Settings Container */}
           <div
@@ -308,12 +399,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     className={`w-full py-3 rounded text-sm font-bold transition-colors ${
                       !canCopyLink
                         ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                        : linkCopySuccess
-                          ? 'bg-green-600 text-white'
-                          : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                        : linkCopyError
+                          ? 'bg-red-600 text-white'
+                          : linkCopySuccess
+                            ? 'bg-green-600 text-white'
+                            : 'bg-indigo-600 hover:bg-indigo-700 text-white'
                     }`}
                   >
-                    {linkCopySuccess ? t('copied') : t('copyGameLink')}
+                    {linkCopyError ? 'Host not ready' : (linkCopySuccess ? t('copied') : t('copyGameLink'))}
                   </button>
                   <p className="text-xs text-gray-400 mt-1">
                     {t('copyGameLinkDesc')}
@@ -340,6 +433,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {t('clearCacheDesc')}
             </p>
           </div>
+
+          {/* Clear WebRTC Session Button - only show if there's a WebRTC session */}
+          {hasWebRTCSession && (
+            <div className="-mt-3">
+              <button
+                onClick={handleClearWebRTCSession}
+                className="w-full py-3 rounded text-sm font-bold transition-colors bg-yellow-700 hover:bg-yellow-600 text-white"
+              >
+                Clear WebRTC Session
+              </button>
+              <p className="text-xs text-gray-400 mt-1">
+                Clear saved WebRTC session data (fixes connection issues)
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end mt-8 space-x-3">

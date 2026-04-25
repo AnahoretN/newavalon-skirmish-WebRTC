@@ -803,7 +803,7 @@ function handlePreviousPhase(state: GameState, _playerId: number): GameState {
  * PASS_TURN - pass turn to next player
  */
 function handlePassTurn(state: GameState, playerId: number, reason: string): GameState {
-  const activePlayerIds = getActivePlayerIds(state.players)
+  const activePlayerIds = getActivePlayerIds(state)
   if (activePlayerIds.length === 0) {return state}
 
   const currentIndex = activePlayerIds.indexOf(state.activePlayerId || 1)

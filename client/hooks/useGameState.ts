@@ -9,13 +9,18 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import type { GameState, Card, DragItem, HighlightData, FloatingTextData, DeckSelectionData, HandCardSelectionData } from '../types'
-import { createInitialState } from './core/gameCreators'
+import { createInitialState, createDeck } from './core/gameCreators'
 import { logger } from '../utils/logger'
 import type { PersonalizedState } from '../p2p/SimpleP2PTypes'
 import { SimpleHost, SimpleGuest, createHostFromSavedSession } from '../p2p'
+import { HostConnectionManager, GuestConnectionManager, ConnectionStrategy } from '../p2p/ConnectionManager'
 import { useVisualEffects } from './useVisualEffects'
 import { triggerDirectClickWave } from './useDirectClickWave'
 import { tokenDatabase } from '../content'
+import { shuffleDeck } from '@shared/utils/array'
+import { assignUniqueRandomColor } from '../utils/colorAssigner'
+import { getDecksData } from '../content'
+import { DeckType } from '../types'
 
 // Export type for use in other files
 export type ConnectionStatus = 'Connecting' | 'Connected' | 'Disconnected'
@@ -43,6 +48,13 @@ interface UseGameStateResult {
   isReconnecting: boolean
   reconnectProgress: { attempt: number; maxAttempts: number; timeRemaining: number } | null
   setDummyPlayerCount: (count: number) => void
+
+  // NEW: Local game and signalling control
+  createLocalGame: () => string  // Creates local game without PeerJS connection
+  connectToSignalling: () => Promise<string>  // Connects to PeerJS when ready to invite
+  disconnectFromSignalling: () => void  // Disconnects from signalling (keeps P2P)
+  isConnectedToSignalling: () => boolean  // Check if connected to signalling
+  isGameInitialized: () => boolean  // Check if local game is created
 
   // Ready check
   playerReady: () => void
@@ -249,18 +261,40 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   // P2P менеджеры
   const hostRef = useRef<SimpleHost | null>(null)
   const guestRef = useRef<SimpleGuest | null>(null)
+  const hostManagerRef = useRef<ReturnType<typeof HostConnectionManager> | null>(null)
+  const guestManagerRef = useRef<ReturnType<typeof GuestConnectionManager> | null>(null)
   const isHostRef = useRef<boolean>(false)
+  const connectionStrategyRef = useRef<ConnectionStrategy>('peerjs')
 
   // State for draggedItem (useState вместо useRef для реактивности)
   const [draggedItem, setDraggedItemState] = useState<DragItem | null>(null)
 
+  // Local game settings - these can be set BEFORE host is created
+  // They will be applied to the game state when host is initialized
+  const [localGameSettings, setLocalGameSettings] = useState<{
+    gameMode: any
+    activeGridSize: number
+    dummyPlayerCount: number
+  }>({
+    gameMode: 'FFA',
+    activeGridSize: 5,
+    dummyPlayerCount: 0
+  })
+
   // Refs для useVisualEffects
   const gameStateRef = useRef(gameState)
   const localPlayerIdRef = useRef(localPlayerId)
+  // CRITICAL: Track state version to prevent old states from overwriting newer ones
+  // This fixes targetingMode being cleared when host broadcasts old state
+  const stateVersionRef = useRef(0)
 
   // Update refs when state changes
   useEffect(() => {
     gameStateRef.current = gameState
+    // Track state version from host broadcasts
+    if (gameState.version !== undefined) {
+      stateVersionRef.current = gameState.version
+    }
   }, [gameState])
   useEffect(() => {
     localPlayerIdRef.current = localPlayerId
@@ -305,19 +339,48 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     try {
       setConnectionStatus('Connecting')
 
-      const host = new SimpleHost(createInitialState(), {
+      const hostConfig = {
         onStateUpdate: (personalState) => {
+          // CRITICAL: Version check to prevent old states from overwriting newer ones
+          // This fixes targetingMode being cleared immediately after being set
+          if (personalState.version !== undefined) {
+            if (personalState.version <= stateVersionRef.current) {
+              // Log skipped states with targetingMode for debugging
+              if (personalState.targetingMode?.handTargets) {
+                console.log('[DISCARD_FROM_HAND] Skipping old state:', {
+                  receivedVersion: personalState.version,
+                  currentVersion: stateVersionRef.current,
+                  hasHandTargets: true,
+                  handTargetsCount: personalState.targetingMode.handTargets.length,
+                })
+              }
+              return // Skip old state
+            }
+          }
+
           const fullState = personalToGameState(personalState, 1)
           // Defer state update to avoid flushSync during render cycle
           setTimeout(() => {
             setGameState(fullState)
             setLocalPlayerId(1)
+
+            // CRITICAL: Sync local settings with host state
+            // This ensures that settings are consistent even when changed by guests
+            setLocalGameSettings(prev => ({
+              ...prev,
+              gameMode: personalState.gameMode || prev.gameMode,
+              activeGridSize: personalState.activeGridSize ?? prev.activeGridSize,
+              dummyPlayerCount: personalState.dummyPlayerCount ?? prev.dummyPlayerCount
+            }))
           }, 0)
 
           // Auto-save session on state updates
-          const sessionData = host.exportSession()
-          if (sessionData) {
-            localStorage.setItem('webrtc_host_session', JSON.stringify(sessionData))
+          const manager = hostManagerRef.current
+          if (manager) {
+            const sessionData = manager.exportSession()
+            if (sessionData) {
+              localStorage.setItem('webrtc_host_session', JSON.stringify(sessionData))
+            }
           }
         },
         onPlayerJoin: (playerId) => {
@@ -349,16 +412,30 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           }))
           setLatestFloatingTexts(batch)
         }
-      })
+      }
 
-      // CRITICAL: Set hostRef BEFORE initialize() so onStateUpdate can access it
-      hostRef.current = host
+      const managerConfig = {
+        preferredStrategy: 'peerjs' as ConnectionStrategy,
+        enableTrysteroFallback: true,
+        connectionTimeout: 15000,
+        trysteroAppId: 'newavalon-skirmish'
+      }
+
+      const manager = new HostConnectionManager(createInitialState(), hostConfig, managerConfig)
+      hostManagerRef.current = manager
       isHostRef.current = true
-      const peerId = await host.initialize()
+
+      const { peerId, strategy } = await manager.initialize()
+      connectionStrategyRef.current = strategy
+
+      // Get the actual host instance for direct access
+      hostRef.current = (manager as any).activeHost
+
       setConnectionStatus('Connected')
+      logger.info('[createGame] Connected via', strategy, 'peerId:', peerId)
 
       // Save initial session data
-      const sessionData = host.exportSession()
+      const sessionData = manager.exportSession()
       if (sessionData) {
         localStorage.setItem('webrtc_host_session', JSON.stringify(sessionData))
       }
@@ -366,20 +443,200 @@ export function useGameState(_props: any = {}): UseGameStateResult {
       return peerId
     } catch (e) {
       setConnectionStatus('Disconnected')
+      logger.error('[createGame] Failed to create game:', e)
       throw e
     }
   }, [setClickWaves])
+
+  // ============================================================================
+  // Local game creation (without PeerJS connection)
+  // ============================================================================
+  const createLocalGame = useCallback(() => {
+    try {
+      // Create initial state with local settings applied
+      const initialState = createInitialState()
+      initialState.gameMode = localGameSettings.gameMode
+      initialState.activeGridSize = localGameSettings.activeGridSize
+      initialState.dummyPlayerCount = localGameSettings.dummyPlayerCount
+
+      const hostConfig = {
+        onStateUpdate: (personalState) => {
+          // CRITICAL: Version check to prevent old states from overwriting newer ones
+          // This fixes targetingMode being cleared immediately after being set
+          if (personalState.version !== undefined) {
+            if (personalState.version <= stateVersionRef.current) {
+              // Log skipped states with targetingMode for debugging
+              if (personalState.targetingMode?.handTargets) {
+                console.log('[DISCARD_FROM_HAND] Skipping old state:', {
+                  receivedVersion: personalState.version,
+                  currentVersion: stateVersionRef.current,
+                  hasHandTargets: true,
+                  handTargetsCount: personalState.targetingMode.handTargets.length,
+                })
+              }
+              return // Skip old state
+            }
+          }
+
+          const fullState = personalToGameState(personalState, 1)
+          // Defer state update to avoid flushSync during render cycle
+          setTimeout(() => {
+            setGameState(fullState)
+            setLocalPlayerId(1)
+
+            // CRITICAL: Sync local settings with host state
+            // This ensures that settings are consistent even when changed by guests
+            setLocalGameSettings(prev => ({
+              ...prev,
+              gameMode: personalState.gameMode || prev.gameMode,
+              activeGridSize: personalState.activeGridSize ?? prev.activeGridSize,
+              dummyPlayerCount: personalState.dummyPlayerCount ?? prev.dummyPlayerCount
+            }))
+          }, 0)
+
+          // Auto-save session on state updates
+          const manager = hostManagerRef.current
+          if (manager) {
+            const sessionData = manager.exportSession()
+            if (sessionData) {
+              localStorage.setItem('webrtc_host_session', JSON.stringify(sessionData))
+            }
+          }
+        },
+        onPlayerJoin: (playerId) => {
+          // Player joined
+        },
+        onPlayerLeave: (playerId) => {
+          // Player left
+        },
+        onClickWave: (wave) => {
+          // INSTANT: Show wave via direct DOM manipulation
+          triggerDirectClickWave(wave as any)
+          // Defer React state update to avoid flushSync during render cycle
+          setTimeout(() => {
+            setClickWaves(prev => [...prev, wave])
+          }, 0)
+          // Auto-remove after animation completes (700ms to match ClickWave totalDuration)
+          setTimeout(() => {
+            setClickWaves(prev => prev.filter(w => w.timestamp !== wave.timestamp))
+          }, 700)
+        },
+        onFloatingTextBatch: (events) => {
+          const timestamp = Date.now()
+          const batch = events.map((item, i) => ({
+            row: item.row,
+            col: item.col,
+            text: item.text,
+            playerId: item.playerId,
+            timestamp: timestamp + i
+          }))
+          setLatestFloatingTexts(batch)
+        }
+      }
+
+      const managerConfig = {
+        preferredStrategy: 'peerjs' as ConnectionStrategy,
+        enableTrysteroFallback: false,  // No fallback for local games
+        connectionTimeout: 15000,
+        trysteroAppId: 'newavalon-skirmish'
+      }
+
+      const manager = new HostConnectionManager(initialState, hostConfig, managerConfig)
+      hostManagerRef.current = manager
+      isHostRef.current = true
+      connectionStrategyRef.current = 'peerjs'
+
+      // Initialize local game WITHOUT connecting to PeerJS
+      // This sets activeHost internally
+      const gameId = manager.initializeLocal()
+
+      // CRITICAL: Get the actual host instance AFTER initializeLocal()
+      // initializeLocal() sets activeHost, so we must get it after calling the method
+      hostRef.current = (manager as any).activeHost
+
+      setConnectionStatus('Connected')  // Local game is "connected" to itself
+      logger.info('[createLocalGame] Local game created, gameId:', gameId)
+
+      return gameId
+    } catch (e) {
+      logger.error('[createLocalGame] Failed to create local game:', e)
+      throw e
+    }
+  }, [setClickWaves, localGameSettings])
+
+  // Connect to PeerJS signalling server (for inviting online players)
+  const connectToSignalling = useCallback(async () => {
+    const manager = hostManagerRef.current
+    if (!manager) {
+      throw new Error('No game session. Call createLocalGame() first.')
+    }
+
+    if (!manager.isInitialized()) {
+      throw new Error('Game not initialized. Call createLocalGame() first.')
+    }
+
+    if (manager.isConnectedToSignalling()) {
+      // Already connected, just return peerId
+      const peerId = manager.getPeerId()
+      if (peerId) return peerId
+    }
+
+    try {
+      setConnectionStatus('Connecting')
+      const { peerId } = await manager.connectToSignalling()
+      setConnectionStatus('Connected')
+      logger.info('[connectToSignalling] Connected to PeerJS, peerId:', peerId)
+      return peerId
+    } catch (e) {
+      setConnectionStatus('Connected')  // Still "connected" to local game
+      logger.error('[connectToSignalling] Failed to connect:', e)
+      throw e
+    }
+  }, [])
+
+  // Disconnect from signalling server (keeps P2P connections)
+  const disconnectFromSignalling = useCallback(() => {
+    const manager = hostManagerRef.current
+    if (manager && manager.isConnectedToSignalling()) {
+      manager.disconnectFromSignalling()
+      logger.info('[disconnectFromSignalling] Disconnected from signalling server')
+    }
+  }, [])
+
+  // Check if connected to signalling server
+  const isConnectedToSignalling = useCallback((): boolean => {
+    const manager = hostManagerRef.current
+    return manager ? manager.isConnectedToSignalling() : false
+  }, [])
+
+  // Check if local game is initialized
+  const isGameInitialized = useCallback((): boolean => {
+    const manager = hostManagerRef.current
+    return manager ? manager.isInitialized() : false
+  }, [])
 
   // ============================================================================
   // Подключение как гость
   // ============================================================================
   const joinGameViaModal = useCallback(async (hostPeerId: string) => {
     try {
+      logger.info('[joinGameViaModal] Starting guest connection:', {
+        hostPeerId,
+        currentLocalPlayerId: localPlayerId,
+        isHost: isHostRef.current,
+        existingGuest: !!guestRef.current
+      })
       setConnectionStatus('Connecting')
 
-      const guest = new SimpleGuest({
+      const guestConfig = {
         localPlayerId: 0,
         onStateUpdate: (personalState) => {
+          // CRITICAL: Version check to prevent old states from overwriting newer ones
+          // This fixes targetingMode being cleared immediately after being set
+          if (personalState.version !== undefined && personalState.version <= stateVersionRef.current) {
+            return // Skip old state
+          }
+
           // Определяем localPlayerId из состояния или токена
           const token = localStorage.getItem('player_token')
           let myId = 0
@@ -391,11 +648,9 @@ export function useGameState(_props: any = {}): UseGameStateResult {
             }
           }
 
-          // CRITICAL: If token not found, use guest.getLocalPlayerId() as fallback
-          // This is the authoritative ID from SimpleGuest (set by host in JOIN_ACCEPT)
-          // Do NOT fall back to name search as it can match wrong player (host) if names are same
-          if (myId === 0 && guestRef.current) {
-            const guestId = guestRef.current.getLocalPlayerId()
+          // CRITICAL: If token not found, use guest manager's getLocalPlayerId() as fallback
+          if (myId === 0 && guestManagerRef.current) {
+            const guestId = guestManagerRef.current.getLocalPlayerId()
             if (guestId > 0) {
               myId = guestId
             }
@@ -406,6 +661,15 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           setTimeout(() => {
             setGameState(fullState)
             setLocalPlayerId(myId)
+
+            // CRITICAL: Sync local settings with host state
+            // This ensures that guest's local settings match the host's current settings
+            setLocalGameSettings(prev => ({
+              ...prev,
+              gameMode: personalState.gameMode || prev.gameMode,
+              activeGridSize: personalState.activeGridSize ?? prev.activeGridSize,
+              dummyPlayerCount: personalState.dummyPlayerCount ?? prev.dummyPlayerCount
+            }))
           }, 0)
         },
         onConnected: () => {
@@ -482,6 +746,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           localStorage.removeItem('webrtc_host_peer_id')
           localStorage.removeItem('player_token')
           guestRef.current = null
+          guestManagerRef.current = null
           isHostRef.current = false
           setGameState(createInitialState())
           setConnectionStatus('Disconnected')
@@ -489,16 +754,49 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           setReconnectProgress(null)
           isReconnectingRef.current = false
         }
-      })
+      }
+
+      const managerConfig = {
+        preferredStrategy: 'peerjs' as ConnectionStrategy,
+        enableTrysteroFallback: true,
+        connectionTimeout: 15000,
+        trysteroAppId: 'newavalon-skirmish'
+      }
+
+      const manager = new GuestConnectionManager(guestConfig, managerConfig)
+      guestManagerRef.current = manager
 
       // CRITICAL: Set guestRef BEFORE connect() so onStateUpdate can access it
       // onStateUpdate may be called during connect() when JOIN_ACCEPT is received
-      guestRef.current = guest
-      await guest.connect(hostPeerId)
+      guestRef.current = (manager as any).activeGuest
+
+      const { strategy } = await manager.connect(hostPeerId, localStorage.getItem('player_name') || 'Player')
+
+      // CRITICAL: Update guestRef AFTER connection is established
+      // The activeGuest may have changed during connection
+      guestRef.current = (manager as any).activeGuest
+
+      connectionStrategyRef.current = strategy
       isHostRef.current = false
 
-      return guest.getLocalPlayerId()
+      const playerId = manager.getLocalPlayerId()
+      logger.info('[joinGameViaModal] Guest connected successfully:', {
+        hostPeerId,
+        strategy,
+        assignedPlayerId: playerId,
+        localPlayerId: localPlayerId
+      })
+
+      // CRITICAL: Update localPlayerId immediately after connection
+      // This ensures that actions like PLAYER_READY are sent with the correct player ID
+      setLocalPlayerId(playerId)
+
+      return playerId
     } catch (e) {
+      logger.error('[joinGameViaModal] Guest connection failed:', {
+        hostPeerId,
+        error: e instanceof Error ? e.message : String(e)
+      })
       setConnectionStatus('Disconnected')
       throw e
     }
@@ -631,6 +929,11 @@ export function useGameState(_props: any = {}): UseGameStateResult {
         try {
           const host = createHostFromSavedSession(savedSession, {
             onStateUpdate: (personalState) => {
+              // CRITICAL: Version check to prevent old states from overwriting newer ones
+              if (personalState.version !== undefined && personalState.version <= stateVersionRef.current) {
+                return // Skip old state
+              }
+
               const fullState = personalToGameState(personalState, 1)
               // Defer state update to avoid flushSync during render cycle
               setTimeout(() => {
@@ -678,9 +981,19 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           isHostRef.current = true
           setConnectionStatus('Connected')
 
-        } catch (error) {
-          // Clear invalid session
-          localStorage.removeItem('webrtc_host_session')
+        } catch (error: any) {
+          // Check if this is a PeerJS connection error
+          const isPeerJSError = error?.message?.includes('PeerJS') || error?.message?.includes('WebSocket')
+
+          if (isPeerJSError) {
+            // Clear the session so it doesn't keep failing on page reload
+            localStorage.removeItem('webrtc_host_session')
+            // Don't show error - user can still use WebSocket mode
+            console.warn('[useGameState] WebRTC auto-restore failed (PeerJS server down). Use WebSocket mode or try again later.')
+          } else {
+            // Other errors - clear session
+            localStorage.removeItem('webrtc_host_session')
+          }
         } finally {
           setIsReconnecting(false)
           setReconnectProgress(null)
@@ -700,8 +1013,13 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   // Отправка действий
   // ============================================================================
   const sendAction = useCallback((action: string, data?: any) => {
-    if (isHostRef.current && hostRef.current) {
-      hostRef.current.hostAction(action, data)
+    // Check both hostRef (old SimpleHost) and hostManagerRef (new HostConnectionManager)
+    if (isHostRef.current) {
+      if (hostRef.current) {
+        hostRef.current.hostAction(action, data)
+      } else if (hostManagerRef.current) {
+        hostManagerRef.current.hostAction(action, data)
+      }
     } else if (guestRef.current) {
       guestRef.current.sendAction(action, data)
     }
@@ -718,20 +1036,152 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   // Настройки игры
   // ============================================================================
   const setGameMode = useCallback((mode: any) => {
-    sendAction('SET_GAME_MODE', { mode })
-  }, [sendAction])
+    // Always update local settings (works before host is created)
+    setLocalGameSettings(prev => ({ ...prev, gameMode: mode }))
+    // Also update gameState for immediate UI feedback
+    setGameState((prev: GameState) => ({ ...prev, gameMode: mode }))
+    // If host exists, send action to apply to game state
+    // Check both hostRef (old SimpleHost) and hostManagerRef (new HostConnectionManager)
+    if (isHostRef.current) {
+      if (hostRef.current) {
+        hostRef.current.hostAction('SET_GAME_MODE', { mode })
+      } else if (hostManagerRef.current) {
+        hostManagerRef.current.hostAction('SET_GAME_MODE', { mode })
+      }
+    } else if (guestRef.current) {
+      guestRef.current.sendAction('SET_GAME_MODE', { mode })
+    }
+  }, [])
 
   const setGamePrivacy = useCallback((isPrivate: boolean) => {
-    sendAction('SET_PRIVACY', { isPrivate })
-  }, [sendAction])
+    // Update gameState for immediate UI feedback
+    setGameState((prev: GameState) => ({ ...prev, isPrivate }))
+    // If host exists, send action
+    // Check both hostRef (old SimpleHost) and hostManagerRef (new HostConnectionManager)
+    if (isHostRef.current) {
+      if (hostRef.current) {
+        hostRef.current.hostAction('SET_PRIVACY', { isPrivate })
+      } else if (hostManagerRef.current) {
+        hostManagerRef.current.hostAction('SET_PRIVACY', { isPrivate })
+      }
+    } else if (guestRef.current) {
+      guestRef.current.sendAction('SET_PRIVACY', { isPrivate })
+    }
+  }, [])
 
   const setActiveGridSize = useCallback((size: any) => {
-    sendAction('SET_GRID_SIZE', { size })
-  }, [sendAction])
+    // Always update local settings (works before host is created)
+    setLocalGameSettings(prev => ({ ...prev, activeGridSize: size }))
+    // Also update gameState for immediate UI feedback
+    setGameState((prev: GameState) => ({ ...prev, activeGridSize: size }))
+    // If host exists, send action to apply to game state
+    // Check both hostRef (old SimpleHost) and hostManagerRef (new HostConnectionManager)
+    if (isHostRef.current) {
+      if (hostRef.current) {
+        hostRef.current.hostAction('SET_GRID_SIZE', { size })
+      } else if (hostManagerRef.current) {
+        hostManagerRef.current.hostAction('SET_GRID_SIZE', { size })
+      }
+    } else if (guestRef.current) {
+      guestRef.current.sendAction('SET_GRID_SIZE', { size })
+    }
+  }, [])
 
   const setDummyPlayerCount = useCallback((count: number) => {
-    sendAction('SET_DUMMY_PLAYER_COUNT', { count })
-  }, [sendAction])
+    logger.info('[setDummyPlayerCount] Setting dummy player count:', count,
+      'hostRef exists:', !!hostRef.current,
+      'hostManagerRef exists:', !!hostManagerRef.current,
+      'isHost:', isHostRef.current)
+
+    // Always update local settings (works before host is created)
+    setLocalGameSettings(prev => ({ ...prev, dummyPlayerCount: count }))
+
+    // Optimistically update the players array for immediate UI feedback
+    // This works both before host is created and during multiplayer
+    setGameState((prev: GameState) => {
+      const realPlayers = prev.players.filter(p => !p.isDummy)
+      const currentDummies = prev.players.filter(p => p.isDummy)
+      const numericCount = Number(count)
+
+      // Validate count
+      if (!Number.isFinite(numericCount) || numericCount < 0 || numericCount > 3) {
+        return prev
+      }
+
+      // If count matches current number of dummies, just update the counter
+      if (currentDummies.length === numericCount) {
+        return { ...prev, dummyPlayerCount: numericCount }
+      }
+
+      // Keep existing dummies (preserve their name, color, deck)
+      const newPlayers = [...realPlayers]
+      const dummiesToKeep = Math.min(currentDummies.length, numericCount)
+
+      // Add existing dummies (preserving their data)
+      for (let i = 0; i < dummiesToKeep; i++) {
+        newPlayers.push(currentDummies[i])
+      }
+
+      // Add NEW dummy players only if we need more
+      if (numericCount > currentDummies.length) {
+        let nextPlayerId = Math.max(...realPlayers.map(p => p.id), ...currentDummies.map(p => p.id), 0)
+        for (let i = currentDummies.length; i < numericCount; i++) {
+          nextPlayerId++
+          const dummyName = `Dummy ${i + 1}`
+
+          // Get random deck type for dummy player
+          const decksData = getDecksData()
+          const deckKeys = Object.keys(decksData).filter(key =>
+            key !== 'Tokens' && key !== 'Commands' && key !== 'Custom'
+          ) as DeckType[]
+          const randomDeckType = deckKeys[Math.floor(Math.random() * deckKeys.length)] || DeckType.SynchroTech
+
+          const dummyDeck = shuffleDeck(createDeck(randomDeckType, nextPlayerId, dummyName))
+
+          // Assign random unique color (not already used by existing players)
+          const existingColors = newPlayers.map(p => p.color)
+          const dummyColor = assignUniqueRandomColor(existingColors)
+
+          const dummyPlayer = {
+            id: nextPlayerId,
+            name: dummyName,
+            score: 0,
+            hand: [],
+            deck: dummyDeck,
+            discard: [],
+            discardSize: 0,
+            announcedCard: null,
+            selectedDeck: randomDeckType,
+            color: dummyColor,
+            isDummy: true,
+            isDisconnected: false,
+            isReady: true,
+            boardHistory: [],
+            autoDrawEnabled: true,
+          }
+          newPlayers.push(dummyPlayer)
+        }
+      }
+
+      return {
+        ...prev,
+        players: newPlayers,
+        dummyPlayerCount: numericCount
+      }
+    })
+
+    // If host exists, send action to apply to game state on server/host side
+    // Check both hostRef (old SimpleHost) and hostManagerRef (new HostConnectionManager)
+    if (isHostRef.current) {
+      if (hostRef.current) {
+        hostRef.current.hostAction('SET_DUMMY_PLAYER_COUNT', { count })
+      } else if (hostManagerRef.current) {
+        hostManagerRef.current.hostAction('SET_DUMMY_PLAYER_COUNT', { count })
+      }
+    } else if (guestRef.current) {
+      guestRef.current.sendAction('SET_DUMMY_PLAYER_COUNT', { count })
+    }
+  }, [])
 
   const assignTeams = useCallback((teams: any) => {
     sendAction('ASSIGN_TEAMS', { teams })
@@ -1215,9 +1665,10 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   // ============================================================================
 
   // Initialize visual effects with simpleHost if available
+  // Pass getter functions instead of direct values to ensure updates are captured
   const visualEffects = useVisualEffects({
-    simpleHost: hostRef.current,
-    simpleGuest: guestRef.current,
+    simpleHost: () => hostRef.current,
+    simpleGuest: () => guestRef.current,
     gameStateRef,
     localPlayerIdRef,
     setLatestHighlight,
@@ -1432,10 +1883,14 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     localStorage.removeItem('webrtc_host_session') // Clear host session data
 
     // CRITICAL: Different behavior for host vs guests
-    if (isHostRef.current && hostRef.current) {
+    if (isHostRef.current) {
       // Host is exiting - notify all guests and end game for everyone
       try {
-        hostRef.current.hostAction('HOST_EXIT_GAME', {})
+        if (hostRef.current) {
+          hostRef.current.hostAction('HOST_EXIT_GAME', {})
+        } else if (hostManagerRef.current) {
+          hostManagerRef.current.hostAction('HOST_EXIT_GAME', {})
+        }
       } catch (e) {
         // Failed to send HOST_EXIT message
       }
@@ -1448,11 +1903,15 @@ export function useGameState(_props: any = {}): UseGameStateResult {
       }
     }
 
-    // Destroy connections
+    // Destroy connections (this will disconnect from signalling servers)
     hostRef.current?.destroy()
     guestRef.current?.destroy()
+    hostManagerRef.current?.destroy()
+    guestManagerRef.current?.destroy()
     hostRef.current = null
     guestRef.current = null
+    hostManagerRef.current = null
+    guestManagerRef.current = null
     isHostRef.current = false
 
     // Reset state
@@ -1478,16 +1937,50 @@ export function useGameState(_props: any = {}): UseGameStateResult {
   // ============================================================================
   // WebRTC свойства
   // ============================================================================
-  const webrtcHostId = hostRef.current?.getPeerId() || null
+  // Check both hostRef (old SimpleHost) and hostManagerRef (new HostConnectionManager)
+  const webrtcHostId = hostRef.current?.getPeerId() || hostManagerRef.current?.getPeerId() || null
   const webrtcIsHost = isHostRef.current
 
   // ============================================================================
   // Очистка при размонтировании
   // ============================================================================
   useEffect(() => {
-    return () => {
+    // Cleanup on component unmount
+    const cleanup = () => {
       hostRef.current?.destroy()
+      hostManagerRef.current?.destroy()
       guestRef.current?.destroy()
+    }
+
+    // Also cleanup on page unload to ensure PeerJS connections are closed
+    const handleBeforeUnload = () => {
+      // Send EXIT_GAME if connected as guest to let host know we're leaving
+      if (guestRef.current && !isHostRef.current) {
+        try {
+          guestRef.current.sendAction('EXIT_GAME', {})
+        } catch (e) {
+          // Ignore errors during cleanup
+        }
+      }
+      // Destroy connections
+      cleanup()
+    }
+
+    // Handle visibility change - when user returns to the tab, ensure connection is alive
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // User returned to the tab - trigger reconnection if needed
+        // The existing reconnection logic in handlePeerMessage will handle this
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      cleanup()
     }
   }, [])
 
@@ -1627,6 +2120,13 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     shareHostDeckWithGuests: (_deck: any[], _deckLength: number) => {},
     isReconnecting,
     reconnectProgress,
+
+    // NEW: Local game and signalling control
+    createLocalGame,
+    connectToSignalling,
+    disconnectFromSignalling,
+    isConnectedToSignalling,
+    isGameInitialized,
   }
 }
 

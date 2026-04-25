@@ -8,17 +8,103 @@
  */
 
 import { useCallback, useEffect, useRef } from 'react'
-import type { HighlightData, FloatingTextData, TargetingModeData, AbilityAction, CommandContext, GameState } from '../types'
+import type { HighlightData, FloatingTextData, TargetingModeData, AbilityAction, CommandContext, GameState, Card } from '../types'
 import { SimpleVisualEffects } from '../p2p/SimpleVisualEffects'
 import type { SimpleHost } from '../p2p/SimpleHost'
 import type { SimpleGuest } from '../p2p/SimpleGuest'
 import { initClickWaveOverlay, triggerDirectClickWave, type ClickWaveData } from './useDirectClickWave'
 
+/**
+ * Helper function to sanitize AbilityAction for P2P transmission
+ * Removes non-serializable properties like functions
+ */
+function sanitizeActionForP2P(action: AbilityAction): any {
+  const sanitized: any = {
+    type: action.type,
+    mode: action.mode,
+    tokenType: action.tokenType,
+    count: action.count,
+    dynamicCount: action.dynamicCount,
+    onlyFaceDown: action.onlyFaceDown,
+    onlyOpponents: action.onlyOpponents,
+    targetOwnerId: action.targetOwnerId,
+    excludeOwnerId: action.excludeOwnerId,
+    targetType: action.targetType,
+    sourceCoords: action.sourceCoords,
+    payload: action.payload ? { ...action.payload } : undefined,
+    isDeployAbility: action.isDeployAbility,
+    recordContext: action.recordContext,
+    contextCheck: action.contextCheck,
+    requiredTargetStatus: action.requiredTargetStatus,
+    requireStatusFromSourceOwner: action.requireStatusFromSourceOwner,
+    mustBeAdjacentToSource: action.mustBeAdjacentToSource,
+    mustBeInLineWithSource: action.mustBeInLineWithSource,
+    range: action.range,
+  }
+
+  // Remove function properties from payload if present
+  if (sanitized.payload) {
+    delete sanitized.payload.filter
+    delete sanitized.payload.filterFn
+    delete (sanitized.payload as any).cost?.filter
+  }
+
+  // Sanitize sourceCard - keep only essential data
+  if (action.sourceCard) {
+    sanitized.sourceCard = sanitizeCardForP2P(action.sourceCard)
+  }
+
+  // Sanitize chainedAction recursively if present
+  if (action.chainedAction) {
+    sanitized.chainedAction = sanitizeActionForP2P(action.chainedAction)
+  }
+
+  return sanitized
+}
+
+/**
+ * Helper function to sanitize Card for P2P transmission
+ * Removes non-serializable properties
+ */
+function sanitizeCardForP2P(card: Card): any {
+  return {
+    id: card.id,
+    baseId: card.baseId,
+    deck: card.deck,
+    name: card.name,
+    imageUrl: card.imageUrl,
+    power: card.power,
+    abilityText: card.abilityText,
+    ownerId: card.ownerId,
+    ownerName: card.ownerName,
+    types: card.types,
+    faction: card.faction,
+  }
+}
+
+/**
+ * Helper function to sanitize TargetingModeData for P2P transmission
+ */
+function sanitizeTargetingModeForP2P(targetingMode: TargetingModeData): any {
+  return {
+    playerId: targetingMode.playerId,
+    action: sanitizeActionForP2P(targetingMode.action),
+    sourceCoords: targetingMode.sourceCoords,
+    timestamp: targetingMode.timestamp,
+    boardTargets: targetingMode.boardTargets,
+    handTargets: targetingMode.handTargets,
+    isDeckSelectable: targetingMode.isDeckSelectable,
+    originalOwnerId: targetingMode.originalOwnerId,
+    ownerId: targetingMode.ownerId,
+    chainedAction: targetingMode.chainedAction ? sanitizeActionForP2P(targetingMode.chainedAction) : undefined,
+  }
+}
+
 interface UseVisualEffectsProps {
-  // SimpleHost (P2P mode)
-  simpleHost: SimpleHost | null
-  // SimpleGuest (P2P mode - for guests)
-  simpleGuest: SimpleGuest | null
+  // SimpleHost (P2P mode) - use getter function to get current value
+  simpleHost: SimpleHost | null | (() => SimpleHost | null)
+  // SimpleGuest (P2P mode - for guests) - use getter function to get current value
+  simpleGuest: SimpleGuest | null | (() => SimpleGuest | null)
 
   // Local refs
   gameStateRef: React.MutableRefObject<GameState>
@@ -53,6 +139,15 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     setGameState,
   } = props
 
+  // Helper functions to get current values (handles both direct values and getter functions)
+  const getSimpleHost = useCallback(() => {
+    return typeof simpleHost === 'function' ? simpleHost() : simpleHost
+  }, [simpleHost])
+
+  const getSimpleGuest = useCallback(() => {
+    return typeof simpleGuest === 'function' ? simpleGuest() : simpleGuest
+  }, [simpleGuest])
+
   // Track targeting mode clear timestamp to prevent race conditions
   const targetingModeClearRef = useRef<number>(0)
 
@@ -71,11 +166,12 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     setLatestHighlight(fullHighlightData)
 
     // Broadcast via SimpleHost if available (P2P mode)
-    if (simpleHost) {
-      const effects = new SimpleVisualEffects(simpleHost)
+    const currentSimpleHost = getSimpleHost()
+    if (currentSimpleHost) {
+      const effects = new SimpleVisualEffects(currentSimpleHost)
       effects.broadcastHighlight(fullHighlightData)
     }
-  }, [simpleHost, setLatestHighlight])
+  }, [getSimpleHost, setLatestHighlight])
 
   /**
    * Trigger floating text effect(s)
@@ -93,11 +189,12 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     }, 0)
 
     // Broadcast via SimpleHost if available (P2P mode)
-    if (simpleHost) {
-      const effects = new SimpleVisualEffects(simpleHost)
+    const currentSimpleHost = getSimpleHost()
+    if (currentSimpleHost) {
+      const effects = new SimpleVisualEffects(currentSimpleHost)
       effects.broadcastFloatingText(batch)
     }
-  }, [simpleHost, setLatestFloatingTexts])
+  }, [getSimpleHost, setLatestFloatingTexts])
 
   /**
    * Trigger "no target" overlay effect
@@ -109,11 +206,12 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     setLatestNoTarget({ coords, timestamp })
 
     // Broadcast via SimpleHost if available (P2P mode)
-    if (simpleHost) {
-      const effects = new SimpleVisualEffects(simpleHost)
+    const currentSimpleHost = getSimpleHost()
+    if (currentSimpleHost) {
+      const effects = new SimpleVisualEffects(currentSimpleHost)
       effects.broadcastNoTarget(coords)
     }
-  }, [simpleHost, setLatestNoTarget])
+  }, [getSimpleHost, setLatestNoTarget])
 
   /**
    * Trigger deck selection effect
@@ -129,8 +227,9 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     setLatestDeckSelections(prev => [...prev, deckSelectionData])
 
     // Broadcast via SimpleHost if available (P2P mode)
-    if (simpleHost) {
-      const effects = new SimpleVisualEffects(simpleHost)
+    const currentSimpleHost = getSimpleHost()
+    if (currentSimpleHost) {
+      const effects = new SimpleVisualEffects(currentSimpleHost)
       effects.broadcastDeckSelection(playerId, selectedByPlayerId)
     }
 
@@ -138,7 +237,7 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     setTimeout(() => {
       setLatestDeckSelections(prev => prev.filter(ds => ds.timestamp !== deckSelectionData.timestamp))
     }, 1000)
-  }, [simpleHost, setLatestDeckSelections])
+  }, [getSimpleHost, setLatestDeckSelections])
 
   /**
    * Trigger hand card selection effect
@@ -159,8 +258,9 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     setLatestHandCardSelections(prev => [...prev, handCardSelectionData])
 
     // Broadcast via SimpleHost if available (P2P mode)
-    if (simpleHost) {
-      const effects = new SimpleVisualEffects(simpleHost)
+    const currentSimpleHost = getSimpleHost()
+    if (currentSimpleHost) {
+      const effects = new SimpleVisualEffects(currentSimpleHost)
       effects.broadcastHandCardSelection(playerId, cardIndex, selectedByPlayerId)
     }
 
@@ -168,7 +268,7 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     setTimeout(() => {
       setLatestHandCardSelections(prev => prev.filter(cs => cs.timestamp !== handCardSelectionData.timestamp))
     }, 1000)
-  }, [simpleHost, setLatestHandCardSelections])
+  }, [getSimpleHost, setLatestHandCardSelections])
 
   /**
    * Trigger click wave effect (colored ripple animation)
@@ -226,13 +326,15 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     }, 0)
 
     // Broadcast via SimpleHost if available (P2P host mode)
-    if (simpleHost) {
-      const effects = new SimpleVisualEffects(simpleHost)
+    const currentSimpleHost = getSimpleHost()
+    const currentSimpleGuest = getSimpleGuest()
+    if (currentSimpleHost) {
+      const effects = new SimpleVisualEffects(currentSimpleHost)
       effects.broadcastClickWave(wave)
     }
     // Send action via SimpleGuest if available (P2P guest mode)
-    else if (simpleGuest) {
-      simpleGuest.sendAction('CLICK_WAVE', wave)
+    else if (currentSimpleGuest) {
+      currentSimpleGuest.sendAction('CLICK_WAVE', wave)
     }
 
     // Auto-remove from React state after animation completes
@@ -240,7 +342,7 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     setTimeout(() => {
       setClickWaves(prev => prev.filter(w => w.timestamp !== wave.timestamp))
     }, 700)
-  }, [simpleHost, simpleGuest, gameStateRef, localPlayerIdRef, setClickWaves])
+  }, [getSimpleHost, getSimpleGuest, gameStateRef, localPlayerIdRef, setClickWaves])
 
   /**
    * Set targeting mode for all clients
@@ -331,33 +433,60 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
       handTargets: targetingModeData.handTargets,
     })
 
+    // CRITICAL: Check if targeting mode is already set with the same values
+    // This prevents infinite loops when setTargetingMode is called repeatedly
+    const currentTargetingMode = currentGameState.targetingMode
+    const isAlreadySet = currentTargetingMode &&
+                         currentTargetingMode.playerId === playerId &&
+                         currentTargetingMode.action?.mode === action.mode &&
+                         currentTargetingMode.action?.type === action.type &&
+                         JSON.stringify(currentTargetingMode.handTargets) === JSON.stringify(preCalculatedHandTargets)
+
+    if (isAlreadySet) {
+      console.log('[VISUAL EFFECTS] Targeting mode already set in gameState, skipping update:', {
+        currentMode: currentTargetingMode.action?.mode,
+        newMode: action.mode,
+        currentPlayerId: currentTargetingMode.playerId,
+        newPlayerId: playerId,
+      })
+      return
+    }
+
     // Update local state immediately
     setGameState((prev: any) => {
-      console.log('[VISUAL EFFECTS] Setting targetingMode in local state', {
-        prevTargetingMode: prev.targetingMode ? { mode: prev.targetingMode.action.mode, playerId: prev.targetingMode.playerId } : null,
-        newTargetingMode: { mode: action.mode, playerId, handTargetsCount: preCalculatedHandTargets?.length },
-        targetingModeDataHandTargets: targetingModeData.handTargets?.length || 0,
-      })
+      if (preCalculatedHandTargets && preCalculatedHandTargets.length > 0) {
+        console.log('[DISCARD_FROM_HAND] Setting targetingMode in local state with handTargets:', {
+          actionType: action.payload?.actionType,
+          playerId,
+          handTargetsCount: preCalculatedHandTargets.length,
+          handTargets: preCalculatedHandTargets,
+          prevTargetingMode: prev.targetingMode ? { mode: prev.targetingMode.action.mode, playerId: prev.targetingMode.playerId } : null,
+        })
+      }
       const newState = {
         ...prev,
         targetingMode: targetingModeData,
       }
-      console.log('[VISUAL EFFECTS] New gameState targetingMode:', {
-        hasTargetingMode: !!newState.targetingMode,
-        hasHandTargets: !!newState.targetingMode?.handTargets,
-        handTargetsLength: newState.targetingMode?.handTargets?.length || 0,
-        handTargets: newState.targetingMode?.handTargets,
-      })
+      if (preCalculatedHandTargets && preCalculatedHandTargets.length > 0) {
+        console.log('[DISCARD_FROM_HAND] New gameState targetingMode:', {
+          hasTargetingMode: !!newState.targetingMode,
+          hasHandTargets: !!newState.targetingMode?.handTargets,
+          handTargetsLength: newState.targetingMode?.handTargets?.length || 0,
+          handTargets: newState.targetingMode?.handTargets,
+        })
+      }
       return newState
     })
 
     // Broadcast via SimpleHost if available (P2P mode)
     // CRITICAL: Broadcast if we are HOST OR if owner is DUMMY (to sync across all clients)
     // When setting targetingMode for dummy player, any player can broadcast to ensure sync
-    const shouldBroadcast = simpleHost && (localPlayerId === 1 || isOwnerDummy)
+    const currentSimpleHost = getSimpleHost()
+    const currentSimpleGuest = getSimpleGuest()
+    const shouldBroadcast = currentSimpleHost && (localPlayerId === 1 || isOwnerDummy)
     console.log('[VISUAL EFFECTS] Broadcast check:', {
-      hasSimpleHost: !!simpleHost,
-      hasSimpleGuest: !!simpleGuest,
+      hasSimpleHost: !!currentSimpleHost,
+      hasSimpleGuest: !!currentSimpleGuest,
       localPlayerId,
       isHost: localPlayerId === 1,
       isOwnerDummy,
@@ -368,25 +497,27 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
       // This ensures targetingMode is included in state broadcasts to all clients
       // including the host itself (via notifyStateUpdate callback)
       if (localPlayerId === 1) {
-        simpleHost.setTargetingMode(targetingModeData)
+        currentSimpleHost.setTargetingMode(targetingModeData)
         console.log('[VISUAL EFFECTS] Host setting targetingMode in SimpleHost state', {
           reason: 'isHost',
         })
       } else {
         // Non-host player setting targeting mode for dummy player - broadcast via SimpleVisualEffects
-        const effects = new SimpleVisualEffects(simpleHost)
+        const effects = new SimpleVisualEffects(currentSimpleHost)
         effects.setTargetingMode(targetingModeData)
         console.log('[VISUAL EFFECTS] Broadcasting targetingMode to all clients via SimpleHost', {
           reason: 'isOwnerDummy',
         })
       }
-    } else if (simpleGuest) {
+    } else if (currentSimpleGuest) {
       // CRITICAL: Guests must send targetingMode to host for broadcast
       // This fixes abilities like Faber that require hand card targeting
-      simpleGuest.sendAction('TARGETING_MODE', targetingModeData)
+      // SANITIZE: Remove non-serializable properties (functions) before sending
+      const sanitizedTargetingMode = sanitizeTargetingModeForP2P(targetingModeData)
+      currentSimpleGuest.sendAction('TARGETING_MODE', sanitizedTargetingMode)
       console.log('[VISUAL EFFECTS] Sending targetingMode to host via SimpleGuest')
     }
-  }, [simpleHost, simpleGuest, gameStateRef, setGameState])
+  }, [getSimpleHost, getSimpleGuest, gameStateRef, setGameState])
 
   /**
    * Clear targeting mode for all clients
@@ -445,24 +576,25 @@ export function useVisualEffects(props: UseVisualEffectsProps) {
     // Broadcast via SimpleHost if available (P2P mode)
     // CRITICAL: Broadcast if we are HOST OR if owner is DUMMY (to sync across all clients)
     // When clearing targetingMode for dummy player, any player can broadcast to ensure sync
-    if (simpleHost && (isHost || isOwnerDummy)) {
+    const currentSimpleHost = getSimpleHost()
+    if (currentSimpleHost && (isHost || isOwnerDummy)) {
       // CRITICAL: When HOST clears targeting mode, update SimpleHost state directly
       // This ensures the cleared targetingMode is reflected in state broadcasts
       if (isHost) {
-        simpleHost.clearTargetingMode()
+        currentSimpleHost.clearTargetingMode()
         console.log('[VISUAL EFFECTS] Host clearing targetingMode in SimpleHost state', {
           reason: 'isHost',
         })
       } else {
         // Non-host player clearing targeting mode for dummy player - broadcast via SimpleVisualEffects
-        const effects = new SimpleVisualEffects(simpleHost)
+        const effects = new SimpleVisualEffects(currentSimpleHost)
         effects.clearTargetingMode()
         console.log('[VISUAL EFFECTS] Broadcasting clearTargetingMode to all clients', {
           reason: 'isOwnerDummy',
         })
       }
     }
-  }, [simpleHost, gameStateRef, setGameState])
+  }, [getSimpleHost, gameStateRef, setGameState])
 
   return {
     triggerHighlight,

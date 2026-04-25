@@ -382,6 +382,9 @@ export interface SimpleHostConfig {
     playerColor: string
   }) => void
   onFloatingTextBatch?: (events: Array<{ row: number; col: number; text: string; playerId: number }>) => void
+  // Signalling server optimization
+  disconnectFromSignallingOnGameStart?: boolean  // Default: true - disconnect from signalling server when game starts
+  onSignallingDisconnected?: () => void  // Callback when host disconnects from signalling server
 }
 
 /**

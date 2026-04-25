@@ -59,6 +59,9 @@ interface HeaderProps {
   // Reconnection props
   isReconnecting?: boolean;
   reconnectProgress?: { attempt: number; maxAttempts: number; timeRemaining: number } | null;
+  // NEW: Signalling control props
+  connectToSignalling?: () => Promise<string>;
+  isConnectedToSignalling?: () => boolean;
 }
 
 const StatusIndicator = memo<{
@@ -265,12 +268,12 @@ const GameSettingsMenu = memo<{
             <button
               key={option}
               onClick={() => onDummyPlayerCountChange(option)}
-              disabled={!isHost || isGameStarted || (realPlayerCount + option > MAX_PLAYERS)}
+              disabled={isGameStarted || (realPlayerCount + option > MAX_PLAYERS)}
               className={`px-vu-md rounded font-bold transition-colors ${
                 dummyPlayerCount === option
                   ? 'bg-indigo-600 text-white'
                   : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-              } ${!isHost || isGameStarted || (realPlayerCount + option > MAX_PLAYERS) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${isGameStarted || (realPlayerCount + option > MAX_PLAYERS) ? 'opacity-50 cursor-not-allowed' : ''}`}
               style={{ fontSize: `${getVuSize(13)}px`, height: `${getVuSize(29)}px` }}
             >
               {option}
@@ -336,7 +339,7 @@ const GameSettingsMenu = memo<{
 GameSettingsMenu.displayName = 'GameSettingsMenu'
 
 // Invite Player Menu
-const InvitePlayerMenu = memo<{
+interface InvitePlayerMenuProps {
   isOpen: boolean;
   onClose: () => void;
   anchorEl: HTMLElement | null;
@@ -346,8 +349,12 @@ const InvitePlayerMenu = memo<{
   isHost: boolean;
   isGameStarted: boolean;
   hostId?: string | null;
-  t: (key: keyof TranslationResource['ui']) => string;
-}>(({
+  t: (key: string) => string;
+  connectToSignalling?: () => Promise<string>;
+  isConnectedToSignalling?: () => boolean;
+}
+
+function InvitePlayerMenu({
   isOpen,
   onClose,
   anchorEl,
@@ -358,10 +365,14 @@ const InvitePlayerMenu = memo<{
   isGameStarted,
   hostId,
   t,
-}) => {
+  connectToSignalling,
+  isConnectedToSignalling,
+}: InvitePlayerMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const [gameIdCopySuccess, setGameIdCopySuccess] = useState(false)
   const [linkCopySuccess, setLinkCopySuccess] = useState(false)
+  const [linkError, setLinkError] = useState<string | null>(null)
+  const [isConnecting, setIsConnecting] = useState(false)
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -382,6 +393,7 @@ const InvitePlayerMenu = memo<{
     if (!isOpen) {
       setGameIdCopySuccess(false)
       setLinkCopySuccess(false)
+      setLinkError(null)
     }
   }, [isOpen])
 
@@ -391,35 +403,69 @@ const InvitePlayerMenu = memo<{
     navigator.clipboard.writeText(gameId).then(() => {
       setGameIdCopySuccess(true)
       setTimeout(() => setGameIdCopySuccess(false), 1500)
-    }).catch(err => {
+    }).catch(() => {
     })
   }, [gameId])
 
-  const handleCopyLink = useCallback(() => {
+  const handleCopyLink = useCallback(async () => {
     if (!gameId) {return}
 
     // Check if WebRTC mode is enabled
     const isWebRTCMode = getWebRTCEnabled()
 
-    // For WebRTC mode, generate host link; otherwise use standard invite link
-    let inviteLink: string
-    if (isWebRTCMode && hostId) {
+    // For WebRTC mode, check if connected to signalling server
+    // If not, connect first (this happens when player created local game)
+    let actualHostId = hostId
+    if (isWebRTCMode) {
+      // Check if we need to connect to signalling
+      // Safe check: only call isConnectedToSignalling if it's a function
+      const needsConnection = !actualHostId && connectToSignalling && isConnectedToSignalling && typeof isConnectedToSignalling === 'function' && !isConnectedToSignalling()
+
+      if (needsConnection) {
+        setIsConnecting(true)
+        setLinkError(null)
+        try {
+          actualHostId = await connectToSignalling()
+          setIsConnecting(false)
+        } catch (e) {
+          setIsConnecting(false)
+          setLinkCopySuccess(false)
+          setLinkError('Failed to connect to PeerJS server. Please try again.')
+          setTimeout(() => setLinkError(null), 3000)
+          return
+        }
+      }
+
+      // If still no hostId, show error
+      if (!actualHostId) {
+        setLinkCopySuccess(false)
+        setLinkError('Host not ready')
+        setTimeout(() => setLinkError(null), 3000)
+        return
+      }
+
       // WebRTC P2P mode - use host link
       const baseUrl = window.location.origin + window.location.pathname
-      inviteLink = `${baseUrl}#hostId=${encodeURIComponent(hostId)}`
+      const inviteLink = `${baseUrl}#hostId=${encodeURIComponent(actualHostId)}`
+
+      // Copy to clipboard
+      navigator.clipboard.writeText(inviteLink).then(() => {
+        setLinkCopySuccess(true)
+        setTimeout(() => setLinkCopySuccess(false), 2000)
+      }).catch(() => {
+      })
     } else {
       // Standard server mode - use generateInviteLink
       const { url: link } = generateInviteLink(gameId, isGameStarted, isPrivate)
-      inviteLink = link
-    }
 
-    // Copy to clipboard
-    navigator.clipboard.writeText(inviteLink).then(() => {
-      setLinkCopySuccess(true)
-      setTimeout(() => setLinkCopySuccess(false), 2000)
-    }).catch(err => {
-    })
-  }, [gameId, isGameStarted, isPrivate, hostId])
+      // Copy to clipboard
+      navigator.clipboard.writeText(link).then(() => {
+        setLinkCopySuccess(true)
+        setTimeout(() => setLinkCopySuccess(false), 2000)
+      }).catch(() => {
+      })
+    }
+  }, [gameId, isGameStarted, isPrivate, hostId, connectToSignalling, isConnectedToSignalling])
 
   if (!isOpen || !anchorEl) {return null}
 
@@ -498,19 +544,23 @@ const InvitePlayerMenu = memo<{
       {/* Copy Link Button */}
       <button
         onClick={handleCopyLink}
-        disabled={!gameId}
+        disabled={!gameId || isConnecting}
         className={`w-full px-vu-md rounded font-bold transition-colors ${
-          linkCopySuccess
+          linkError
+            ? 'bg-red-600 text-white'
+            : linkCopySuccess
             ? 'bg-green-600 text-white'
+            : isConnecting
+            ? 'bg-yellow-600 text-white'
             : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-        } ${!gameId ? 'opacity-50 cursor-not-allowed' : ''}`}
+        } ${!gameId || isConnecting ? 'opacity-50 cursor-not-allowed' : ''}`}
         style={{ fontSize: `${getVuSize(13)}px`, height: `${getVuSize(44)}px` }}
       >
-        {linkCopySuccess ? t('copied') : t('copyInviteLink')}
+        {linkError || (isConnecting ? (t('connecting') || 'Connecting...') : (linkCopySuccess ? t('copied') : t('copyInviteLink')))}
       </button>
     </div>
   )
-})
+}
 
 InvitePlayerMenu.displayName = 'InvitePlayerMenu'
 
@@ -555,6 +605,8 @@ const Header = memo<HeaderProps>(({
   hasLastPlayedCard = false,
   isReconnecting = false,
   reconnectProgress = null,
+  connectToSignalling,
+  isConnectedToSignalling,
 }) => {
   const { t } = useLanguage()
   const [showRoundTooltip, setShowRoundTooltip] = useState(false)
@@ -810,6 +862,8 @@ const Header = memo<HeaderProps>(({
         isGameStarted={isGameStarted}
         hostId={hostId}
         t={t}
+        connectToSignalling={connectToSignalling}
+        isConnectedToSignalling={isConnectedToSignalling}
       />
     </>
   )

@@ -80,6 +80,7 @@ const AppInner = function AppInner() {
     getFreshGameState,
     localPlayerId,
     setLocalPlayerId,
+    createLocalGame,
     createGame,
     joinGameViaModal,
     joinAsInvite,
@@ -126,6 +127,9 @@ const AppInner = function AppInner() {
     toggleActivePlayer,
     toggleAutoDraw,
     forceReconnect,
+    connectToSignalling,
+    disconnectFromSignalling,
+    isConnectedToSignalling,
     triggerHighlight,
     latestHighlight,
     latestFloatingTexts,
@@ -688,7 +692,8 @@ const AppInner = function AppInner() {
   }, [gameState?.players])
 
   // Sort players by turn order relative to local player
-  // The panel shows: player after local player, then next, etc., with player before local player last
+  // Turn order is circular: startingPlayerId -> (startingPlayerId+1) -> ... -> last -> first -> startingPlayerId
+  // Right panel shows: player after local (top), then next, ..., player before local (bottom)
   const sortedPlayers = useMemo(() => {
     if (!gameState?.players || !localPlayerId) {
       return gameState?.players || []
@@ -706,28 +711,32 @@ const AppInner = function AppInner() {
     }
 
     // After game starts, use turn order relative to local player
-    // Create array of players in their original order (by id)
-    const players = [...gameState.players].sort((a, b) => a.id - b.id)
+    // Sort players by ID to ensure consistent order
+    const playersById = [...gameState.players].sort((a, b) => a.id - b.id)
 
-    // Turn order starts from startingPlayerId
+    // Find starting player position
     const startingId = gameState.startingPlayerId!
-    const startingIndex = players.findIndex(p => p.id === startingId)
+    const startingIndex = playersById.findIndex(p => p.id === startingId)
 
-    // Reorder players to start from startingPlayerId
-    const turnOrderPlayers = [
-      ...players.slice(startingIndex),
-      ...players.slice(0, startingIndex)
+    // Create circular turn order starting from startingPlayerId
+    // For example: if startingPlayerId=3 and players are [1,2,3,4], turn order is [3,4,1,2]
+    const turnOrder = [
+      ...playersById.slice(startingIndex),  // starting player and those after
+      ...playersById.slice(0, startingIndex) // wrap around to beginning
     ]
 
-    // Find local player in turn order
-    const localIndexInTurnOrder = turnOrderPlayers.findIndex(p => p.id === localPlayerId)
+    // Find local player's position in the turn order
+    const localIndex = turnOrder.findIndex(p => p.id === localPlayerId)
 
-    // Rotate so local player is first, then remove local player from the list
-    // Panel shows: next player after local, then next, etc., with player before local last
-    const afterLocal = turnOrderPlayers.slice(localIndexInTurnOrder + 1)
-    const beforeLocal = turnOrderPlayers.slice(0, localIndexInTurnOrder)
+    // Players after local in turn order (next players)
+    const playersAfterLocal = turnOrder.slice(localIndex + 1)
 
-    return [...afterLocal, ...beforeLocal]
+    // Players before local in turn order (previous players)
+    const playersBeforeLocal = turnOrder.slice(0, localIndex)
+
+    // Return all players except local, in turn order:
+    // first those who come after local, then those who come before local
+    return [...playersAfterLocal, ...playersBeforeLocal]
   }, [gameState?.players, localPlayerId, gameState?.isGameStarted, gameState?.startingPlayerId])
 
   const isTargetingMode = useMemo(
@@ -1227,6 +1236,11 @@ const AppInner = function AppInner() {
   // Track token status changes for ability readiness recheck
   const tokenHashRef = useRef<string>('')
 
+  // Use refs to avoid infinite loops when setting targeting mode state
+  // These track previous targets to prevent unnecessary re-renders
+  const prevBoardTargetsRef = useRef<{row: number, col: number}[]>([])
+  const prevHandTargetsRef = useRef<{playerId: number, cardIndex: number}[]>([])
+
   // Reset justAutoTransitioned when phase changes
   useEffect(() => {
     setJustAutoTransitioned(false)
@@ -1287,6 +1301,19 @@ const AppInner = function AppInner() {
         (gameState.targetingMode.sourceCoords.row === abilityMode.sourceCoords.row &&
          gameState.targetingMode.sourceCoords.col === abilityMode.sourceCoords.col)
       if (sameMode && sameSource) {
+        return
+      }
+    }
+
+    // CRITICAL: Also check if targetingMode is already set for cursorStack (token targeting)
+    // This prevents infinite loop when CREATE_STACK sets targetingMode and gameState updates
+    if (gameState.targetingMode && cursorStack && !abilityMode) {
+      // Check if the targeting mode is for CREATE_STACK (token targeting)
+      const isTokenTargetingMode = gameState.targetingMode.action?.type === 'CREATE_STACK' ||
+                                   gameState.targetingMode.action?.mode === 'SELECT_TARGET'
+      // Check if the token type matches
+      const sameTokenType = gameState.targetingMode.action?.tokenType === cursorStack.type
+      if (isTokenTargetingMode && sameTokenType) {
         return
       }
     }
@@ -1474,16 +1501,6 @@ const AppInner = function AppInner() {
       }
     }
 
-    setValidTargets(boardTargets)
-    // CRITICAL: For SELECT_CELL mode (False Orders), never show hand targets
-    // SELECT_CELL should only highlight board cells, not hand cards
-    if (abilityMode?.mode === 'SELECT_CELL') {
-      setValidHandTargets([])
-    } else {
-      setValidHandTargets(handTargets)
-    }
-
-
     // Use universal targeting mode system to sync targets to all players
     // This ensures all players see the same visual highlights
     //
@@ -1500,6 +1517,57 @@ const AppInner = function AppInner() {
     const hasCommandModal = !!commandModalCard
     const hasActiveMode = cursorStack || abilityMode || hasPlayMode || hasCommandModal
     const isDeckSelectableMode = abilityMode?.mode === 'SELECT_DECK'
+
+    // CRITICAL: Don't override targetingMode if it's already set with handTargets (DISCARD_FROM_HAND abilities)
+    // These abilities set targetingMode in actionExecutionHandler.ts with pre-calculated handTargets
+    // We should preserve them instead of recalculating and potentially clearing them
+    const isHandTargetingMode = gameState.targetingMode?.handTargets &&
+                                gameState.targetingMode.handTargets.length > 0 &&
+                                gameState.targetingMode.action?.payload?.actionType === abilityMode?.payload?.actionType
+
+    // Check if targets actually changed before setting state
+    const boardTargetsChanged = JSON.stringify(boardTargets) !== JSON.stringify(prevBoardTargetsRef.current)
+    const handTargetsChanged = JSON.stringify(handTargets) !== JSON.stringify(prevHandTargetsRef.current)
+
+    if (isHandTargetingMode) {
+      // Targeting mode with handTargets is already set correctly - skip re-setting
+      // This prevents DISCARD_FROM_HAND visual effects from being cleared
+      console.log('[App.tsx] Preserving handTargets targetingMode:', {
+        actionType: gameState.targetingMode.action?.payload?.actionType,
+        handTargetsCount: gameState.targetingMode.handTargets.length,
+        abilityModeActionType: abilityMode?.payload?.actionType,
+      })
+      // CRITICAL: Still update validTargets for UI highlights, but don't call setTargetingMode
+      if (boardTargetsChanged) {
+        setValidTargets(boardTargets)
+        prevBoardTargetsRef.current = boardTargets
+      }
+      const handTargetsToUse = gameState.targetingMode.handTargets
+      if (JSON.stringify(handTargetsToUse) !== JSON.stringify(prevHandTargetsRef.current)) {
+        setValidHandTargets(handTargetsToUse)
+        prevHandTargetsRef.current = handTargetsToUse
+      }
+      return undefined
+    }
+
+    // Only update state if targets actually changed
+    if (boardTargetsChanged) {
+      setValidTargets(boardTargets)
+      prevBoardTargetsRef.current = boardTargets
+    }
+    // CRITICAL: For SELECT_CELL mode (False Orders), never show hand targets
+    // SELECT_CELL should only highlight board cells, not hand cards
+    if (abilityMode?.mode === 'SELECT_CELL') {
+      if (handTargetsChanged) {
+        setValidHandTargets([])
+        prevHandTargetsRef.current = []
+      }
+    } else {
+      if (handTargetsChanged) {
+        setValidHandTargets(handTargets)
+        prevHandTargetsRef.current = handTargets
+      }
+    }
 
     if (hasActiveMode && (boardTargets.length > 0 || handTargets.length > 0 || isDeckSelectableMode)) {
       // Determine the action to use for targeting mode
@@ -1555,12 +1623,16 @@ const AppInner = function AppInner() {
     } else if (!hasActiveMode) {
       // Clear targeting mode ONLY if it belongs to the local player AND no cursorStack is active
       // CRITICAL: Don't clear targeting mode if cursorStack is active (e.g., placing tokens)
+      // CRITICAL: Don't clear targeting mode if it has handTargets (DISCARD_FROM_HAND abilities)
       // Targeting mode will be cleared when token is placed (in handCardHandlers.ts)
-      if (gameState.targetingMode?.playerId === localPlayerId && !cursorStack) {
+      const hasHandTargets = gameState.targetingMode?.handTargets && gameState.targetingMode.handTargets.length > 0
+      if (gameState.targetingMode?.playerId === localPlayerId && !cursorStack && !hasHandTargets) {
         clearTargetingMode()
       }
       // Also clear valid hand targets to remove highlights
-      setValidHandTargets([])
+      if (!hasHandTargets) {
+        setValidHandTargets([])
+      }
     }
 
     return undefined
@@ -1605,6 +1677,7 @@ const AppInner = function AppInner() {
   // Clear targetingMode when abilityMode transitions from active to null (Deploy ability completion)
   // This ensures targeting highlights are cleared on all clients when Deploy finishes
   // CRITICAL: Don't auto-clear if cursorStack is active (e.g., Vigilant Spotter placing Revealed token)
+  // CRITICAL: Don't auto-clear if targetingMode has handTargets (DISCARD_FROM_HAND abilities)
   const prevAbilityModeRef = useRef<AbilityAction | null>(null)
   useEffect(() => {
     const hadAbilityMode = prevAbilityModeRef.current !== null
@@ -1614,13 +1687,21 @@ const AppInner = function AppInner() {
       // Ability mode was just cleared - check if it was a Deploy ability or any ability that set targeting mode
       // CRITICAL: Only clear targeting mode if cursorStack is NOT active
       // If cursorStack is active, targeting mode will be cleared when token is placed (in handCardHandlers.ts)
-      if (gameState.targetingMode?.playerId === localPlayerId && !cursorStack) {
+      const targetingPlayer = gameState.targetingMode?.playerId
+        ? gameState.players.find(p => p.id === gameState.targetingMode.playerId)
+        : null
+      const isTargetingModeOwnerDummy = targetingPlayer?.isDummy ?? false
+      // CRITICAL: Don't clear targetingMode if it has handTargets (DISCARD_FROM_HAND abilities like Faber)
+      // These targeting modes are managed separately and should only be cleared when a card is selected
+      const hasHandTargets = gameState.targetingMode?.handTargets && gameState.targetingMode.handTargets.length > 0
+
+      if ((gameState.targetingMode?.playerId === localPlayerId || isTargetingModeOwnerDummy) && !cursorStack && !hasHandTargets) {
         clearTargetingMode()
       }
     }
 
     prevAbilityModeRef.current = abilityMode
-  }, [abilityMode, gameState.targetingMode?.playerId, localPlayerId, clearTargetingMode, cursorStack])
+  }, [abilityMode, gameState.targetingMode?.playerId, gameState.targetingMode?.handTargets, gameState.players, localPlayerId, clearTargetingMode, cursorStack])
 
 
   useEffect(() => {
@@ -2155,18 +2236,35 @@ const AppInner = function AppInner() {
     const inviteHostId = sessionStorage.getItem('invite_host_id')
     const autoJoinFlag = sessionStorage.getItem('invite_auto_join')
 
+    logger.info('[App] WebRTC invite effect:', {
+      inviteHostId,
+      autoJoinFlag,
+      connectAsGuestAvailable: typeof connectAsGuest === 'function',
+      webrtcIsHost
+    })
+
     // Only log if there's actually an invite to process
     if (inviteHostId && autoJoinFlag && typeof connectAsGuest === 'function') {
       // Clear the stored invite data
       sessionStorage.removeItem('invite_host_id')
       sessionStorage.removeItem('invite_auto_join')
 
+      logger.info('[App] Attempting to connect as guest to host:', inviteHostId)
+
       // Connect to host (async, but we don't need to wait for it here)
       connectAsGuest(inviteHostId)
+        .then((success) => {
+          logger.info('[App] connectAsGuest result:', success, 'localPlayerId:', localPlayerId)
+        })
+        .catch((err) => {
+          logger.error('[App] connectAsGuest error:', err)
+        })
     }
   }, [connectAsGuest]) // Run when connectAsGuest is available
 
   // Handle invite link - auto-join game as new player or spectator
+  // NOTE: For WebRTC P2P mode, use #hostId=... in invite links (not #game=...)
+  // The #game=... parameter is reserved for future server mode implementation
   useEffect(() => {
     const inviteGameId = sessionStorage.getItem('invite_game_id')
     const autoJoinFlag = sessionStorage.getItem('invite_auto_join')
@@ -2183,6 +2281,18 @@ const AppInner = function AppInner() {
         // Clear the stored invite data so we don't try again
         sessionStorage.removeItem('invite_game_id')
         sessionStorage.removeItem('invite_auto_join')
+
+        // Check if this is WebRTC mode - if so, gameId is not a valid host identifier
+        const isWebRTCMode = localStorage.getItem('webrtc_enabled') === 'true'
+        if (isWebRTCMode) {
+          // For WebRTC mode, we need hostId, not gameId
+          // The invite link should have #hostId=... instead of #game=...
+          logger.warn('[App] Received gameId invite in WebRTC mode - this requires hostId parameter')
+          // Don't attempt to join - would cause incorrect connection
+          return
+        }
+
+        // For server mode (not implemented yet), would use proper join logic here
         // Generate a player name for the invite join
         const playerName = `Player ${Math.floor(Math.random() * 1000)}`
         // Join using joinAsInvite (handles new player or spectator)
@@ -2902,8 +3012,12 @@ const AppInner = function AppInner() {
         gameId={gameState.gameId}
         isGameStarted={gameState.isGameStarted}
         isPrivate={gameState.isPrivate}
+        hostId={webrtcHostId}
         onClearImageCache={handleClearImageCache}
         initializeWebrtcHost={initializeWebrtcHost}
+        createLocalGame={createLocalGame}
+        connectToSignalling={connectToSignalling}
+        isConnectedToSignalling={isConnectedToSignalling}
       />
       <ModalsRenderer />
       </>
@@ -2958,6 +3072,8 @@ const AppInner = function AppInner() {
         hasLastPlayedCard={checkHasLastPlayedCard(gameState)}
         isReconnecting={isReconnecting}
         reconnectProgress={reconnectProgress}
+        connectToSignalling={connectToSignalling}
+        isConnectedToSignalling={isConnectedToSignalling}
       />
 
       {/* Reconnection Modal - Shows when WebRTC connection is lost and attempting to reconnect */}

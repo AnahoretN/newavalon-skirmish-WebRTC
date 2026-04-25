@@ -409,35 +409,6 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
   triggerClickWave,
   hideDummyCards = false,
 }) => {
-  // DEBUG: Log targetingMode when PlayerPanel renders
-  console.log('[PlayerPanel] Rendering, targetingMode:', {
-    playerName: player.name,
-    playerId: player.id,
-    hasTargetingMode: !!targetingMode,
-    targetingModePlayerId: targetingMode?.playerId,
-    hasHandTargets: !!targetingMode?.handTargets,
-    handTargetsLength: targetingMode?.handTargets?.length || 0,
-    handTargets: targetingMode?.handTargets,
-    isDeckSelectable: targetingMode?.isDeckSelectable,
-    actionMode: (targetingMode as any)?.action?.mode,
-    actionType: (targetingMode as any)?.action?.payload?.actionType,
-  })
-
-  if (targetingMode?.handTargets && targetingMode.handTargets.length > 0) {
-    const hasTargetsForThisPlayer = targetingMode.handTargets.some(t => t.playerId === player.id)
-    if (hasTargetsForThisPlayer) {
-      console.log('[PlayerPanel] Rendering with handTargets:', {
-        playerName: player.name,
-        playerId: player.id,
-        targetingModePlayerId: targetingMode.playerId,
-        targetingModeActionMode: (targetingMode as any)?.action?.mode,
-        targetingModeActionType: (targetingMode as any)?.action?.payload?.actionType,
-        handTargets: targetingMode.handTargets,
-        targetsForThisPlayer: targetingMode.handTargets.filter(t => t.playerId === player.id),
-      })
-    }
-  }
-
   const { t, resources } = useLanguage()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -909,18 +880,6 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
                   // Check if this card is a valid target from GLOBAL targetingMode only
                   // NO LOCAL effects - all highlights must be synchronized across all players
                   const isTarget = targetingMode?.handTargets?.some(t => t.playerId === player.id && t.cardIndex === index)
-
-                  // DEBUG: Log targetingMode for this player
-                  if (index === 0 && targetingMode?.handTargets) {
-                    console.log('[PlayerPanel] Checking card for targeting:', {
-                      playerName: player.name,
-                      playerId: player.id,
-                      targetingModePlayerId: targetingMode.playerId,
-                      handTargets: targetingMode.handTargets,
-                      isTarget,
-                      cardIndex: index,
-                    })
-                  }
 
                   // Use targeting player's color for the highlight
                   // If targetingMode is active, use that player's color, otherwise use highlightOwnerId or activePlayerId
@@ -1673,6 +1632,19 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
     return p.discardSize ?? 0
   }
 
+  // CRITICAL: Compare targetingMode - prevents unnecessary re-renders when targetingMode hasn't changed
+  // Only check key properties that affect rendering: playerId and action.mode
+  // This ensures P2P guests still re-render when targetingMode actually changes
+  const targetingModeEqual = (
+    (prevProps.targetingMode?.playerId === nextProps.targetingMode?.playerId) &&
+    (prevProps.targetingMode?.action?.mode === nextProps.targetingMode?.action?.mode) &&
+    (prevProps.targetingMode?.action?.payload?.actionType === nextProps.targetingMode?.action?.payload?.actionType) &&
+    // CRITICAL: Also check handTargets existence and contents, not just length
+    // This fixes DISCARD_FROM_HAND visual effect not showing when handTargets change
+    (!prevProps.targetingMode?.handTargets === !nextProps.targetingMode?.handTargets) &&
+    JSON.stringify(prevProps.targetingMode?.handTargets) === JSON.stringify(nextProps.targetingMode?.handTargets)
+  )
+
   return (
     prevProps.player.id === nextProps.player.id &&
     prevProps.player.score === nextProps.player.score &&
@@ -1693,6 +1665,7 @@ const PlayerPanel: React.FC<PlayerPanelProps> = memo(({
     prevProps.allPlayers.map(p => p.id).join(',') === nextProps.allPlayers.map(p => p.id).join(',') &&
     cursorStackEqual &&
     draggedItemEqual &&
+    targetingModeEqual &&
     // CRITICAL: Check if hand card statuses changed (for Revealed tokens on dummy cards)
     // Compare JSON string of hand cards - if any status changed, re-render
     JSON.stringify(prevProps.player.hand.map(c => ({ id: c.id, statuses: c.statuses }))) ===

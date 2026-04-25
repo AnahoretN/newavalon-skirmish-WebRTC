@@ -148,6 +148,7 @@ export const ModalsRenderer = () => {
           gameId={restData.gameId}
           isGameStarted={restData.isGameStarted}
           isPrivate={restData.isPrivate}
+          hostId={restData.hostId}
           onClearImageCache={restData.onClearImageCache}
         />
       )}

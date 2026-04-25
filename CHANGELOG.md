@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-04-25
+
+### Fixed
+- **DISCARD_FROM_HAND Visual Effect**: Fixed hand card highlights not showing for discard abilities
+  - Added check in App.tsx to preserve targetingMode when it has handTargets
+  - Updated useVisualEffects to use getter functions for simpleHost/simpleGuest to ensure current values
+  - Added hasHandTargets check in clearTargetingMode conditions to prevent premature clearing
+  - targetingMode with handTargets (like Faber's discard ability) now persists until card is selected
+
+## [0.3.3] - 2026-04-24
+
+### Fixed
+- **Targeting Mode Not Clearing**: Fixed targeting mode not clearing after token placement for dummy players
+- **Token Placement Targeting**: Fixed token placement targeting mode showing stale cards from previous ability activation
+
 ## [0.3.2] - 2026-04-21
 
 ### Fixed

@@ -348,11 +348,29 @@ export function handleStartNewMatch(state: GameState): GameState {
 
 /**
  * Helper function to get active player IDs (not disconnected, not spectators)
+ * Returns IDs in turn order starting from startingPlayerId
  */
-export function getActivePlayerIds(players: Player[]): number[] {
-  return players
-    .filter(p => !p.isDisconnected && !p.isSpectator)
-    .map(p => p.id)
+export function getActivePlayerIds(state: GameState): number[] {
+  const activePlayers = state.players.filter(p => !p.isDisconnected && !p.isSpectator)
+
+  // Before game starts or no starting player, return in ID order
+  if (!state.isGameStarted || state.startingPlayerId === undefined || state.startingPlayerId === null) {
+    return activePlayers.map(p => p.id).sort((a, b) => a - b)
+  }
+
+  // Sort players by ID for consistent ordering
+  const playersById = [...activePlayers].sort((a, b) => a.id - b.id)
+
+  // Find starting player position
+  const startingIndex = playersById.findIndex(p => p.id === state.startingPlayerId)
+
+  // Create circular turn order starting from startingPlayerId
+  const turnOrder = [
+    ...playersById.slice(startingIndex),
+    ...playersById.slice(0, startingIndex)
+  ]
+
+  return turnOrder.map(p => p.id)
 }
 
 /**

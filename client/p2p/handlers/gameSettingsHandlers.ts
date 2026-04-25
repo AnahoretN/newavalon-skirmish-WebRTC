@@ -73,44 +73,52 @@ export function handleSetDummyPlayerCount(state: GameState, count: number): Game
     return { ...state, dummyPlayerCount: numericCount }
   }
 
-  // Remove all existing dummy players
+  // Keep existing real players
   const newPlayers = [...realPlayers]
 
-  // Add new dummy players
-  let nextPlayerId = Math.max(...realPlayers.map(p => p.id), 0)
-  for (let i = 0; i < numericCount; i++) {
-    nextPlayerId++
-    const dummyName = `Dummy ${i + 1}`
+  // Keep EXISTING dummy players (preserve their name, color, deck)
+  const dummiesToKeep = Math.min(currentDummies.length, numericCount)
+  for (let i = 0; i < dummiesToKeep; i++) {
+    newPlayers.push(currentDummies[i])
+  }
 
-    // Get random deck type for dummy player
-    const decksData = getDecksData()
-    const deckKeys = Object.keys(decksData).filter(key =>
-      key !== 'Tokens' && key !== 'Commands' && key !== 'Custom'
-    ) as DeckType[]
-    const randomDeckType = deckKeys[Math.floor(Math.random() * deckKeys.length)] || DeckType.SynchroTech
+  // Add NEW dummy players only if we need more
+  if (numericCount > currentDummies.length) {
+    let nextPlayerId = Math.max(...realPlayers.map(p => p.id), ...currentDummies.map(p => p.id), 0)
+    for (let i = currentDummies.length; i < numericCount; i++) {
+      nextPlayerId++
+      const dummyName = `Dummy ${i + 1}`
 
-    const dummyDeck = shuffleDeck(createDeck(randomDeckType, nextPlayerId, dummyName))
+      // Get random deck type for dummy player
+      const decksData = getDecksData()
+      const deckKeys = Object.keys(decksData).filter(key =>
+        key !== 'Tokens' && key !== 'Commands' && key !== 'Custom'
+      ) as DeckType[]
+      const randomDeckType = deckKeys[Math.floor(Math.random() * deckKeys.length)] || DeckType.SynchroTech
 
-    // Assign random unique color (not already used by existing players)
-    const existingColors = newPlayers.map(p => p.color)
-    const dummyColor = assignUniqueRandomColor(existingColors)
+      const dummyDeck = shuffleDeck(createDeck(randomDeckType, nextPlayerId, dummyName))
 
-    const dummyPlayer: Player = {
-      id: nextPlayerId,
-      name: dummyName,
-      score: 0,
-      hand: [],
-      deck: dummyDeck,
-      discard: [],
-      announcedCard: null,
-      selectedDeck: randomDeckType,
-      color: dummyColor,
-      isDummy: true,
-      isReady: true,
-      boardHistory: [],
-      autoDrawEnabled: true,
+      // Assign random unique color (not already used by existing players)
+      const existingColors = newPlayers.map(p => p.color)
+      const dummyColor = assignUniqueRandomColor(existingColors)
+
+      const dummyPlayer: Player = {
+        id: nextPlayerId,
+        name: dummyName,
+        score: 0,
+        hand: [],
+        deck: dummyDeck,
+        discard: [],
+        announcedCard: null,
+        selectedDeck: randomDeckType,
+        color: dummyColor,
+        isDummy: true,
+        isReady: true,
+        boardHistory: [],
+        autoDrawEnabled: true,
+      }
+      newPlayers.push(dummyPlayer)
     }
-    newPlayers.push(dummyPlayer)
   }
 
   return {

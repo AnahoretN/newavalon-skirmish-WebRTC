@@ -144,7 +144,11 @@ export function handleActionExecution(
   )
 
   if (!shouldSkipTargetCheck) {
-    const hasTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    // CRITICAL: Use getFreshGameState() for target check to include tokens just placed
+    // This fixes Data Interception option 1 where SELECT_UNIT_FOR_MOVE needs to see
+    // the Exploit token placed in the previous step
+    const freshGameStateForCheck = getFreshGameState ? getFreshGameState() : gameState
+    const hasTargets = checkActionHasTargets(action, freshGameStateForCheck, action.sourceCard?.ownerId || localPlayerId, commandContext)
 
     if (!hasTargets) {
       triggerNoTarget(sourceCoords)
@@ -196,12 +200,16 @@ function handleReverendSetupScore(
   props: ActionHandlerProps
 ): void {
   const { gameState, getFreshGameState, updatePlayerScore, triggerFloatingText, markAbilityUsed } = props
-  const ownerId = action.sourceCard?.ownerId ?? 0
-  let exploitCount = 0
-
   // CRITICAL: Use getFreshGameState() to get the latest state from host/guest
   // This ensures we count Exploit tokens added in previous steps of multi-step commands
   const freshState = getFreshGameState()
+
+  // CRITICAL: Get ownerId from the actual card at sourceCoords, not from action.sourceCard
+  // This fixes the bug where two dummy players have cards with the same name
+  const actualCard = freshState.board[sourceCoords.row]?.[sourceCoords.col]?.card
+  const ownerId = actualCard?.ownerId ?? action.sourceCard?.ownerId ?? 0
+
+  let exploitCount = 0
 
   for (let r = 0; r < freshState.board.length; r++) {
     for (let c = 0; c < freshState.board[r].length; c++) {
@@ -932,7 +940,9 @@ function handleOpenModal(
 ): void {
   const { gameState, getFreshGameState, localPlayerId, commandContext, setViewingDiscard, markAbilityUsed, triggerNoTarget, setAbilityMode, setTargetingMode } = props
 
-  const hasTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+  // CRITICAL: Use getFreshGameState() for target check to include tokens just placed
+  const freshGameState = getFreshGameState ? getFreshGameState() : gameState
+  const hasTargets = checkActionHasTargets(action, freshGameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
 
   if (!hasTargets) {
     triggerNoTarget(action.sourceCoords || sourceCoords)
@@ -942,7 +952,7 @@ function handleOpenModal(
 
   // PLACE_TOKEN - Token placement on board (from CREATE_TOKEN action)
   if (action.mode === 'PLACE_TOKEN') {
-    const targets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    const targets = calculateValidTargets(action, freshGameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
     setAbilityMode(action)
     setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, targets, commandContext)
     return
@@ -1079,11 +1089,16 @@ function handleEnterMode(
   // SHIELD_SELF_THEN_PUSH (Reclaimed Gawain)
   // Add Shield immediately, then let user select adjacent opponent to push
   if (mode === 'SHIELD_SELF_THEN_PUSH') {
-    const actorId = getSafePlayerId(action, localPlayerId)
+    // CRITICAL: Get ownerId from the actual card at sourceCoords, not from action.sourceCard
+    // This fixes the bug where two dummy players have cards with the same name
+    const freshState = getFreshGameState()
+    const actualCard = freshState.board[sourceCoords.row]?.[sourceCoords.col]?.card
+    const actorId = actualCard?.ownerId ?? getSafePlayerId(action, localPlayerId)
     addBoardCardStatus(sourceCoords, 'Shield', actorId)
 
     const pushAction: AbilityAction = {
       ...action,
+      sourceCard: actualCard || action.sourceCard,
       payload: { ...action.payload, shieldApplied: true }
     }
     const targets = calculateValidTargets(pushAction, gameState, actorId, commandContext)
@@ -1095,11 +1110,16 @@ function handleEnterMode(
 
   // SHIELD_SELF_THEN_SPAWN (Edith Byron)
   if (mode === 'SHIELD_SELF_THEN_SPAWN') {
-    const actorId = getSafePlayerId(action, localPlayerId)
+    // CRITICAL: Get ownerId from the actual card at sourceCoords, not from action.sourceCard
+    // This fixes the bug where two dummy players have cards with the same name
+    const freshState = getFreshGameState()
+    const actualCard = freshState.board[sourceCoords.row]?.[sourceCoords.col]?.card
+    const actorId = actualCard?.ownerId ?? getSafePlayerId(action, localPlayerId)
     addBoardCardStatus(sourceCoords, 'Shield', actorId)
 
     const spawnAction: AbilityAction = {
       ...action,
+      sourceCard: actualCard || action.sourceCard,
       payload: { ...action.payload, shieldApplied: true }
     }
     const targets = calculateValidTargets(spawnAction, gameState, actorId, commandContext)
@@ -1131,7 +1151,11 @@ function handleEnterMode(
 
   // PRINCEPS_SHIELD_THEN_AIM
   if (mode === 'PRINCEPS_SHIELD_THEN_AIM') {
-    const actorId = getSafePlayerId(action, localPlayerId)
+    // CRITICAL: Get ownerId from the actual card at sourceCoords, not from action.sourceCard
+    // This fixes the bug where two dummy players have cards with the same name
+    const freshState = getFreshGameState()
+    const actualCard = freshState.board[sourceCoords.row]?.[sourceCoords.col]?.card
+    const actorId = actualCard?.ownerId ?? getSafePlayerId(action, localPlayerId)
     addBoardCardStatus(sourceCoords, 'Shield', actorId)
 
     const aimStackAction: AbilityAction = {
@@ -1139,7 +1163,7 @@ function handleEnterMode(
       tokenType: 'Aim',
       count: 1,
       mustBeInLineWithSource: true,
-      sourceCard: action.sourceCard,
+      sourceCard: actualCard || action.sourceCard,
       sourceCoords,
       isDeployAbility: action.isDeployAbility,
     }
@@ -1150,7 +1174,11 @@ function handleEnterMode(
 
   // GAWAIN_DEPLOY_SHIELD_AIM
   if (mode === 'GAWAIN_DEPLOY_SHIELD_AIM') {
-    const actorId = action.sourceCard!.ownerId!
+    // CRITICAL: Get ownerId from the actual card at sourceCoords, not from action.sourceCard
+    // This fixes the bug where two dummy players have cards with the same name
+    const freshState = getFreshGameState()
+    const actualCard = freshState.board[sourceCoords.row]?.[sourceCoords.col]?.card
+    const actorId = actualCard?.ownerId ?? action.sourceCard!.ownerId!
     addBoardCardStatus(sourceCoords, 'Shield', actorId)
 
     const aimStackAction: AbilityAction = {
@@ -1158,7 +1186,7 @@ function handleEnterMode(
       tokenType: 'Aim',
       count: 1,
       mustBeInLineWithSource: true,
-      sourceCard: action.sourceCard,
+      sourceCard: actualCard || action.sourceCard,
       sourceCoords,
       isDeployAbility: action.isDeployAbility,
     }
@@ -1331,7 +1359,7 @@ function handleEnterMode(
         handTargets.push({ playerId: player.id, cardIndex: i })
       }
 
-      console.log('[handleEnterMode] Hand-only discard action:', {
+      console.log('[DISCARD_FROM_HAND] Hand targets calculated:', {
         actionType,
         ownerId,
         playerName: player.name,
@@ -1342,11 +1370,16 @@ function handleEnterMode(
       })
 
       if (handTargets.length === 0) {
-        console.log('[handleEnterMode] No valid hand targets, triggering NO_TARGET')
+        console.log('[DISCARD_FROM_HAND] No valid hand targets, triggering NO_TARGET')
         triggerNoTarget(action.sourceCoords || sourceCoords)
         return
       }
 
+      console.log('[DISCARD_FROM_HAND] Calling setTargetingMode with handTargets:', {
+        handTargetsCount: handTargets.length,
+        handTargets,
+        playerId: getSafePlayerId(action, localPlayerId),
+      })
       setAbilityMode(action)
       setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, [], commandContext, handTargets)
       return
@@ -1355,21 +1388,28 @@ function handleEnterMode(
 
   // SELECT_TARGET
   if (mode === 'SELECT_TARGET') {
-    // For Deploy abilities, don't check targets immediately - let player activate anytime
+    // NOTE: Target check is already done in handleActionExecution (line 147)
+    // No need to check again here - just calculate targets and set modes
+    // This reduces calculateValidTargets calls from 3 to 2, then to 1 after batching
+
+    // CRITICAL: Use freshGameState for calculateValidTargets to see tokens just placed
+    // This ensures consistency with checkActionHasTargets which also uses freshGameState
+    const freshGameState = getFreshGameState ? getFreshGameState() : gameState
+
+    // For Deploy abilities, let player activate anytime (targets may appear later)
     if (action.isDeployAbility) {
-      const targets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+      const targets = calculateValidTargets(action, freshGameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
       setAbilityMode(action)
       setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, targets, commandContext)
       return
     }
-    // For Setup/Commit abilities, check targets
-    const hasTargets = checkActionHasTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
-    if (!hasTargets) {
-      triggerNoTarget(action.sourceCoords || sourceCoords)
-      // DON'T mark ability as used - preserve ready status so ability can be used when targets appear
-      return
-    }
-    const targets = calculateValidTargets(action, gameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+
+    // For Setup/Commit abilities - calculate targets directly
+    // handleActionExecution already verified targets exist before calling handleEnterMode
+    const targets = calculateValidTargets(action, freshGameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+
+    // CRITICAL: Batch state updates to reduce re-renders
+    // Use React's automatic batching - both updates in same tick will batch
     setAbilityMode(action)
     setTargetingMode(action, getSafePlayerId(action, localPlayerId), sourceCoords, targets, commandContext)
     return
@@ -1378,12 +1418,21 @@ function handleEnterMode(
   // IP_AGENT_THREAT_SCORING - IP Dept Agent Setup
   // Select a line (row or column) to score Threats
   if (mode === 'IP_AGENT_THREAT_SCORING') {
-    const ownerId = action.sourceCard?.ownerId ?? 0
     const { row, col } = sourceCoords
 
     // CRITICAL: Use getFreshGameState() to get the latest state from host/guest
     const freshState = getFreshGameState()
     const gridSize = freshState.activeGridSize
+
+    // CRITICAL: Get the actual card from sourceCoords to determine correct ownerId
+    // This fixes the bug where two dummy players have cards with the same name
+    const sourceCell = freshState.board[row]?.[col]
+    const actualCard = sourceCell?.card
+    if (!actualCard) {
+      triggerNoTarget(sourceCoords)
+      return
+    }
+    const ownerId = actualCard.ownerId ?? 0
 
     // Check for adjacent Support
     const hasSupport = (r: number, c: number): boolean => {
@@ -1413,8 +1462,11 @@ function handleEnterMode(
     }
 
     // Set up targeting mode with custom payload for line selection
+    // CRITICAL: Update sourceCard to point to the actual card at sourceCoords
     const targetingAction: AbilityAction = {
       ...action,
+      sourceCard: actualCard,
+      sourceCoords,
       payload: {
         ...action.payload,
         sourceRow: row,
@@ -1424,7 +1476,8 @@ function handleEnterMode(
     }
 
     setAbilityMode(targetingAction)
-    setTargetingMode(targetingAction, getSafePlayerId(action, localPlayerId), sourceCoords, boardTargets, commandContext)
+    // CRITICAL: Use ownerId from actualCard, not from action.sourceCard
+    setTargetingMode(targetingAction, ownerId, sourceCoords, boardTargets, commandContext)
     return
   }
 

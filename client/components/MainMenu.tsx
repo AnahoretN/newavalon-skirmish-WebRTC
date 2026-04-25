@@ -24,9 +24,14 @@ interface MainMenuProps {
     isGameStarted?: boolean;
     isPrivate?: boolean;
     onClearImageCache?: () => void;
+    hostId?: string | null;
     // WebRTC props
     initializeWebrtcHost?: () => Promise<string | null>;
     connectAsGuest?: (hostId: string) => Promise<boolean>;
+    // NEW: Local game creation (without PeerJS)
+    createLocalGame?: () => string;
+    connectToSignalling?: () => Promise<string>;
+    isConnectedToSignalling?: () => boolean;
 }
 
 export const MainMenu: React.FC<MainMenuProps> = memo(({
@@ -46,7 +51,11 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
   isGameStarted = false,
   isPrivate = false,
   onClearImageCache,
+  hostId = null,
   initializeWebrtcHost,
+  createLocalGame,
+  connectToSignalling,
+  isConnectedToSignalling,
 }) => {
   const [isInitializingHost, setIsInitializingHost] = useState(false)
 
@@ -90,6 +99,7 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
       gameId,
       isGameStarted,
       isPrivate,
+      hostId,
       onClearImageCache
     })
   }
@@ -99,13 +109,16 @@ export const MainMenu: React.FC<MainMenuProps> = memo(({
   }
 
   const handleHostGame = async () => {
-    if (!initializeWebrtcHost) {return}
+    if (!createLocalGame) {return}
     setIsInitializingHost(true)
     try {
-      await initializeWebrtcHost()
-      // Note: initializeWebrtcHost already creates the game and sets localPlayerId
+      // Create local game WITHOUT connecting to PeerJS
+      // This allows player to set up their game without using server resources
+      createLocalGame()
+      // Note: createLocalGame already creates the game and sets localPlayerId
       // No need to call handleCreateGame again
     } catch (err) {
+      console.error('[MainMenu] Failed to create local game:', err)
     } finally {
       setIsInitializingHost(false)
     }

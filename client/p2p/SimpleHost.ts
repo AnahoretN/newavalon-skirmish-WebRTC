@@ -6,8 +6,8 @@
  */
 
 import { loadPeerJS } from './PeerJSLoader'
-import { getPeerJSOptions } from './rtcConfig'
-import type { GameState } from '../types'
+import { getPeerJSOptions, tryNextPeerJSServer } from './rtcConfig'
+import type { GameState, AbilityAction, Card } from '../types'
 import type {
   ActionMessage,
   StateMessage,
@@ -26,6 +26,100 @@ import { getRandomHostColor, assignUniqueRandomColor } from '../utils/colorAssig
 const RECONNECT_TIMEOUT_MS = 30000
 
 /**
+ * Helper function to sanitize AbilityAction for P2P transmission
+ * Removes non-serializable properties like functions
+ */
+function sanitizeActionForP2P(action: AbilityAction): any {
+  const sanitized: any = {
+    type: action.type,
+    mode: action.mode,
+    tokenType: action.tokenType,
+    count: action.count,
+    dynamicCount: action.dynamicCount,
+    onlyFaceDown: action.onlyFaceDown,
+    onlyOpponents: action.onlyOpponents,
+    targetOwnerId: action.targetOwnerId,
+    excludeOwnerId: action.excludeOwnerId,
+    targetType: action.targetType,
+    sourceCoords: action.sourceCoords,
+    payload: action.payload ? { ...action.payload } : undefined,
+    isDeployAbility: action.isDeployAbility,
+    recordContext: action.recordContext,
+    contextCheck: action.contextCheck,
+    requiredTargetStatus: action.requiredTargetStatus,
+    requireStatusFromSourceOwner: action.requireStatusFromSourceOwner,
+    mustBeAdjacentToSource: action.mustBeAdjacentToSource,
+    mustBeInLineWithSource: action.mustBeInLineWithSource,
+    range: action.range,
+  }
+
+  // Remove function properties from payload if present
+  if (sanitized.payload) {
+    delete sanitized.payload.filter
+    delete sanitized.payload.filterFn
+    delete (sanitized.payload as any).cost?.filter
+  }
+
+  // Sanitize sourceCard - keep only essential data
+  if (action.sourceCard) {
+    sanitized.sourceCard = sanitizeCardForP2P(action.sourceCard)
+  }
+
+  // Sanitize chainedAction recursively if present
+  if (action.chainedAction) {
+    sanitized.chainedAction = sanitizeActionForP2P(action.chainedAction)
+  }
+
+  return sanitized
+}
+
+/**
+ * Helper function to sanitize Card for P2P transmission
+ * Removes non-serializable properties
+ */
+function sanitizeCardForP2P(card: Card): any {
+  return {
+    id: card.id,
+    baseId: card.baseId,
+    deck: card.deck,
+    name: card.name,
+    imageUrl: card.imageUrl,
+    power: card.power,
+    abilityText: card.abilityText,
+    ownerId: card.ownerId,
+    ownerName: card.ownerName,
+    types: card.types,
+    faction: card.faction,
+  }
+}
+
+/**
+ * Helper function to sanitize TargetingModeData for P2P transmission
+ */
+function sanitizeTargetingModeForP2P(targetingMode: any): any {
+  if (!targetingMode) return null
+
+  const sanitized: any = {
+    playerId: targetingMode.playerId,
+    action: sanitizeActionForP2P(targetingMode.action),
+    sourceCoords: targetingMode.sourceCoords,
+    timestamp: targetingMode.timestamp,
+    boardTargets: targetingMode.boardTargets,
+    handTargets: targetingMode.handTargets,
+    isDeckSelectable: targetingMode.isDeckSelectable,
+    originalOwnerId: targetingMode.originalOwnerId,
+    ownerId: targetingMode.ownerId,
+  }
+
+  // Sanitize chainedAction recursively if present
+  if (targetingMode.chainedAction) {
+    sanitized.chainedAction = sanitizeActionForP2P(targetingMode.chainedAction)
+  }
+
+  return sanitized
+}
+
+/**
  * SimpleHost - simplified host
  */
 export class SimpleHost {
@@ -40,6 +134,9 @@ export class SimpleHost {
 
   // Reconnection timers: playerId -> timer ID
   private reconnectTimers: Map<number, NodeJS.Timeout> = new Map()
+
+  // Signalling server optimization
+  private disconnectedFromSignalling: boolean = false  // True after we disconnect from signalling server
 
   // Configuration
   private config: SimpleHostConfig
@@ -92,56 +189,115 @@ export class SimpleHost {
   }
 
   /**
-   * Initialize host
-   * @param customPeerId - Optional custom peer ID for session restoration (same ID after page refresh)
+   * Initialize local game state WITHOUT connecting to PeerJS
+   * Call this to create a local game session for single-player or to prepare for hosting
+   * Use connectToSignalling() when ready to accept online players
    */
-  async initialize(customPeerId?: string): Promise<string> {
+  initializeLocal(): string {
+    const gameId = this.generateGameId()
+    const hostToken = this.generatePlayerToken()
+    const hostDeckType = this.getRandomDeckType()
+    const hostDeck = this.createPlayerDeck(1, localStorage.getItem('player_name') || 'Host', hostDeckType)
+
+    // Assign random unique color for host
+    const hostColor = getRandomHostColor()
+
+    // Preserve dummyPlayerCount from initial state before overwriting
+    const dummyCount = this.state.dummyPlayerCount || 0
+    const gameMode = this.state.gameMode || 'FFA'
+
+    // Start with host player
+    const newPlayers = [
+      {
+        id: 1,
+        name: localStorage.getItem('player_name') || 'Host',
+        score: 0,
+        hand: [],
+        deck: hostDeck,
+        discard: [],
+        announcedCard: null,
+        selectedDeck: hostDeckType,
+        color: hostColor,
+        isDummy: false,
+        isDisconnected: false,
+        isReady: false,
+        boardHistory: [],
+        autoDrawEnabled: true,
+        playerToken: hostToken
+      }
+    ]
+
+    // Add dummy players if dummyCount > 0
+    let nextPlayerId = 2
+    for (let i = 0; i < dummyCount; i++) {
+      const dummyName = `Dummy ${i + 1}`
+
+      // Get random deck type for dummy player
+      const randomDeckType = this.getRandomDeckType()
+      const dummyDeck = this.createPlayerDeck(nextPlayerId, dummyName, randomDeckType)
+
+      // Assign random unique color (not already used by existing players)
+      const existingColors = newPlayers.map(p => p.color)
+      const dummyColor = assignUniqueRandomColor(existingColors)
+
+      const dummyPlayer: any = {
+        id: nextPlayerId,
+        name: dummyName,
+        score: 0,
+        hand: [],
+        deck: dummyDeck,
+        discard: [],
+        announcedCard: null,
+        selectedDeck: randomDeckType,
+        color: dummyColor,
+        isDummy: true,
+        isReady: true,
+        boardHistory: [],
+        autoDrawEnabled: true,
+      }
+      newPlayers.push(dummyPlayer)
+      nextPlayerId++
+    }
+
+    this.state = {
+      ...this.state,
+      gameId,
+      gameMode,
+      players: newPlayers,
+      dummyPlayerCount: dummyCount
+    }
+
+    // Update playerIdCounter to avoid ID conflicts
+    this.playerIdCounter = nextPlayerId
+
+    // Save host token
+    localStorage.setItem('player_token', hostToken)
+
+    logger.info('[SimpleHost.initializeLocal] Game initialized:', {
+      gameId,
+      gameMode,
+      dummyPlayerCount: dummyCount,
+      totalPlayers: newPlayers.length,
+      playerIds: newPlayers.map(p => ({ id: p.id, name: p.name, isDummy: p.isDummy }))
+    })
+
+    // Notify about initial state
+    this.notifyStateUpdate()
+
+    return gameId
+  }
+
+  /**
+   * Connect to PeerJS signalling server
+   * Call this when ready to accept online players (e.g., when copying invite link)
+   * @param customPeerId - Optional custom peer ID for session restoration
+   */
+  async connectToSignalling(customPeerId?: string): Promise<string> {
     const { Peer } = await loadPeerJS()
 
-    // Generate gameId and add host player (only if not restoring from saved state)
-    const isRestoring = !!customPeerId && this.state.gameId
-
-    if (!isRestoring) {
-      const gameId = this.generateGameId()
-      const hostToken = this.generatePlayerToken()
-      const hostDeckType = this.getRandomDeckType()
-      const hostDeck = this.createPlayerDeck(1, localStorage.getItem('player_name') || 'Host', hostDeckType)
-
-      // Assign random unique color for host
-      const hostColor = getRandomHostColor()
-
-      this.state = {
-        ...this.state,
-        gameId,
-        players: [
-          {
-            id: 1,
-            name: localStorage.getItem('player_name') || 'Host',
-            score: 0,
-            hand: [],
-            deck: hostDeck,
-            discard: [],
-            announcedCard: null,
-          selectedDeck: hostDeckType,
-            color: hostColor,
-            isDummy: false,
-            isDisconnected: false,
-            isReady: false,
-            boardHistory: [],
-            autoDrawEnabled: true,
-            playerToken: hostToken
-          }
-        ]
-      }
-
-      // Save host token
-      localStorage.setItem('player_token', hostToken)
-    } else {
-      // Restore host token from saved state
-      const hostPlayer = this.state.players.find(p => p.id === 1)
-      if (hostPlayer?.playerToken) {
-        localStorage.setItem('player_token', hostPlayer.playerToken)
-      }
+    // If gameId doesn't exist, initialize local game first
+    if (!this.state.gameId) {
+      this.initializeLocal()
     }
 
     return new Promise((resolve, reject) => {
@@ -149,8 +305,7 @@ export class SimpleHost {
         this.peer = new Peer(getPeerJSOptions(customPeerId))
 
         this.peer.on('open', (_peerId: string) => {
-          // Notify about initial state
-          this.notifyStateUpdate()
+          logger.info('[SimpleHost] Connected to signalling server, peerId:', _peerId)
           resolve(_peerId)
         })
 
@@ -159,12 +314,47 @@ export class SimpleHost {
         })
 
         this.peer.on('error', (err: any) => {
-          reject(err)
+          // Check if this is a connection error that might be fixed by trying a different server
+          if (err?.type === 'peer-unavailable' || err?.type === 'network' || err?.message?.includes('WebSocket')) {
+            const nextServerIndex = tryNextPeerJSServer()
+            console.warn('[SimpleHost] Connection error, trying server', nextServerIndex)
+            // Note: The caller will need to recreate the SimpleHost with new options
+            reject(new Error(`PeerJS connection failed. Try again or use WebSocket mode. (Server ${nextServerIndex})`))
+          } else {
+            reject(err)
+          }
+        })
+
+        this.peer.on('disconnected', () => {
+          // Only attempt reconnection if this was not intentional
+          if (this.disconnectedFromSignalling) {
+            logger.info('[SimpleHost] Disconnected from signalling (intentional), skipping reconnect')
+            return
+          }
+
+          // Attempt to reconnect to signalling server
+          // Existing P2P connections continue to work, but we need signalling for new connections
+          logger.info('[SimpleHost] Disconnected from PeerJS signalling server, attempting to reconnect...')
+          setTimeout(() => {
+            if (this.peer && !this.disconnectedFromSignalling) {
+              this.peer.reconnect()
+            }
+          }, 1000)
         })
       } catch (e) {
         reject(e)
       }
     })
+  }
+
+  /**
+   * Initialize host (legacy method for backward compatibility)
+   * @param customPeerId - Optional custom peer ID for session restoration (same ID after page refresh)
+   * @deprecated Use initializeLocal() + connectToSignalling() instead
+   */
+  async initialize(customPeerId?: string): Promise<string> {
+    this.initializeLocal()
+    return this.connectToSignalling(customPeerId)
   }
 
   /**
@@ -233,9 +423,19 @@ export class SimpleHost {
     if (action === 'TARGETING_MODE') {
       // CRITICAL: Update host's state with targetingMode so it's included in broadcastAll()
       // This ensures PlayerPanel receives the targetingMode for highlighting hand cards
+      // SANITIZE: Remove non-serializable properties (functions) before storing
+      const sanitizedTargetingMode = sanitizeTargetingModeForP2P(data)
+      if (sanitizedTargetingMode.handTargets && sanitizedTargetingMode.handTargets.length > 0) {
+        console.log('[DISCARD_FROM_HAND] Host received TARGETING_MODE with handTargets:', {
+          playerId: sanitizedTargetingMode.playerId,
+          actionType: sanitizedTargetingMode.action?.payload?.actionType,
+          handTargetsCount: sanitizedTargetingMode.handTargets.length,
+          handTargets: sanitizedTargetingMode.handTargets,
+        })
+      }
       this.state = {
         ...this.state,
-        targetingMode: data
+        targetingMode: sanitizedTargetingMode
       }
       this.version++
       // Broadcast the targeting mode to all clients (including sender) via state update
@@ -448,6 +648,17 @@ export class SimpleHost {
     if (newState !== oldState) {
       this.state = newState
 
+      // OPTIMIZATION: Disconnect from signalling server when game starts
+      // All players are connected, P2P works, no need for signalling
+      // Can be disabled via config.disconnectFromSignallingOnGameStart = false
+      if (!oldState.isGameStarted && newState.isGameStarted) {
+        const shouldDisconnect = this.config.disconnectFromSignallingOnGameStart !== false  // Default is true
+        if (shouldDisconnect) {
+          logger.info('[SimpleHost] Game started, disconnecting from signalling server...')
+          this.disconnectFromSignalling()
+        }
+      }
+
       // Update playerIdCounter to reflect new max player ID
       // This prevents ID conflicts when players are added via actions (like SET_DUMMY_PLAYER_COUNT)
       const maxPlayerId = newState.players.length > 0
@@ -467,10 +678,19 @@ export class SimpleHost {
   private handleJoinRequest(data: any, fromPeerId: string): void {
     const { playerName, playerToken } = data
 
+    logger.info('[SimpleHost] JOIN_REQUEST received:', {
+      fromPeerId,
+      playerName,
+      hasToken: !!playerToken,
+      currentPlayers: this.state.players.length,
+      playerIdCounter: this.playerIdCounter
+    })
+
     // Check for reconnection
     if (playerToken) {
       const existingPlayerId = this.findPlayerByToken(playerToken)
       if (existingPlayerId) {
+        logger.info('[SimpleHost] Reconnecting existing player:', existingPlayerId)
         // Cancel reconnection timer if exists
         const timer = this.reconnectTimers.get(existingPlayerId)
         if (timer) {
@@ -522,6 +742,12 @@ export class SimpleHost {
     // New player
     const newPlayerId = this.playerIdCounter++
 
+    logger.info('[SimpleHost] Creating new player:', {
+      newPlayerId,
+      playerName,
+      fromPeerId
+    })
+
     // Generate token if not provided
     const finalToken = playerToken || this.generatePlayerToken()
 
@@ -564,6 +790,13 @@ export class SimpleHost {
 
     // Create personalized state
     const personalizedState = this.personalizeForPlayer(newPlayerId)
+
+    logger.info('[SimpleHost] Sending JOIN_ACCEPT to new player:', {
+      newPlayerId,
+      fromPeerId,
+      totalPlayers: this.state.players.length,
+      version: this.version
+    })
 
     // Send confirmation
     const conn = this.connections.get(fromPeerId)
@@ -730,6 +963,14 @@ export class SimpleHost {
       version: this.version,
       state: this.state as any  // will be personalized for each
     }
+
+    // Log state changes for debugging
+    logger.info('[SimpleHost.broadcastAll] Broadcasting state:', {
+      version: this.version,
+      playersCount: this.state.players.length,
+      dummyPlayerCount: this.state.dummyPlayerCount,
+      players: this.state.players.map((p: any) => ({ id: p.id, name: p.name, isDummy: p.isDummy }))
+    })
 
     // Also notify host
     this.notifyStateUpdate()
@@ -1255,9 +1496,11 @@ export class SimpleHost {
    * @param targetingMode - The targeting mode data to set
    */
   setTargetingMode(targetingMode: any): void {
+    // SANITIZE: Remove non-serializable properties (functions) before storing
+    const sanitizedTargetingMode = sanitizeTargetingModeForP2P(targetingMode)
     this.state = {
       ...this.state,
-      targetingMode
+      targetingMode: sanitizedTargetingMode
     }
     this.version++
     // Broadcast to all clients including host (via notifyStateUpdate)
@@ -1288,6 +1531,56 @@ export class SimpleHost {
       this.peer.destroy()
       this.peer = null
     }
+  }
+
+  /**
+   * Disconnect from PeerJS signalling server (optimization)
+   * Call this after all players have connected and game has started
+   * P2P connections remain active, but new players cannot join
+   * Use reconnectToSignalling() to allow new players again
+   */
+  disconnectFromSignalling(): void {
+    if (this.peer && !this.disconnectedFromSignalling) {
+      try {
+        this.peer.disconnect() // Disconnects from signalling server but keeps P2P connections
+        this.disconnectedFromSignalling = true
+        logger.info('[SimpleHost] Disconnected from signalling server (P2P connections active)')
+        // Notify app if callback provided
+        this.config.onSignallingDisconnected?.()
+      } catch (e) {
+        logger.warn('[SimpleHost] Failed to disconnect from signalling server:', e)
+      }
+    }
+  }
+
+  /**
+   * Reconnect to PeerJS signalling server
+   * Call this to allow new players to join again
+   */
+  reconnectToSignalling(): void {
+    if (this.peer && this.disconnectedFromSignalling) {
+      try {
+        this.peer.reconnect()
+        this.disconnectedFromSignalling = false
+        logger.info('[SimpleHost] Reconnected to signalling server')
+      } catch (e) {
+        logger.warn('[SimpleHost] Failed to reconnect to signalling server:', e)
+      }
+    }
+  }
+
+  /**
+   * Check if currently connected to signalling server
+   */
+  isConnectedToSignalling(): boolean {
+    return this.peer !== null && !this.disconnectedFromSignalling
+  }
+
+  /**
+   * Check if local game is initialized (even without signalling connection)
+   */
+  isInitialized(): boolean {
+    return this.state.gameId !== undefined && this.state.gameId !== null
   }
 }
 

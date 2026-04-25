@@ -1,6 +1,6 @@
 {
   "name": "new-avalon-skirmish",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "A virtual tabletop for the New Avalon: Skirmish card game with WebRTC P2P support.",
   "type": "module",
   "scripts": {
@@ -22,11 +22,13 @@
     "node": "18.x"
   },
   "dependencies": {
+    "@trystero-p2p/torrent": "^0.23.1",
     "express": "^5.2.1",
     "express-ws": "^5.0.2",
     "peerjs": "^1.5.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "trystero": "^0.23.1",
     "ws": "^8.17.1"
   },
   "devDependencies": {
