@@ -3525,6 +3525,9 @@ function handleAddStatusToHandCard(state: GameState, _playerId: number, data: an
  * Used by Reckless Provocateur Commit
  * fromCoords: source card (has tokens to transfer)
  * toCoords: destination card (receives all tokens)
+ *
+ * CRITICAL: Only transfers gameplay tokens (Aim, Exploit, Rule, Shield, Stun, Revealed)
+ * Does NOT transfer ready statuses (readyDeploy, readyCommit, readySetup) or internal states
  */
 function handleTransferAllStatuses(state: GameState, _playerId: number, data: any): GameState {
   const { fromCoords, toCoords } = data || {}
@@ -3556,21 +3559,24 @@ function handleTransferAllStatuses(state: GameState, _playerId: number, data: an
   const fromCard = fromCell.card
   const toCard = toCell.card
 
-  // Get all statuses from source card
-  const statusesToTransfer = fromCard.statuses || []
+  // Only transfer gameplay tokens, NOT ready statuses or internal states
+  // Valid tokens: Aim, Exploit, Rule, Shield, Stun, Revealed
+  const validTokenTypes = new Set(['Aim', 'Exploit', 'Rule', 'Shield', 'Stun', 'Revealed'])
+  const allStatuses = fromCard.statuses || []
+
+  // Filter to only valid gameplay tokens
+  const statusesToTransfer = allStatuses.filter((s: any) => validTokenTypes.has(s.type))
 
   if (statusesToTransfer.length === 0) {
     return state
   }
 
-
-  // Add all statuses to destination card
+  // Add only valid tokens to destination card
   const newToCardStatuses = [...(toCard.statuses || []), ...statusesToTransfer]
 
-  // Clear all statuses from source card, BUT preserve deployUsedThisTurn
-  // This prevents the card from getting readyDeploy back when it already used deploy
-  const deployUsedStatus = (fromCard.statuses || []).find((s: any) => s.type === 'deployUsedThisTurn')
-  const newFromCardStatuses: any[] = deployUsedStatus ? [deployUsedStatus] : []
+  // Preserve all non-transferred statuses on source card (ready statuses, internal states, etc.)
+  // This includes: readyDeploy, readyCommit, readySetup, deployUsedThisTurn, etc.
+  const newFromCardStatuses = allStatuses.filter((s: any) => !validTokenTypes.has(s.type))
 
   // Update both cards
   const newBoard = state.board.map((row, rIdx) =>

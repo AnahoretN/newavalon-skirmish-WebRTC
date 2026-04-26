@@ -398,7 +398,7 @@ export function handleLineSelection(
             const isOwner = targetCard.ownerId === actorId
             const activePlayer = gameState.players.find((p: any) => p.id === actorId)
             const targetPlayer = gameState.players.find((p: any) => p.id === targetCard.ownerId)
-            const isTeammate = activePlayer?.teamId !== undefined && targetPlayer?.teamId !== undefined && activePlayer.teamId === targetPlayer.teamId
+            const isTeammate = activePlayer?.teamId !== null && targetPlayer?.teamId !== null && activePlayer.teamId === targetPlayer.teamId
             if (!isSelf && (isOwner || isTeammate)) {
               modifyBoardCardPower({ row: r, col: c }, 1)
             }
@@ -506,7 +506,7 @@ export function handleLineSelection(
 
       // CRITICAL FIX: Check if we have valid source coords before using them
       // This fixes Unwavering Integrator line selection not working when clicking empty cells
-      const hasValidSourceCoords = sourceRowFromCoords !== undefined && sourceColFromCoords !== undefined
+      const hasValidSourceCoords = sourceRowFromCoords !== null && sourceColFromCoords !== undefined
 
 
       if (hasValidSourceCoords) {

@@ -268,12 +268,12 @@ const GameSettingsMenu = memo<{
             <button
               key={option}
               onClick={() => onDummyPlayerCountChange(option)}
-              disabled={isGameStarted || (realPlayerCount + option > MAX_PLAYERS)}
+              disabled={!isHost || isGameStarted || (realPlayerCount + option > MAX_PLAYERS)}
               className={`px-vu-md rounded font-bold transition-colors ${
                 dummyPlayerCount === option
                   ? 'bg-indigo-600 text-white'
                   : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-              } ${isGameStarted || (realPlayerCount + option > MAX_PLAYERS) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${!isHost || isGameStarted || (realPlayerCount + option > MAX_PLAYERS) ? 'opacity-50 cursor-not-allowed' : ''}`}
               style={{ fontSize: `${getVuSize(13)}px`, height: `${getVuSize(29)}px` }}
             >
               {option}

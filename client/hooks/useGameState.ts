@@ -40,6 +40,7 @@ interface UseGameStateResult {
   joinGameViaModal: (gameCode: string) => Promise<number>
   joinAsInvite: (gameId: string, playerName?: string) => Promise<number>
   exitGame: () => void
+  disconnectHostAndPeerJS: () => void  // Auto-disconnect host/PeerJS when returning to main menu
   // Additional WebRTC compatibility props (stubs)
   initializeWebrtcHost: () => Promise<string>
   connectAsGuest: (hostId: string) => Promise<boolean>
@@ -323,6 +324,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     latestHighlightRef.current = latestHighlight
   }, [latestHighlight])
   useEffect(() => {
+    console.log('[useGameState] latestFloatingTexts state changed!', latestFloatingTexts)
     latestFloatingTextsRef.current = latestFloatingTexts || []
   }, [latestFloatingTexts])
   useEffect(() => {
@@ -402,6 +404,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           }, 700)
         },
         onFloatingTextBatch: (events) => {
+          console.log('[useGameState] onFloatingTextBatch callback called:', events)
           const timestamp = Date.now()
           const batch = events.map((item, i) => ({
             row: item.row,
@@ -410,6 +413,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
             playerId: item.playerId,
             timestamp: timestamp + i
           }))
+          console.log('[useGameState] Calling setLatestFloatingTexts with batch:', batch)
           setLatestFloatingTexts(batch)
         }
       }
@@ -522,6 +526,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           }, 700)
         },
         onFloatingTextBatch: (events) => {
+          console.log('[useGameState] onFloatingTextBatch callback called:', events)
           const timestamp = Date.now()
           const batch = events.map((item, i) => ({
             row: item.row,
@@ -530,6 +535,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
             playerId: item.playerId,
             timestamp: timestamp + i
           }))
+          console.log('[useGameState] Calling setLatestFloatingTexts with batch:', batch)
           setLatestFloatingTexts(batch)
         }
       }
@@ -686,8 +692,10 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           setLatestHighlight({ ...data, timestamp: Date.now() })
         },
         onFloatingText: (batch) => {
+          console.log('[useGameState GUEST] onFloatingText callback called:', batch)
           const timestamp = Date.now()
           const withTimestamp = batch.map((item, i) => ({ ...item, timestamp: timestamp + i }))
+          console.log('[useGameState GUEST] Calling setLatestFloatingTexts with batch:', withTimestamp)
           setLatestFloatingTexts(withTimestamp)
         },
         onTargetingMode: (targetingMode) => {
@@ -963,6 +971,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
               }, 700)
             },
             onFloatingTextBatch: (events) => {
+              console.log('[useGameState RESTORED] onFloatingTextBatch callback called:', events)
               const timestamp = Date.now()
               const batch = events.map((item, i) => ({
                 row: item.row,
@@ -971,6 +980,7 @@ export function useGameState(_props: any = {}): UseGameStateResult {
                 playerId: item.playerId,
                 timestamp: timestamp + i
               }))
+              console.log('[useGameState RESTORED] Calling setLatestFloatingTexts with batch:', batch)
               setLatestFloatingTexts(batch)
             }
           })
@@ -1921,6 +1931,43 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     setReconnectProgress(null)
   }, [])
 
+  // Disconnect host and PeerJS when returning to main menu
+  // Called automatically when MainMenu is opened
+  const disconnectHostAndPeerJS = useCallback(() => {
+    // Destroy host connections
+    if (hostRef.current) {
+      hostRef.current.destroy()
+      hostRef.current = null
+    }
+    if (hostManagerRef.current) {
+      // Disconnect from signalling server first
+      if (hostManagerRef.current.isConnectedToSignalling()) {
+        hostManagerRef.current.disconnectFromSignalling()
+      }
+      hostManagerRef.current.destroy()
+      hostManagerRef.current = null
+    }
+
+    // Destroy guest connections too
+    if (guestRef.current) {
+      guestRef.current.destroy()
+      guestRef.current = null
+    }
+    if (guestManagerRef.current) {
+      guestManagerRef.current.destroy()
+      guestManagerRef.current = null
+    }
+
+    // Clear host flags
+    isHostRef.current = false
+
+    // Clear saved credentials
+    localStorage.removeItem('webrtc_host_peer_id')
+    localStorage.removeItem('webrtc_host_session')
+
+    logger.info('[disconnectHostAndPeerJS] Host mode and PeerJS disconnected')
+  }, [])
+
   // ============================================================================
   // Вспомогательные
   // ============================================================================
@@ -2092,13 +2139,14 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     reorderCards,
     requestDeckView,
     triggerFloatingText,
-    latestFloatingTexts: latestFloatingTextsRef.current,
+    latestFloatingTexts,
     latestDeckSelections: latestDeckSelectionsRef.current,
     latestHandCardSelections: latestHandCardSelectionsRef.current,
     sendAction,
     moveItem,
     requestGamesList,
     exitGame,
+    disconnectHostAndPeerJS,
 
     // WebRTC
     webrtcHostId,

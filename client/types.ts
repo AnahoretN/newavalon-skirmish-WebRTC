@@ -416,6 +416,7 @@ export type AbilityAction = {
     dynamicCount?: { factor: string; ownerId: number }; // For dynamic stack counts (e.g. Overwatch Reveal)
     onlyFaceDown?: boolean;
     onlyOpponents?: boolean;
+    onlyAllies?: boolean; // Optional restriction - Only self OR teammates (Signal Prophet)
     targetOwnerId?: number;
     excludeOwnerId?: number;
     targetType?: string; // Optional: Restrict target by card Type

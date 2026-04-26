@@ -104,6 +104,7 @@ const AppInner = function AppInner() {
     gamesList,
     requestGamesList,
     exitGame,
+    disconnectHostAndPeerJS,
     sendAction,
     moveItem,
     updateState,
@@ -651,6 +652,17 @@ const AppInner = function AppInner() {
     },
     [gameState?.gameId, gameState?.players, localPlayerId, isSpectator],
   )
+
+  // Auto-disconnect host mode and PeerJS when returning to main menu
+  const wasGameActiveRef = useRef(false)
+  useEffect(() => {
+    // Check if we just transitioned from active game to main menu
+    if (wasGameActiveRef.current && !isGameActive) {
+      // Disconnect host and PeerJS connections
+      disconnectHostAndPeerJS()
+    }
+    wasGameActiveRef.current = isGameActive
+  }, [isGameActive, disconnectHostAndPeerJS])
 
   // PERFORMANCE: Use useRef to track player colors and only update when they actually change
   // This prevents unnecessary re-renders of components that depend on playerColorMap
@@ -1714,6 +1726,7 @@ const AppInner = function AppInner() {
   }, [latestHighlight])
 
   useEffect(() => {
+    console.log('[APP] latestFloatingTexts useEffect triggered!', latestFloatingTexts)
     if (latestFloatingTexts && latestFloatingTexts.length > 0) {
       // Convert P2P format to FloatingTextData format
       const newTexts = latestFloatingTexts.map(ft => {
@@ -1733,6 +1746,8 @@ const AppInner = function AppInner() {
         // Fallback - include _color if present
         return { ...base, _color: (ft as any).color }
       }) as Array<FloatingTextData | { id: string; text: string; row?: number; col?: number; playerId?: number; _color?: string; timestamp: number }>
+
+      console.log('[APP] Setting activeFloatingTexts:', newTexts)
 
       // CRITICAL FIX: Clear previous floating texts before adding new ones
       // This prevents floating texts from multiple scorings from being visible simultaneously

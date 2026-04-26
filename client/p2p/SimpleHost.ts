@@ -410,6 +410,14 @@ export class SimpleHost {
       if (expectedPeerId !== fromPeerId) {
         return
       }
+
+      // Host-only actions: reject from guests
+      if (action === 'SET_DUMMY_PLAYER_COUNT' || action === 'SET_GAME_MODE' ||
+          action === 'SET_GRID_SIZE' || action === 'SET_PRIVACY' ||
+          action === 'ASSIGN_TEAMS') {
+        logger.warn('[SimpleHost] Rejected host-only action from guest:', { action, playerId })
+        return
+      }
     }
 
     // Visual effects - broadcast without state change
@@ -619,6 +627,9 @@ export class SimpleHost {
             type: 'FLOATING_TEXT',
             data: { batch: scoreEvents.map((item, i) => ({ ...item, timestamp: Date.now() + (i * 100) })) }
           })
+
+          // CRITICAL: Notify host locally so host can see floating texts too
+          this.config.onFloatingTextBatch?.(scoreEvents)
         }
 
         // Clean up temporary data from result state
@@ -1004,14 +1015,9 @@ export class SimpleHost {
       }
     })
 
-    // CRITICAL: Clear floatingTexts after broadcasting to prevent them from persisting
-    // This ensures floating texts are only shown once when triggered
-    if (this.state.floatingTexts && this.state.floatingTexts.length > 0) {
-      this.state = {
-        ...this.state,
-        floatingTexts: []
-      }
-    }
+    // NOTE: floatingTexts are NOT cleared here anymore
+    // They are cleared by each client's useEffect after processing
+    // This ensures trigger abilities (like Vigilant Spotter) show floating texts correctly
   }
 
   /**
@@ -1143,6 +1149,8 @@ export class SimpleHost {
     if (scoreEvents.length > 0) {
       const calculatedScore = scoreEvents.reduce((sum, e) => sum + parseInt(e.text), 0)
 
+      console.log('[SimpleHost] broadcastFloatingTextForScoring: scoreEvents:', scoreEvents)
+
       const message = {
         type: 'FLOATING_TEXT',
         data: { batch: scoreEvents.map((item, i) => ({ ...item, timestamp: Date.now() + i })) }
@@ -1158,7 +1166,10 @@ export class SimpleHost {
       })
 
       // Notify host locally
+      console.log('[SimpleHost] Calling onFloatingTextBatch callback, exists:', !!this.config.onFloatingTextBatch)
       this.config.onFloatingTextBatch?.(scoreEvents)
+    } else {
+      console.log('[SimpleHost] broadcastFloatingTextForScoring: NO scoreEvents!')
     }
   }
 

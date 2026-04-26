@@ -624,7 +624,7 @@
       "name": "Code Keeper",
       "imageUrl": "https://res.cloudinary.com/dxxh6meej/image/upload/v1771365286/FUS_CODE_KEEPER_yhowqj.webp",
       "fallbackImage": "/images/cards/FUS_CODE_KEEPER.png",
-      "power": 2,
+      "power": 3,
       "abilityText": "Deploy: Place 1 Exploit counter on each opponent card in lines with any Threat.\nCommit (requires Support): Move an opponent card with your Exploit counter 1 cell.",
       "flavorText": "The Signal is truth. All else is noise.",
       "types": ["Unit", "Fusion"],

@@ -504,7 +504,7 @@ export function buildActionFromContentAbility(
       } as AbilityAction
 
     case 'MOVE_CARD': {
-      // Convert MOVE_CARD to SELECT_UNIT_FOR_MOVE mode (Finn Setup)
+      // Convert MOVE_CARD to SELECT_UNIT_FOR_MOVE mode (Finn Setup, Signal Prophet)
       // Uses range from details to determine movement distance
       const range = details.distance || 2
       const filterString = details.filter || 'isOwner'
@@ -521,7 +521,9 @@ export function buildActionFromContentAbility(
           moveFromHand: false,
           selectedCard: null,
           allowSelf: false,
-          onlyOpponents: details.onlyOpponents
+          onlyOpponents: details.onlyOpponents,
+          onlyAllies: details.target === 'ally',  // Signal Prophet: only target allied cards
+          excludeSelf: details.excludeSelf
         }
       } as AbilityAction
       console.log('[buildActionFromContentAbility] MOVE_CARD for', card?.baseId || 'unknown', {
@@ -530,7 +532,9 @@ export function buildActionFromContentAbility(
         range,
         hasFilter: !!filter,
         typeofFilter: typeof filter,
-        payloadFilterString: action.payload.filterString
+        payloadFilterString: action.payload.filterString,
+        target: details.target,
+        onlyAllies: action.payload.onlyAllies
       })
       return action
     }

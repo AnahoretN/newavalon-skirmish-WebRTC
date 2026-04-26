@@ -310,7 +310,7 @@ function handleGlobalAutoApply(
   sourceCoords: { row: number; col: number },
   props: ActionHandlerProps
 ): void {
-  const { gameState, localPlayerId, commandContext, markAbilityUsed, triggerNoTarget, triggerFloatingText, updatePlayerScore, applyGlobalEffect, addBoardCardStatus, removeStatusByType, handleActionExecution: execAction, sendAction } = props
+  const { gameState, getFreshGameState, localPlayerId, commandContext, markAbilityUsed, triggerNoTarget, triggerFloatingText, updatePlayerScore, applyGlobalEffect, addBoardCardStatus, removeStatusByType, handleActionExecution: execAction, sendAction } = props
   // P2P: Token placement on moved card (False Orders Option 1: Stun x2)
   // Send to host for processing since client can't directly modify shared state
   if (action.payload?.contextCardId && action.payload?.tokenType && action.payload?.count && sendAction) {
@@ -1227,9 +1227,36 @@ function handleEnterMode(
     // CRITICAL: Use getFreshGameState() to get the latest state from host/guest
     // This fixes the issue where React state hasn't updated yet after card movement
     const freshGameState = getFreshGameState ? getFreshGameState() : gameState
-    console.log('[PUSH DEBUG] action.sourceCoords:', action.sourceCoords, 'sourceCoords param:', sourceCoords, 'actorId:', action.sourceCard?.ownerId || localPlayerId)
-    const pushTargets = calculateValidTargets(action, freshGameState, action.sourceCard?.ownerId || localPlayerId, commandContext)
+    const actorId = action.sourceCard?.ownerId || localPlayerId
+    console.log('[PUSH DEBUG] ====================')
+    console.log('[PUSH DEBUG] localPlayerId:', localPlayerId)
+    console.log('[PUSH DEBUG] actorId:', actorId)
+    console.log('[PUSH DEBUG] action.sourceCoords:', action.sourceCoords)
+    console.log('[PUSH DEBUG] sourceCoords param:', sourceCoords)
+    console.log('[PUSH DEBUG] action.sourceCard:', action.sourceCard?.name, 'ownerId:', action.sourceCard?.ownerId)
+    console.log('[PUSH DEBUG] freshGameState.activeGridSize:', freshGameState.activeGridSize)
+    console.log('[PUSH DEBUG] freshGameState.board.length:', freshGameState.board.length)
+
+    // Log board around sourceCoords
+    if (action.sourceCoords) {
+      console.log('[PUSH DEBUG] Board around sourceCoords:')
+      for (let dr = -2; dr <= 2; dr++) {
+        for (let dc = -2; dc <= 2; dc++) {
+          const r = action.sourceCoords.row + dr
+          const c = action.sourceCoords.col + dc
+          if (r >= 0 && r < freshGameState.board.length && c >= 0 && c < freshGameState.board[0].length) {
+            const cell = freshGameState.board[r][c]
+            console.log(`[PUSH DEBUG]   board[${r}][${c}]:`, cell.card?.name || 'empty', 'ownerId:', cell.card?.ownerId)
+          }
+        }
+      }
+    }
+
+    const pushTargets = calculateValidTargets(action, freshGameState, actorId, commandContext)
+    console.log('[PUSH DEBUG] pushTargets.length:', pushTargets.length)
     console.log('[PUSH DEBUG] pushTargets:', pushTargets)
+    console.log('[PUSH DEBUG] ====================')
+
     if (pushTargets.length === 0) {
       triggerNoTarget(action.sourceCoords || sourceCoords)
       // Ready status already removed, ability marked as used
@@ -1646,16 +1673,19 @@ function handleEnterMode(
 
         // PUSH action
         if (nextStep.action === 'PUSH') {
-          // Create PUSH mode action to check for valid targets
+          // Create SELECT_TARGET mode with actionType PUSH to check for valid targets
+          // CRITICAL: Use SELECT_TARGET mode (not PUSH mode) so payload.actionType === 'PUSH'
+          // handler in handleSelectTargetActionType is called, which properly handles _autoStepsContext
           const pushAction: AbilityAction = {
             type: 'ENTER_MODE',
-            mode: 'PUSH',
+            mode: 'SELECT_TARGET',
             sourceCard: action.sourceCard,
             sourceCoords: action.sourceCoords,
             isDeployAbility: action.isDeployAbility,
             readyStatusToRemove: action.readyStatusToRemove,
             payload: {
               ...nextStep.details,
+              actionType: 'PUSH',  // CRITICAL: Tells handleSelectTargetActionType to use PUSH logic
               _autoStepsContext: {
                 steps: steps,
                 currentStepIndex: nextStepIndex + 1,

@@ -69,12 +69,14 @@ export const validateTarget = (
   const { card, ownerId, location } = target
 
   // 1. Target Owner (Inclusive)
-  if (constraints.targetOwnerId !== undefined && constraints.targetOwnerId !== TARGET_OPPONENTS && constraints.targetOwnerId !== TARGET_MOVED_OWNER && constraints.targetOwnerId !== ownerId) {
+  // CRITICAL: Use != null to check for both undefined AND null
+  // If targetOwnerId is not set (undefined/null), skip this check
+  if (constraints.targetOwnerId != null && constraints.targetOwnerId !== TARGET_OPPONENTS && constraints.targetOwnerId !== TARGET_MOVED_OWNER && constraints.targetOwnerId !== ownerId) {
     return false
   }
 
   // 2. Excluded Owner (Exclusive)
-  if (constraints.excludeOwnerId !== undefined && constraints.excludeOwnerId === ownerId) {
+  if (constraints.excludeOwnerId != null && constraints.excludeOwnerId === ownerId) {
     return false
   }
 
@@ -93,7 +95,9 @@ export const validateTarget = (
     // Cannot be teammate
     const tokenOwner = players.find(p => p.id === effectiveOwnerId)
     const targetPlayer = players.find(p => p.id === ownerId)
-    if (tokenOwner && targetPlayer && tokenOwner.teamId !== undefined && tokenOwner.teamId === targetPlayer.teamId) {
+    // CRITICAL: Use != null to check for both undefined AND null
+    // If teamId is not set (undefined/null), player is in FFA mode - no teammates
+    if (tokenOwner && targetPlayer && tokenOwner.teamId != null && tokenOwner.teamId === targetPlayer.teamId) {
       return false
     }
   }
@@ -168,7 +172,7 @@ export const validateTarget = (
   }
 
   // 9. Max Distance Check (Chebyshev distance - max of row/col difference)
-  if (constraints.maxDistanceFromSource !== undefined && constraints.sourceCoords && target.boardCoords) {
+  if (constraints.maxDistanceFromSource != null && constraints.sourceCoords && target.boardCoords) {
     const { row: r1, col: c1 } = constraints.sourceCoords
     const { row: r2, col: c2 } = target.boardCoords
     const distance = Math.max(Math.abs(r1 - r2), Math.abs(c1 - c2))
@@ -178,7 +182,7 @@ export const validateTarget = (
   }
 
   // 10. Max Orthogonal Distance Check (Manhattan distance - row diff + col diff, for orthogonal movement)
-  if (constraints.maxOrthogonalDistance !== undefined && constraints.sourceCoords && target.boardCoords) {
+  if (constraints.maxOrthogonalDistance != null && constraints.sourceCoords && target.boardCoords) {
     const { row: r1, col: c1 } = constraints.sourceCoords
     const { row: r2, col: c2 } = target.boardCoords
     const distance = Math.abs(r1 - r2) + Math.abs(c1 - c2)
@@ -246,7 +250,7 @@ function buildFilterFromString(
   // isAdjacent
   if (filter === 'isAdjacent') {
     return (_card: Card, r?: number, c?: number) =>
-      r !== undefined && c !== undefined && checkAdj(r, c, _coords.row, _coords.col)
+      r != null && c != null && checkAdj(r, c, _coords.row, _coords.col)
   }
 
   // isOpponent
@@ -526,7 +530,9 @@ export const calculateValidTargets = (
           // Check if target is opponent (not teammate)
           const actorPlayer = currentGameState.players.find(p => p.id === ownerId)
           const targetPlayer = currentGameState.players.find(p => p.id === targetOwnerId)
-          const isTeammate = actorPlayer?.teamId !== undefined && targetPlayer?.teamId !== undefined &&
+          // CRITICAL: Use != null to check for both undefined AND null
+          // If teamId is not set (undefined/null), player is in FFA mode - no teammates
+          const isTeammate = actorPlayer?.teamId != null && targetPlayer?.teamId != null &&
                             actorPlayer.teamId === targetPlayer.teamId
 
           if (!isTeammate) {
@@ -659,6 +665,11 @@ export const calculateValidTargets = (
         // Check basic filter
         let isValid = cell.card && filterFn(cell.card, r, c)
 
+        // Check excludeSelf (Signal Prophet: "another allied card" - exclude source card)
+        if (isValid && payload.excludeSelf && sourceCoords && r === sourceCoords.row && c === sourceCoords.col) {
+          isValid = false
+        }
+
         // Check onlyOpponents constraint for SELECT_UNIT_FOR_MOVE
         if (isValid && payload.onlyOpponents && cell.card) {
           const cardOwnerId = cell.card.ownerId
@@ -677,8 +688,31 @@ export const calculateValidTargets = (
           }
         }
 
+        // Check onlyAllies constraint for SELECT_UNIT_FOR_MOVE (Signal Prophet)
+        if (isValid && payload.onlyAllies && cell.card) {
+          const cardOwnerId = cell.card.ownerId
+          const actorPlayer = currentGameState.players.find(p => p.id === actorId)
+          const targetPlayer = currentGameState.players.find(p => p.id === cardOwnerId)
+
+          // Must be self OR teammate
+          // CRITICAL: Use != null to check for both undefined AND null
+          // If teamId is not set (undefined/null), player is in FFA mode - only self is ally
+          const isSelf = cardOwnerId === actorId
+          const isTeammate = actorPlayer?.teamId != null && targetPlayer?.teamId != null &&
+                            actorPlayer.teamId === targetPlayer.teamId
+
+          if (!isSelf && !isTeammate) {
+            isValid = false
+          }
+
+          // excludeSelf: If true, self is not a valid target (Signal Prophet: "another allied card")
+          if (isValid && payload.excludeSelf && isSelf) {
+            isValid = false
+          }
+        }
+
         if (cell.card && mode === 'SELECT_UNIT_FOR_MOVE') {
-          console.log('[calculateValidTargets] Checking cell', { r, c, cardId: cell.card.baseId, cardOwnerId: cell.card.ownerId, sourceOwnerId: actorId, isValid, onlyOpponents: payload.onlyOpponents })
+          console.log('[calculateValidTargets] Checking cell', { r, c, cardId: cell.card.baseId, cardOwnerId: cell.card.ownerId, sourceOwnerId: actorId, isValid, onlyOpponents: payload.onlyOpponents, onlyAllies: payload.onlyAllies })
         }
 
         // Check context requirements (e.g., Adjacent to last move)
@@ -765,7 +799,9 @@ export const calculateValidTargets = (
         if (targetCard && targetCard.ownerId !== actorId) {
           const actorPlayer = currentGameState.players.find(p => p.id === actorId)
           const targetPlayer = currentGameState.players.find(p => p.id === targetCard.ownerId)
-          const isTeammate = actorPlayer?.teamId !== undefined && targetPlayer?.teamId !== undefined && actorPlayer.teamId === targetPlayer.teamId
+          // CRITICAL: Use != null to check for both undefined AND null
+          // If teamId is not set (undefined/null), player is in FFA mode - no teammates
+          const isTeammate = actorPlayer?.teamId != null && targetPlayer?.teamId != null && actorPlayer.teamId === targetPlayer.teamId
           console.log('[calculateValidTargets PUSH] actorPlayer:', actorPlayer?.name, 'teamId:', actorPlayer?.teamId, 'targetPlayer:', targetPlayer?.name, 'teamId:', targetPlayer?.teamId, 'isTeammate:', isTeammate)
 
           if (!isTeammate) {
