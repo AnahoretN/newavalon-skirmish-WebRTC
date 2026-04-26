@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.4] - 2026-04-25
 
+### Added
+- **Game Action Logging**: Complete game history tracking and visualization
+  - New GameLogModal component for viewing game history
+  - GameLogEntry types for structured action logging
+  - Logging utilities in client/utils/gameStateLogger.ts
+  - Ability to rewind and review game states
+  - Visual timeline of all game actions
+
+- **P2P Connection Settings**: Enhanced WebRTC connection configuration
+  - Custom signaling servers support
+  - Trystero trackers configuration
+  - Primary/Secondary/Tertiary server labels
+  - Add/remove custom servers from settings
+  - Improved connection management in ConnectionManager
+
+- **New Translations**: Added Belarusian (be) and Ukrainian (uk) locales
+  - Complete UI translations for new languages
+  - Extended locale types with P2P settings strings
+
 ### Fixed
 - **DISCARD_FROM_HAND Visual Effect**: Fixed hand card highlights not showing for discard abilities
   - Added check in App.tsx to preserve targetingMode when it has handTargets
