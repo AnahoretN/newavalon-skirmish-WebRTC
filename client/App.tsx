@@ -50,6 +50,8 @@ import { useLanguage } from './contexts/LanguageContext'
 import { TIMING, deepCloneState } from './utils/common'
 import { getWebRTCEnabled } from './hooks/useWebRTCEnabled'
 import { getCardAbilityTypes } from '@server/utils/autoAbilities'
+import { AIIntegrationAdapter, createAIAdapter } from './ai'
+import { buildActionFromContentAbility } from '@shared/abilities/contentAbilities.js'
 
 // Inner app component without ModalsProvider
 const AppInner = function AppInner() {
@@ -193,6 +195,17 @@ const AppInner = function AppInner() {
     isRulesModalOpen: false,
     isTeamAssignOpen: false,
   })
+
+  // AI state
+  const [aiEnabled, setAIEnabled] = useState(false)
+  const aiProcessingRef = useRef(false)
+  const aiAdaptersRef = useRef<Map<number, AIIntegrationAdapter>>(new Map())
+
+  // AI toggle handler
+  const handleAIToggle = useCallback((enabled: boolean) => {
+    setAIEnabled(enabled)
+    localStorage.setItem('ai_enabled', enabled.toString())
+  }, [])
 
   // Mulligan modal control
   const { open: openMulliganModal, close: closeMulliganModal } = useModals()
@@ -702,6 +715,260 @@ const AppInner = function AppInner() {
 
     return playerColorMapRef.current
   }, [gameState?.players])
+
+  // Load AI enabled state from localStorage on mount
+  useEffect(() => {
+    const savedAI = localStorage.getItem('ai_enabled')
+    if (savedAI !== null) {
+      setAIEnabled(savedAI === 'true')
+    }
+  }, [])
+
+  // Helper function for AI to activate abilities
+  const handleAIAbilityActivation = useCallback(async (
+    card: Card,
+    ability: any,
+    sourceCoords: { row: number; col: number },
+    targetCoords: { row: number; col: number } | null
+  ) => {
+    // Build AbilityAction from ContentAbility
+    const action = buildActionFromContentAbility(ability, card, gameState, card.ownerId || 0, sourceCoords)
+
+    if (!action) {
+      console.warn('[AI] Failed to build action from ability:', ability)
+      return
+    }
+
+    console.log('[AI] Activating ability:', {
+      cardName: card.name,
+      abilityType: ability.type,
+      abilityAction: ability.action,
+      hasTarget: !!targetCoords,
+      targetCoords
+    })
+
+    // If ability has a target, we need to handle targeting
+    if (targetCoords) {
+      // Set targeting mode first, then simulate click on target
+      setTargetingMode(action, card.ownerId || 0, sourceCoords)
+
+      // Small delay to ensure targeting mode is set
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      // Simulate click on target cell - use fresh state
+      const freshState = getFreshGameState()
+      const targetCell = freshState.board[targetCoords.row]?.[targetCoords.col]
+      if (targetCell?.card) {
+        // Target is a card - use handleBoardCardClick
+        handleBoardCardClick(targetCell.card, targetCoords)
+      } else {
+        // Target is empty cell - use handleEmptyCellClick
+        handleEmptyCellClick(targetCoords)
+      }
+
+      // Wait for ability animation to complete
+      await new Promise(resolve => setTimeout(resolve, 300))
+    } else {
+      // No target - execute action directly
+      executeAction(action, sourceCoords)
+
+      // Wait for ability animation to complete
+      await new Promise(resolve => setTimeout(resolve, 300))
+    }
+
+    console.log('[AI] Ability activation complete')
+  }, [gameState, getFreshGameState, setTargetingMode, executeAction, handleBoardCardClick, handleEmptyCellClick])
+
+  // Initialize AI adapters for dummy players
+  useEffect(() => {
+    if (!aiEnabled || !gameState.isGameStarted) {
+      aiAdaptersRef.current.clear()
+      return
+    }
+
+    // Create adapters for all dummy players
+    const adapters = aiAdaptersRef.current
+
+    gameState.players.forEach(player => {
+      if (player.isDummy && !adapters.has(player.id)) {
+        const adapter = createAIAdapter(
+          gameState,
+          player.id,
+          {
+            drawCard: async (playerId: number) => {
+              drawCard(playerId)
+            },
+            playCard: async (card: Card, row: number, col: number, playerId: number, faceUp: boolean) => {
+              const cardIndex = gameState.players.find(p => p.id === playerId)?.hand.findIndex(c => c.id === card.id) ?? -1
+              if (cardIndex >= 0) {
+                handleDrop(
+                  { card, source: 'hand', playerId, cardIndex },
+                  { target: 'board', boardCoords: { row, col } }
+                )
+                // Wait for card placement animation
+                await new Promise(resolve => setTimeout(resolve, 300))
+              }
+            },
+            activateAbility: async (card: Card, ability: any, sourceCoords: { row: number; col: number }, targetCoords: { row: number; col: number } | null) => {
+              await handleAIAbilityActivation(card, ability, sourceCoords, targetCoords)
+            },
+            scoreLine: async (r1: number, c1: number, r2: number, c2: number, playerId: number) => {
+              scoreLine(r1, c1, r2, c2, playerId)
+            }
+          },
+          {
+            thinkingDelay: 600,
+            onPhaseChange: (newPhase) => {
+              setPhase(newPhase)
+            }
+          }
+        )
+        adapters.set(player.id, adapter)
+      }
+    })
+
+    // Clean up adapters for players that are no longer dummy
+    adapters.forEach((adapter, playerId) => {
+      const player = gameState.players.find(p => p.id === playerId)
+      if (!player || !player.isDummy) {
+        adapters.delete(playerId)
+      }
+    })
+  }, [aiEnabled, gameState.isGameStarted, gameState.players, drawCard, handleDrop, scoreLine, setPhase, handleAIAbilityActivation, gameState])
+
+  // AI Turn Execution for Dummy Players
+  useEffect(() => {
+    // Only run AI if enabled, game is started, and not already processing
+    if (!aiEnabled || !gameState.isGameStarted || aiProcessingRef.current) {
+      return
+    }
+
+    // Check if active player is a dummy
+    const activePlayer = gameState.players.find(p => p.id === gameState.activePlayerId)
+    if (!activePlayer || !activePlayer.isDummy) {
+      return
+    }
+
+    // Don't run AI if local player is the active player (safety check)
+    if (gameState.activePlayerId === localPlayerId) {
+      return
+    }
+
+    // Don't run AI if there's an active ability mode or cursor stack (wait for animations)
+    if (abilityMode || cursorStack) {
+      return
+    }
+
+    // Get or create AI adapter for this player
+    let adapter = aiAdaptersRef.current.get(activePlayer.id)
+    if (!adapter) {
+      adapter = createAIAdapter(
+        gameState,
+        activePlayer.id,
+        {
+          drawCard: async (playerId: number) => {
+            drawCard(playerId)
+          },
+          playCard: async (card: Card, row: number, col: number, playerId: number, faceUp: boolean) => {
+            const cardIndex = gameState.players.find(p => p.id === playerId)?.hand.findIndex(c => c.id === card.id) ?? -1
+            if (cardIndex >= 0) {
+              handleDrop(
+                { card, source: 'hand', playerId, cardIndex },
+                { target: 'board', boardCoords: { row, col } }
+              )
+              // Wait for card placement animation
+              await new Promise(resolve => setTimeout(resolve, 300))
+            }
+          },
+          activateAbility: async (card: Card, ability: any, sourceCoords: { row: number; col: number }, targetCoords: { row: number; col: number } | null) => {
+            await handleAIAbilityActivation(card, ability, sourceCoords, targetCoords)
+          },
+          scoreLine: async (r1: number, c1: number, r2: number, c2: number, playerId: number) => {
+            scoreLine(r1, c1, r2, c2, playerId)
+          }
+        },
+        {
+          thinkingDelay: 600,
+          onPhaseChange: (newPhase) => {
+            setPhase(newPhase)
+          }
+        }
+      )
+      aiAdaptersRef.current.set(activePlayer.id, adapter)
+    }
+
+    // Update adapter with current game state
+    adapter.updateGameState(gameState)
+
+    // Check if adapter should act
+    if (!adapter.shouldAct()) {
+      return
+    }
+
+    // Mark as processing
+    aiProcessingRef.current = true
+
+    // Execute AI turn
+    const executeAITurn = async () => {
+      try {
+        const result = await adapter.executeTurn()
+
+        console.log('[AI] Turn result:', result)
+
+        // Handle phase change
+        if (result.nextPhase !== undefined) {
+          setPhase(result.nextPhase)
+        }
+
+        // Handle turn pass
+        if (result.shouldPassTurn) {
+          toggleActivePlayer()
+        }
+
+        // Continue if AI should act again
+        if (result.shouldContinue) {
+          // Small delay before next action
+          await new Promise(resolve => setTimeout(resolve, 400))
+          // Get fresh state to see the card that was just played
+          const freshState = getFreshGameState()
+          adapter.updateGameState(freshState)
+          const nextResult = await adapter.executeTurn()
+          console.log('[AI] Continued result:', nextResult)
+
+          if (nextResult.nextPhase !== undefined) {
+            setPhase(nextResult.nextPhase)
+          }
+          if (nextResult.shouldPassTurn) {
+            toggleActivePlayer()
+          }
+        }
+      } catch (error) {
+        console.error('[AI] Error executing turn:', error)
+      } finally {
+        aiProcessingRef.current = false
+      }
+    }
+
+    executeAITurn()
+  }, [
+    aiEnabled,
+    gameState.isGameStarted,
+    gameState.activePlayerId,
+    gameState.currentPhase,
+    gameState.players,
+    abilityMode,
+    cursorStack,
+    localPlayerId,
+    drawCard,
+    handleDrop,
+    scoreLine,
+    toggleActivePlayer,
+    setPhase,
+    setAbilityMode,
+    getFreshGameState,
+    handleAIAbilityActivation,
+    gameState
+  ])
 
   // Sort players by turn order relative to local player
   // Turn order is circular: startingPlayerId -> (startingPlayerId+1) -> ... -> last -> first -> startingPlayerId
@@ -3081,6 +3348,8 @@ const AppInner = function AppInner() {
         }}
         hideDummyCards={hideDummyCards}
         onToggleHideDummyCards={setHideDummyCards}
+        isAIEnabled={aiEnabled}
+        onToggleAI={handleAIToggle}
         currentRound={gameState.currentRound}
         turnNumber={gameState.turnNumber}
         isScoringStep={gameState.isScoringStep}
