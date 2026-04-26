@@ -523,7 +523,8 @@ export function buildActionFromContentAbility(
           allowSelf: false,
           onlyOpponents: details.onlyOpponents,
           onlyAllies: details.target === 'ally',  // Signal Prophet: only target allied cards
-          excludeSelf: details.excludeSelf
+          excludeSelf: details.excludeSelf,
+          requireTokenFromSourceOwner: details.requireTokenFromSourceOwner  // Signal Prophet: must have your Exploit counter
         }
       } as AbilityAction
       console.log('[buildActionFromContentAbility] MOVE_CARD for', card?.baseId || 'unknown', {

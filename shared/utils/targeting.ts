@@ -665,10 +665,21 @@ export const calculateValidTargets = (
         // Check basic filter
         let isValid = cell.card && filterFn(cell.card, r, c)
 
-        // Check excludeSelf (Signal Prophet: "another allied card" - exclude source card)
-        if (isValid && payload.excludeSelf && sourceCoords && r === sourceCoords.row && c === sourceCoords.col) {
-          isValid = false
+        if (cell.card && mode === 'SELECT_UNIT_FOR_MOVE') {
+          console.log('[calculateValidTargets] Filter check:', {
+            r, c,
+            cardId: cell.card.baseId,
+            cardOwnerId: cell.card.ownerId,
+            actorId,
+            isValid,
+            filterString: typeof payload.filterString === 'function' ? '(function)' : payload.filterString,
+            statuses: cell.card.statuses?.map(s => `${s.type}[${s.addedByPlayerId}]`).join(', ') || 'none'
+          })
         }
+
+        // CRITICAL: Do NOT check excludeSelf here! The excludeSelf logic is handled
+        // within the onlyAllies/onlyOpponents checks below, which need to know about
+        // the source card to make FFA vs team mode decisions.
 
         // Check onlyOpponents constraint for SELECT_UNIT_FOR_MOVE
         if (isValid && payload.onlyOpponents && cell.card) {
@@ -701,12 +712,81 @@ export const calculateValidTargets = (
           const isTeammate = actorPlayer?.teamId != null && targetPlayer?.teamId != null &&
                             actorPlayer.teamId === targetPlayer.teamId
 
+          // Check if in FFA mode (no team assignments)
+          const isFFAMode = actorPlayer?.teamId == null
+
+          // Check if this cell is the source card
+          const isSourceCard = sourceCoords && r === sourceCoords.row && c === sourceCoords.col
+
+          if (cell.card && mode === 'SELECT_UNIT_FOR_MOVE') {
+            console.log('[calculateValidTargets] onlyAllies check:', {
+              r, c, cardId: cell.card.baseId,
+              cardOwnerId, actorId,
+              isSelf, isTeammate, isFFAMode, isSourceCard,
+              actorTeamId: actorPlayer?.teamId,
+              targetTeamId: targetPlayer?.teamId,
+              isValidBefore: isValid
+            })
+          }
+
           if (!isSelf && !isTeammate) {
             isValid = false
           }
 
           // excludeSelf: If true, self is not a valid target (Signal Prophet: "another allied card")
-          if (isValid && payload.excludeSelf && isSelf) {
+          // CRITICAL: Different behavior for FFA vs team mode:
+          // - FFA mode: allow ALL self-owned cards (the "another" constraint doesn't apply in FFA)
+          // - Team mode: exclude source card only (teammates' cards are "another" ally)
+          if (payload.excludeSelf) {
+            if (!isFFAMode) {
+              // In team mode: exclude source card (teammates provide other valid targets)
+              if (isSourceCard) {
+                isValid = false
+              }
+            }
+            // In FFA mode: do NOT exclude any self cards (allow all your cards with the counter)
+          }
+
+          if (cell.card && mode === 'SELECT_UNIT_FOR_MOVE') {
+            console.log('[calculateValidTargets] onlyAllies result:', { r, c, isValidAfter: isValid, isFFAMode, isSourceCard })
+          }
+        }
+
+        // Check requireTokenFromSourceOwner - ensures token/counter was added by the activating player
+        // Used by Signal Prophet: "with an Exploit counter" (implicitly "your" counter)
+        if (isValid && payload.requireTokenFromSourceOwner && cell.card?.statuses && actorId !== null) {
+          // Extract counter type from filterString (e.g., "hasCounter_Exploit" -> "Exploit")
+          let counterType = 'Exploit' // Default fallback
+          if (payload.filterString && typeof payload.filterString === 'string') {
+            // Handle hasCounter_CounterName format
+            if (payload.filterString.startsWith('hasCounter_')) {
+              counterType = payload.filterString.replace('hasCounter_', '')
+            }
+            // Handle hasCounterOwner_CounterName format
+            else if (payload.filterString.startsWith('hasCounterOwner_')) {
+              counterType = payload.filterString.replace('hasCounterOwner_', '')
+            }
+            // Handle hasStatus_StatusName format
+            else if (payload.filterString.startsWith('hasStatus_')) {
+              counterType = payload.filterString.replace('hasStatus_', '')
+            }
+          }
+
+          const hasTokenFromSourceOwner = cell.card.statuses.some((s: any) =>
+            s.type === counterType && s.addedByPlayerId === actorId
+          )
+
+          if (cell.card && mode === 'SELECT_UNIT_FOR_MOVE') {
+            console.log('[calculateValidTargets] requireTokenFromSourceOwner check:', {
+              r, c, cardId: cell.card.baseId,
+              counterType, actorId,
+              statuses: cell.card.statuses,
+              hasTokenFromSourceOwner,
+              isValidBefore: isValid
+            })
+          }
+
+          if (!hasTokenFromSourceOwner) {
             isValid = false
           }
         }
