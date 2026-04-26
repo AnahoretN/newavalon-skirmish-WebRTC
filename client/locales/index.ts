@@ -231,6 +231,8 @@ const enUI = {
   failedToParseDeckFile: 'Failed to parse deck file.',
   webrtcMode: 'WebRTC Mode',
   webrtcModeDesc: 'Enable peer-to-peer connection to play without a central server (Host acts as server)',
+  aiMode: 'AI Mode',
+  aiModeDesc: 'Enable AI for dummy players (they will play cards, activate abilities, and score automatically)',
   peerjsServerSettings: 'PeerJS Signaling Server',
   peerjsServerDesc: 'Custom PeerJS server for WebRTC signaling (optional, uses default if empty)',
   peerjsServerAddress: 'PeerJS Server URL',

@@ -52,6 +52,8 @@ interface HeaderProps {
   onToggleAutoDraw: (enabled: boolean) => void;
   hideDummyCards: boolean;
   onToggleHideDummyCards: (enabled: boolean) => void;
+  isAIEnabled: boolean;
+  onToggleAI: (enabled: boolean) => void;
   currentRound?: number;
   turnNumber?: number;
   isScoringStep?: boolean;
@@ -178,6 +180,8 @@ const GameSettingsMenu = memo<{
   isHost: boolean;
   hideDummyCards: boolean;
   onToggleHideDummyCards: (enabled: boolean) => void;
+  isAIEnabled: boolean;
+  onToggleAI: (enabled: boolean) => void;
   t: (key: keyof TranslationResource['ui']) => string;
 }>(({
   isOpen,
@@ -198,6 +202,8 @@ const GameSettingsMenu = memo<{
   isHost,
   hideDummyCards,
   onToggleHideDummyCards,
+  isAIEnabled,
+  onToggleAI,
   t,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null)
@@ -257,6 +263,22 @@ const GameSettingsMenu = memo<{
           style={{ fontSize: `${getVuSize(13)}px`, height: `${getVuSize(29)}px` }}
         >
           {isAutoDrawEnabled ? t('on') : t('off')}
+        </button>
+      </div>
+
+      {/* AI Mode */}
+      <div className="flex items-center justify-between" style={{ marginBottom: `${getVuSize(8)}px` }}>
+        <span className="text-gray-300" style={{ fontSize: `${getVuSize(13)}px` }}>{t('aiMode')}</span>
+        <button
+          onClick={() => onToggleAI(!isAIEnabled)}
+          className={`px-vu-md rounded font-bold transition-colors ${
+            isAIEnabled
+              ? 'bg-green-600 text-white'
+              : 'bg-gray-600 text-gray-400'
+          }`}
+          style={{ fontSize: `${getVuSize(13)}px`, height: `${getVuSize(29)}px` }}
+        >
+          {isAIEnabled ? t('on') : t('off')}
         </button>
       </div>
 
@@ -599,6 +621,8 @@ const Header = memo<HeaderProps>(({
   onToggleAutoDraw,
   hideDummyCards,
   onToggleHideDummyCards,
+  isAIEnabled,
+  onToggleAI,
   currentRound = 1,
   turnNumber = 1,
   isScoringStep = false,
@@ -847,6 +871,8 @@ const Header = memo<HeaderProps>(({
         isHost={isHost}
         hideDummyCards={hideDummyCards}
         onToggleHideDummyCards={onToggleHideDummyCards}
+        isAIEnabled={isAIEnabled}
+        onToggleAI={onToggleAI}
         t={t}
       />
 

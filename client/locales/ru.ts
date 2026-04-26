@@ -256,6 +256,8 @@ export const ru: TranslationResource = {
     failedToParseDeckFile: 'Не удалось разобрать файл колоды.',
     webrtcMode: 'Режим WebRTC',
     webrtcModeDesc: 'Включить прямое соединение между игроками без центрального сервера (Хост выступает сервером)',
+    aiMode: 'Режим ИИ',
+    aiModeDesc: 'Включить искусственный интеллект для думми игроков (они будут играть карты, активировать способности и набирать очки автоматически)',
     peerjsServerSettings: 'Сигнальный сервер PeerJS',
     peerjsServerDesc: 'Пользовательский сервер PeerJS для WebRTC (опционально, используется стандартный если пусто)',
     peerjsServerAddress: 'URL сервера PeerJS',

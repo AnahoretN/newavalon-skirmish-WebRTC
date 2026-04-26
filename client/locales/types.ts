@@ -268,6 +268,8 @@ export interface TranslationResource {
     failedToParseDeckFile: string;
     webrtcMode: string;
     webrtcModeDesc: string;
+    aiMode: string;
+    aiModeDesc: string;
     peerjsServerSettings: string;
     peerjsServerDesc: string;
     peerjsServerAddress: string;

@@ -55,7 +55,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setLocalWebrtcEnabled(webrtcEnabled)
   }, [webrtcEnabled])
 
-  // Load WebRTC setting from localStorage on mount
+  // Load WebRTC settings from localStorage on mount
   useEffect(() => {
     if (isOpen) {
       const savedWebrtc = localStorage.getItem('webrtc_enabled')

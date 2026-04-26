@@ -256,6 +256,8 @@ export const sr: TranslationResource = {
     failedToParseDeckFile: 'Nije uspelo raščlanjivanje datoteke špila.',
     webrtcMode: 'WebRTC Režim',
     webrtcModeDesc: 'Omogućite direktnu vezu između igrača bez centralnog servera (Domaćin deluje kao server)',
+    aiMode: 'AI Režim',
+    aiModeDesc: 'Omogućite AI za prazne igrače (igraće karte, aktiviratiće sposobnosti i bodovati automatski)',
     peerjsServerSettings: 'PeerJS Signal Server',
     peerjsServerDesc: 'Prilagođeni PeerJS server za WebRTC signalizaciju (opcionalno, koristi se podrazumevani ako je prazno)',
     peerjsServerAddress: 'URL PeerJS servera',

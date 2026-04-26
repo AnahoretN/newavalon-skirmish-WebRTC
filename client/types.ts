@@ -246,6 +246,9 @@ export interface GameState {
   autoAbilitiesEnabled: boolean; // Server-side flag for auto-abilities
   autoDrawEnabled: boolean; // Server-side flag for auto-draw
 
+  // AI settings
+  aiEnabled: boolean; // If true, dummy players use AI to make decisions
+
   // Round Logic
   currentRound: number; // 1, 2, or 3
   turnNumber: number; // Counts total full orbits (circles)

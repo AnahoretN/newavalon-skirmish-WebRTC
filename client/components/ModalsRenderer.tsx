@@ -150,6 +150,8 @@ export const ModalsRenderer = () => {
           isPrivate={restData.isPrivate}
           hostId={restData.hostId}
           onClearImageCache={restData.onClearImageCache}
+          aiEnabled={restData.aiEnabled ?? false}
+          onAIToggle={restData.onAIToggle}
         />
       )}
 
