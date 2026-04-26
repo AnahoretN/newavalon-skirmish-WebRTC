@@ -8,7 +8,7 @@
  */
 
 import { loadPeerJS } from './PeerJSLoader'
-import { getPeerJSOptions, tryNextPeerJSServer, ALTERNATIVE_PEERJS_SERVERS } from './rtcConfig'
+import { getPeerJSOptions, tryNextPeerJSServer, ALTERNATIVE_PEERJS_SERVERS, isTrysteroEnabled, getAllSignalingServers, getServerCount } from './rtcConfig'
 import SimpleHost from './SimpleHost'
 import SimpleGuest from './SimpleGuest'
 import TrysteroHost, { TrysteroHostConfig } from './TrysteroHost'
@@ -71,7 +71,7 @@ export class HostConnectionManager {
     this.hostConfig = hostConfig
     this.config = {
       preferredStrategy: 'peerjs',
-      enableTrysteroFallback: true,
+      enableTrysteroFallback: isTrysteroEnabled(),
       connectionTimeout: 15000,
       ...managerConfig
     }
@@ -123,7 +123,7 @@ export class HostConnectionManager {
    * Try PeerJS connection with all servers
    */
   private async tryPeerJS(customPeerId?: string): Promise<string | null> {
-    const maxRetries = ALTERNATIVE_PEERJS_SERVERS.length
+    const maxRetries = getServerCount()
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
@@ -402,7 +402,7 @@ export class GuestConnectionManager {
     this.guestConfig = guestConfig
     this.config = {
       preferredStrategy: 'peerjs',
-      enableTrysteroFallback: true,
+      enableTrysteroFallback: isTrysteroEnabled(),
       connectionTimeout: 15000,
       ...managerConfig
     }

@@ -69,6 +69,7 @@ interface UseAppAbilitiesProps {
     sendAction?: (action: string, data?: any) => void;
     setActionQueue?: React.Dispatch<React.SetStateAction<AbilityAction[]>>;
     pendingChainedActionRef?: React.MutableRefObject<boolean>;
+    addLogEntry: (type: string, details: any, playerId?: number) => void;
 }
 
 /**
@@ -131,6 +132,7 @@ export const useAppAbilities = ({
   sendAction,
   setActionQueue,
   pendingChainedActionRef,
+  addLogEntry,
 }: UseAppAbilitiesProps) => {
 
   // Store handleLineSelection ref to avoid circular dependency
@@ -301,8 +303,9 @@ export const useAppAbilities = ({
       markAbilityUsed,
       addBoardCardStatus,
       setAbilityMode,
+      addLogEntry,
     })
-  }, [gameState, getFreshGameState, localPlayerId, abilityMode, cursorStack, handleActionExecution, markAbilityUsed, addBoardCardStatus, setAbilityMode])
+  }, [gameState, getFreshGameState, localPlayerId, abilityMode, cursorStack, handleActionExecution, markAbilityUsed, addBoardCardStatus, setAbilityMode, addLogEntry])
   /**
    * Handle click on board card
    */
@@ -600,9 +603,10 @@ export const useAppAbilities = ({
         handleActionExecution,
         markAbilityUsed,
         addBoardCardStatus,
+        addLogEntry,
       }),
     })
-  }, [abilityMode, cursorStack, gameState, getFreshGameState, localPlayerId, handleActionExecution, markAbilityUsed, setAbilityMode, setCommandContext, triggerHandCardSelection, moveItem, setCursorStack, clearTargetingMode, clearValidTargets, setPlayMode, setActionQueue, interactionLock])
+  }, [abilityMode, cursorStack, gameState, getFreshGameState, localPlayerId, handleActionExecution, markAbilityUsed, addBoardCardStatus, addLogEntry, setAbilityMode, setCommandContext, triggerHandCardSelection, moveItem, setCursorStack, clearTargetingMode, clearValidTargets, setPlayMode, setActionQueue, interactionLock])
 
   /**
    * Handle double click on announced card
@@ -633,9 +637,10 @@ export const useAppAbilities = ({
         handleActionExecution,
         markAbilityUsed,
         addBoardCardStatus,
+        addLogEntry,
       }),
     })
-  }, [abilityMode, cursorStack, gameState, getFreshGameState, localPlayerId, handleActionExecution, markAbilityUsed, setAbilityMode, setCommandContext, triggerHandCardSelection, moveItem, setCursorStack, clearTargetingMode, clearValidTargets, interactionLock])
+  }, [abilityMode, cursorStack, gameState, getFreshGameState, localPlayerId, handleActionExecution, markAbilityUsed, addBoardCardStatus, addLogEntry, setAbilityMode, setCommandContext, triggerHandCardSelection, moveItem, setCursorStack, clearTargetingMode, clearValidTargets, interactionLock])
 
   return {
     activateAbility,

@@ -275,6 +275,10 @@ export interface GameState {
   // Local spectator state (not synced with server)
   localPlayerId: number | null; // The player ID of the local client (null if spectator)
   isSpectator: boolean; // True if the local client is a spectator
+
+  // Game Log System
+  gameLogs: GameLogEntry[]; // Array of all game actions performed
+  gameLogIndex?: number; // Current position in log history (for rewind/forward)
 }
 
 /**
@@ -698,3 +702,112 @@ export interface BoardCellDelta {
   cardPowerDelta?: number;
   cardPowerModifier?: number;
 }
+
+// ============================================================================
+// GAME LOG SYSTEM (DELTA-BASED)
+// ============================================================================
+
+/**
+ * Types of game actions that can be logged
+ */
+export type GameLogActionType =
+  | 'GAME_START'
+  | 'ROUND_START'
+  | 'ROUND_WIN'
+  | 'MATCH_WIN'
+  | 'TURN_START'
+  | 'PHASE_CHANGE'
+  | 'DRAW_CARD'
+  | 'DRAW_MULTIPLE_CARDS'
+  | 'PLAY_CARD'
+  | 'ANNOUNCE_CARD'
+  | 'MOVE_CARD'
+  | 'DESTROY_CARD'
+  | 'RETURN_TO_HAND'
+  | 'DISCARD_CARD'
+  | 'DISCARD_FROM_BOARD'
+  | 'ACTIVATE_ABILITY'
+  | 'PLACE_TOKEN'
+  | 'PLACE_TOKEN_ON_CARD'
+  | 'REMOVE_STATUS'
+  | 'ADD_STATUS'
+  | 'SCORE_POINTS'
+  | 'SHUFFLE_DECK'
+  | 'PLAYER_JOIN'
+  | 'PLAYER_LEAVE'
+  | 'GAME_END'
+  | 'COMMAND_OPTION'
+
+/**
+ * Details for a game log entry
+ */
+export interface GameLogEntryDetails {
+  cardName?: string;
+  cardId?: string;
+  targetPlayerName?: string;
+  targetCardName?: string;
+  targetPlayerId?: number;
+  abilityText?: string;
+  amount?: number;
+  count?: number;
+  from?: string;
+  to?: string;
+  fromCoords?: { row: number; col: number };
+  toCoords?: { row: number; col: number };
+  coords?: { row: number; col: number };
+  commandOption?: string;
+  commandModule?: number; // 1 or 2 for command cards
+  scoreChange?: number;
+  newScore?: number;
+  winners?: number[]; // Player IDs who won
+  winnerName?: string;
+  targetLocation?: 'board' | 'hand' | 'discard' | 'deck' | 'showcase';
+}
+
+/**
+ * Path to a nested property in game state
+ * Examples: ['board', 3, 4], ['players', 0, 'hand'], ['players', 1, 'score']
+ */
+export type DeltaPath = Array<string | number>
+
+/**
+ * A delta represents a change to a specific part of game state
+ */
+export interface GameDelta {
+  path: DeltaPath;        // Path to the changed element
+  before: any;            // Value before the change
+  after: any;             // Value after the change
+  op?: 'set' | 'add' | 'remove'; // Operation type
+}
+
+/**
+ * A single entry in the game log
+ * Now uses delta-based storage instead of full game state snapshots
+ */
+export interface GameLogEntry {
+  id: string;              // Unique ID for this entry
+  timestamp: number;       // When this action occurred
+  type: GameLogActionType; // Type of action
+  playerId: number;        // Player who performed the action
+  playerName: string;      // Player name at time of action
+  playerColor: PlayerColor;// Player color at time of action
+  round?: number;          // Round number (if applicable)
+  turn?: number;           // Turn number (if applicable)
+  phase?: number;          // Phase number (0-4, if applicable)
+  details: GameLogEntryDetails; // Additional details about the action
+  // NEW: Delta-based storage (replaces gameState)
+  deltas?: GameDelta[];    // Changes made by this action
+  inverseDeltas?: GameDelta[]; // Reverse changes for rewind (before/after swapped)
+}
+
+/**
+ * Game log history with base state
+ * Used to reconstruct any point in the game
+ */
+export interface GameLogHistory {
+  baseState: GameState;    // Initial state before any logged actions
+  entries: GameLogEntry[]; // All log entries with deltas
+}
+
+// Re-export GameLogActionType for convenience
+export type { GameLogActionType, GameLogEntryDetails }

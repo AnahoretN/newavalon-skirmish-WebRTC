@@ -1212,6 +1212,14 @@ export const checkActionHasTargets = (action: AbilityAction, currentGameState: G
       const ownerId = action.sourceCard?.ownerId ?? playerId ?? 0
       const player = currentGameState.players.find(p => p.id === ownerId)
 
+      // Check if source card has Support if required
+      // This handles abilities like Inventive Maker Setup: "Setup (requires Support)"
+      if (action.supportRequired && action.sourceCard) {
+        if (!hasStatus(action.sourceCard, 'Support', ownerId)) {
+          return false // No Support, cannot activate
+        }
+      }
+
       if (player && player.discard && player.discard.length > 0) {
         const filter = action.payload?.filter
         if (filter) {

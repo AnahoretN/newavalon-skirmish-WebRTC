@@ -6,6 +6,15 @@ import type { ConnectionStatus } from '@/hooks/useGameState'
 import { generateInviteLink } from '@/utils/inviteLinks'
 import { logger } from '@/utils/logger'
 import { globalImageLoader } from '@/utils/imageLoader'
+import {
+  getCustomSignalingServers,
+  addCustomSignalingServer,
+  removeCustomSignalingServer,
+  getAllSignalingServers,
+  isTrysteroEnabled,
+  setTrysteroEnabled,
+  type CustomSignalingServer
+} from '@/p2p/rtcConfig'
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -47,6 +56,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [serverSettingsExpanded, setServerSettingsExpanded] = useState(false)
   const [peerjsServerExpanded, setPeerjsServerExpanded] = useState(false)
   const [peerjsServerUrl, setPeerjsServerUrl] = useState('')
+  const [customServers, setCustomServers] = useState<CustomSignalingServer[]>([])
+  const [allServers, setAllServers] = useState<ReturnType<typeof getAllSignalingServers>>([])
+  const [newServerUrl, setNewServerUrl] = useState('')
+  const [trysteroEnabled, setTrysteroEnabled] = useState(false)
 
   const isConnected = connectionStatus === 'Connected'
 
@@ -63,6 +76,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       // Load PeerJS server URL
       const savedPeerjsUrl = localStorage.getItem('peerjs_server_url') || ''
       setPeerjsServerUrl(savedPeerjsUrl)
+      // Load custom servers
+      const custom = getCustomSignalingServers()
+      setCustomServers(custom)
+      setAllServers(getAllSignalingServers())
+      // Load Trystero setting
+      setTrysteroEnabled(isTrysteroEnabled())
     }
   }, [isOpen])
 
@@ -198,6 +217,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     window.location.reload()
   }
 
+  const handleAddCustomServer = () => {
+    const trimmedUrl = newServerUrl.trim()
+    if (!trimmedUrl) return
+
+    // Add protocol if missing
+    let urlToValidate = trimmedUrl
+    if (!/^https?:\/\//i.test(trimmedUrl)) {
+      urlToValidate = `https://${trimmedUrl}`
+    }
+
+    try {
+      new URL(urlToValidate) // Validate URL
+      addCustomSignalingServer(urlToValidate)
+      const updated = getCustomSignalingServers()
+      setCustomServers(updated)
+      setAllServers(getAllSignalingServers())
+      setNewServerUrl('')
+    } catch {
+      // Invalid URL - silently ignore
+    }
+  }
+
+  const handleRemoveCustomServer = (id: string) => {
+    removeCustomSignalingServer(id)
+    const updated = getCustomSignalingServers()
+    setCustomServers(updated)
+    setAllServers(getAllSignalingServers())
+  }
+
+  const handleTrysteroToggle = (enabled: boolean) => {
+    setTrysteroEnabled(enabled)
+    setTrysteroEnabled(enabled)
+  }
+
   // Check if there's a WebRTC session to clear
   const hasWebRTCSession = !!(
     localStorage.getItem('webrtc_host_session') ||
@@ -254,14 +307,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* PeerJS Server Settings - only shown when WebRTC is enabled */}
+          {/* Signaling Server Settings - only shown when WebRTC is enabled */}
           {localWebrtcEnabled && (
             <div className="bg-gray-750 rounded-vu-2">
               <button
                 onClick={() => setPeerjsServerExpanded(!peerjsServerExpanded)}
                 className="w-full flex items-center justify-between p-3 text-left cursor-pointer hover:bg-gray-700"
               >
-                <span className="text-sm font-medium text-gray-300">{t('peerjsServerSettings')}</span>
+                <span className="text-sm font-medium text-gray-300">{t('signalingServerSettings')}</span>
                 <svg
                   className={`w-5 h-5 text-gray-400 transition-transform ${
                     peerjsServerExpanded ? 'rotate-180' : ''
@@ -275,25 +328,73 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
 
               {peerjsServerExpanded && (
-                <div className="p-3 pt-0">
+                <div className="p-3 pt-0 space-y-4">
+                  {/* Trystero Torrent Trackers Toggle */}
+                  <div className="flex items-center justify-between pb-2 border-b border-gray-700">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1">
+                        {t('trysteroTrackers')}
+                      </label>
+                      <p className="text-xs text-gray-400">
+                        {t('trysteroTrackersDesc')}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleTrysteroToggle(!trysteroEnabled)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        trysteroEnabled ? 'bg-indigo-600' : 'bg-gray-600'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          trysteroEnabled ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Custom Servers */}
                   <div>
-                    <label htmlFor="peerjs-server-url" className="block text-sm font-medium text-gray-300 mb-1">
-                      {t('peerjsServerAddress')}
-                    </label>
-                    <input
-                      id="peerjs-server-url"
-                      type="text"
-                      value={peerjsServerUrl}
-                      onChange={(e) => {
-                        setPeerjsServerUrl(e.target.value)
-                        localStorage.setItem('peerjs_server_url', e.target.value.trim())
-                      }}
-                      placeholder={t('peerjsServerPlaceholder')}
-                      className="w-full bg-gray-700 border border-gray-600 text-white font-mono rounded-vu-2 p-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                    <p className="text-xs text-gray-400 mt-1">
-                      {t('peerjsServerDesc')}
-                    </p>
+                    <p className="text-xs text-gray-400 mb-2">{t('customServers')}</p>
+                    <div className="space-y-1 mb-2">
+                      {customServers.length === 0 ? (
+                        <p className="text-xs text-gray-500 italic">{t('noCustomServers')}</p>
+                      ) : (
+                        customServers.map((server) => (
+                          <div key={server.id} className="flex items-center justify-between text-sm bg-gray-700 rounded p-2">
+                            <span className="text-gray-300 truncate flex-1 mr-2" title={server.url}>
+                              {server.name || server.url}
+                            </span>
+                            <button
+                              onClick={() => handleRemoveCustomServer(server.id)}
+                              className="text-red-400 hover:text-red-300 transition-colors p-1"
+                              title={t('remove')}
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    {/* Add Server Input */}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newServerUrl}
+                        onChange={(e) => setNewServerUrl(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddCustomServer()}
+                        placeholder={t('addServerPlaceholder')}
+                        className="flex-1 bg-gray-700 border border-gray-600 text-white font-mono text-sm rounded p-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                      <button
+                        onClick={handleAddCustomServer}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded px-3 transition-colors"
+                      >
+                        {t('addServer')}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

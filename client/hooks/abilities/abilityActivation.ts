@@ -18,6 +18,7 @@ export interface AbilityActivationProps {
   markAbilityUsed: (coords: { row: number; col: number }, isDeploy?: boolean, setDeployAttempted?: boolean, readyStatusToRemove?: string) => void
   addBoardCardStatus?: (coords: {row: number, col: number}, status: string, pid: number, count?: number) => void
   setAbilityMode?: React.Dispatch<React.SetStateAction<AbilityAction | null>>
+  addLogEntry?: (type: string, details: any, playerId?: number) => void
 }
 
 /**
@@ -69,9 +70,23 @@ export function activateAbility(
   const canActivate = canActivateAbility(card as any, gameState.currentPhase, gameState.activePlayerId ?? undefined, gameState as any)
   if (!canActivate) {
     // Check if it's specifically because of missing Support
+    // Need to check the ability for the CURRENT phase, not just deploy
     const abilities = getAbilitiesForCard(card as any)
-    const deployAbility = abilities?.find((a: any) => a.activationType === 'deploy')
-    if (deployAbility?.supportRequired && !hasStatus(card, 'Support', card.ownerId!)) {
+    const phaseIndex = gameState.currentPhase
+
+    // Determine which ability type to check based on phase
+    let abilityToCheck: any
+    if (phaseIndex === 1) {
+      abilityToCheck = abilities?.find((a: any) => a.activationType === 'setup')
+    } else if (phaseIndex === 3) {
+      abilityToCheck = abilities?.find((a: any) => a.activationType === 'commit')
+    }
+    // If no phase-specific ability, check deploy
+    if (!abilityToCheck) {
+      abilityToCheck = abilities?.find((a: any) => a.activationType === 'deploy')
+    }
+
+    if (abilityToCheck?.supportRequired && !hasStatus(card, 'Support', card.ownerId!)) {
       // Show "No Target" effect to indicate missing Support
       const { triggerNoTarget } = props as any
       triggerNoTarget?.(boardCoords)
@@ -81,6 +96,14 @@ export function activateAbility(
 
   const action = getCardAbilityAction(card as any, gameState as any, card.ownerId!, boardCoords)
   if (action) {
+    // Log ability activation
+    if (props.addLogEntry) {
+      props.addLogEntry('ACTIVATE_ABILITY', {
+        cardName: card.name,
+        abilityText: action.mode || action.type || 'ability',
+        targetLocation: action.payload?.targetLocation,
+      }, card.ownerId!)
+    }
     // Check for DISCARD_FROM_HAND cost (Faber, Lucius, etc.)
     if (action.payload?.cost?.type === 'DISCARD_FROM_HAND' && setAbilityMode) {
       console.log('[DISCARD_FROM_HAND] Cost detected, creating discard mode:', {

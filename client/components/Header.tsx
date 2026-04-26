@@ -62,6 +62,9 @@ interface HeaderProps {
   // NEW: Signalling control props
   connectToSignalling?: () => Promise<string>;
   isConnectedToSignalling?: () => boolean;
+  // Game Log props
+  onOpenGameLog?: () => void;
+  gameLogCount?: number;
 }
 
 const StatusIndicator = memo<{
@@ -607,6 +610,8 @@ const Header = memo<HeaderProps>(({
   reconnectProgress = null,
   connectToSignalling,
   isConnectedToSignalling,
+  onOpenGameLog,
+  gameLogCount = 0,
 }) => {
   const { t } = useLanguage()
   const [showRoundTooltip, setShowRoundTooltip] = useState(false)
@@ -677,6 +682,18 @@ const Header = memo<HeaderProps>(({
             style={{ fontSize: `${getVuSize(13)}px` }}
           >
             {t('invitePlayer')}
+          </button>
+
+          {/* Game Log Button */}
+          <button
+            onClick={onOpenGameLog}
+            className="relative font-medium py-vu-md px-vu-md rounded-vu-2 transition-colors bg-gray-700 hover:bg-gray-600 text-white"
+            style={{ fontSize: `${getVuSize(13)}px` }}
+            title={t('gameLog') || 'Game Log'}
+          >
+            <span className="flex items-center gap-vu-1">
+              <span>{t('log') || 'Log'}</span>
+            </span>
           </button>
         </div>
 

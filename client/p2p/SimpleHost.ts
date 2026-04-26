@@ -464,6 +464,25 @@ export class SimpleHost {
       return
     }
 
+    // Handle RESTORE_GAME_STATE - restore game state to a previous point (host only, for rewind)
+    if (action === 'RESTORE_GAME_STATE') {
+      console.log('[SimpleHost] RESTORE_GAME_STATE received:', { fromPeerId, data })
+      if (fromPeerId !== 'host') {
+        logger.warn('[SimpleHost] RESTORE_GAME_STATE is host-only action')
+        return
+      }
+      const restoredState = data.gameState
+      console.log('[SimpleHost] Restored state:', restoredState)
+      if (restoredState) {
+        this.state = restoredState
+        this.version++
+        this.broadcastAll()
+        logger.info('[SimpleHost] Game state restored to log entry:', data.logId)
+        console.log('[SimpleHost] State restored, broadcasting to all players')
+      }
+      return
+    }
+
     // Handle EXIT_GAME - intentional player exit (becomes dummy, no reconnection)
     // @ts-ignore - EXIT_GAME is not in standard action types
     if (action === 'EXIT_GAME') {

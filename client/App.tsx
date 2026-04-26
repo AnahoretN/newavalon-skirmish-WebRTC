@@ -17,11 +17,13 @@ import { TopDeckView } from './components/TopDeckView'
 import { ReconnectingModal } from './components/ReconnectingModal'
 import { ModalsRenderer, ModalsProvider, useModals } from './components/ModalsRenderer'
 import { VUTestPanel } from './components/VUTestPanel'
+import GameLogModal from './components/GameLogModal'
 import { logger } from './utils/logger'
 import { useGameState } from './hooks/useGameState'
 import { useAppAbilities } from './hooks/useAppAbilities'
 import { useAppCommand } from './hooks/useAppCommand'
 import { useAppCounters } from './hooks/useAppCounters'
+import { useGameLog, createLogDetails, handleGameLogEntry, handleGameLogsSync } from './hooks/useGameLog'
 import { initializeVUBasePixels } from './utils/virtualUnits'
 import type {
   Player,
@@ -183,6 +185,11 @@ const AppInner = function AppInner() {
     isReconnecting,
     reconnectProgress,
   } = gameStateHook
+
+  // ============================================================================
+  // Logging wrappers for game actions - will be initialized after gameLogHook
+  // ============================================================================
+  const previousStateRef = useRef<GameState | null>(null)
 
   const [modalsState, setModalsState] = useState({
     isJoinModalOpen: false,
@@ -428,12 +435,64 @@ const AppInner = function AppInner() {
     sendAction,
   })
 
+  // Determine if current player is host (needed for gameLogHook)
+  const isHost = useMemo(() => localPlayerId === 1, [localPlayerId])
+
+  // Game Log hook (must be before wrapped functions that use it)
+  const [isGameLogOpen, setIsGameLogOpen] = useState(false)
+  const gameLogHook = useGameLog({
+    gameState,
+    localPlayerId,
+    isHost,
+    sendAction: sendAction,
+  })
+
   // Wrapper for nextPhase that sets justAutoTransitioned flag
   // Also forwards forceTurnPass parameter for scoring completion
   const handleNextPhase = useCallback((forceTurnPass?: boolean) => {
     setJustAutoTransitioned(true)
     nextPhase(forceTurnPass)
   }, [nextPhase])
+
+  // ============================================================================
+  // Wrapped functions with logging (must be before useAppAbilities)
+  // ============================================================================
+  // Wrapper for destroyCard with logging
+  const destroyCardWithLogging = useCallback((card: Card, boardCoords: { row: number; col: number }) => {
+    destroyCard(card, boardCoords)
+    gameLogHook.addLogEntry('DESTROY_CARD', createLogDetails.destroyCard(card.name), localPlayerId ?? 0)
+  }, [destroyCard, gameLogHook, localPlayerId])
+
+  // Wrapper for spawnToken with logging
+  const spawnTokenWithLogging = useCallback((coords: {row: number, col: number}, name: string, ownerId: number) => {
+    spawnToken(coords, name, ownerId)
+    const player = gameState?.players.find(p => p.id === ownerId)
+    gameLogHook.addLogEntry('PLACE_TOKEN', createLogDetails.placeToken(name), ownerId)
+  }, [spawnToken, gameLogHook, gameState?.players])
+
+  // Wrapper for addBoardCardStatus with logging (placing tokens/counters on cards)
+  const addBoardCardStatusWithLogging = useCallback((coords: any, status: any, playerId?: number, count?: number) => {
+    addBoardCardStatus(coords, status, playerId, count)
+    const ownerId = playerId ?? localPlayerId ?? 0
+    const card = gameState?.board[coords.row]?.[coords.col]?.card
+    if (card) {
+      const targetPlayer = gameState?.players.find(p => p.id === card.ownerId)
+      gameLogHook.addLogEntry('PLACE_TOKEN_ON_CARD', createLogDetails.placeTokenOnCard(
+        status,
+        targetPlayer?.name,
+        card.name,
+        coords,
+        'board'
+      ), ownerId)
+    }
+  }, [addBoardCardStatus, gameLogHook, gameState, localPlayerId])
+
+  // Wrapper for handleCommandConfirm with logging
+  const handleCommandConfirmWithLogging = useCallback((optionIndex: number, card: Card) => {
+    handleCommandConfirm(optionIndex, card)
+    const moduleNumber = optionIndex + 1
+    gameLogHook.addLogEntry('COMMAND_OPTION', createLogDetails.commandOption(card.name, `${t('module')} ${moduleNumber}`), (card.ownerId || localPlayerId) ?? 0)
+  }, [handleCommandConfirm, gameLogHook, localPlayerId, t])
 
   const {
     executeAction,
@@ -470,13 +529,13 @@ const AppInner = function AppInner() {
     transferStatus,
     transferAllCounters,
     transferAllStatusesWithoutException,
-    destroyCard,
+    destroyCard: destroyCardWithLogging,
     resurrectDiscardedCard,
-    spawnToken,
+    spawnToken: spawnTokenWithLogging,
     scoreLine,
     nextPhase: handleNextPhase,
     modifyBoardCardPower,
-    addBoardCardStatus,
+    addBoardCardStatus: addBoardCardStatusWithLogging,
     removeBoardCardStatus,
     removeBoardCardStatusByOwner,
     resetDeployStatus,
@@ -491,6 +550,7 @@ const AppInner = function AppInner() {
     sendAction,
     setActionQueue,
     pendingChainedActionRef,
+    addLogEntry: (type, details, playerId) => gameLogHook.addLogEntry(type, details, playerId),
   })
 
   const handleAnnouncedCardDoubleClick = (player: Player, card: Card) => {
@@ -589,6 +649,17 @@ const AppInner = function AppInner() {
     handleEmptyCellClick(boardCoords)
   }, [gameState.isScoringStep, gameState.activePlayerId, gameState.players, localPlayerId, handleScoringLineClick, handleEmptyCellClick])
 
+  // Player status checks (must be before useGameLog which depends on isHost)
+  const isSpectator = useMemo(
+    () => localPlayerId === null && gameState.gameId !== null,
+    [localPlayerId, gameState.gameId],
+  )
+
+  const realPlayerCount = useMemo(
+    () => gameState.players?.filter(p => !p.isDummy).length || 0,
+    [gameState.players],
+  )
+
   const {
     cursorFollowerRef,
     handleCounterMouseDown,
@@ -609,17 +680,114 @@ const AppInner = function AppInner() {
     setActionQueue,
   })
 
-  const isSpectator = useMemo(
-    () => localPlayerId === null && gameState.gameId !== null,
-    [localPlayerId, gameState.gameId],
-  )
+  // ============================================================================
+  // Track state changes for logging (scores, round winners, etc.)
+  // ============================================================================
+  useEffect(() => {
+    if (!gameState || !previousStateRef.current || !gameState.isGameStarted) {
+      previousStateRef.current = gameState
+      return
+    }
 
-  const realPlayerCount = useMemo(
-    () => gameState.players?.filter(p => !p.isDummy).length || 0,
-    [gameState.players],
-  )
+    const prevState = previousStateRef.current
 
-  const isHost = useMemo(() => localPlayerId === 1, [localPlayerId])
+    // Log score changes
+    gameState.players.forEach(player => {
+      const prevPlayer = prevState.players.find(p => p.id === player.id)
+      if (prevPlayer && player.score !== prevPlayer.score) {
+        const delta = player.score - prevPlayer.score
+        if (delta !== 0) {
+          gameLogHook.addLogEntry('SCORE_POINTS', createLogDetails.scorePoints(delta, player.score), player.id)
+        }
+      }
+    })
+
+    // Log round winners
+    if (gameState.roundWinners && prevState.roundWinners) {
+      const currentRound = gameState.currentRound
+      const prevRound = prevState.currentRound
+      if (currentRound !== prevRound && prevState.roundWinners[currentRound - 1]) {
+        const winners = prevState.roundWinners[currentRound - 1] || []
+        const winnerNames = winners.map(id => gameState.players.find(p => p.id === id)?.name).filter(Boolean)
+        if (winners.length > 0) {
+          gameLogHook.addLogEntry('ROUND_WIN', createLogDetails.roundWin(winners, winnerNames[0]), winners[0])
+        }
+      }
+    }
+
+    // Log match winner
+    if (gameState.gameWinner && !prevState.gameWinner) {
+      const winner = gameState.players.find(p => p.id === gameState.gameWinner)
+      if (winner) {
+        gameLogHook.addLogEntry('MATCH_WIN', createLogDetails.matchWin(winner.name), winner.id)
+      }
+    }
+
+    previousStateRef.current = gameState
+  }, [gameState, gameLogHook])
+
+  // ============================================================================
+  // Wrapped functions with logging
+  // ============================================================================
+  const drawCardWithLogging = useCallback((playerId?: number) => {
+    const targetId = playerId ?? localPlayerId
+    console.log('[drawCardWithLogging] Called:', { targetId, localPlayerId, hasGameState: !!gameState })
+
+    // Call original function first
+    drawCard(playerId)
+
+    // Log after a short delay to let state update
+    setTimeout(() => {
+      console.log('[drawCardWithLogging] Attempting to log DRAW_CARD')
+      gameLogHook.addLogEntry('DRAW_CARD', createLogDetails.drawCard(t('aCard')), targetId ?? localPlayerId ?? 0)
+    }, 50)
+  }, [drawCard, localPlayerId, gameLogHook, t])
+
+  const drawCardsBatchWithLogging = useCallback((playerId: number, count: number) => {
+    console.log('[drawCardsBatchWithLogging] Called:', { playerId, count })
+    drawCardsBatch(playerId, count)
+    gameLogHook.addLogEntry('DRAW_MULTIPLE_CARDS', createLogDetails.drawMultipleCards(count), playerId)
+  }, [drawCardsBatch, gameLogHook])
+
+  const updatePlayerScoreWithLogging = useCallback((playerId: number, delta: number) => {
+    console.log('[updatePlayerScoreWithLogging] Called:', { playerId, delta })
+    updatePlayerScore(playerId, delta)
+  }, [updatePlayerScore])
+
+  const shufflePlayerDeckWithLogging = useCallback((playerId?: number) => {
+    shufflePlayerDeck(playerId)
+    const targetId = playerId ?? localPlayerId
+    gameLogHook.addLogEntry('SHUFFLE_DECK', {}, targetId)
+  }, [shufflePlayerDeck, localPlayerId, gameLogHook])
+
+  // Enhanced handleDrop with logging
+  const handleDropWithLogging = useCallback((item: DragItem, target: any) => {
+    const result = handleDrop(item, target)
+
+    // Log card plays
+    if (target.target === 'board' && item.source === 'hand' && item.card) {
+      gameLogHook.addLogEntry('PLAY_CARD', createLogDetails.playCard(
+        item.card.name,
+        target.boardCoords
+      ), item.playerId)
+    } else if (target.target === 'board' && item.source === 'board' && item.card) {
+      // Moving card on board
+      gameLogHook.addLogEntry('MOVE_CARD', createLogDetails.moveCard(
+        item.card.name,
+        undefined, undefined,
+        item.boardCoords, // fromCoords
+        target.boardCoords // toCoords
+      ), item.playerId)
+    } else if (target.target === 'announced' && item.card) {
+      gameLogHook.addLogEntry('ANNOUNCE_CARD', createLogDetails.announceCard(item.card.name), item.playerId)
+    } else if (target.target === 'discard' && item.card) {
+      gameLogHook.addLogEntry('DISCARD_CARD', createLogDetails.discardCard(item.card.name), item.playerId)
+    } else if (target.target === 'hand' && item.card) {
+      gameLogHook.addLogEntry('RETURN_TO_HAND', createLogDetails.returnToHand(item.card.name), item.playerId)
+    }
+
+    return result
+  }, [handleDrop, gameLogHook])
 
   const localPlayer = useMemo(
     () => gameState?.players?.find(p => p.id === localPlayerId),
@@ -690,8 +858,6 @@ const AppInner = function AppInner() {
         if (p.color && validColors.includes(p.color)) {
           newMap.set(p.id, p.color)
         } else {
-          // Debug: log when player has invalid or missing color
-          console.warn(`[App] Player ${p.id} has invalid color:`, p.color, 'Valid colors:', validColors)
           // Use fallback color (blue) for players with invalid colors
           newMap.set(p.id, 'blue')
         }
@@ -1031,7 +1197,7 @@ const AppInner = function AppInner() {
 
       // Shuffle deck if required by the search ability
       if (topDeckViewState.shuffleOnClose) {
-        shufflePlayerDeck(playerId)
+        shufflePlayerDeckWithLogging(playerId)
       }
 
       if (topDeckViewState.isLocked && topDeckViewState.sourceCard) {
@@ -1039,7 +1205,7 @@ const AppInner = function AppInner() {
           // Use thenDraw if specified, otherwise draw 1 card (default behavior)
           const drawCount = topDeckViewState.thenDraw ?? 1
           for (let i = 0; i < drawCount; i++) {
-            drawCard(topDeckViewState.sourceCard.ownerId)
+            drawCardWithLogging(topDeckViewState.sourceCard.ownerId)
           }
         }
         if (topDeckViewState.sourceCoords) {
@@ -1544,11 +1710,6 @@ const AppInner = function AppInner() {
     if (isHandTargetingMode) {
       // Targeting mode with handTargets is already set correctly - skip re-setting
       // This prevents DISCARD_FROM_HAND visual effects from being cleared
-      console.log('[App.tsx] Preserving handTargets targetingMode:', {
-        actionType: gameState.targetingMode.action?.payload?.actionType,
-        handTargetsCount: gameState.targetingMode.handTargets.length,
-        abilityModeActionType: abilityMode?.payload?.actionType,
-      })
       // CRITICAL: Still update validTargets for UI highlights, but don't call setTargetingMode
       if (boardTargetsChanged) {
         setValidTargets(boardTargets)
@@ -1726,7 +1887,6 @@ const AppInner = function AppInner() {
   }, [latestHighlight])
 
   useEffect(() => {
-    console.log('[APP] latestFloatingTexts useEffect triggered!', latestFloatingTexts)
     if (latestFloatingTexts && latestFloatingTexts.length > 0) {
       // Convert P2P format to FloatingTextData format
       const newTexts = latestFloatingTexts.map(ft => {
@@ -1746,8 +1906,6 @@ const AppInner = function AppInner() {
         // Fallback - include _color if present
         return { ...base, _color: (ft as any).color }
       }) as Array<FloatingTextData | { id: string; text: string; row?: number; col?: number; playerId?: number; _color?: string; timestamp: number }>
-
-      console.log('[APP] Setting activeFloatingTexts:', newTexts)
 
       // CRITICAL FIX: Clear previous floating texts before adding new ones
       // This prevents floating texts from multiple scorings from being visible simultaneously
@@ -2148,7 +2306,7 @@ const AppInner = function AppInner() {
           const resourceOwnerId = actionToProcess.sourceCard?.ownerId ?? actionToProcess.originalOwnerId ?? payloadOwnerId ?? localPlayerId
           const count = calculateDynamicCount(factor, resourceOwnerId, baseCount)
           if (type === 'draw' && count > 0) {
-            drawCardsBatch(resourceOwnerId, count)
+            drawCardsBatchWithLogging(resourceOwnerId, count)
           }
         } else if (actionToProcess.payload?.resourceChange) {
           const { draw, score } = actionToProcess.payload.resourceChange
@@ -2156,10 +2314,10 @@ const AppInner = function AppInner() {
           if (activePlayerId !== undefined && activePlayerId !== null) {
             if (draw) {
               const count = typeof draw === 'number' ? draw : 1
-              drawCardsBatch(activePlayerId, count)
+              drawCardsBatchWithLogging(activePlayerId, count)
             }
             if (score) {
-              updatePlayerScore(activePlayerId, score)
+              updatePlayerScoreWithLogging(activePlayerId, score)
             }
           }
         } else if (actionToProcess.payload?.contextReward && actionToProcess.sourceCard) {
@@ -2558,7 +2716,7 @@ const AppInner = function AppInner() {
 
     // Shuffle deck if required by the search ability (even when cancelling without selection)
     if (viewingDiscard.shuffleOnClose) {
-      shufflePlayerDeck(viewingDiscard.player.id)
+      shufflePlayerDeckWithLogging(viewingDiscard.player.id)
     }
 
     // If closing during a card pick/search ability without selecting a card, cancel the ability
@@ -2571,7 +2729,7 @@ const AppInner = function AppInner() {
     // Draw card and mark ability used if triggered by deploy/setup ability
     if (viewingDiscard.isDeployAbility !== undefined && viewingDiscard.sourceCard) {
       if (viewingDiscard.sourceCard.ownerId !== undefined) {
-        drawCard(viewingDiscard.sourceCard.ownerId)
+        drawCardWithLogging(viewingDiscard.sourceCard.ownerId)
       }
       if (viewingDiscard.sourceCoords) {
         markAbilityUsed(viewingDiscard.sourceCoords, viewingDiscard.isDeployAbility)
@@ -2924,10 +3082,10 @@ const AppInner = function AppInner() {
       const { player } = data
       const canControl = player.id === localPlayerId || !!player.isDummy
       if (canControl) {
-        items.push({ label: t('drawCard'), onClick: () => drawCard(player.id) })
+        items.push({ label: t('drawCard'), onClick: () => drawCardWithLogging(player.id) })
         items.push({ label: t('drawStartingHand'), onClick: () => {
           for (let i = 0; i < 6; i++) {
-            drawCard(player.id)
+            drawCardWithLogging(player.id)
           }
         } })
         items.push({ label: t('viewTopCards'), onClick: () => {
@@ -2937,7 +3095,7 @@ const AppInner = function AppInner() {
           }
           setTopDeckViewState({ targetPlayerId: player.id, isLocked: false, initialCount: 1 })
         } })
-        items.push({ label: t('shuffle'), onClick: () => shufflePlayerDeck(player.id) })
+        items.push({ label: t('shuffle'), onClick: () => shufflePlayerDeckWithLogging(player.id) })
       }
       items.push({ label: t('view'), onClick: () => handleViewDeck(player) })
     } else if (type === 'discardPile') {
@@ -3089,6 +3247,8 @@ const AppInner = function AppInner() {
         reconnectProgress={reconnectProgress}
         connectToSignalling={connectToSignalling}
         isConnectedToSignalling={isConnectedToSignalling}
+        onOpenGameLog={() => setIsGameLogOpen(true)}
+        gameLogCount={gameLogHook.logs.length}
       />
 
       {/* Reconnection Modal - Shows when WebRTC connection is lost and attempting to reconnect */}
@@ -3132,7 +3292,7 @@ const AppInner = function AppInner() {
           isOpen={!!commandModalCard}
           card={commandModalCard}
           playerColorMap={new Map(gameState.players.map(p => [p.id, p.color])) as any}
-          onConfirm={(index) => handleCommandConfirm(index, commandModalCard)}
+          onConfirm={(index) => handleCommandConfirmWithLogging(index, commandModalCard)}
           onCancel={() => {
             setCommandModalCard(null); setActionQueue([]); setCommandContext({})
           }}
@@ -3311,11 +3471,11 @@ const AppInner = function AppInner() {
               isGameStarted={gameState.isGameStarted}
               onNameChange={(name) => updatePlayerName(localPlayer.id, name)}
               onColorChange={(color) => changePlayerColor(localPlayer.id, color)}
-              onScoreChange={(delta) => updatePlayerScore(localPlayer.id, delta)}
+              onScoreChange={(delta) => updatePlayerScoreWithLogging(localPlayer.id, delta)}
               onDeckChange={(deckType) => changePlayerDeck(localPlayer.id, deckType)}
               onLoadCustomDeck={(deckFile) => loadCustomDeck(localPlayer.id, deckFile)}
-              onDrawCard={(playerId) => drawCard(playerId)}
-              handleDrop={handleDrop}
+              onDrawCard={(playerId) => drawCardWithLogging(playerId)}
+              handleDrop={handleDropWithLogging}
               draggedItem={draggedItem}
               setDraggedItem={setDraggedItem}
               openContextMenu={openContextMenu}
@@ -3363,7 +3523,7 @@ const AppInner = function AppInner() {
               board={gameState.board}
               isGameStarted={gameState.isGameStarted}
               activeGridSize={gameState.activeGridSize}
-              handleDrop={handleDrop}
+              handleDrop={handleDropWithLogging}
               draggedItem={draggedItem}
               setDraggedItem={setDraggedItem}
               openContextMenu={openContextMenu}
@@ -3420,11 +3580,11 @@ const AppInner = function AppInner() {
                     isGameStarted={gameState.isGameStarted}
                     onNameChange={(name) => updatePlayerName(player.id, name)}
                     onColorChange={(color) => changePlayerColor(player.id, color)}
-                    onScoreChange={(delta) => updatePlayerScore(player.id, delta)}
+                    onScoreChange={(delta) => updatePlayerScoreWithLogging(player.id, delta)}
                     onDeckChange={(deckType) => changePlayerDeck(player.id, deckType)}
                     onLoadCustomDeck={(deckFile) => loadCustomDeck(player.id, deckFile)}
-                    onDrawCard={(playerId) => drawCard(playerId)}
-                    handleDrop={handleDrop}
+                    onDrawCard={(playerId) => drawCardWithLogging(playerId)}
+                    handleDrop={handleDropWithLogging}
                     draggedItem={draggedItem}
                     setDraggedItem={setDraggedItem}
                     openContextMenu={openContextMenu}
@@ -3469,6 +3629,26 @@ const AppInner = function AppInner() {
     {import.meta.env.DEV && (
       <VUTestPanel enabled={import.meta.env.VITE_SHOW_VU_PANEL === 'true'} />
     )}
+
+    {/* Game Log Modal */}
+    <GameLogModal
+      isOpen={isGameLogOpen}
+      onClose={() => setIsGameLogOpen(false)}
+      logs={gameLogHook.logs}
+      players={gameState.players.map(p => ({ id: p.id, name: p.name, color: p.color }))}
+      isHost={isHost}
+      currentRound={gameState.currentRound}
+      currentTurn={gameState.turnNumber}
+      currentPhase={gameState.currentPhase}
+      gameState={gameState}
+      onRewind={gameLogHook.rewindToLog}
+      onBackward={gameLogHook.backwardLog}
+      onForward={gameLogHook.forwardLog}
+      canRewind={gameLogHook.canRewind}
+      canForward={gameLogHook.canForward}
+      currentLogIndex={gameLogHook.currentLogIndex}
+      maxRewindIndex={gameLogHook.currentLogIndex}
+    />
     </>
   )
 }

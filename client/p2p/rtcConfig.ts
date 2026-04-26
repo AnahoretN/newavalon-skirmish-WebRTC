@@ -12,6 +12,15 @@ export interface RTCConfiguration {
 }
 
 /**
+ * Custom signaling server entry
+ */
+export interface CustomSignalingServer {
+  id: string
+  url: string
+  name?: string
+}
+
+/**
  * RTC configuration with multiple STUN servers for fallback.
  *
  * If one STUN server fails, WebRTC will try the next one automatically.
@@ -47,6 +56,103 @@ export const ALTERNATIVE_PEERJS_SERVERS = [
   { host: '0.peerjs.com', port: 443, secure: true },
 ]
 
+// ============================================================
+// CUSTOM SIGNALING SERVERS MANAGEMENT
+// ============================================================
+
+const CUSTOM_SERVERS_KEY = 'custom_signaling_servers'
+const TRYSTERO_ENABLED_KEY = 'trystero_trackers_enabled'
+
+/**
+ * Get list of custom signaling servers from localStorage
+ */
+export function getCustomSignalingServers(): CustomSignalingServer[] {
+  try {
+    const data = localStorage.getItem(CUSTOM_SERVERS_KEY)
+    if (!data) return []
+    return JSON.parse(data)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Add a custom signaling server to the list
+ */
+export function addCustomSignalingServer(url: string, name?: string): CustomSignalingServer {
+  const servers = getCustomSignalingServers()
+  const id = Date.now().toString() + Math.random().toString(36).slice(2, 9)
+  const newServer: CustomSignalingServer = { id, url: url.trim(), name }
+  servers.push(newServer)
+  localStorage.setItem(CUSTOM_SERVERS_KEY, JSON.stringify(servers))
+  return newServer
+}
+
+/**
+ * Remove a custom signaling server from the list
+ */
+export function removeCustomSignalingServer(id: string): void {
+  const servers = getCustomSignalingServers()
+  const filtered = servers.filter(s => s.id !== id)
+  localStorage.setItem(CUSTOM_SERVERS_KEY, JSON.stringify(filtered))
+}
+
+/**
+ * Get the full list of signaling servers (default + custom)
+ * Returns: [primary, secondary, tertiary, ...custom servers]
+ */
+export function getAllSignalingServers(): Array<{ host: string; port: number; secure: boolean; path?: string; isCustom?: boolean; id?: string }> {
+  const baseServers = [
+    { host: '0.peerjs.com', port: 443, secure: true, isDefault: true, label: 'Primary' },
+    { host: '1.peerjs.com', port: 443, secure: true, isDefault: true, label: 'Secondary' },
+    { host: '2.peerjs.com', port: 443, secure: true, isDefault: true, label: 'Tertiary' },
+  ]
+
+  const customServers = getCustomSignalingServers().map(server => {
+    try {
+      const url = new URL(server.url)
+      return {
+        id: server.id,
+        name: server.name,
+        host: url.hostname,
+        port: parseInt(url.port) || (url.protocol === 'https:' ? 443 : 80),
+        path: url.pathname.replace(/\/$/, '') || undefined,
+        secure: url.protocol === 'https:',
+        isCustom: true
+      }
+    } catch {
+      return null
+    }
+  }).filter((s): s is NonNullable<typeof s> => s !== null)
+
+  return [...baseServers, ...customServers]
+}
+
+/**
+ * Get the total number of available signaling servers (default + custom)
+ */
+export function getServerCount(): number {
+  return getAllSignalingServers().length
+}
+
+/**
+ * Get Trystero torrent trackers enabled state
+ */
+export function isTrysteroEnabled(): boolean {
+  return localStorage.getItem(TRYSTERO_ENABLED_KEY) === 'true'
+}
+
+/**
+ * Set Trystero torrent trackers enabled state
+ */
+export function setTrysteroEnabled(enabled: boolean): void {
+  localStorage.setItem(TRYSTERO_ENABLED_KEY, enabled.toString())
+}
+
+// ============================================================
+// LEGACY PEERJS SERVER MANAGEMENT
+// ============================================================
+
 /**
  * Get the index of the last working server from localStorage.
  * Automatically resets to 0 if the saved index is out of bounds.
@@ -56,8 +162,9 @@ function getLastServerIndex(): number {
   if (!savedIndex) return 0
 
   const index = parseInt(savedIndex, 10)
+  const allServers = getAllSignalingServers()
   // Reset if index is out of bounds (server list may have changed)
-  if (isNaN(index) || index < 0 || index >= ALTERNATIVE_PEERJS_SERVERS.length) {
+  if (isNaN(index) || index < 0 || index >= allServers.length) {
     console.warn('[PeerJS] Invalid server index cached, resetting to default')
     localStorage.removeItem('peerjs_server_index')
     return 0
@@ -73,7 +180,7 @@ function saveServerIndex(index: number): void {
 }
 
 /**
- * Get custom PeerJS server URL from localStorage.
+ * Get custom PeerJS server URL from localStorage (legacy single server setting).
  * Returns null if using the default PeerJS cloud server.
  */
 function getCustomPeerJSServer(): string | null {
@@ -132,7 +239,7 @@ export function getPeerJSOptions(customPeerId?: string, serverIndex?: number): {
     options.id = customPeerId
   }
 
-  // Check for custom PeerJS server first
+  // Check for custom PeerJS server first (old single server setting)
   const customServer = getCustomPeerJSServer()
   if (customServer) {
     try {
@@ -150,9 +257,12 @@ export function getPeerJSOptions(customPeerId?: string, serverIndex?: number): {
     }
   }
 
+  // Get all servers (default + custom)
+  const allServers = getAllSignalingServers()
+
   // Use fallback server list only if explicitly requested
   // Otherwise, let PeerJS use its default cloud service (more reliable)
-  const lastIndex = serverIndex ?? getLastServerIndex()
+  const lastIndex = serverIndex ?? 0
 
   // If using server index 0 (default), don't specify host/port - let PeerJS use defaults
   if (lastIndex === 0 && !serverIndex) {
@@ -160,8 +270,8 @@ export function getPeerJSOptions(customPeerId?: string, serverIndex?: number): {
     return options
   }
 
-  // Use specific server from fallback list
-  const server = ALTERNATIVE_PEERJS_SERVERS[lastIndex] || ALTERNATIVE_PEERJS_SERVERS[0]
+  // Use specific server from all servers list
+  const server = allServers[lastIndex] || allServers[0]
 
   options.host = server.host
   options.port = server.port
@@ -181,10 +291,11 @@ export function getPeerJSOptions(customPeerId?: string, serverIndex?: number): {
  * Call this when PeerJS connection fails.
  */
 export function tryNextPeerJSServer(): number {
+  const allServers = getAllSignalingServers()
   const currentIndex = getLastServerIndex()
-  const nextIndex = (currentIndex + 1) % ALTERNATIVE_PEERJS_SERVERS.length
+  const nextIndex = (currentIndex + 1) % allServers.length
   saveServerIndex(nextIndex)
-  console.log('[PeerJS] Switching to server', nextIndex, 'of', ALTERNATIVE_PEERJS_SERVERS.length)
+  console.log('[PeerJS] Switching to server', nextIndex, 'of', allServers.length)
   return nextIndex
 }
 
