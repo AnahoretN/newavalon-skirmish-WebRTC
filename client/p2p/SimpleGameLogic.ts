@@ -535,6 +535,10 @@ export function applyAction(
       newState = handleMarkAbilityUsed(newState, data)
       break
 
+    case 'EXECUTE_ABILITY_CHAINED':
+      newState = handleExecuteAbilityChained(newState, playerId, data)
+      break
+
     case 'GLOBAL_AUTO_APPLY':
       newState = handleGlobalAutoApply(newState, playerId, data)
       break
@@ -2815,6 +2819,117 @@ function handleLoadCustomDeck(state: GameState, playerId: number, deckFile: Cust
   )
 
   return { ...state, players: newPlayers }
+}
+
+/**
+ * EXECUTE_ABILITY_CHAINED - Execute ability with chained action on host
+ * Used by guests who don't have opponent hand data to properly calculate targets
+ * The host has full game state and can execute the chained action correctly
+ */
+function handleExecuteAbilityChained(state: GameState, playerId: number, data: any): GameState {
+  const { sourceCoords, chainedAction, onlyOpponents } = data || {}
+  if (!sourceCoords || !chainedAction) {
+    console.warn('[EXECUTE_ABILITY_CHAINED] Missing required data:', { sourceCoords, chainedAction })
+    return state
+  }
+
+  console.log('[EXECUTE_ABILITY_CHAINED] Executing chained action on host:', {
+    playerId,
+    sourceCoords,
+    chainedActionType: chainedAction.type,
+    chainedActionMode: chainedAction.mode,
+  })
+
+  let newState = state
+
+  // First, mark the ability as used (remove ready status)
+  const { row, col } = sourceCoords
+  const sourceCard = newState.board[row]?.[col]?.card
+  if (sourceCard) {
+    // Get ability info to determine which ready status to remove
+    const abilityInfo = getCardAbilityInfo(sourceCard)
+    let readyStatusToRemove: string | undefined
+
+    if (chainedAction.mode === 'DRAW_CARD' || chainedAction.type === 'DRAW_CARD') {
+      // Vigilant Spotter and similar abilities use readyCommit
+      readyStatusToRemove = abilityInfo.hasCommitAbility ? 'readyCommit' : undefined
+    } else if (chainedAction.mode === 'DISCARD_AND_DRAW' || chainedAction.type === 'DISCARD_AND_DRAW') {
+      readyStatusToRemove = abilityInfo.hasCommitAbility ? 'readyCommit' : undefined
+    }
+
+    // Mark ability as used
+    if (readyStatusToRemove) {
+      newState = handleMarkAbilityUsed(newState, {
+        coords: sourceCoords,
+        isDeploy: false,
+        readyStatusToRemove
+      })
+    }
+  }
+
+  // Execute the chained action
+  if (chainedAction.type === 'DRAW_CARD' || chainedAction.mode === 'DRAW_CARD') {
+    // Draw a card for the player
+    newState = {
+      ...newState,
+      players: newState.players.map(p => {
+        if (p.id === playerId && p.deck && p.deck.length > 0) {
+          const drawnCard = p.deck.shift()
+          if (drawnCard) {
+            console.log('[EXECUTE_ABILITY_CHAINED] Drew card for player:', playerId, 'card:', drawnCard.name)
+            return {
+              ...p,
+              hand: [...p.hand, drawnCard],
+              handSize: p.hand.length + 1,
+              deckSize: p.deck.length
+            }
+          }
+        }
+        return p
+      })
+    }
+  } else if (chainedAction.type === 'DISCARD_AND_DRAW' || chainedAction.mode === 'DISCARD_AND_DRAW') {
+    // Discard and draw (for abilities like "discard a card, then draw a card")
+    newState = {
+      ...newState,
+      players: newState.players.map(p => {
+        if (p.id === playerId) {
+          // Discard first card from hand
+          let newHand = [...(p.hand || [])]
+          let newDiscard = [...(p.discard || [])]
+          if (newHand.length > 0) {
+            const discardedCard = newHand.shift()
+            if (discardedCard) {
+              newDiscard.push(discardedCard)
+            }
+          }
+          // Then draw a card
+          let newDeck = [...(p.deck || [])]
+          if (newDeck.length > 0) {
+            const drawnCard = newDeck.shift()
+            if (drawnCard) {
+              newHand.push(drawnCard)
+            }
+          }
+          console.log('[EXECUTE_ABILITY_CHAINED] Discard and draw for player:', playerId)
+          return {
+            ...p,
+            hand: newHand,
+            handSize: newHand.length,
+            deck: newDeck,
+            deckSize: newDeck.length,
+            discard: newDiscard,
+            discardSize: newDiscard.length
+          }
+        }
+        return p
+      })
+    }
+  } else {
+    console.warn('[EXECUTE_ABILITY_CHAINED] Unsupported chained action type:', chainedAction.type, chainedAction.mode)
+  }
+
+  return newState
 }
 
 /**

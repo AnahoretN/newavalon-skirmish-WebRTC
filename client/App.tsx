@@ -1015,7 +1015,7 @@ const AppInner = function AppInner() {
           // Skip teammates if onlyOpponents is set
           if (onlyOpponents && excludedOwnerId !== undefined) {
             const excludedPlayer = gameState.players.find(p => p.id === excludedOwnerId)
-            if (excludedPlayer && excludedPlayer.teamId !== undefined && excludedPlayer.teamId === player.teamId) {
+            if (excludedPlayer && excludedPlayer.teamId != null && excludedPlayer.teamId === player.teamId) {
               continue
             }
           }
@@ -1979,7 +1979,7 @@ const AppInner = function AppInner() {
             // Skip teammates if onlyOpponents is set
             if (onlyOpponents && excludedOwnerId !== undefined) {
               const excludedPlayer = gameState.players.find(p => p.id === excludedOwnerId)
-              if (excludedPlayer && excludedPlayer.teamId !== undefined && excludedPlayer.teamId === player.teamId) {
+              if (excludedPlayer && excludedPlayer.teamId != null && excludedPlayer.teamId === player.teamId) {
                 continue
               }
             }
@@ -2039,7 +2039,7 @@ const AppInner = function AppInner() {
             // Skip teammates if onlyOpponents is set
             if (onlyOpponents && excludedOwnerId !== undefined) {
               const excludedPlayer = gameState.players.find(p => p.id === excludedOwnerId)
-              if (excludedPlayer && excludedPlayer.teamId !== undefined && excludedPlayer.teamId === player.teamId) {
+              if (excludedPlayer && excludedPlayer.teamId != null && excludedPlayer.teamId === player.teamId) {
                 continue
               }
             }
@@ -2986,7 +2986,7 @@ const AppInner = function AppInner() {
       }
       const canControl = player.id === localPlayerId || !!player.isDummy
       const localP = gameState.players?.find(p => p.id === localPlayerId)
-      const isTeammate = localP?.teamId !== undefined && player.teamId === localP.teamId
+      const isTeammate = localP?.teamId != null && player.teamId === localP.teamId
       const isRevealedToMe = card.revealedTo === 'all' || (Array.isArray(card.revealedTo) && card.revealedTo.includes(localPlayerId))
       const isRevealedByRequest = card.statuses?.some((s: any) => s.type === 'Revealed' && s.addedByPlayerId === localPlayerId)
       const isVisible = (() => {

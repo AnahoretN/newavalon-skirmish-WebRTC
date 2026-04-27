@@ -1271,9 +1271,10 @@ export class SimpleHost {
         if (isDeckViewTarget) {
           const placeholderHand = (player.hand || []).map((card: any) => {
             // Check if this card is Revealed for the local player
+            // CRITICAL: Use addedByPlayerId, not ownerId, as Revealed status uses addedByPlayerId
             const isRevealedToMe = card.revealedTo?.includes(localPlayerId) ||
               (card.statuses || []).some((s: any) =>
-                s.type === 'Revealed' && s.ownerId === localPlayerId
+                s.type === 'Revealed' && s.addedByPlayerId === localPlayerId
               )
 
             // If Revealed to this player, send full card data so they can see it face-up
@@ -1339,9 +1340,10 @@ export class SimpleHost {
         // EXCEPTION: If card has Revealed status for local player, include full data
         const placeholderHand = (player.hand || []).map((card: any) => {
           // Check if this card is Revealed for the local player
+          // CRITICAL: Use addedByPlayerId, not ownerId, as Revealed status uses addedByPlayerId
           const isRevealedToMe = card.revealedTo?.includes(localPlayerId) ||
             (card.statuses || []).some((s: any) =>
-              s.type === 'Revealed' && s.ownerId === localPlayerId
+              s.type === 'Revealed' && s.addedByPlayerId === localPlayerId
             )
 
           // If Revealed to this player, send full card data so they can see it face-up

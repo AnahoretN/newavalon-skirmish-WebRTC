@@ -540,9 +540,16 @@ function handleCreateStack(
     tokenType: action.tokenType,
     count: action.count,
     sourceCard: action.sourceCard?.name,
+    sourceCardOwnerId: action.sourceCard?.ownerId,
     hasChainedAction: !!action.chainedAction,
     chainedActionType: action.chainedAction?.type,
     chainedActionMode: action.chainedAction?.mode,
+    onlyOpponents: action.onlyOpponents,
+    excludeOwnerId: action.excludeOwnerId,
+    targetLocation: action.payload?.targetLocation,
+    localPlayerId: props.localPlayerId,
+    // DIAGNOSTIC: Also check payload.onlyOpponents for Vigilant Spotter
+    payloadOnlyOpponents: action.payload?.onlyOpponents,
     callStack,
   })
 
@@ -797,29 +804,67 @@ function handleCreateStack(
       // The ability will complete when the player clicks on a hand card (in handCardHandlers.ts)
     }
     // Case 2: Revealed with onlyOpponents (e.g., False Orders Option 0 - reveal any opponent's cards)
-    else if (tokenType === 'Revealed' && (action.onlyOpponents || action.excludeOwnerId)) {
+    // CRITICAL: Check both action.onlyOpponents and action.payload?.onlyOpponents
+    // Some abilities might have onlyOpponents in payload instead of directly on action
+    else if (tokenType === 'Revealed' && (action.onlyOpponents || action.excludeOwnerId || action.payload?.onlyOpponents)) {
       // Collect hand targets for ALL opponents (excluding excluded owner)
       const handTargets: {playerId: number, cardIndex: number}[] = []
       const excludedId = action.excludeOwnerId ?? tokenOwnerId
 
       // CRITICAL: Use getFreshGameState() to get the latest state from host/guest
       // This ensures we don't select cards that already have Revealed tokens from previous steps
+      // CRITICAL: For guests, wait a moment if needed to ensure fresh state has opponent hand data
       const freshState = getFreshGameState()
+
+      // DIAGNOSTIC: Log opponent hand availability for debugging guest issues
+      console.log('[CREATE_STACK] Checking opponent hands for Revealed token:', {
+        tokenOwnerId,
+        excludedId,
+        onlyOpponents: action.onlyOpponents,
+        totalPlayers: freshState.players.length,
+        playersWithHandData: freshState.players.filter(p => p.hand && p.hand.length > 0).length,
+        players: freshState.players.map(p => ({
+          id: p.id,
+          name: p.name,
+          handLength: p.hand?.length || 0,
+          isDummy: p.isDummy,
+          isLocal: p.id === props.localPlayerId
+        }))
+      })
 
       for (const player of freshState.players) {
         // Skip excluded player (token owner's own hand)
         if (player.id === excludedId) {
+          console.log('[CREATE_STACK] Skipping excluded player:', player.id, '(token owner)')
           continue
         }
         // Skip teammates if onlyOpponents is set
-        if (action.onlyOpponents) {
+        const onlyOpponents = action.onlyOpponents || action.payload?.onlyOpponents
+        if (onlyOpponents) {
           const tokenOwner = freshState.players.find(p => p.id === tokenOwnerId)
-          if (tokenOwner && tokenOwner.teamId !== undefined && tokenOwner.teamId === player.teamId) {
+          console.log('[CREATE_STACK] Checking teammate skip for player:', player.id, 'tokenOwner:', tokenOwner?.id, 'tokenOwnerTeamId:', tokenOwner?.teamId, 'playerTeamId:', player.teamId)
+          // CRITICAL FIX: In FFA mode, teamId is undefined/null for everyone
+          // Only skip as teammates if both have the same explicitly defined teamId (not null/undefined)
+          // Use != null to check for both null AND undefined
+          if (tokenOwner && tokenOwner.teamId != null && tokenOwner.teamId === player.teamId) {
+            console.log('[CREATE_STACK] Skipping player as teammate:', player.id, 'teamId:', player.teamId)
+            continue
+          }
+          // Also skip if both have undefined teamId AND it's actually team mode (not FFA)
+          // We can detect team mode by checking if gameMode is not 'FFA'
+          const gameMode = freshState.gameMode
+          if (tokenOwner && tokenOwner.teamId == null && player.teamId == null && gameMode !== 'FFA' && gameMode !== 'FreeForAll') {
+            console.log('[CREATE_STACK] Skipping player with null/undefined teamId in team mode:', player.id, 'gameMode:', gameMode)
             continue
           }
         }
         // Add this player's hand cards
         if (player.hand) {
+          console.log('[CREATE_STACK] Player', player.id, 'has', player.hand.length, 'cards in hand', {
+            isLocal: player.id === props.localPlayerId,
+            isExcluded: player.id === excludedId,
+            firstCard: player.hand[0] ? { id: player.hand[0].id, baseId: player.hand[0].baseId, hasStatuses: !!player.hand[0].statuses, statuses: player.hand[0].statuses } : null
+          })
           for (let i = 0; i < player.hand.length; i++) {
             const card = player.hand[i]
             // Check if card doesn't already have our Revealed token
@@ -832,7 +877,13 @@ function handleCreateStack(
             const isFaceDown = card.isFaceDown !== false // Default to true for hand cards
             const passesFaceDownCheck = !action.onlyFaceDown || isFaceDown
 
-            if (!hasOurRevealed && passesFaceDownCheck) {
+            // DIAGNOSTIC: Log why each card is or isn't added
+            if (hasOurRevealed) {
+              console.log('[CREATE_STACK] Card', i, 'skipped (has Revealed token)')
+            } else if (!passesFaceDownCheck) {
+              console.log('[CREATE_STACK] Card', i, 'skipped (face-down check failed)')
+            } else {
+              console.log('[CREATE_STACK] Card', i, 'added as target', { cardId: card.id, baseId: card.baseId })
               handTargets.push({ playerId: player.id, cardIndex: i })
             }
           }
@@ -840,11 +891,65 @@ function handleCreateStack(
       }
 
       // DIAGNOSTIC: Log Revealed token targeting setup (all opponents)
-      console.log('[CREATE_STACK] Setting up Revealed token for all opponents =>', handTargets.length, 'hand targets')
+      console.log('[CREATE_STACK] Setting up Revealed token for all opponents =>', handTargets.length, 'hand targets', {
+        tokenOwnerId,
+        excludedId,
+        onlyOpponents: action.onlyOpponents || action.payload?.onlyOpponents,
+        totalPlayers: freshState.players.length,
+        playersWithHand: freshState.players.filter(p => p.hand && p.hand.length > 0).length,
+        handTargets: handTargets.map(t => ({ playerId: t.playerId, cardIndex: t.cardIndex }))
+      })
 
       // CRITICAL: If no hand targets, skip Revealed placement and execute chainedAction directly
       if (handTargets.length === 0) {
-        console.log('[CREATE_STACK] No hand targets for Revealed (all opponents) - skipping to chainedAction')
+        console.log('[CREATE_STACK] No hand targets for Revealed (all opponents) - skipping to chainedAction', {
+          tokenOwnerId,
+          excludedId,
+          onlyOpponents: action.onlyOpponents || action.payload?.onlyOpponents,
+          players: freshState.players.map(p => ({ id: p.id, name: p.name, handLength: p.hand?.length || 0, isDummy: p.isDummy })),
+          // DIAGNOSTIC: Check if this is a guest without fresh opponent hand data
+          localPlayerId: props.localPlayerId,
+          isGuest: props.localPlayerId !== 1 && props.localPlayerId !== tokenOwnerId,
+          hasSendAction: !!props.sendAction,
+        })
+
+        // CRITICAL FIX: For guests in WebRTC mode, send the full CREATE_STACK action to host
+        // The host has complete game state and can properly calculate targets for opponent hands
+        const isGuestInWebRTCMode = props.localPlayerId !== 1 && props.sendAction
+        const isTargetingOpponentHands = action.onlyOpponents || action.payload?.onlyOpponents
+
+        if (isGuestInWebRTCMode && isTargetingOpponentHands && action.chainedAction) {
+          console.log('[CREATE_STACK] Guest sending CREATE_STACK with chainedAction to host for proper execution')
+
+          // Send the ability action to host so it can execute with full game state
+          // This ensures DRAW_CARD and other chained actions work correctly
+          props.sendAction('EXECUTE_ABILITY_CHAINED', {
+            sourceCoords: action.sourceCoords || sourceCoords,
+            chainedAction: action.chainedAction,
+            tokenOwnerId,
+            onlyOpponents: action.onlyOpponents || action.payload?.onlyOpponents,
+          })
+
+          // Mark ability as used locally (removes ready status)
+          if (action.readyStatusToRemove) {
+            markAbilityUsed(action.sourceCoords || sourceCoords, action.isDeployAbility, false, action.readyStatusToRemove)
+          }
+          return
+        }
+
+        // CRITICAL: For guests without opponent hand data, show a message to the user
+        // This can happen if the guest hasn't received the latest state from the host yet
+        if (props.localPlayerId !== 1 && props.localPlayerId !== tokenOwnerId) {
+          console.warn('[CREATE_STACK] Guest player detected with no opponent hand data. This might be a sync issue.')
+          // Try to get fresh state one more time after a short delay
+          setTimeout(() => {
+            const retryState = getFreshGameState()
+            console.log('[CREATE_STACK] Retry - opponent hands:', retryState.players.map(p => ({
+              id: p.id,
+              handLength: p.hand?.length || 0
+            })))
+          }, 100)
+        }
         if (action.chainedAction) {
           console.log('[CREATE_STACK] Executing chainedAction:', action.chainedAction.type, action.chainedAction.mode)
           // CRITICAL: Set pending flag before executing chained action
@@ -873,7 +978,7 @@ function handleCreateStack(
           tokenType,
           filter: () => true,
           excludeOwnerId: action.excludeOwnerId,
-          onlyOpponents: action.onlyOpponents,
+          onlyOpponents: action.onlyOpponents || action.payload?.onlyOpponents,
         },
         sourceCoords: action.sourceCoords || sourceCoords,
         sourceCard: action.sourceCard,

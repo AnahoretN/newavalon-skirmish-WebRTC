@@ -229,15 +229,18 @@ function personalToGameState(personal: PersonalizedState, localPlayerId: number)
           discardSize: p.discardSize || 0
         }
       } else {
-        // Для других игроков - только размеры + announcedCard (витрина видна всем)
+        // Для других игроков - placeholder cards с statuses (для Revealed token targeting)
+        // Host sends placeholder cards with statuses for Revealed token targeting
+        // If p.hand has data (placeholder cards), use it; otherwise empty array
+        const opponentHand = p.hand || []
         return {
           ...p,
-          hand: p.hand || [],
+          hand: opponentHand,
           deck: [],
           discard: [],
           boardHistory: [],
           announcedCard: p.announcedCard || null,
-          handSize: p.handSize || 0,
+          handSize: opponentHand.length > 0 ? opponentHand.length : (p.handSize || 0),
           deckSize: p.deckSize || 0,
           discardSize: p.discardSize || 0
         }
@@ -698,18 +701,9 @@ export function useGameState(_props: any = {}): UseGameStateResult {
           console.log('[useGameState GUEST] Calling setLatestFloatingTexts with batch:', withTimestamp)
           setLatestFloatingTexts(withTimestamp)
         },
-        onTargetingMode: (targetingMode) => {
-          setGameState((prev: any) => ({
-            ...prev,
-            targetingMode
-          }))
-        },
-        onClearTargetingMode: () => {
-          setGameState((prev: any) => ({
-            ...prev,
-            targetingMode: null
-          }))
-        },
+        // onTargetingMode and onClearTargetingMode removed to prevent race conditions
+        // Targeting mode is now synced via onStateUpdate from host's broadcastAll()
+        // which already includes targetingMode in the state
         onNoTarget: (coords) => {
           setLatestNoTarget({ coords, timestamp: Date.now() })
         },
@@ -1810,8 +1804,13 @@ export function useGameState(_props: any = {}): UseGameStateResult {
     sendAction('TOGGLE_AUTO_DRAW', { playerId, enabled })
   }, [sendAction])
   const forceReconnect = useCallback(async () => {
+    // SimpleGuest has reconnect(), TrysteroGuest has requestReconnect()
     if (guestRef.current) {
-      await guestRef.current.reconnect()
+      if (typeof guestRef.current.reconnect === 'function') {
+        await guestRef.current.reconnect()
+      } else if (typeof (guestRef.current as any).requestReconnect === 'function') {
+        await (guestRef.current as any).requestReconnect()
+      }
     }
   }, [])
 

@@ -89,6 +89,7 @@ export type ActionType =
 
   // Ability tracking
   | 'MARK_ABILITY_USED'
+  | 'EXECUTE_ABILITY_CHAINED'  // Guest requests host to execute ability with chained action
   | 'REMOVE_ALL_COUNTERS_BY_TYPE'
   | 'REMOVE_COUNTER_BY_TYPE'  // Remove counter by type and owner (for Censor Commit)
   | 'REMOVE_COUNTERS_WITH_REWARD'  // Remove counters with draw/score reward (Inspiration)
@@ -210,7 +211,8 @@ export interface PersonalizedPlayer {
   discard?: GameState['players'][0]['discard']
   boardHistory?: GameState['players'][0]['boardHistory']
 
-  // For other players: only sizes
+  // For other players: placeholder hand cards (for Revealed token targeting) + sizes
+  // Opponents' hands contain placeholder cards with minimal data (id, statuses) for targeting
   handSize?: number
   deckSize?: number
   discardSize?: number

@@ -684,6 +684,9 @@ const Header = memo<HeaderProps>(({
             {t('invitePlayer')}
           </button>
 
+          {/* Vertical divider */}
+          <div className="w-vu-border h-vu-divider bg-gray-600 header-divider-spacer" />
+
           {/* Game Log Button */}
           <button
             onClick={onOpenGameLog}
