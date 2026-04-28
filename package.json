@@ -7,7 +7,7 @@
     "dev": "node --import tsx/esm server/dev.ts",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build --mode production",
-    "build:gh-pages": "vite build --mode gh-pages",
+    "build:gh-pages": "vite build --mode gh-pages && cp public/favicon.svg docs/",
     "build:docs": "vite build --mode gh-pages && xcopy /E /I /Y dist docs",
     "build:server": "tsc --project tsconfig.server.json",
     "start": "node dist-server/index.js",
